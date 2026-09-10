@@ -7,7 +7,8 @@
    auto-scroll 支持按钮开关 + 用户滚动检测（离底暂停 / 回底恢复），
    Clear 重置滚动锁，Filter 过滤/还原。
 2. 主窗口顶部 Connect/Pause/Stop 跟随 _sc_active_log_panel_index：
-   聚焦额外面板时控制面板连接与暂停，焦点切换时按钮文本/勾选同步。
+   聚焦额外面板时控制面板连接/显示暂停/丢弃接收，焦点切换时按钮文本/勾选同步。
+   Pause=冻结显示但保留数据；Stop=保持连接丢弃 RX 且可恢复；Disconnect=断连串口。
 
 可独立运行：
     python tests/test_serialcom_multipanel_sync.py
@@ -141,15 +142,21 @@ def test_top_controls_follow_focus():
     assert panel.get("session_id") is not None, "面板 Mock 连接未建立会话"
     assert w._sc_connect_btn.text() == "Disconnect", "面板连接后按钮未变 Disconnect"
 
-    # Pause 分发到面板且不影响主串口
+    # Pause 分发到面板且不影响主串口；新语义：冻结显示但保留数据
     w._sc_on_pause(True)
     assert panel["paused"] is True and w._sc_paused is False, "Pause 未分发到聚焦面板"
+    assert panel["frame"].display_paused is True, "Pause 未同步到组件 display_paused"
+    panel["frame"].flush_pending()  # 先冲掉 connect 期间残留的 [INFO]，建立空基线
+    app.processEvents()
     rx_before = panel["frame"].rx_bytes
+    logs_before = len(panel["frame"].all_logs)
     w._sc_extra_panel_on_data(panel, b"hello\n")
-    assert panel["frame"].rx_bytes == rx_before, "面板暂停时仍接收数据"
+    assert panel["frame"].rx_bytes > rx_before, "Pause 应保留 RX 字节计数"
+    assert len(panel["frame"].all_logs) > logs_before, "Pause 应保留 RX 数据到 all_logs"
+    assert not panel["frame"].pending_html, "Pause 期间不应渲染到视图"
 
     # 切回主面板 -> 按钮恢复主串口状态
-    w._sc_on_primary_panel_clicked(None)
+    w._sc_on_primary_panel_clicked()
     assert w._sc_active_extra_panel() is None, "主面板聚焦解析失败"
     assert w._sc_connect_btn.text() == "Connect", "切回主面板后按钮未恢复"
     assert not w._sc_pause_btn.isChecked(), "切回主面板后 Pause 勾选未恢复"
@@ -158,13 +165,31 @@ def test_top_controls_follow_focus():
     w._sc_on_log_panel_clicked(panel, None)
     assert w._sc_pause_btn.isChecked() and w._sc_pause_btn.text() == "Resume", "面板 Pause 状态未同步到按钮"
 
-    # Stop 断开聚焦面板
-    w._sc_on_stop()
-    assert w._sc_connect_btn.text() == "Connect", "Stop 后按钮未恢复 Connect"
-    assert panel.get("session_id") is None, "Stop 后面板会话未移除"
+    # 恢复 Pause -> 全量重建，日志不丢失
+    w._sc_on_pause(False)
+    assert panel["frame"].display_paused is False, "Pause 恢复失败"
+    assert not w._sc_pause_btn.isChecked() and w._sc_pause_btn.text() == "Pause", "Pause 恢复后按钮未同步"
+
+    # Stop 新语义：保持连接但丢弃 RX；再次点击恢复接收
+    w._sc_on_stop(True)
+    assert panel["stopped"] is True, "Stop 未分发到聚焦面板"
+    assert panel.get("session_id") is not None, "Stop 不应断开连接"
+    assert w._sc_stop_btn.isChecked() and w._sc_stop_btn.text() == "Resume", "Stop 按钮状态未同步"
+    rx_before = panel["frame"].rx_bytes
+    w._sc_extra_panel_on_data(panel, b"dropped\n")
+    assert panel["frame"].rx_bytes == rx_before, "Stop 期间应丢弃 RX 数据"
+    w._sc_on_stop(False)
+    assert panel["stopped"] is False and not w._sc_stop_btn.isChecked(), "Stop 恢复失败"
+    w._sc_extra_panel_on_data(panel, b"resumed\n")
+    assert panel["frame"].rx_bytes > rx_before, "Stop 恢复后应继续接收"
+
+    # Disconnect 断开聚焦面板
+    w._sc_on_connect_toggle()
+    assert w._sc_connect_btn.text() == "Connect", "Disconnect 后按钮未恢复 Connect"
+    assert panel.get("session_id") is None, "Disconnect 后面板会话未移除"
 
     # 面板 auto-scroll：贴底关闭后来数据不得复活且画面冻结
-    w._sc_on_primary_panel_clicked(None)
+    w._sc_on_primary_panel_clicked()
     for i in range(100):
         w._sc_extra_panel_append_log(panel, f"[RX] line {i}")
     panel["frame"].flush_pending()

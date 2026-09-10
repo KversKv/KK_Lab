@@ -214,6 +214,8 @@ class LogPanelMixin:
         panel.ntp_timestamp_provider = self._sc_ntp_timestamp
         panel.entry_renderer = self._sc_render_log_html
         panel.export_fast_path = self._sc_export_fast_path
+        # 共享同一 list：兼容 Mixin/持久化层对 _sc_highlight_keywords 的既有引用
+        panel.highlight_keywords = self._sc_highlight_keywords
         panel.raw_appended.connect(self._sc_write_to_log_files)
         panel.save_toggled.connect(self._sc_on_save_toggle)
         panel.cleared.connect(self._sc_on_primary_logs_cleared)
@@ -344,10 +346,10 @@ class LogPanelMixin:
             p["frame"].show()
 
     def _build_extra_log_panel(self, config):
-        """额外内嵌日志面板：SerialLogPanel(simple 过滤 + basic 状态栏) + dict facade。"""
+        """额外内嵌日志面板：SerialLogPanel(full 过滤 + basic 状态栏) + dict facade。"""
         comp = SerialLogPanel(
             title=config.get("title", "Serial Log"),
-            filter_mode="simple",
+            filter_mode="full",
             status_bar="basic",
             compact_toolbar=True,
             with_border=True,
@@ -379,20 +381,20 @@ class LogPanelMixin:
             "read_thread": None,
             "read_worker": None,
             "paused": False,
+            "stopped": False,
             "session_id": None,
         }
 
+        # 面板管理项注入组件内置右键菜单（Highlight 项由组件统一提供）
+        comp.context_menu_extra = lambda menu, p=panel: self._sc_extra_panel_menu_extra(p, menu)
         comp.customContextMenuRequested.connect(
             lambda pos, p=panel: self._sc_extra_panel_context_menu(p, comp.mapToGlobal(pos))
-        )
-        comp.log_edit.customContextMenuRequested.connect(
-            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, comp.log_edit.mapToGlobal(pos))
         )
         comp.clicked.connect(lambda p=panel: self._sc_on_log_panel_clicked(p, None))
 
         return panel
 
-    def _sc_on_primary_panel_clicked(self, event):
+    def _sc_on_primary_panel_clicked(self):
         if self._sc_active_log_panel_index != 0:
             self._sc_active_log_panel_index = 0
             self._sc_active_session_id = "primary"
@@ -453,6 +455,7 @@ class LogPanelMixin:
         self._sc_sync_top_control_state()
 
     def _sc_extra_panel_context_menu(self, panel, global_pos):
+        """面板本体（日志编辑区以外）右键：仅弹面板管理菜单。"""
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
@@ -469,7 +472,13 @@ class LogPanelMixin:
                 height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
             }}
         """)
+        self._sc_extra_panel_menu_extra(panel, menu)
+        if menu.isEmpty():
+            return
+        menu.exec(global_pos)
 
+    def _sc_extra_panel_menu_extra(self, panel, menu):
+        """向右键菜单填充面板管理项（Connect/Disconnect、Settings、Remove）。"""
         is_connected = self._sc_extra_panel_is_connected(panel)
 
         if is_connected:
@@ -493,10 +502,12 @@ class LogPanelMixin:
         remove_act.triggered.connect(lambda: self._sc_remove_specific_panel(panel))
         menu.addAction(remove_act)
 
-        menu.exec(global_pos)
-
     def _sc_extra_panel_do_disconnect(self, panel):
         self._sc_extra_panel_disconnect(panel)
+        # Disconnect 复位 Pause/Stop：重连后恢复正常的接收与显示
+        panel["paused"] = False
+        panel["stopped"] = False
+        panel["frame"].set_display_paused(False)
         panel["port_label"].setText("Port: Disconnected")
         panel["port_label"].setStyleSheet(status_label_style("error", compact=True))
         self._sc_extra_panel_append_log(panel, "[INFO] Disconnected", _CLR_TEXT_INFO)
@@ -654,7 +665,8 @@ class LogPanelMixin:
         thread.start()
 
     def _sc_extra_panel_on_data(self, panel, data: bytes):
-        if panel.get("paused"):
+        # Stop 语义：保持连接但丢弃 RX 数据；Pause 由组件 display_paused 处理（数据保留）
+        if panel.get("stopped"):
             return
         panel["frame"].append_rx_data(data)
 
@@ -669,6 +681,21 @@ class LogPanelMixin:
             if sizes and sizes[0] < self._sc_sidebar_min_width:
                 center_width = max(sizes[1], 600) if len(sizes) > 1 else 600
                 self._sc_body_splitter.setSizes([self._sc_sidebar_default_width, center_width])
+
+    def _sc_on_footer_toggle(self, checked):
+        """Footer 按钮：展开/隐藏底部 Quick Commands / Scripts 区域。"""
+        self._sc_footer_visible = checked
+        if not checked:
+            sizes = self._sc_center_splitter.sizes()
+            if sizes and sum(sizes) > 0:
+                self._sc_center_splitter_sizes_before_hide = sizes
+        self._sc_quick_area.setVisible(checked)
+        if checked:
+            restore = (
+                getattr(self, "_sc_center_splitter_sizes_before_hide", None)
+                or self._sc_center_splitter_default_sizes
+            )
+            self._sc_center_splitter.setSizes(list(restore))
 
     def _sc_open_settings_dialog(self):
         from ui.modules.serialCom_module.serialCom_module_frame import _SerialSettingsDialog
@@ -995,137 +1022,13 @@ class LogPanelMixin:
     # --- 日志渲染：行号 + 右键高亮 + 过滤高亮 ---
 
     def _sc_render_log_html(self, base_html, line_no, apply_filter_highlight=False):
-        """对基础 HTML 应用行号前缀、右键关键词高亮、过滤高亮（可选，状态取自组件）。"""
-        html = base_html
+        """主面板 entry_renderer：过滤/关键词高亮复用组件统一实现，此处仅加行号前缀。"""
         panel = self._sc_log_panel
-        if apply_filter_highlight and panel.filter_applied_pattern:
-            html = SerialLogPanel.html_with_filter_highlight(
-                html, panel.filter_applied_pattern,
-                panel.filter_applied_use_regex, panel.filter_applied_case,
-            )
-        if self._sc_highlight_keywords:
-            html = self._sc_apply_keyword_highlights(html)
+        html = panel.apply_highlights(base_html, apply_filter_highlight)
         if self._sc_show_line_num:
             lineno_html = f'<span style="color:{_CLR_TEXT_LINENO};">{line_no:>5} </span>'
             html = lineno_html + html
         return html
-
-    def _sc_apply_keyword_highlights(self, html):
-        """对所有右键高亮关键词着色，多关键词使用不同颜色。"""
-        if not self._sc_highlight_keywords:
-            return html
-        keywords = [kw["keyword"] for kw in self._sc_highlight_keywords]
-        try:
-            combined = re.compile(
-                '|'.join(re.escape(k) for k in keywords), re.IGNORECASE
-            )
-        except re.error:
-            return html
-        kw_lower_map = {}
-        for kw_info in self._sc_highlight_keywords:
-            kw_lower_map[kw_info["keyword"].lower()] = kw_info
-
-        parts = re.split(r'(<[^>]*>)', html)
-        for idx, seg in enumerate(parts):
-            if not seg or seg.startswith('<'):
-                continue
-            def _replace(m):
-                matched = m.group(0)
-                info = kw_lower_map.get(matched.lower())
-                if info is None:
-                    return matched
-                return (
-                    f'<span style="background-color:{info["bg"]};'
-                    f'color:{info["fg"]};'
-                    f'border-radius:2px;padding:0 1px;">{matched}</span>'
-                )
-            try:
-                parts[idx] = combined.sub(_replace, seg)
-            except re.error:
-                continue
-        return ''.join(parts)
-
-    def _sc_add_highlight_keyword(self, keyword):
-        """添加右键高亮关键词，自动分配调色板中的颜色。"""
-        keyword = keyword.strip()
-        if not keyword or len(keyword) > 200:
-            return
-        for kw_info in self._sc_highlight_keywords:
-            if kw_info["keyword"].lower() == keyword.lower():
-                return
-        idx = len(self._sc_highlight_keywords) % len(_SC_HIGHLIGHT_PALETTE)
-        bg, fg = _SC_HIGHLIGHT_PALETTE[idx]
-        self._sc_highlight_keywords.append({"keyword": keyword, "bg": bg, "fg": fg})
-        self._sc_rebuild_log_view()
-
-    def _sc_remove_highlight_keyword(self, keyword):
-        """移除指定右键高亮关键词。"""
-        self._sc_highlight_keywords = [
-            kw for kw in self._sc_highlight_keywords
-            if kw["keyword"].lower() != keyword.lower()
-        ]
-        self._sc_rebuild_log_view()
-
-    def _sc_clear_highlight_keywords(self):
-        """清除所有右键高亮关键词。"""
-        if not self._sc_highlight_keywords:
-            return
-        self._sc_highlight_keywords.clear()
-        self._sc_rebuild_log_view()
-
-    def _sc_on_log_context_menu(self, pos):
-        """日志区右键菜单：高亮选中词 / 管理已有高亮。"""
-        menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER_HOVER};
-                border-radius: 6px; padding: 4px 0px;
-            }}
-            QMenu::item {{
-                padding: 6px 20px; color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT};
-            }}
-            QMenu::item:selected {{
-                background-color: {_CLR_BORDER}; color: #ffffff;
-            }}
-            QMenu::separator {{
-                height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
-            }}
-        """)
-        cursor = self._sc_log_edit.textCursor()
-        word = ""
-        if cursor.hasSelection():
-            word = cursor.selectedText().strip()
-        if not word:
-            try:
-                cursor = self._sc_log_edit.cursorForPosition(pos)
-                cursor.select(QTextCursor.WordUnderCursor)
-                word = cursor.selectedText().strip()
-            except Exception:
-                word = ""
-        if word:
-            display = word if len(word) <= 40 else word[:37] + "..."
-            act = QAction(f'Highlight "{display}"', self)
-            act.triggered.connect(lambda checked, w=word: self._sc_add_highlight_keyword(w))
-            menu.addAction(act)
-        if self._sc_highlight_keywords:
-            if word:
-                menu.addSeparator()
-            for kw_info in self._sc_highlight_keywords:
-                kw = kw_info["keyword"]
-                display = kw if len(kw) <= 40 else kw[:37] + "..."
-                label = f'Remove "{display}"'
-                act = QAction(label, self)
-                act.triggered.connect(
-                    lambda checked, k=kw: self._sc_remove_highlight_keyword(k)
-                )
-                menu.addAction(act)
-            menu.addSeparator()
-            clear_act = QAction("Clear All Highlights", self)
-            clear_act.triggered.connect(self._sc_clear_highlight_keywords)
-            menu.addAction(clear_act)
-        if not word and not self._sc_highlight_keywords:
-            return
-        menu.exec(self._sc_log_edit.mapToGlobal(pos))
 
     def _sc_append_system(self, message: str, force_primary: bool = False):
         color_map = {"INFO": _CLR_TEXT_INFO, "WARN": _CLR_WARNING, "ERROR": _CLR_ERROR}

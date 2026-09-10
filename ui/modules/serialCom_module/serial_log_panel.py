@@ -23,21 +23,26 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QTextEdit,
+    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSpinBox, QTextEdit,
     QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QAction, QColor, QTextCursor
 
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.modules.serialCom_module.serialCom_module_frame import (
+    _SC_HIGHLIGHT_PALETTE,
     _SVG_LOGS_DIR,
     _SVG_SERIAL_DIR,
+    _CLR_BG_CARD,
+    _CLR_BORDER,
+    _CLR_BORDER_HOVER,
     _CLR_ERROR,
     _CLR_FILTER_BG,
     _CLR_FILTER_BORDER,
     _CLR_FILTER_TEXT,
+    _CLR_INPUT_TEXT,
     _CLR_RX,
     _CLR_TEXT_ACCENT,
     _CLR_TEXT_BODY,
@@ -48,6 +53,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     _CLR_TEXT_TIME,
     _CLR_TX,
     _CLR_WARNING,
+    _UI_FONT,
     SERIAL_SCROLLBAR_STYLE,
     auto_scroll_icon_colors,
     checkbox_style,
@@ -145,10 +151,16 @@ class SerialLogPanel(QFrame):
         self.filter_applied_after = 0
         self.filter_dirty = False
         self.filter_last_count = 0
+        # 右键关键词高亮（组件级，三处容器各自独立）：[{"keyword","bg","fg"}]
+        self.highlight_keywords = []
+        # 显示暂停（Pause 新语义）：True 时数据照常入 all_logs/写文件，但不渲染；
+        # 恢复时全量重建视图，日志不丢失
+        self.display_paused = False
         # 宿主钩子
         self.ntp_timestamp_provider = None   # callable() -> str
         self.entry_renderer = None           # callable(base_html, line_no, apply_filter_highlight) -> html
         self.export_fast_path = None         # callable() -> str | None
+        self.context_menu_extra = None       # callable(QMenu)：宿主向日志右键菜单追加自定义项
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -400,6 +412,9 @@ class SerialLogPanel(QFrame):
         if self.log_edit.verticalScrollBar():
             self.log_edit.verticalScrollBar().valueChanged.connect(self._on_user_scroll)
 
+        # 右键菜单（Highlight 关键词 + 宿主追加项）
+        self.log_edit.customContextMenuRequested.connect(self._on_log_context_menu)
+
         # 点击上报（焦点切换用），保留原 selection 行为
         _orig_press = self.log_edit.mousePressEvent
 
@@ -512,6 +527,8 @@ class SerialLogPanel(QFrame):
             del self.all_logs[:-self.max_lines]
         self.raw_appended.emit(raw)
 
+        if self.display_paused:
+            return
         if self.is_filter_active():
             self.filter_dirty = True
         else:
@@ -533,13 +550,51 @@ class SerialLogPanel(QFrame):
         return self.default_render_entry(base_html, line_no, apply_filter_highlight)
 
     def default_render_entry(self, base_html, line_no, apply_filter_highlight=False):
-        html = base_html
+        return self.apply_highlights(base_html, apply_filter_highlight)
+
+    def apply_highlights(self, html, apply_filter_highlight=False):
+        """统一应用过滤高亮 + 右键关键词高亮（主面板 entry_renderer 亦复用）。"""
         if apply_filter_highlight and self.filter_applied_pattern:
             html = self.html_with_filter_highlight(
                 html, self.filter_applied_pattern,
                 self.filter_applied_use_regex, self.filter_applied_case,
             )
-        return html
+        return self.apply_keyword_highlights(html)
+
+    def apply_keyword_highlights(self, html):
+        """对所有右键高亮关键词着色，多关键词使用不同颜色。"""
+        if not self.highlight_keywords:
+            return html
+        keywords = [kw["keyword"] for kw in self.highlight_keywords]
+        try:
+            combined = re.compile(
+                '|'.join(re.escape(k) for k in keywords), re.IGNORECASE
+            )
+        except re.error:
+            return html
+        kw_lower_map = {}
+        for kw_info in self.highlight_keywords:
+            kw_lower_map[kw_info["keyword"].lower()] = kw_info
+
+        parts = re.split(r'(<[^>]*>)', html)
+        for idx, seg in enumerate(parts):
+            if not seg or seg.startswith('<'):
+                continue
+            def _replace(m):
+                matched = m.group(0)
+                info = kw_lower_map.get(matched.lower())
+                if info is None:
+                    return matched
+                return (
+                    f'<span style="background-color:{info["bg"]};'
+                    f'color:{info["fg"]};'
+                    f'border-radius:2px;padding:0 1px;">{matched}</span>'
+                )
+            try:
+                parts[idx] = combined.sub(_replace, seg)
+            except re.error:
+                continue
+        return ''.join(parts)
 
     @staticmethod
     def html_with_filter_highlight(html, pattern, use_regex, case_sensitive):
@@ -895,6 +950,110 @@ class SerialLogPanel(QFrame):
         self.auto_scroll = True
         self.scroll_lock_btn.setChecked(True)
         self.cleared.emit()
+
+    # ------------------------------------------------------------------ 右键关键词高亮
+
+    def add_highlight_keyword(self, keyword):
+        """添加右键高亮关键词，自动分配调色板中的颜色。"""
+        keyword = keyword.strip()
+        if not keyword or len(keyword) > 200:
+            return
+        for kw_info in self.highlight_keywords:
+            if kw_info["keyword"].lower() == keyword.lower():
+                return
+        idx = len(self.highlight_keywords) % len(_SC_HIGHLIGHT_PALETTE)
+        bg, fg = _SC_HIGHLIGHT_PALETTE[idx]
+        self.highlight_keywords.append({"keyword": keyword, "bg": bg, "fg": fg})
+        self.rebuild_view()
+
+    def remove_highlight_keyword(self, keyword):
+        """移除指定右键高亮关键词（原地修改，保持与宿主的共享引用）。"""
+        self.highlight_keywords[:] = [
+            kw for kw in self.highlight_keywords
+            if kw["keyword"].lower() != keyword.lower()
+        ]
+        self.rebuild_view()
+
+    def clear_highlight_keywords(self):
+        """清除所有右键高亮关键词。"""
+        if not self.highlight_keywords:
+            return
+        self.highlight_keywords.clear()
+        self.rebuild_view()
+
+    def _on_log_context_menu(self, pos):
+        """日志区右键菜单：高亮选中词 / 管理已有高亮 + 宿主追加项。"""
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER_HOVER};
+                border-radius: 6px; padding: 4px 0px;
+            }}
+            QMenu::item {{
+                padding: 6px 20px; color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT};
+            }}
+            QMenu::item:selected {{
+                background-color: {_CLR_BORDER}; color: #ffffff;
+            }}
+            QMenu::separator {{
+                height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
+            }}
+        """)
+        cursor = self.log_edit.textCursor()
+        word = ""
+        if cursor.hasSelection():
+            word = cursor.selectedText().strip()
+        if not word:
+            try:
+                cursor = self.log_edit.cursorForPosition(pos)
+                cursor.select(QTextCursor.WordUnderCursor)
+                word = cursor.selectedText().strip()
+            except Exception:
+                word = ""
+        if word:
+            display = word if len(word) <= 40 else word[:37] + "..."
+            act = QAction(f'Highlight "{display}"', self)
+            act.triggered.connect(lambda checked, w=word: self.add_highlight_keyword(w))
+            menu.addAction(act)
+        if self.highlight_keywords:
+            if word:
+                menu.addSeparator()
+            for kw_info in self.highlight_keywords:
+                kw = kw_info["keyword"]
+                display = kw if len(kw) <= 40 else kw[:37] + "..."
+                act = QAction(f'Remove "{display}"', self)
+                act.triggered.connect(
+                    lambda checked, k=kw: self.remove_highlight_keyword(k)
+                )
+                menu.addAction(act)
+            menu.addSeparator()
+            clear_act = QAction("Clear All Highlights", self)
+            clear_act.triggered.connect(self.clear_highlight_keywords)
+            menu.addAction(clear_act)
+
+        has_highlight_items = bool(word) or bool(self.highlight_keywords)
+        if self.context_menu_extra is not None:
+            if has_highlight_items:
+                menu.addSeparator()
+            self.context_menu_extra(menu)
+
+        if menu.isEmpty():
+            return
+        menu.exec(self.log_edit.mapToGlobal(pos))
+
+    # ------------------------------------------------------------------ 显示暂停（Pause）
+
+    def set_display_paused(self, paused):
+        """Pause 新语义：暂停渲染但保留数据；恢复时全量重建视图，日志不丢失。"""
+        paused = bool(paused)
+        if paused == self.display_paused:
+            return
+        self.display_paused = paused
+        if not paused:
+            if self.is_filter_active():
+                self.apply_filter()
+            else:
+                self.rebuild_view()
 
     # ------------------------------------------------------------------ 滚动
 

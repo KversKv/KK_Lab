@@ -200,7 +200,10 @@ class FilterSaveMixin:
 
     def _sc_install_filter_shortcut(self):
         host_widgets = []
-        if getattr(self, "_sc_log_area", None) is not None:
+        # log 容器覆盖主面板 + 全部额外内嵌面板（WidgetWithChildrenShortcut 动态生效）
+        if getattr(self, "_sc_log_container", None) is not None:
+            host_widgets.append(self._sc_log_container)
+        elif getattr(self, "_sc_log_area", None) is not None:
             host_widgets.append(self._sc_log_area)
         if getattr(self, "_sc_send_input", None) is not None:
             host_widgets.append(self._sc_send_input)
@@ -213,6 +216,19 @@ class FilterSaveMixin:
             self._sc_filter_shortcuts.append(sc)
 
     def _sc_toggle_filter_shortcut(self):
+        # 按焦点面板分发：额外面板聚焦时开关该面板的 Filter
+        panel = self._sc_active_extra_panel() if hasattr(self, "_sc_active_extra_panel") else None
+        if panel is not None:
+            btn = panel.get("filter_btn")
+            if btn is None:
+                return
+            btn.click()
+            if btn.isChecked():
+                input_widget = panel.get("filter_input")
+                if input_widget is not None:
+                    input_widget.setFocus(Qt.ShortcutFocusReason)
+                    input_widget.selectAll()
+            return
         btn = getattr(self, "_sc_filter_btn", None)
         if btn is None:
             return

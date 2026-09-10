@@ -675,11 +675,17 @@ class ConnectionMixin:
         self._serial_conn = None
         self._serial_port = None
         self._serial_connected = False
+        # Disconnect 复位 Pause/Stop：重连后恢复正常的接收与显示
+        self._sc_paused = False
+        self._sc_stopped = False
+        if hasattr(self, "_sc_log_panel"):
+            self._sc_log_panel.set_display_paused(False)
         session = self._sc_session_manager.get_session("primary")
         if session is not None:
             session._serial_conn = None
             session._connected = False
         self._sc_update_connect_ui(False)
+        self._sc_sync_top_control_state()
         self._sc_append_system("[INFO] Disconnected", force_primary=True)
         self.serial_connection_changed.emit(False)
 
@@ -724,9 +730,11 @@ class ConnectionMixin:
         if panel is None:
             connected = bool(getattr(self, "_serial_connected", False))
             paused = bool(getattr(self, "_sc_paused", False))
+            stopped = bool(getattr(self, "_sc_stopped", False))
         else:
             connected = self._sc_extra_panel_is_connected(panel)
             paused = bool(panel.get("paused"))
+            stopped = bool(panel.get("stopped"))
         self._sc_set_connect_btn_state(connected)
         pause_btn = getattr(self, "_sc_pause_btn", None)
         if pause_btn is not None:
@@ -734,6 +742,12 @@ class ConnectionMixin:
             pause_btn.setChecked(paused)
             pause_btn.setText("Resume" if paused else "Pause")
             pause_btn.blockSignals(False)
+        stop_btn = getattr(self, "_sc_stop_btn", None)
+        if stop_btn is not None:
+            stop_btn.blockSignals(True)
+            stop_btn.setChecked(stopped)
+            stop_btn.setText("Resume" if stopped else "Stop")
+            stop_btn.blockSignals(False)
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()
@@ -881,21 +895,24 @@ class ConnectionMixin:
             self._sc_status_baud_label.setText(f"Baud rate (bps): {baudrate}")
 
     def _sc_on_pause(self, checked):
+        """Pause：仅冻结日志区显示；RX 数据照常接收保留，恢复后日志不丢失。"""
         panel = self._sc_active_extra_panel()
         if panel is not None:
             panel["paused"] = checked
+            panel["frame"].set_display_paused(checked)
         else:
             self._sc_paused = checked
-        self._sc_pause_btn.setText("Resume" if checked else "Pause")
+            self._sc_log_panel.set_display_paused(checked)
+        self._sc_sync_top_control_state()
 
-    def _sc_on_stop(self):
+    def _sc_on_stop(self, checked):
+        """Stop：保持连接但丢弃 RX 接收数据；再次点击（Resume）后接着接收显示。"""
         panel = self._sc_active_extra_panel()
         if panel is not None:
-            if self._sc_extra_panel_is_connected(panel):
-                self._sc_extra_panel_do_disconnect(panel)
-            return
-        if self._serial_connected:
-            self._sc_do_disconnect()
+            panel["stopped"] = checked
+        else:
+            self._sc_stopped = checked
+        self._sc_sync_top_control_state()
 
     def _sc_on_refresh(self):
         self._sc_port_combo.clear()

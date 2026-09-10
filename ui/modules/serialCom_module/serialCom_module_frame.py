@@ -186,6 +186,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
 
     def complete_serialComWidget(self, parent_layout):
         self._sc_paused = False
+        self._sc_stopped = False
         self._sc_rx_line_buf = ""
         self._sc_rx_flush_timer = None
         self._sc_show_line_num = False
@@ -227,6 +228,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_script_timer.setSingleShot(True)
         self._sc_script_timer.timeout.connect(self._sc_script_on_timeout)
         self._sc_sidebar_visible = True
+        self._sc_footer_visible = True
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
 
@@ -353,6 +355,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 "show_system_log": False,
                 "line_by_line": False,
                 "sidebar_visible": True,
+                "footer_visible": True,
                 "show_line_num": False,
                 "center_split_sizes": [680, 185],
             },
@@ -669,6 +672,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             "show_system_log": getattr(self, "_sc_show_system_log", False),
             "line_by_line": getattr(self, "_sc_line_by_line", False),
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            "footer_visible": getattr(self, "_sc_footer_visible", True),
             "show_line_num": getattr(self, "_sc_show_line_num", False),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
             "log_save_path": getattr(self, "_sc_log_save_path", ""),
@@ -767,6 +771,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     ("show_system_log", "_sc_show_system_log"),
                     ("line_by_line", "_sc_line_by_line"),
                     ("sidebar_visible", "_sc_sidebar_visible"),
+                    ("footer_visible", "_sc_footer_visible"),
                     ("show_line_num", "_sc_show_line_num"),
                     ("log_auto_save", "_sc_log_auto_save"),
                     ("log_save_path", "_sc_log_save_path"),
@@ -831,6 +836,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 ("show_system_log", "_sc_show_system_log"),
                 ("line_by_line", "_sc_line_by_line"),
                 ("sidebar_visible", "_sc_sidebar_visible"),
+                ("footer_visible", "_sc_footer_visible"),
                 ("show_line_num", "_sc_show_line_num"),
             ):
                 if key in data:
@@ -849,6 +855,12 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             self._sc_rx_toggle.set_value("HEX" if getattr(self, "_sc_rx_display_hex", False) else "ASCII")
         if hasattr(self, "_sc_tx_toggle"):
             self._sc_tx_toggle.set_value("HEX" if getattr(self, "_sc_tx_display_hex", False) else "ASCII")
+
+        # 回放 Footer 显隐（toggled 绑定，setChecked 即驱动 _sc_on_footer_toggle）
+        if hasattr(self, "_sc_footer_toggle_btn"):
+            self._sc_footer_toggle_btn.setChecked(
+                bool(getattr(self, "_sc_footer_visible", True))
+            )
 
     def _sc_load_persisted_state(self) -> None:
         try:
@@ -985,6 +997,12 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             self._sc_sidebar_widget.setVisible(True)
         if hasattr(self, "_sc_sidebar_toggle_btn"):
             self._sc_sidebar_toggle_btn.setChecked(True)
+
+        self._sc_footer_visible = True
+        if hasattr(self, "_sc_quick_area"):
+            self._sc_quick_area.setVisible(True)
+        if hasattr(self, "_sc_footer_toggle_btn"):
+            self._sc_footer_toggle_btn.setChecked(True)
 
         if hasattr(self, "_sc_center_splitter"):
             self._sc_center_splitter.setSizes(
@@ -1453,10 +1471,10 @@ class _IndependentSerialWindow(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
 
-        # 统一日志面板（simple 过滤 + RX/TX 状态栏 + Copy/Export 通知）
+        # 统一日志面板（full 过滤 + RX/TX 状态栏 + Copy/Export 通知）
         self._panel = SerialLogPanel(
             title=title,
-            filter_mode="simple",
+            filter_mode="full",
             show_title=False,
             status_bar="rxtx",
             max_lines=5000,

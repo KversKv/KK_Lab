@@ -524,7 +524,8 @@ class SendMixin:
             return False
 
     def _sc_on_data_received(self, data: bytes):
-        if self._sc_paused:
+        # Stop 语义：保持连接但丢弃 RX 数据；Pause 由组件 display_paused 处理（数据保留）
+        if getattr(self, "_sc_stopped", False):
             return
         if self._sc_script_wait_keyword:
             try:

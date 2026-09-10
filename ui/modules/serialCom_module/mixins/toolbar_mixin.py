@@ -220,10 +220,29 @@ class ToolbarMixin:
             os.path.join(_SVG_SERIAL_DIR, "pause.svg"), "Pause"
         )
         self._sc_pause_btn.setCheckable(True)
+        self._sc_pause_btn.setToolTip(
+            "Pause\nFreeze the log display; incoming data is kept and shown again after resume"
+        )
+        self._sc_bind_toggle_icon(
+            self._sc_pause_btn,
+            os.path.join(_SVG_SERIAL_DIR, "pause.svg"),
+            sidebar_toggle_icon_colors(),
+            13,
+        )
         layout.addWidget(self._sc_pause_btn)
 
         self._sc_stop_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "stop.svg"), "Stop"
+        )
+        self._sc_stop_btn.setCheckable(True)
+        self._sc_stop_btn.setToolTip(
+            "Stop\nDrop incoming RX data while staying connected; click again to resume receiving"
+        )
+        self._sc_bind_toggle_icon(
+            self._sc_stop_btn,
+            os.path.join(_SVG_SERIAL_DIR, "stop.svg"),
+            sidebar_toggle_icon_colors(),
+            13,
         )
         layout.addWidget(self._sc_stop_btn)
 
@@ -276,8 +295,9 @@ class ToolbarMixin:
         layout.addSpacing(8)
 
         self._sc_sidebar_toggle_btn = self._make_sc_btn(
-            os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"), "Sidebar"
+            os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"), ""
         )
+        self._sc_sidebar_toggle_btn.setToolTip("Sidebar\nShow/hide the left settings sidebar")
         self._sc_sidebar_toggle_btn.setStyleSheet(sidebar_toggle_button_style())
         self._sc_sidebar_toggle_btn.setCheckable(True)
         self._sc_sidebar_toggle_btn.setChecked(True)
@@ -288,6 +308,23 @@ class ToolbarMixin:
             13,
         )
         layout.addWidget(self._sc_sidebar_toggle_btn)
+
+        self._sc_footer_toggle_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "footer.svg"), ""
+        )
+        self._sc_footer_toggle_btn.setToolTip(
+            "Footer\nShow/hide the bottom Quick Commands / Scripts panel"
+        )
+        self._sc_footer_toggle_btn.setStyleSheet(sidebar_toggle_button_style())
+        self._sc_footer_toggle_btn.setCheckable(True)
+        self._sc_footer_toggle_btn.setChecked(True)
+        self._sc_bind_toggle_icon(
+            self._sc_footer_toggle_btn,
+            os.path.join(_SVG_SERIAL_DIR, "footer.svg"),
+            sidebar_toggle_icon_colors(),
+            13,
+        )
+        layout.addWidget(self._sc_footer_toggle_btn)
 
         layout.addStretch()
 
@@ -537,12 +574,12 @@ class ToolbarMixin:
         self._sc_add_log_btn.clicked.connect(self._sc_on_add_log_panel)
         self._sc_remove_log_btn.clicked.connect(self._sc_on_remove_log_panel)
         self._sc_sidebar_toggle_btn.clicked.connect(self._sc_on_sidebar_toggle)
+        # toggled 绑定：持久化回放 setChecked 时同步生效
+        self._sc_footer_toggle_btn.toggled.connect(self._sc_on_footer_toggle)
         self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
         self._sc_chart_btn.clicked.connect(self._sc_open_chart_dialog)
 
-        # 过滤/复制/导出/保存/清屏/滚动锁均由 SerialLogPanel 内部连接，
-        # 此处仅挂主面板特有的右键高亮菜单。
-        self._sc_log_edit.customContextMenuRequested.connect(self._sc_on_log_context_menu)
+        # 过滤/复制/导出/保存/清屏/滚动锁/右键高亮菜单均由 SerialLogPanel 内部连接。
 
         self._sc_send_btn.clicked.connect(self._sc_on_send)
         self._sc_send_input.returnPressed.connect(self._sc_on_send)
