@@ -1,0 +1,74 @@
+tests/test_gpadc_multi_temp_smoke.py
+  s_f68b10dcc7c470::t_26155ba31851c9 1-5,7,10-11,23-52,54,56,59-68,72-90,92-93,98-115,118-122,124-141,190-193,195-197
+  s_f68b10dcc7c470::t_8b372994403e42 12-16
+  s_f68b10dcc7c470::t_7c08f77262743f 6,8-9,17-22,53,55,57-58,69-71,91,94-97,116-117,123,142-189,194
+ui/theme/qss/dialog.qss
+  s_f68b10dcc7c470::t_5dcedd3599d6c0 73-91
+  s_f68b10dcc7c470::t_9ef2735ea50737 249-262
+core/pmu_test/gpadc/gpadc_multi_temp.py
+  s_f68b10dcc7c470::t_05d7d5e0da11b3 298
+  s_f68b10dcc7c470::t_f4d5f85644c550 48,59-146,148-153,157-166
+  s_f68b10dcc7c470::t_1f2e96301bc0c3 205-206,219,222,224-225,227
+  s_f68b10dcc7c470::t_e983d175e369fa 270
+  s_f68b10dcc7c470::t_bdb3eeed12d59b 371
+  s_f68b10dcc7c470::t_5485f3b6e0f1e5 1-47,49-58,147,154-156,167-181,191-204,207-218,220-221,223,226,228-269,271-297,299-370,372-454
+  s_f68b10dcc7c470::t_265f4c77a47739 182-190
+helps/pmu_gpadc.html
+  s_f68b10dcc7c470::t_c1074211b38f95 17
+  s_f68b10dcc7c470::t_1a90cd2326a5c9 10,13-16,18-22
+  s_f68b10dcc7c470::t_ba068b19d4d72e 23
+ui/pages/pmu_test/gpadc_multi_temp_panel.py
+  s_f68b10dcc7c470::t_02c3f8583aef44 315
+  s_f68b10dcc7c470::t_b7837d739444c3 224-227
+  s_f68b10dcc7c470::t_6b68218bb54ab9 177-189,201-202,218-223,228-233,253-258
+  s_f68b10dcc7c470::t_a1ef8dfe7bd43e 289
+  s_f68b10dcc7c470::t_f02cbd3bf37698 1-4,7-9,12-19,22-23,29-33,43-47,49-53,55-59,61-168,190-200,203-217,234-252,259-288,290-314,316-468,471-489,491-543
+  s_f68b10dcc7c470::t_7f659f724d6e5b 5-6,10-11,20-21,24-27,34-42,48,54,60
+  s_f68b10dcc7c470::t_5dcb9b2c6e8465 169-176
+  s_f68b10dcc7c470::t_80c87707338cb3 28
+  s_f68b10dcc7c470::t_fc8058bb7015c5 469-470
+  s_f68b10dcc7c470::t_6243b31c8fc749 490
+DIRECTORY_STRUCTURE.txt
+  s_f68b10dcc7c470::t_1ad21eccaa766b 420
+ui/pages/pmu_test/AGENTS.md
+  s_f68b10dcc7c470::t_fae7e0192b1648 48
+core/pmu_test/gpadc/__init__.py
+  s_f68b10dcc7c470::t_017d2ac100155a 30,32
+  s_f68b10dcc7c470::t_cc6e5280f60522 14-19,31,33
+ui/pages/pmu_test/gpadc_test_ui.py
+  s_f68b10dcc7c470::t_0cdfcd4b962d3b 1696-1697
+  h_bab89651263f0f 22,54-55,57-58,90,109,111,688,984-990,1179,1362-1370,1386-1395,1497-1518,1617-1695,1698-1705,1768-1777,1829-1833,2023-2187,2205,2212-2259,2286-2287,2411-2415,2636-2639,3131-3163,3998-4114,4422-4433
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "d50e962dea12b38a465216be1736897d1caf5ef0",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_f68b10dcc7c470": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa24c15526a29f7a1727437",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa25efd526a29f7a17276ae",
+        "source_scene": "agent",
+        "tool_name": "Edit",
+        "runtime_client": "trae-tob-git-ai",
+        "external_session_id": "6aa24c15526a29f7a1727437",
+        "operation_id": "6aa25efd526a29f7a17276ae",
+        "client_type": "ide",
+        "display_model_name": "Kimi-K3",
+        "edit_kind": "file_edit",
+        "session_id": "6aa24c15526a29f7a1727437"
+      }
+    }
+  }
+}
