@@ -1,0 +1,55 @@
+core/pmu_test/gpadc/gpadc_worker.py
+  s_f3631c4420ea78::t_d0540025356498 8-9,18-19,26-27,35-51
+  s_f3631c4420ea78::t_983359c9c3a718 52
+core/AGENTS.md
+  s_f3631c4420ea78::t_7291b33e271e5c 33
+instruments/AGENTS.md
+  s_f3631c4420ea78::t_51b4a4dcd4b9fa 41
+ui/pages/pmu_test/AGENTS.md
+  s_f3631c4420ea78::t_aee0644ea92b05 48
+instruments/chambers/temperature_stabilizer.py
+  s_f3631c4420ea78::t_21e3af619dbe62 155-159,164
+  s_f3631c4420ea78::t_13edd6a216b0ac 31-34,55,74,165
+  s_f3631c4420ea78::t_4ee8ba7ff446a1 121
+ui/pages/pmu_test/gpadc_test_ui.py
+  s_f3631c4420ea78::t_c9b22e7e6d4685 1534
+  s_f3631c4420ea78::t_34e6feb3d2150e 22
+  s_f3631c4420ea78::t_fbd1091b15dee6 43
+  s_f3631c4420ea78::t_63b4cc7d0c6b86 3242-3259,3261-3266,3268-3272,3274-3278,3281,3284-3311,3313-3317,3319-3325
+  s_f3631c4420ea78::t_0af425e55ed755 1790-1811
+  s_f3631c4420ea78::t_1616ead2fb3358 3260
+  s_f3631c4420ea78::t_302dfa77ba1fa4 3340-3344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "4d148a1fc15b689b542cf473c5a9b845dbc073b9",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_f3631c4420ea78": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa276d0526a29f7a172782c",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "Kimi-K3",
+        "operation_id": "6aa27a84526a29f7a17278cd",
+        "tool_use_id": "6aa27a84526a29f7a17278cd",
+        "client_type": "ide",
+        "tool_name": "Edit",
+        "external_session_id": "6aa276d0526a29f7a172782c",
+        "session_id": "6aa276d0526a29f7a172782c",
+        "edit_kind": "file_edit",
+        "source_scene": "agent"
+      }
+    }
+  }
+}
