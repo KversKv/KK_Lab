@@ -28,6 +28,10 @@ class TemperatureStabilizer:
          consecutive evaluations.
       3. Watchdog: abort with reason="timeout" when total elapsed exceeds
          ``max_wait_s`` (0 means infinite).
+      4. Read-failure guard: when ``max_read_failures`` > 0, raise RuntimeError
+         after that many consecutive failed PV reads (e.g. chamber serial
+         dropped) so the caller can recover instead of polling blindly until
+         the watchdog.
 
     The helper is UI / Qt agnostic: callers pass ``log_fn`` (a plain
     callable that accepts a single string) and ``stop_check`` (returns
@@ -48,6 +52,7 @@ class TemperatureStabilizer:
         log_fn: Optional[Callable[[str], None]] = None,
         stop_check: Optional[Callable[[], bool]] = None,
         log_progress_every: float = 30.0,
+        max_read_failures: int = 0,
     ) -> None:
         if poll_interval <= 0:
             raise ValueError("poll_interval must be > 0")
@@ -66,6 +71,7 @@ class TemperatureStabilizer:
         self._log_fn = log_fn
         self._stop_check = stop_check
         self._log_progress_every = float(log_progress_every)
+        self.max_read_failures = int(max_read_failures)
 
     def _emit(self, msg: str) -> None:
         if self._log_fn is not None:
@@ -112,6 +118,7 @@ class TemperatureStabilizer:
         arrived = self.arrive_tolerance is None
         t0 = time.time()
         last_progress_log = t0
+        consecutive_failures = 0
 
         while True:
             if self._should_stop():
@@ -145,9 +152,16 @@ class TemperatureStabilizer:
             poll_count += 1
 
             if actual is None:
+                consecutive_failures += 1
+                if self.max_read_failures > 0 and consecutive_failures >= self.max_read_failures:
+                    raise RuntimeError(
+                        f"温箱温度读取连续失败 {consecutive_failures} 次，通信疑似中断"
+                    )
                 if self._sleep_interruptible(self.poll_interval):
                     continue
                 continue
+
+            consecutive_failures = 0
 
             if not arrived:
                 if abs(actual - target) <= float(self.arrive_tolerance):

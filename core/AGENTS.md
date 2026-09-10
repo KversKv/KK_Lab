@@ -30,7 +30,7 @@
   - `*_controller.py` → `core/<feature>/`；
   - `*_worker.py` → `core/<feature>/`（仅 QtCore）；
   - `*_analysis.py` → `core/<feature>/`（**无任何 Qt**，pytest 可直测）。
-- **禁止在 core 出现 UI 逻辑**：弹窗、样式、控件操作一律回 UI 层。
+- **禁止在 core 出现 UI 逻辑**：弹窗、样式、控件操作一律回 UI 层。Worker 需用户决策时走"信号请求 + threading.Event 阻塞应答"范式（参考 [pmu_test/gpadc/gpadc_worker.py](./pmu_test/gpadc/gpadc_worker.py) 的 `confirm_request / wait_user_confirm / respond_confirm` 三件套，阻塞期间须可响应 Stop），不得自行 import QtWidgets 弹窗。
 - **数据落盘**：结果写 `Results/`，文件名 `<功能>_<型号>_<YYYYMMDD_HHMMSS>.csv`，写前 `os.makedirs(..., exist_ok=True)`。
 - **芯片配置**：从 [chips/bes_chip_configs/](../chips/bes_chip_configs/) 读取，不在 core 硬编码寄存器 / 电压表。
 

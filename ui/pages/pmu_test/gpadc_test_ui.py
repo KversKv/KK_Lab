@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
     QTextEdit, QProgressBar, QListWidget, QListWidgetItem, QAbstractItemView,
-    QSplitter, QMenu, QInputDialog, QTabWidget, QFileDialog
+    QSplitter, QMenu, QInputDialog, QTabWidget, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter
@@ -40,7 +40,7 @@ from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockChamber, MockI2C, MockN6705C
 from instruments.chambers import TemperatureStabilizer
-from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
+from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO, apply_qss
 from ui.styles import get_page_base_qss
 from core.pmu_test.gpadc import (
     TestWorker as _TestWorker,
@@ -1531,6 +1531,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         worker.error.connect(self._on_test_error)
         worker.log.connect(self._append_log)
         worker.progress.connect(self.set_progress)
+        worker.confirm_request.connect(self._on_worker_confirm_request)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1785,6 +1786,28 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
     def _on_test_error(self, err):
         self._append_log(f"[ERROR] Test error: {err}")
+
+    def _on_worker_confirm_request(self, title: str, message: str):
+        """Worker 确认请求（温箱通信失败等可恢复错误）→ 弹窗让用户决定重试/中止。
+
+        Worker 阻塞等待应答；选“重试”重测当前温度点，选“中止”或按 Esc 结束测试。
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setIcon(QMessageBox.Warning)
+        box.setText(message)
+        retry_btn = box.addButton("重试", QMessageBox.YesRole)
+        abort_btn = box.addButton("中止", QMessageBox.NoRole)
+        box.setDefaultButton(abort_btn)
+        box.setEscapeButton(abort_btn)
+        apply_qss(box, "dialog")
+        box.exec()
+        if self._test_worker is not None:
+            try:
+                self._test_worker.respond_confirm(box.clickedButton() is retry_btn)
+            except RuntimeError:
+                # 弹窗期间用户按 Stop，worker 已随线程销毁
+                pass
 
     def _on_test_thread_finished(self):
         self._test_worker = None
@@ -3216,57 +3239,90 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
                     break
 
-                chamber.set_temperature(current_temp)
-                self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
+                try:
+                    chamber.set_temperature(current_temp)
+                    self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
 
-                if DEBUG_MOCK:
-                    self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
-                else:
-                    if point_idx == 0:
-                        try:
-                            chamber.start()
-                            self._test_worker.log.emit("[INFO] Chamber started (constant-temp run command sent)")
-                        except Exception as e:
-                            self._test_worker.log.emit(f"[WARN] Chamber start command failed: {e}")
+                    if DEBUG_MOCK:
+                        self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
+                    else:
+                        if point_idx == 0:
+                            try:
+                                chamber.start()
+                                self._test_worker.log.emit("[INFO] Chamber started (constant-temp run command sent)")
+                            except Exception as e:
+                                self._test_worker.log.emit(f"[WARN] Chamber start command failed: {e}")
 
-                    stabilizer = TemperatureStabilizer(
-                        chamber,
-                        log_fn=self._test_worker.log.emit,
+                        stabilizer = TemperatureStabilizer(
+                            chamber,
+                            log_fn=self._test_worker.log.emit,
+                            stop_check=stop_check,
+                            max_read_failures=12,
+                        )
+                        result = stabilizer.wait_for_stable(current_temp)
+
+                        if result.reason == "stopped":
+                            self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
+                            break
+
+                        actual_str = "N/A" if result.actual is None else f"{result.actual:.2f}"
+                        self._test_worker.log.emit(
+                            f"[INFO] Temperature {result.reason}: target={current_temp:.1f}, "
+                            f"actual={actual_str}, waited {result.waited_s:.0f}s, polls={result.poll_count}"
+                        )
+
+                        self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
+                        for _ in range(int(soak_time)):
+                            if stop_check and stop_check():
+                                break
+                            time.sleep(1)
+
+                        if stop_check and stop_check():
+                            self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
+                            break
+
+                    if DEBUG_MOCK:
+                        self._mock_i2c.set_mock_voltage(current_temp / 100.0)
+
+                    avg, max_val, min_val, raw_data = self._gpadc_read_by_cnts(
+                        device_addr,
+                        reg_addr,
+                        iic_weight,
+                        get_reg_cnt=sample_cnt,
+                        return_raw=True,
                         stop_check=stop_check,
                     )
-                    result = stabilizer.wait_for_stable(current_temp)
-
-                    if result.reason == "stopped":
+                except Exception as e:
+                    # 可恢复错误（典型：温箱 USB 串口瞬时中断 WriteFile AccessDenied）
+                    # → 弹窗让用户恢复环境后重试当前温度点，避免长周期测试整体报废
+                    logger.warning("高低温测试温度点 %.1f°C 执行失败: %s", current_temp, e, exc_info=True)
+                    retry = False
+                    stopped = False
+                    if not DEBUG_MOCK:
+                        answered, retry = self._test_worker.wait_user_confirm(
+                            "温箱通信失败",
+                            f"温度点 {current_temp:.1f}°C 执行失败：\n{e}\n\n"
+                            "常见原因：USB 串口转换器瞬时掉线、端口被其它程序占用、USB 电源管理挂起。\n"
+                            "请检查温箱串口连接并恢复环境后：\n"
+                            "· 【重试】重新打开串口，重测当前温度点（已测数据保留）\n"
+                            "· 【中止】结束测试，输出已测温度点数据",
+                        )
+                        stopped = not answered
+                    if stopped:
                         self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
+                    elif not retry:
+                        self._test_worker.log.emit(
+                            f"[WARN] 温度点 {current_temp:.1f}°C 执行失败且未重试，测试提前结束（已测数据保留）"
+                        )
+                    if not retry:
                         break
-
-                    actual_str = "N/A" if result.actual is None else f"{result.actual:.2f}"
-                    self._test_worker.log.emit(
-                        f"[INFO] Temperature {result.reason}: target={current_temp:.1f}, "
-                        f"actual={actual_str}, waited {result.waited_s:.0f}s, polls={result.poll_count}"
-                    )
-
-                    self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
-                    for _ in range(int(soak_time)):
-                        if stop_check and stop_check():
-                            break
-                        time.sleep(1)
-
-                    if stop_check and stop_check():
-                        self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
-                        break
-
-                if DEBUG_MOCK:
-                    self._mock_i2c.set_mock_voltage(current_temp / 100.0)
-
-                avg, max_val, min_val, raw_data = self._gpadc_read_by_cnts(
-                    device_addr,
-                    reg_addr,
-                    iic_weight,
-                    get_reg_cnt=sample_cnt,
-                    return_raw=True,
-                    stop_check=stop_check,
-                )
+                    try:
+                        chamber.disconnect()
+                        chamber.connect()
+                        self._test_worker.log.emit("[INFO] 温箱串口已重新打开，重试当前温度点")
+                    except Exception as e2:
+                        self._test_worker.log.emit(f"[WARN] 温箱串口重开失败: {e2}")
+                    continue
 
                 temp_data.append(current_temp)
                 adc_mean.append(avg)
@@ -3281,7 +3337,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 if progress_callback:
                     progress_callback(int(point_idx * 100 / total_points))
                 time.sleep(1)
-            chamber.set_temperature(25.0)
+            try:
+                chamber.set_temperature(25.0)
+            except Exception as e:
+                # 中止场景串口可能仍断开，恢复常温失败不应冲掉已测数据
+                self._test_worker.log.emit(f"[WARN] 恢复温箱 25°C 失败: {e}，请手动检查温箱状态")
             self._test_worker.log.emit("===== HIGH/LOW TEMP TEST 结果 =====")
             self._test_worker.log.emit("Temp, RawMean, RawMin, RawMax")
             for i in range(len(temp_data)):

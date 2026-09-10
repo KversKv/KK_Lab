@@ -38,6 +38,7 @@
 
 - **§6 断线重连**：`is_connected()` 不假设恒真；`read/write` 前要有超时保护，异常落盘日志并通知 UI。
 - **§13 温箱 Modbus CRC**：VT6002 用 Modbus RTU（CRC16），串口参数需严格匹配；超时建议 2–3s（默认 1s 不够）。
+- **温箱串口瞬时中断（WriteFile AccessDenied / WinError 5）**：USB-RS485 受压缩机强电干扰 / USB 电源管理挂起会瞬时拒写，pyserial 抛 `SerialException("WriteFile failed ...")`，重开串口（`disconnect()+connect()`）即可恢复；`TemperatureStabilizer` 新增 `max_read_failures`（默认 0=不限制，>0 时连续 N 次 PV 读失败抛 RuntimeError）防止稳定等待期串口断开还静默干等到 watchdog。
 - **§14 N6705C Datalog 格式**：二进制 + CSV 混合，解析走 [power/keysight/n6705c_datalog_process.py](./power/keysight/n6705c_datalog_process.py)，不要重复造轮子。
 - **§15 示波器截图差异**：DSOX4034A 用 `:DISP:DATA? PNG, COLor`；MSO64B 用 `HARDCopy` 系列。基类保留 `capture_screen(path)`，子类各自实现。
 - **§21 VISA 后端选择**：USBTMC 仪器在 Windows 上由 NI-VISA / Keysight IO 接管，`pyvisa-py` 会抛 `No device found.`。新增驱动自检：搜 `ResourceManager('@py')` 一律替换为"默认 + 可选 visa_library + 失败回退 @py"。
