@@ -1,0 +1,72 @@
+tests/test_serialcom_multipanel_sync.py
+  s_5a1294a3e0c51a::t_a64b0e5db03738 147,149
+  s_5a1294a3e0c51a::t_a878d89d9b2de6 170,176,179,181,185
+  s_5a1294a3e0c51a::t_fe7ff122cb5a9c 45-47,50-51,53,55,59-60,62-63,65,67,70-71,73,78-80,83-87,90-92
+ui/modules/serialCom_module/serial_log_panel.py
+  s_5a1294a3e0c51a::t_c19e2888ae5b65 1-957
+ui/modules/serialCom_module/mixins/send_mixin.py
+  s_5a1294a3e0c51a::t_850c7f1a8f928c 1278
+  s_5a1294a3e0c51a::t_342f5c5769e83c 534
+  s_5a1294a3e0c51a::t_ffecb9529ad8ee 476,507,517
+ui/modules/serialCom_module/mixins/filter_save_mixin.py
+  s_5a1294a3e0c51a::t_aadf25ce9911c2 352
+  s_5a1294a3e0c51a::t_2912cb5bdf79c0 351,360
+  s_5a1294a3e0c51a::t_b16cc626847202 229,232,235,237-238
+ui/modules/serialCom_module/mixins/script_mixin.py
+  s_5a1294a3e0c51a::t_d69dd8cd39aa12 1024
+DIRECTORY_STRUCTURE.txt
+  s_5a1294a3e0c51a::t_a5b2b6ac26f74a 349
+ui/modules/serialCom_module/serialCom_module_frame.py
+  h_bab89651263f0f 173
+  s_5a1294a3e0c51a::t_789d29de204925 1456-1464,1470,1475,1477,1508,1516,1536,1539,1551,1560-1561,1566,1570-1571,1574,1598
+ui/modules/serialCom_module/mixins/log_panel_mixin.py
+  s_5a1294a3e0c51a::t_48bb53bc8be08c 795
+  s_5a1294a3e0c51a::t_9a4eae8aa195db 347-357,359,362-376
+  s_5a1294a3e0c51a::t_a25a254c6a425b 706
+  s_5a1294a3e0c51a::t_2ed18312f0cb8e 980-993
+  s_5a1294a3e0c51a::t_a33df3c742b4b1 385-386,388-389,391
+  s_5a1294a3e0c51a::t_040c05b97d5192 195
+  s_5a1294a3e0c51a::t_be4df067f50cbb 204-212,214-218,220-247
+  s_5a1294a3e0c51a::t_7f9d8389c88643 219
+  s_5a1294a3e0c51a::t_6a7a615cd08314 775
+  s_5a1294a3e0c51a::t_c87904c48bab7c 659,662
+  s_5a1294a3e0c51a::t_247bbbe41a4c15 196
+  s_5a1294a3e0c51a::t_4e9286e69636ea 998,1000-1004
+ui/modules/serialCom_module/mixins/toolbar_mixin.py
+  s_5a1294a3e0c51a::t_fe2c9f7cc0861e 543-544
+ui/modules/AGENTS.md
+  s_5a1294a3e0c51a::t_d83d7c3558d32a 35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "bcd3aa15b54bd722612c2473a7ba6e88516d9f0e",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_5a1294a3e0c51a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa29614526a29f7a1727b7d",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "external_session_id": "6aa29614526a29f7a1727b7d",
+        "client_type": "ide",
+        "edit_kind": "bash",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_name": "RunCommand",
+        "operation_id": "6aa2aa1e526a29f7a1727dab",
+        "tool_use_id": "6aa2aa1e526a29f7a1727dab",
+        "session_id": "6aa29614526a29f7a1727b7d",
+        "display_model_name": "Kimi-K3"
+      }
+    }
+  }
+}
