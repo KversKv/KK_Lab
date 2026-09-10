@@ -623,6 +623,8 @@ class FilterSaveMixin:
             self._sc_start_auto_save()
 
     def _sc_on_user_scroll(self, value):
+        if getattr(self, "_sc_appending", False):
+            return
         sb = self._sc_log_edit.verticalScrollBar()
         if sb and sb.maximum() > 0:
             at_bottom = value >= sb.maximum() - 5

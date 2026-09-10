@@ -569,6 +569,13 @@ class ConnectionMixin:
 
 
     def _sc_on_connect_toggle(self):
+        panel = self._sc_active_extra_panel()
+        if panel is not None:
+            if self._sc_extra_panel_is_connected(panel):
+                self._sc_extra_panel_do_disconnect(panel)
+            else:
+                self._sc_extra_panel_connect(panel)
+            return
         if self._serial_connected:
             self._sc_do_disconnect()
         else:
@@ -676,26 +683,31 @@ class ConnectionMixin:
         self._sc_append_system("[INFO] Disconnected", force_primary=True)
         self.serial_connection_changed.emit(False)
 
-    def _sc_update_connect_ui(self, connected):
-        if not hasattr(self, '_sc_connect_btn_fixed_width_applied'):
-            self._sc_connect_btn.setFixedWidth(96)
-            self._sc_connect_btn_fixed_width_applied = True
+    def _sc_set_connect_btn_state(self, connected):
         if connected:
             self._sc_connect_btn.setText("Disconnect")
             self._sc_connect_btn.setStyleSheet(main_connect_button_style(connected=True))
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), _CLR_DISCONNECT_TEXT, 12)
             if not icon.isNull():
                 self._sc_connect_btn.setIcon(icon)
-            self._sc_status_port_label.setText(f"\u2022 Port: {self._serial_port}")
-            self._sc_status_port_label.setStyleSheet(status_label_style("ok", include_font=True))
-            baud = getattr(self, '_serial_baudrate', '-')
-            self._sc_status_baud_label.setText(f"Baud rate (bps): {baud}")
         else:
             self._sc_connect_btn.setText("Connect")
             self._sc_connect_btn.setStyleSheet(main_connect_button_style(connected=False))
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), _CLR_CONNECT_TEXT, 12)
             if not icon.isNull():
                 self._sc_connect_btn.setIcon(icon)
+
+    def _sc_update_connect_ui(self, connected):
+        if not hasattr(self, '_sc_connect_btn_fixed_width_applied'):
+            self._sc_connect_btn.setFixedWidth(96)
+            self._sc_connect_btn_fixed_width_applied = True
+        self._sc_set_connect_btn_state(connected)
+        if connected:
+            self._sc_status_port_label.setText(f"\u2022 Port: {self._serial_port}")
+            self._sc_status_port_label.setStyleSheet(status_label_style("ok", include_font=True))
+            baud = getattr(self, '_serial_baudrate', '-')
+            self._sc_status_baud_label.setText(f"Baud rate (bps): {baud}")
+        else:
             self._sc_status_port_label.setText("\u2022 Port: Unconnected")
             self._sc_status_port_label.setStyleSheet(status_label_style("error", include_font=True))
             self._sc_status_baud_label.setText("Baud rate (bps): -")
@@ -704,6 +716,24 @@ class ConnectionMixin:
         auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
         self._sc_baud_combo.setEditable(not auto_detect_on)
         self._sc_baud_combo.setEnabled(not auto_detect_on)
+
+    def _sc_sync_top_control_state(self):
+        if not hasattr(self, "_sc_connect_btn"):
+            return
+        panel = self._sc_active_extra_panel()
+        if panel is None:
+            connected = bool(getattr(self, "_serial_connected", False))
+            paused = bool(getattr(self, "_sc_paused", False))
+        else:
+            connected = self._sc_extra_panel_is_connected(panel)
+            paused = bool(panel.get("paused"))
+        self._sc_set_connect_btn_state(connected)
+        pause_btn = getattr(self, "_sc_pause_btn", None)
+        if pause_btn is not None:
+            pause_btn.blockSignals(True)
+            pause_btn.setChecked(paused)
+            pause_btn.setText("Resume" if paused else "Pause")
+            pause_btn.blockSignals(False)
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()
@@ -851,10 +881,19 @@ class ConnectionMixin:
             self._sc_status_baud_label.setText(f"Baud rate (bps): {baudrate}")
 
     def _sc_on_pause(self, checked):
-        self._sc_paused = checked
+        panel = self._sc_active_extra_panel()
+        if panel is not None:
+            panel["paused"] = checked
+        else:
+            self._sc_paused = checked
         self._sc_pause_btn.setText("Resume" if checked else "Pause")
 
     def _sc_on_stop(self):
+        panel = self._sc_active_extra_panel()
+        if panel is not None:
+            if self._sc_extra_panel_is_connected(panel):
+                self._sc_extra_panel_do_disconnect(panel)
+            return
         if self._serial_connected:
             self._sc_do_disconnect()
 

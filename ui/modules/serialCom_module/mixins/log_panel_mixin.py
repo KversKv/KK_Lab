@@ -172,7 +172,6 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     send_button_style,
     separator_style,
     sidebar_toggle_button_style,
-    auto_scroll_button_style,
     sidebar_toggle_icon_colors,
     auto_scroll_icon_colors,
     sidebar_wrapper_style,
@@ -550,38 +549,67 @@ class LogPanelMixin:
 
         toolbar.addStretch()
 
+        _icon_btn_pad = "6px"
+        _icon_btn_size = 14
+
+        def _to_icon_only(btn, svg_name, color):
+            btn.setText("")
+            _icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), color, _icon_btn_size)
+            if not _icon.isNull():
+                btn.setIcon(_icon)
+            btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
+
         filter_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
         )
+        _to_icon_only(filter_btn, "filter.svg", _CLR_TEXT_BTN_LOG)
         filter_btn.setCheckable(True)
+        filter_btn.setStyleSheet(
+            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
+        )
+        filter_btn.setToolTip("Filter\nShow only log lines matching a keyword or regex")
         toolbar.addWidget(filter_btn)
 
         copy_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
         )
+        _to_icon_only(copy_btn, "copy.svg", _CLR_TEXT_BTN_LOG)
+        copy_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        copy_btn.setToolTip("Copy\nCopy all current log content to the clipboard")
         toolbar.addWidget(copy_btn)
 
         export_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
         )
+        _to_icon_only(export_btn, "export.svg", _CLR_TEXT_BTN_LOG)
+        export_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        export_btn.setToolTip("Export\nSave the current log content as a file")
         toolbar.addWidget(export_btn)
 
         clear_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
         )
+        _to_icon_only(clear_btn, "trash.svg", _CLR_TEXT_BTN_LOG)
+        clear_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        clear_btn.setToolTip("Clear\nClear all log content in the console")
         toolbar.addWidget(clear_btn)
 
         scroll_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
         )
+        scroll_btn.setText("")
+        scroll_btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
         scroll_btn.setCheckable(True)
         scroll_btn.setChecked(True)
-        scroll_btn.setStyleSheet(auto_scroll_button_style())
+        scroll_btn.setStyleSheet(
+            log_icon_button_style(checked_variant="green", padding=_icon_btn_pad)
+        )
+        scroll_btn.setToolTip("Auto-scroll\nAutomatically scroll to the latest log line")
         self._sc_bind_toggle_icon(
             scroll_btn,
             os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
             auto_scroll_icon_colors(),
-            11,
+            _icon_btn_size,
         )
         toolbar.addWidget(scroll_btn)
 
@@ -660,6 +688,8 @@ class LogPanelMixin:
             "rx_bytes": 0,
             "tx_bytes": 0,
             "auto_scroll": True,
+            "appending": False,
+            "paused": False,
             "all_logs": [],
             "pending_html": [],
             "session_id": None,
@@ -771,6 +801,8 @@ class LogPanelMixin:
                 sb.setValue(sb.maximum())
 
     def _sc_extra_panel_on_scroll(self, panel, value):
+        if panel.get("appending"):
+            return
         sb = panel["log_edit"].verticalScrollBar()
         if sb and sb.maximum() > 0:
             at_bottom = value >= sb.maximum() - 5
@@ -787,6 +819,21 @@ class LogPanelMixin:
             self._sc_active_session_id = "primary"
             self._sc_session_manager.set_active_session("primary")
             self._sc_update_panel_focus_style()
+
+    def _sc_active_extra_panel(self):
+        idx = getattr(self, "_sc_active_log_panel_index", 0)
+        if 0 < idx <= len(self._sc_extra_log_panels):
+            return self._sc_extra_log_panels[idx - 1]
+        return None
+
+    def _sc_extra_panel_is_connected(self, panel):
+        if DEBUG_MOCK:
+            session_id = panel.get("session_id")
+            if session_id:
+                session = self._sc_session_manager.get_session(session_id)
+                return session is not None and session.connected
+            return bool(panel.get("port_label") and "MOCK" in panel["port_label"].text())
+        return panel.get("conn") is not None and panel["conn"].is_open
 
     def _sc_on_log_panel_clicked(self, panel, event):
         try:
@@ -824,6 +871,8 @@ class LogPanelMixin:
                     f"QFrame#scLogFrame {{ background-color: {_CLR_BG_LOG}; border: {inactive_border}; border-radius: 6px; }}"
                 )
 
+        self._sc_sync_top_control_state()
+
     def _sc_extra_panel_context_menu(self, panel, global_pos):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
@@ -842,16 +891,7 @@ class LogPanelMixin:
             }}
         """)
 
-        is_connected = False
-        if DEBUG_MOCK:
-            session_id = panel.get("session_id")
-            if session_id:
-                session = self._sc_session_manager.get_session(session_id)
-                is_connected = session is not None and session.connected
-            else:
-                is_connected = panel.get("port_label") and "MOCK" in panel["port_label"].text()
-        else:
-            is_connected = panel.get("conn") is not None and panel["conn"].is_open
+        is_connected = self._sc_extra_panel_is_connected(panel)
 
         if is_connected:
             disconnect_act = QAction("Disconnect", self)
@@ -881,6 +921,7 @@ class LogPanelMixin:
         panel["port_label"].setText("Port: Disconnected")
         panel["port_label"].setStyleSheet(status_label_style("error", compact=True))
         self._sc_extra_panel_append_log(panel, "[INFO] Disconnected", _CLR_TEXT_INFO)
+        self._sc_sync_top_control_state()
 
     def _sc_extra_panel_settings(self, panel):
         from ui.modules.serialCom_module.serialCom_module_frame import _PanelSettingsDialog
@@ -971,6 +1012,7 @@ class LogPanelMixin:
             panel["port_label"].setText("Port: MOCK")
             panel["port_label"].setStyleSheet(status_label_style("connected", include_font=True))
             self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", _CLR_TEXT_INFO)
+            self._sc_sync_top_control_state()
             return
 
         try:
@@ -997,6 +1039,7 @@ class LogPanelMixin:
             self._sc_extra_panel_start_read(panel)
         except Exception as e:
             self._sc_extra_panel_append_log(panel, f"[ERROR] Connection failed: {e}", extra_log_error_color())
+        self._sc_sync_top_control_state()
 
     def _sc_extra_panel_disconnect(self, panel):
         if panel.get("read_worker"):
@@ -1032,6 +1075,8 @@ class LogPanelMixin:
         thread.start()
 
     def _sc_extra_panel_on_data(self, panel, data: bytes):
+        if panel.get("paused"):
+            return
         panel["rx_bytes"] += len(data)
         panel["rx_label"].setText(self._sc_format_bytes("RX", panel["rx_bytes"]))
         display = data.decode("utf-8", errors="replace")
@@ -1054,17 +1099,24 @@ class LogPanelMixin:
             batch = panel["pending_html"][:200]
             panel["pending_html"] = panel["pending_html"][200:]
             log_edit = panel["log_edit"]
-            log_edit.setUpdatesEnabled(False)
-            cursor = log_edit.textCursor()
-            cursor.beginEditBlock()
-            for html in batch:
-                log_edit.append(html)
-            cursor.endEditBlock()
-            log_edit.setUpdatesEnabled(True)
-            if panel["auto_scroll"]:
-                sb = log_edit.verticalScrollBar()
-                if sb:
-                    sb.setValue(sb.maximum())
+            sb = log_edit.verticalScrollBar()
+            prev_value = sb.value() if sb else 0
+            panel["appending"] = True
+            try:
+                log_edit.setUpdatesEnabled(False)
+                cursor = log_edit.textCursor()
+                cursor.beginEditBlock()
+                for html in batch:
+                    log_edit.append(html)
+                cursor.endEditBlock()
+                log_edit.setUpdatesEnabled(True)
+                if panel["auto_scroll"]:
+                    if sb:
+                        sb.setValue(sb.maximum())
+                elif sb:
+                    sb.setValue(prev_value)
+            finally:
+                panel["appending"] = False
 
     def _sc_on_sidebar_toggle(self, checked):
         self._sc_sidebar_visible = checked
@@ -1562,15 +1614,23 @@ class LogPanelMixin:
         elif self._sc_pending_html:
             batch = self._sc_pending_html[:200]
             self._sc_pending_html = self._sc_pending_html[200:]
-            self._sc_log_edit.setUpdatesEnabled(False)
-            cursor = self._sc_log_edit.textCursor()
-            cursor.beginEditBlock()
-            for html in batch:
-                self._sc_log_edit.append(html)
-            cursor.endEditBlock()
-            self._sc_log_edit.setUpdatesEnabled(True)
-            if self._sc_auto_scroll:
-                self._sc_scroll_to_bottom()
+            sb = self._sc_log_edit.verticalScrollBar()
+            prev_value = sb.value() if sb else 0
+            self._sc_appending = True
+            try:
+                self._sc_log_edit.setUpdatesEnabled(False)
+                cursor = self._sc_log_edit.textCursor()
+                cursor.beginEditBlock()
+                for html in batch:
+                    self._sc_log_edit.append(html)
+                cursor.endEditBlock()
+                self._sc_log_edit.setUpdatesEnabled(True)
+                if self._sc_auto_scroll:
+                    self._sc_scroll_to_bottom()
+                elif sb:
+                    sb.setValue(prev_value)
+            finally:
+                self._sc_appending = False
         self._sc_flush_extra_panels()
 
     def _sc_flush_filter_incremental(self):

@@ -32,6 +32,8 @@
 - **控件高度**：可复用控件（如 DarkComboBox）用自身 QSS ID 选择器钉死高度，不依赖父页面。
 - **McuPwrResetConfigMixin 的 Status 行**：仅保留 GPIO 下拉 + “唤醒电平” High/Low 切换（`PolarityToggle(options=_STATUS_WAKE_LEVEL_OPTIONS)`），不再有 Pulse/Level 模式；`status_mode`/`mcu_status_toggle` 已移除。唤醒=`mcu_io.out(pin, active)`，睡眠=`mcu_io.out(pin, 1-active)`（`active = 1 if status_polarity == "rising"(High) else 0`）。`mcu_set_status(active=True/False)` 即按此映射输出电平。`status_polarity` 键仍复用 `rising/falling`（High=rising、Low=falling）以兼容页面读取。Ctrl 行仍保留 Pulse/Level `ModeToggle`。
 - **MCU 家族共享会话**：`McuIoConnectionMixin`（含 `McuPwrResetConfigMixin`）与 `Ch9114GpioMixin` 接入 `InstrumentManager` 后，CH9114F 与 YD-RP2040 均走共享会话：CH9114F=`ch9114f:default`、YD-RP2040=`mcu_io:default`（`_mcu_io_target_session_id()` 按当前类型解析，`_is_mcu_io_family_session()` 判断家族联动）。搜索/连接/断开统一走 `manager.scan_async/connect_async/disconnect_async`；manager 为 None 时 Mixin 回退本地 worker 路径。断开时用 `_resolve_mcu_io_session_id()`（类型切换后按已持实例反查），防漏断旧会话。
+- **SerialCom 多面板控制跟随**：顶部 Connect/Pause/Stop 按 `_sc_active_log_panel_index` 分发到聚焦面板（Refresh 保持全局端口扫描）；焦点切换 / 面板连接变化统一经 `_sc_sync_top_control_state()` 回同步按钮文本/图标/勾选，新增面板控制入口必须调用它。额外面板 `paused=True` 时在 `_sc_extra_panel_on_data` 入口丢数据（与主面板语义一致）。`_IndependentSerialWindow` 按钮集与内嵌面板保持一致（Filter/Copy/Export/Clear/Auto-scroll + 离底 5px 滚动检测），新增面板按钮时须同步浮窗。
+- **SerialCom auto-scroll 冻结坑**：`QTextEdit` 贴底时 append 会被 Qt 自动钉底并触发 `valueChanged(max)`，"回底自动恢复"检测会误杀刚关闭的 auto-scroll（按钮关不掉=失效）。三处（主面板/额外面板/独立浮窗）统一：append 期间置各自 `appending` 守卫（滚动检测直接 return），且 auto-scroll 关闭时 append 后 `setValue(prev_value)` 恢复冻结位置；改任何一处滚动逻辑必须同步另外两处。
 
 ## 局部坑点
 

@@ -722,6 +722,7 @@ tests/
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
 ├── test_serial_script_engine.py     # core.serial_script 引擎纯逻辑单测 (排序/关键字/循环判定)
 ├── test_serialcom_mixin_assembly.py # SerialComMixin 7-Mixin 装配体实例化 + complete_serialComWidget smoke
+├── test_serialcom_multipanel_sync.py # 多串口同步回归：独立浮窗按钮/滚动行为 + 顶部控制跟随聚焦面板
 ├── test_smoke_import.py             # Phase 0 安全网：全量 py_compile + core 导入冒烟
 ├── test_orchestrator_phase0.py       # Orchestrator Phase 0 序列读取 / 无 UI 执行 smoke
 ├── test_orchestrator_phase2.py       # Orchestrator Phase 2 capability / resolver / preflight smoke
