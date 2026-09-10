@@ -473,8 +473,7 @@ class SendMixin:
             ok = self._sc_send_to_focused_panel(data)
             if ok:
                 if self._sc_active_log_panel_index == 0:
-                    self._sc_tx_bytes += len(data)
-                    self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+                    self._sc_log_panel.add_tx_bytes(len(data))
                     if self._sc_show_send:
                         display = line if not self._sc_tx_display_hex else data.hex(' ')
                         self._sc_append_log(f"[TX] {display}", _CLR_TX)
@@ -505,8 +504,7 @@ class SendMixin:
         conn = panel.get("conn")
 
         if DEBUG_MOCK:
-            panel["tx_bytes"] = panel.get("tx_bytes", 0) + len(data)
-            panel["tx_label"].setText(self._sc_format_bytes("TX", panel["tx_bytes"]))
+            panel["frame"].add_tx_bytes(len(data))
             self._sc_extra_panel_append_log(
                 panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
             )
@@ -516,8 +514,7 @@ class SendMixin:
             return False
         try:
             conn.write(data)
-            panel["tx_bytes"] = panel.get("tx_bytes", 0) + len(data)
-            panel["tx_label"].setText(self._sc_format_bytes("TX", panel["tx_bytes"]))
+            panel["frame"].add_tx_bytes(len(data))
             self._sc_extra_panel_append_log(
                 panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
             )
@@ -534,8 +531,7 @@ class SendMixin:
                 self._sc_script_feed_rx(data.decode("utf-8", errors="replace"))
             except Exception:
                 pass
-        self._sc_rx_bytes += len(data)
-        self._sc_status_rx_label.setText(self._sc_format_bytes("RX", self._sc_rx_bytes))
+        self._sc_log_panel.add_rx_bytes(len(data))
 
         self._sc_chart_feed_bytes(data)
 
@@ -1279,8 +1275,7 @@ class SendMixin:
             ok = self._sc_send_to_focused_panel(data)
         if ok:
             if self._sc_active_log_panel_index == 0 and not target_session_id:
-                self._sc_tx_bytes += len(data)
-                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+                self._sc_log_panel.add_tx_bytes(len(data))
                 if self._sc_show_send:
                     display = data.hex(' ') if send_type == "hex" else content
                     self._sc_append_log(f"[TX] {display}", _CLR_TX)

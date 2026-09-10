@@ -170,6 +170,7 @@ _SC_HIGHLIGHT_PALETTE = [
 ]
 
 
+from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 from ui.modules.serialCom_module.mixins.connection_mixin import ConnectionMixin
 from ui.modules.serialCom_module.mixins.toolbar_mixin import ToolbarMixin
 from ui.modules.serialCom_module.mixins.log_panel_mixin import LogPanelMixin
@@ -184,14 +185,9 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
     serial_data_received = Signal(bytes)
 
     def complete_serialComWidget(self, parent_layout):
-        self._sc_rx_bytes = 0
-        self._sc_tx_bytes = 0
         self._sc_paused = False
-        self._sc_auto_scroll = True
         self._sc_rx_line_buf = ""
         self._sc_rx_flush_timer = None
-        self._sc_all_logs = []
-        self._sc_log_line_counter = 0
         self._sc_show_line_num = False
         self._sc_highlight_keywords = []  # [{"keyword": str, "bg": str, "fg": str}]
         self._sc_max_log_lines = self._SC_MAX_LOG_LINES_DEFAULT
@@ -233,15 +229,6 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_sidebar_visible = True
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
-        self._sc_filter_dirty = False
-        self._sc_filter_last_count = 0
-        self._sc_filter_applied_pattern = ""
-        self._sc_filter_applied_use_regex = False
-        self._sc_filter_applied_case = False
-        self._sc_filter_applied_invert = False
-        self._sc_filter_applied_highlight_only = False
-        self._sc_filter_applied_before = 0
-        self._sc_filter_applied_after = 0
 
         self._sc_chart_config = None
         self._sc_chart_controller = None
@@ -336,12 +323,6 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         parent_layout.addLayout(outer)
 
         self._bind_sc_signals()
-
-        self._sc_pending_html = []
-        self._sc_flush_timer = QTimer()
-        self._sc_flush_timer.setInterval(100)
-        self._sc_flush_timer.timeout.connect(self._sc_flush_pending_logs)
-        self._sc_flush_timer.start()
 
         self._sc_load_persisted_state()
         self._sc_start_temp_log()
@@ -1461,11 +1442,6 @@ class _IndependentSerialWindow(QWidget):
         self._conn = None
         self._read_thread = None
         self._read_worker = None
-        self._rx_bytes = 0
-        self._tx_bytes = 0
-        self._auto_scroll = True
-        self._appending = False
-        self._all_logs = []
 
         title = config.get("title", "Serial Log")
         self.setWindowTitle(f"Serial Console - {title}")
@@ -1477,81 +1453,28 @@ class _IndependentSerialWindow(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        # 统一日志面板（simple 过滤 + RX/TX 状态栏 + Copy/Export 通知）
+        self._panel = SerialLogPanel(
+            title=title,
+            filter_mode="simple",
+            show_title=False,
+            status_bar="rxtx",
+            max_lines=5000,
+            notify_on_copy_export=True,
+        )
 
         port_text = config.get("port", "N/A")
         baud_text = str(config.get("baudrate", "N/A"))
         self._status_label = QLabel(f"{port_text} @ {baud_text}")
         self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
-        toolbar.addWidget(self._status_label)
-
-        toolbar.addStretch()
+        self._panel.add_toolbar_leading(self._status_label)
 
         self._connect_btn = QPushButton("Connect")
         self._connect_btn.setCursor(Qt.PointingHandCursor)
         self._connect_btn.clicked.connect(self._toggle_connect)
-        toolbar.addWidget(self._connect_btn)
+        self._panel.add_toolbar_leading(self._connect_btn)
 
-        self._filter_btn = self._make_log_btn(
-            "filter.svg", "Filter\nShow only log lines matching a keyword or regex", checkable=True
-        )
-        self._filter_btn.setStyleSheet(log_icon_button_style(checked_variant="blue", padding="6px"))
-        self._filter_btn.clicked.connect(self._toggle_filter)
-        toolbar.addWidget(self._filter_btn)
-
-        copy_btn = self._make_log_btn("copy.svg", "Copy\nCopy all current log content to the clipboard")
-        copy_btn.clicked.connect(self._copy_log)
-        toolbar.addWidget(copy_btn)
-
-        export_btn = self._make_log_btn("export.svg", "Export\nSave the current log content as a file")
-        export_btn.clicked.connect(self._export_log)
-        toolbar.addWidget(export_btn)
-
-        clear_btn = self._make_log_btn("trash.svg", "Clear\nClear all log content in the console")
-        clear_btn.clicked.connect(self._clear_log)
-        toolbar.addWidget(clear_btn)
-
-        self._scroll_btn = self._make_log_btn(
-            "auto-scroll.svg", "Auto-scroll\nAutomatically scroll to the latest log line", checkable=True
-        )
-        self._scroll_btn.setChecked(True)
-        self._scroll_btn.setStyleSheet(log_icon_button_style(checked_variant="green", padding="6px"))
-        self._bind_toggle_icon(
-            self._scroll_btn,
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
-            auto_scroll_icon_colors(),
-            14,
-        )
-        self._scroll_btn.clicked.connect(self._on_scroll_btn_toggled)
-        toolbar.addWidget(self._scroll_btn)
-
-        root.addLayout(toolbar)
-
-        self._filter_row = QWidget()
-        self._filter_row.setVisible(False)
-        filter_layout = QHBoxLayout(self._filter_row)
-        filter_layout.setContentsMargins(0, 0, 0, 4)
-        filter_layout.setSpacing(6)
-        self._filter_input = QLineEdit()
-        self._filter_input.setPlaceholderText("Enter keyword or regex...")
-        self._filter_input.setStyleSheet(filter_input_style())
-        self._filter_input.returnPressed.connect(self._apply_filter)
-        filter_layout.addWidget(self._filter_input, 1)
-        self._filter_match_label = QLabel("")
-        self._filter_match_label.setStyleSheet(filter_match_label_style())
-        filter_layout.addWidget(self._filter_match_label)
-        root.addWidget(self._filter_row)
-
-        self._log_edit = QTextEdit()
-        self._log_edit.setReadOnly(True)
-        self._log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SERIAL_SCROLLBAR_STYLE)
-        self._log_edit.document().setDefaultStyleSheet(log_document_style())
-        self._log_edit.document().setMaximumBlockCount(5000)
-        root.addWidget(self._log_edit, 1)
-
-        if self._log_edit.verticalScrollBar():
-            self._log_edit.verticalScrollBar().valueChanged.connect(self._on_user_scroll)
+        root.addWidget(self._panel, 1)
 
         send_row = QHBoxLayout()
         send_row.setSpacing(4)
@@ -1565,16 +1488,6 @@ class _IndependentSerialWindow(QWidget):
         send_btn.clicked.connect(self._on_send)
         send_row.addWidget(send_btn)
         root.addLayout(send_row)
-
-        status_bar = QHBoxLayout()
-        self._rx_label = QLabel("RX: 0 B")
-        self._rx_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 11px;")
-        self._tx_label = QLabel("TX: 0 B")
-        self._tx_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 11px;")
-        status_bar.addWidget(self._rx_label)
-        status_bar.addWidget(self._tx_label)
-        status_bar.addStretch()
-        root.addLayout(status_bar)
 
         if config.get("auto_connect", False):
             from PySide6.QtCore import QTimer
@@ -1592,7 +1505,7 @@ class _IndependentSerialWindow(QWidget):
         port = self._config.get("port", "")
         baudrate = self._config.get("baudrate", 115200)
         if not port:
-            self._append("[ERROR] No port configured")
+            self._panel.append_log("[ERROR] No port configured")
             return
 
         if DEBUG_MOCK:
@@ -1600,7 +1513,7 @@ class _IndependentSerialWindow(QWidget):
             self._connect_btn.setText("Disconnect")
             self._status_label.setText(f"MOCK @ {baudrate}")
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
-            self._append(f"[INFO] Mock connected: {port} @ {baudrate}")
+            self._panel.append_log(f"[INFO] Mock connected: {port} @ {baudrate}")
             return
 
         try:
@@ -1620,10 +1533,10 @@ class _IndependentSerialWindow(QWidget):
             self._connect_btn.setText("Disconnect")
             self._status_label.setText(f"{port} @ {baudrate}")
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
-            self._append(f"[INFO] Connected: {port} @ {baudrate}")
+            self._panel.append_log(f"[INFO] Connected: {port} @ {baudrate}")
             self._start_read()
         except Exception as e:
-            self._append(f"[ERROR] Connection failed: {e}")
+            self._panel.append_log(f"[ERROR] Connection failed: {e}")
 
     def _do_disconnect(self):
         self._stop_read()
@@ -1635,7 +1548,7 @@ class _IndependentSerialWindow(QWidget):
         self._conn = None
         self._connect_btn.setText("Connect")
         self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
-        self._append("[INFO] Disconnected")
+        self._panel.append_log("[INFO] Disconnected")
 
     def _on_send(self):
         text = self._send_input.text()
@@ -1644,163 +1557,21 @@ class _IndependentSerialWindow(QWidget):
         data = (text + "\r\n").encode("utf-8")
 
         if DEBUG_MOCK:
-            self._tx_bytes += len(data)
-            self._tx_label.setText(f"TX: {self._tx_bytes} B")
-            self._append(f"[TX] {text}")
+            self._panel.add_tx_bytes(len(data))
+            self._panel.append_log(f"[TX] {text}")
             self._send_input.clear()
             return
 
         if self._conn is None or not self._conn.is_open:
-            self._append("[ERROR] Not connected")
+            self._panel.append_log("[ERROR] Not connected")
             return
         try:
             self._conn.write(data)
-            self._tx_bytes += len(data)
-            self._tx_label.setText(f"TX: {self._tx_bytes} B")
-            self._append(f"[TX] {text}")
+            self._panel.add_tx_bytes(len(data))
+            self._panel.append_log(f"[TX] {text}")
             self._send_input.clear()
         except Exception as e:
-            self._append(f"[ERROR] Send failed: {e}")
-
-    def _clear_log(self):
-        self._log_edit.clear()
-        self._all_logs.clear()
-        self._rx_bytes = 0
-        self._tx_bytes = 0
-        self._rx_label.setText("RX: 0 B")
-        self._tx_label.setText("TX: 0 B")
-        self._auto_scroll = True
-        self._scroll_btn.setChecked(True)
-
-    @staticmethod
-    def _make_log_btn(svg_name, tooltip, checkable=False):
-        btn = QPushButton("")
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(log_icon_button_style(padding="6px"))
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), _CLR_TEXT_BTN_LOG, 14)
-        if not icon.isNull():
-            btn.setIcon(icon)
-        btn.setIconSize(QSize(14, 14))
-        btn.setToolTip(tooltip)
-        if checkable:
-            btn.setCheckable(True)
-        return btn
-
-    @staticmethod
-    def _bind_toggle_icon(btn, svg_path, colors, size):
-        normal_color = colors.get("normal")
-        checked_color = colors.get("checked")
-
-        def _apply(checked):
-            icon = _tinted_svg_icon(svg_path, checked_color if checked else normal_color, size)
-            if not icon.isNull():
-                btn.setIcon(icon)
-
-        btn.toggled.connect(_apply)
-        _apply(btn.isChecked())
-
-    def _toggle_filter(self, checked):
-        self._filter_row.setVisible(checked)
-        if not checked:
-            self._filter_input.clear()
-            self._filter_match_label.setText("")
-            self._show_all_logs()
-        else:
-            self._filter_input.setFocus()
-
-    def _apply_filter(self):
-        keyword = self._filter_input.text().strip()
-        if not keyword:
-            self._filter_match_label.setText("")
-            self._show_all_logs()
-            return
-        self._log_edit.clear()
-        count = 0
-        for msg, html in self._all_logs:
-            if keyword.lower() in msg.lower():
-                self._log_edit.append(html)
-                count += 1
-        self._filter_match_label.setText(f"{count} match{'es' if count != 1 else ''}")
-        if self._auto_scroll:
-            self._scroll_to_bottom()
-
-    def _show_all_logs(self):
-        self._log_edit.clear()
-        for _, html in self._all_logs:
-            self._log_edit.append(html)
-        if self._auto_scroll:
-            self._scroll_to_bottom()
-
-    def _copy_log(self):
-        text = self._log_edit.toPlainText()
-        if text:
-            QApplication.clipboard().setText(text)
-            self._append("[INFO] Log copied to clipboard")
-
-    def _export_log(self):
-        default_name = (self._config.get("title") or "serial_log").replace(" ", "_").lower()
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Log", f"{default_name}.log",
-            "Log Files (*.log);;Text Files (*.txt);;All (*.*)",
-        )
-        if not file_path:
-            return
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(self._log_edit.toPlainText())
-            self._append(f"[INFO] Log exported: {file_path}")
-        except Exception as e:
-            self._append(f"[ERROR] Export failed: {e}")
-
-    def _on_scroll_btn_toggled(self, checked):
-        self._auto_scroll = checked
-        if checked:
-            self._scroll_to_bottom()
-
-    def _on_user_scroll(self, value):
-        if self._appending:
-            return
-        sb = self._log_edit.verticalScrollBar()
-        if sb and sb.maximum() > 0:
-            at_bottom = value >= sb.maximum() - 5
-            if not at_bottom and self._auto_scroll:
-                self._auto_scroll = False
-                self._scroll_btn.setChecked(False)
-            elif at_bottom and not self._auto_scroll:
-                self._auto_scroll = True
-                self._scroll_btn.setChecked(True)
-
-    def _scroll_to_bottom(self):
-        sb = self._log_edit.verticalScrollBar()
-        if sb:
-            sb.setValue(sb.maximum())
-
-    def _append(self, message):
-        from datetime import datetime as _dt
-        ts = _dt.now().strftime("%H:%M:%S.%f")[:-3]
-        color = _CLR_TEXT_BODY
-        if "[ERROR]" in message:
-            color = _CLR_ERROR
-        elif "[INFO]" in message:
-            color = _CLR_TEXT_INFO
-        elif "[TX]" in message:
-            color = _CLR_TX
-        elif "[RX]" in message:
-            color = _CLR_RX
-        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> <span style="color:{color};">{escaped}</span>'
-        sb = self._log_edit.verticalScrollBar()
-        prev_value = sb.value() if sb else 0
-        self._appending = True
-        try:
-            self._all_logs.append((message, html))
-            self._log_edit.append(html)
-            if self._auto_scroll:
-                self._scroll_to_bottom()
-            elif sb:
-                sb.setValue(prev_value)
-        finally:
-            self._appending = False
+            self._panel.append_log(f"[ERROR] Send failed: {e}")
 
     def _start_read(self):
         if self._conn is None:
@@ -1824,15 +1595,7 @@ class _IndependentSerialWindow(QWidget):
         self._read_worker = None
 
     def _on_data_received(self, data: bytes):
-        self._rx_bytes += len(data)
-        self._rx_label.setText(f"RX: {self._rx_bytes} B")
-        try:
-            text = data.decode("utf-8", errors="replace")
-            for line in text.splitlines():
-                if line.strip():
-                    self._append(f"[RX] {line}")
-        except Exception:
-            self._append(f"[RX] {data.hex(' ')}")
+        self._panel.append_rx_data(data)
 
     def closeEvent(self, event):
         self._do_disconnect()

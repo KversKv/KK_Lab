@@ -42,51 +42,54 @@ def test_independent_window_buttons_and_autoscroll():
     win.show()
     app.processEvents()
 
-    assert win._filter_btn.isCheckable(), "Filter 按钮缺失/不可勾选"
-    assert win._scroll_btn.isCheckable() and win._scroll_btn.isChecked(), "Auto-scroll 按钮初始态错误"
+    panel = win._panel
+    assert panel.filter_btn.isCheckable(), "Filter 按钮缺失/不可勾选"
+    assert panel.scroll_lock_btn.isCheckable() and panel.scroll_lock_btn.isChecked(), "Auto-scroll 按钮初始态错误"
 
     for i in range(80):
-        win._append(f"[RX] line {i}")
+        panel.append_log(f"[RX] line {i}")
+    panel.flush_pending()
     app.processEvents()
-    assert len(win._all_logs) == 80, "_all_logs 未记录"
+    assert len(panel.all_logs) == 80, "all_logs 未记录"
 
-    sb = win._log_edit.verticalScrollBar()
+    sb = panel.log_edit.verticalScrollBar()
     assert sb is not None and sb.maximum() > 0, "滚动条无有效范围"
 
     # 用户上滚 -> 暂停自动滚动
-    win._on_user_scroll(0)
-    assert win._auto_scroll is False and not win._scroll_btn.isChecked(), "上滚未暂停 auto-scroll"
+    panel._on_user_scroll(0)
+    assert panel.auto_scroll is False and not panel.scroll_lock_btn.isChecked(), "上滚未暂停 auto-scroll"
     # 回到底部 -> 恢复
-    win._on_user_scroll(sb.maximum())
-    assert win._auto_scroll is True and win._scroll_btn.isChecked(), "回底未恢复 auto-scroll"
+    panel._on_user_scroll(sb.maximum())
+    assert panel.auto_scroll is True and panel.scroll_lock_btn.isChecked(), "回底未恢复 auto-scroll"
     # 按钮关闭 -> 停止跟随
-    win._scroll_btn.click()
+    panel.scroll_lock_btn.click()
     app.processEvents()
-    assert win._auto_scroll is False, "按钮关闭未生效"
+    assert panel.auto_scroll is False, "按钮关闭未生效"
     # 贴底关闭后来数据 -> 不得复活且画面冻结（Qt 钉底对抗）
     frozen_value = sb.value()
-    win._append("[RX] while off")
+    panel.append_log("[RX] while off")
+    panel.flush_pending()
     app.processEvents()
-    assert win._auto_scroll is False and not win._scroll_btn.isChecked(), "关闭后被新数据复活"
+    assert panel.auto_scroll is False and not panel.scroll_lock_btn.isChecked(), "关闭后被新数据复活"
     assert sb.value() == frozen_value, "关闭后画面未冻结"
     # 用户真实回底 -> 恢复
     sb.setValue(sb.maximum())
     app.processEvents()
-    assert win._auto_scroll is True and win._scroll_btn.isChecked(), "真实回底未恢复"
-    win._on_scroll_btn_toggled(True)
-    assert win._auto_scroll is True, "按钮开启未生效"
+    assert panel.auto_scroll is True and panel.scroll_lock_btn.isChecked(), "真实回底未恢复"
+    panel._on_scroll_btn_clicked(True)
+    assert panel.auto_scroll is True, "按钮开启未生效"
 
     # 过滤：'line 1' 命中 line 1 + line 10..19 共 11 行
-    win._filter_input.setText("line 1")
-    win._apply_filter()
-    assert win._filter_match_label.text() == "11 matches", f"过滤计数错误: {win._filter_match_label.text()}"
-    win._toggle_filter(False)
-    assert win._filter_match_label.text() == "", "关闭过滤未清空计数"
+    panel.filter_input.setText("line 1")
+    panel.apply_filter()
+    assert panel.filter_match_label.text() == "Matched: 11 lines", f"过滤计数错误: {panel.filter_match_label.text()}"
+    panel.set_filter_visible(False)
+    assert panel.filter_match_label.text() == "", "关闭过滤未清空计数"
 
     # Clear 重置滚动锁与缓存
-    win._clear_log()
-    assert win._auto_scroll is True and win._scroll_btn.isChecked(), "Clear 未重置 auto-scroll"
-    assert not win._all_logs, "Clear 未清空 _all_logs"
+    panel.clear_logs()
+    assert panel.auto_scroll is True and panel.scroll_lock_btn.isChecked(), "Clear 未重置 auto-scroll"
+    assert not panel.all_logs, "Clear 未清空 all_logs"
 
     win.close()
     win.deleteLater()
@@ -141,9 +144,9 @@ def test_top_controls_follow_focus():
     # Pause 分发到面板且不影响主串口
     w._sc_on_pause(True)
     assert panel["paused"] is True and w._sc_paused is False, "Pause 未分发到聚焦面板"
-    rx_before = panel["rx_bytes"]
+    rx_before = panel["frame"].rx_bytes
     w._sc_extra_panel_on_data(panel, b"hello\n")
-    assert panel["rx_bytes"] == rx_before, "面板暂停时仍接收数据"
+    assert panel["frame"].rx_bytes == rx_before, "面板暂停时仍接收数据"
 
     # 切回主面板 -> 按钮恢复主串口状态
     w._sc_on_primary_panel_clicked(None)
@@ -164,22 +167,22 @@ def test_top_controls_follow_focus():
     w._sc_on_primary_panel_clicked(None)
     for i in range(100):
         w._sc_extra_panel_append_log(panel, f"[RX] line {i}")
-    w._sc_flush_extra_panels()
+    panel["frame"].flush_pending()
     app.processEvents()
     psb = panel["log_edit"].verticalScrollBar()
     assert psb.value() == psb.maximum() > 0, "面板初始未跟随到底"
     panel["scroll_btn"].click()
     app.processEvents()
-    assert panel["auto_scroll"] is False, "面板按钮关闭未生效"
+    assert panel["frame"].auto_scroll is False, "面板按钮关闭未生效"
     frozen = psb.value()
     w._sc_extra_panel_append_log(panel, "[RX] while off")
-    w._sc_flush_extra_panels()
+    panel["frame"].flush_pending()
     app.processEvents()
-    assert panel["auto_scroll"] is False and not panel["scroll_btn"].isChecked(), "面板关闭后被新数据复活"
+    assert panel["frame"].auto_scroll is False and not panel["scroll_btn"].isChecked(), "面板关闭后被新数据复活"
     assert psb.value() == frozen, "面板关闭后画面未冻结"
     psb.setValue(psb.maximum())
     app.processEvents()
-    assert panel["auto_scroll"] is True and panel["scroll_btn"].isChecked(), "面板真实回底未恢复"
+    assert panel["frame"].auto_scroll is True and panel["scroll_btn"].isChecked(), "面板真实回底未恢复"
 
     w._sc_save_persisted_state()
     w.close_serial()

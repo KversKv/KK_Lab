@@ -226,269 +226,16 @@ class FilterSaveMixin:
     # --- action handlers ---
 
 
-    def _sc_on_filter_toggle(self, checked):
-        self._sc_filter_row.setVisible(checked)
-        if not checked:
-            self._sc_filter_input.clear()
-            self._sc_filter_match_label.setText("")
-            self._sc_filter_dirty = False
-            self._sc_filter_last_count = len(self._sc_all_logs)
-            self._sc_reset_applied_filter()
-            self._sc_rebuild_log_view()
-
-    def _sc_reset_applied_filter(self):
-        self._sc_filter_applied_pattern = ""
-        self._sc_filter_applied_use_regex = False
-        self._sc_filter_applied_case = False
-        self._sc_filter_applied_invert = False
-        self._sc_filter_applied_before = 0
-        self._sc_filter_applied_after = 0
-        self._sc_filter_applied_highlight_only = False
-
-    def _sc_filter_inputs_match_applied(self):
-        return (
-            self._sc_filter_input.text().strip() == self._sc_filter_applied_pattern
-            and self._sc_filter_regex_cb.isChecked() == self._sc_filter_applied_use_regex
-            and self._sc_filter_case_cb.isChecked() == self._sc_filter_applied_case
-            and self._sc_filter_invert_cb.isChecked() == self._sc_filter_applied_invert
-            and self._sc_filter_highlight_only_cb.isChecked() == getattr(self, '_sc_filter_applied_highlight_only', False)
-            and self._sc_filter_before_spin.value() == self._sc_filter_applied_before
-            and self._sc_filter_after_spin.value() == self._sc_filter_applied_after
-        )
-
-    def _sc_update_pending_hint(self):
-        if not self._sc_filter_row.isVisible():
-            return
-        if self._sc_filter_inputs_match_applied():
-            return
-        self._sc_filter_match_label.setText("Press Enter to apply")
-
-    def _sc_on_filter_input_changed(self, _text=None):
-        self._sc_update_pending_hint()
-
-    def _sc_on_filter_option_changed(self, *_args):
-        self._sc_update_pending_hint()
-
-    def _sc_apply_filter(self, _text=None):
-        self._sc_filter_dirty = False
-        pattern = self._sc_filter_input.text().strip()
-        self._sc_filter_applied_pattern = pattern
-        self._sc_filter_applied_use_regex = self._sc_filter_regex_cb.isChecked()
-        self._sc_filter_applied_case = self._sc_filter_case_cb.isChecked()
-        self._sc_filter_applied_invert = self._sc_filter_invert_cb.isChecked()
-        self._sc_filter_applied_highlight_only = self._sc_filter_highlight_only_cb.isChecked()
-        self._sc_filter_applied_before = self._sc_filter_before_spin.value()
-        self._sc_filter_applied_after = self._sc_filter_after_spin.value()
-
-        if not pattern:
-            self._sc_filter_last_count = len(self._sc_all_logs)
-            self._sc_rebuild_log_view()
-            self._sc_filter_match_label.setText("")
-            return
-
-        use_regex = self._sc_filter_applied_use_regex
-        case_sensitive = self._sc_filter_applied_case
-        invert = self._sc_filter_applied_invert
-        before = self._sc_filter_applied_before
-        after = self._sc_filter_applied_after
-
-        matched_indices = self._sc_get_matched_indices(
-            pattern, use_regex, case_sensitive, invert
-        )
-        self._sc_filter_match_label.setText(f"Matched: {len(matched_indices)} lines")
-
-        if self._sc_filter_applied_highlight_only:
-            self._sc_filter_last_count = len(self._sc_all_logs)
-            self._sc_rebuild_log_view()
-            if self._sc_auto_scroll:
-                self._sc_scroll_to_bottom()
-            return
-
-        matched_set = set(matched_indices)
-        visible = set()
-        for idx in matched_indices:
-            start = max(0, idx - before)
-            end = min(len(self._sc_all_logs) - 1, idx + after)
-            for i in range(start, end + 1):
-                visible.add(i)
-
-        self._sc_log_edit.setUpdatesEnabled(False)
-        self._sc_log_edit.clear()
-        cursor = self._sc_log_edit.textCursor()
-        cursor.beginEditBlock()
-        prev_shown = -2
-        for i in sorted(visible):
-            if before > 0 or after > 0:
-                if prev_shown >= 0 and i - prev_shown > 1:
-                    self._sc_log_edit.append(
-                        f'<span style="color:{_CLR_TEXT_LINENO};">  ───</span>'
-                    )
-            if i in matched_set and not invert:
-                rendered = self._sc_render_log_html(
-                    self._sc_all_logs[i][1], self._sc_all_logs[i][2],
-                    apply_filter_highlight=True
-                )
-                self._sc_log_edit.append(rendered)
-            else:
-                rendered = self._sc_render_log_html(
-                    self._sc_all_logs[i][1], self._sc_all_logs[i][2]
-                )
-                self._sc_log_edit.append(rendered)
-            prev_shown = i
-        cursor.endEditBlock()
-        self._sc_log_edit.setUpdatesEnabled(True)
-        self._sc_filter_last_count = len(self._sc_all_logs)
-        if self._sc_auto_scroll:
-            self._sc_scroll_to_bottom()
-
-    def _sc_rebuild_log_view(self):
-        self._sc_log_edit.setUpdatesEnabled(False)
-        self._sc_log_edit.clear()
-        cursor = self._sc_log_edit.textCursor()
-        cursor.beginEditBlock()
-        highlight_only = self._sc_is_filter_highlight_only_active()
-        for _raw, html, line_no in self._sc_all_logs:
-            rendered = self._sc_render_log_html(
-                html, line_no, apply_filter_highlight=highlight_only
-            )
-            self._sc_log_edit.append(rendered)
-        cursor.endEditBlock()
-        self._sc_log_edit.setUpdatesEnabled(True)
-        if self._sc_auto_scroll:
-            self._sc_scroll_to_bottom()
+    # --- 过滤/视图/滚动：全部委托 SerialLogPanel（组件内部状态为唯一事实源） ---
 
     def _sc_is_filter_active(self):
-        if not self._sc_filter_row.isVisible():
-            return False
-        if not self._sc_filter_applied_pattern:
-            return False
-        if getattr(self, '_sc_filter_applied_highlight_only', False):
-            return False
-        return True
+        return self._sc_log_panel.is_filter_active()
 
     def _sc_is_filter_highlight_only_active(self):
-        return (self._sc_filter_row.isVisible()
-                and bool(self._sc_filter_applied_pattern)
-                and getattr(self, '_sc_filter_applied_highlight_only', False))
+        return self._sc_log_panel.is_highlight_only_active()
 
-    def _sc_get_matched_indices(self, pattern, use_regex, case_sensitive, invert):
-        matched = []
-        compiled = None
-        if use_regex:
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                compiled = re.compile(pattern, flags)
-            except re.error:
-                return matched
-
-        for i, (raw, _html, _no) in enumerate(self._sc_all_logs):
-            if compiled is not None:
-                hit = bool(compiled.search(raw))
-            elif case_sensitive:
-                hit = pattern in raw
-            else:
-                hit = pattern.lower() in raw.lower()
-            if invert:
-                hit = not hit
-            if hit:
-                matched.append(i)
-        return matched
-
-    @staticmethod
-    def _sc_html_with_filter_highlight(html: str, pattern: str,
-                                       use_regex: bool, case_sensitive: bool) -> str:
-        if not pattern:
-            return html
-
-        compiled = None
-        if use_regex:
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                compiled = re.compile(pattern, flags)
-            except re.error:
-                return html
-        else:
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                compiled = re.compile(re.escape(pattern), flags)
-            except re.error:
-                return html
-
-        wrap_open = (
-            f'<span style="background-color:{_CLR_FILTER_BG};'
-            f'color:{_CLR_FILTER_TEXT};'
-            f'border:1px solid {_CLR_FILTER_BORDER};'
-            f'border-radius:2px;padding:0 1px;">'
-        )
-        wrap_close = '</span>'
-
-        parts = re.split(r'(<[^>]*>)', html)
-        for idx, seg in enumerate(parts):
-            if not seg or seg.startswith('<'):
-                continue
-            try:
-                parts[idx] = compiled.sub(
-                    lambda m: f'{wrap_open}{m.group(0)}{wrap_close}', seg
-                )
-            except re.error:
-                continue
-        return ''.join(parts)
-
-    def _sc_copy_logs(self):
-        cb = QApplication.clipboard()
-        if not cb:
-            return
-        lines = []
-        if self._sc_is_filter_active():
-            pattern = self._sc_filter_applied_pattern
-            use_regex = self._sc_filter_applied_use_regex
-            case_sensitive = self._sc_filter_applied_case
-            invert = self._sc_filter_applied_invert
-            before = self._sc_filter_applied_before
-            after = self._sc_filter_applied_after
-            matched_indices = self._sc_get_matched_indices(
-                pattern, use_regex, case_sensitive, invert
-            )
-            visible = set()
-            for idx in matched_indices:
-                start = max(0, idx - before)
-                end = min(len(self._sc_all_logs) - 1, idx + after)
-                for i in range(start, end + 1):
-                    visible.add(i)
-            prev_shown = -2
-            for i in sorted(visible):
-                if (before > 0 or after > 0) and prev_shown >= 0 and i - prev_shown > 1:
-                    lines.append("  ───")
-                lines.append(self._sc_all_logs[i][0])
-                prev_shown = i
-        else:
-            for raw, _html, _no in self._sc_all_logs:
-                lines.append(raw)
-        cb.setText("\n".join(lines))
-
-    def _sc_export_logs(self):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Logs", f"serial_log_{ts}.txt", "Text Files (*.txt);;All Files (*)"
-        )
-        if not path:
-            return
-        temp_file = self._sc_log_temp_path
-        if temp_file and os.path.isfile(temp_file):
-            if self._sc_log_temp_handle is not None:
-                try:
-                    self._sc_log_temp_handle.flush()
-                except OSError:
-                    pass
-            try:
-                import shutil
-                shutil.copy2(temp_file, path)
-                return
-            except OSError:
-                pass
-        with open(path, "w", encoding="utf-8") as f:
-            for raw, _, _no in self._sc_all_logs:
-                f.write(raw + "\n")
+    def _sc_rebuild_log_view(self):
+        self._sc_log_panel.rebuild_view()
 
     @staticmethod
     def _sc_strip_timestamp(raw: str) -> str:
@@ -601,43 +348,15 @@ class FilterSaveMixin:
                 self._sc_append_system(f"[INFO] Save stopped: {path}", force_primary=True)
             self._sc_save_path = None
 
-    def _sc_clear_logs(self):
-        self._sc_all_logs.clear()
-        self._sc_pending_html.clear()
-        self._sc_log_edit.clear()
-        self._sc_log_line_counter = 0
-        self._sc_rx_bytes = 0
-        self._sc_tx_bytes = 0
+    def _sc_on_primary_logs_cleared(self):
+        """主面板 Clear 后的 Mixin 侧收尾（视图/过滤/字节计数已由组件自清）。"""
         self._sc_rx_line_buf = ""
-        self._sc_status_rx_label.setText("RX: 0 B")
-        self._sc_status_tx_label.setText("TX: 0 B")
-        self._sc_filter_last_count = 0
-        self._sc_filter_dirty = False
-        self._sc_filter_match_label.setText("")
-        self._sc_reset_applied_filter()
-        self._sc_auto_scroll = True
-        self._sc_scroll_lock_btn.setChecked(True)
         self._sc_start_temp_log()
         if self._sc_log_file_handle is not None and self._serial_connected:
             self._sc_stop_auto_save()
             self._sc_start_auto_save()
 
-    def _sc_on_user_scroll(self, value):
-        if getattr(self, "_sc_appending", False):
-            return
-        sb = self._sc_log_edit.verticalScrollBar()
-        if sb and sb.maximum() > 0:
-            at_bottom = value >= sb.maximum() - 5
-            if not at_bottom and self._sc_auto_scroll:
-                self._sc_auto_scroll = False
-                self._sc_scroll_lock_btn.setChecked(False)
-            elif at_bottom and not self._sc_auto_scroll:
-                self._sc_auto_scroll = True
-                self._sc_scroll_lock_btn.setChecked(True)
-
     def _sc_scroll_to_bottom(self):
-        sb = self._sc_log_edit.verticalScrollBar()
-        if sb:
-            sb.setValue(sb.maximum())
+        self._sc_log_panel.scroll_to_bottom()
 
 

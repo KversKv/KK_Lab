@@ -192,6 +192,8 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     _CLR_HISTORY_COMBO_BG
 )
 
+from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
+
 logger = get_logger(__name__)
 
 
@@ -199,230 +201,50 @@ class LogPanelMixin:
     """多 LOG 面板/独立窗口/面板设置 + 日志文件/自动保存/NTP + 日志核心追加与刷新。"""
 
     def _build_sc_log_area(self):
-        frame = QFrame()
-        frame.setObjectName("scLogFrame")
-        frame.setStyleSheet(log_frame_style())
-        frame.setProperty("_is_primary", True)
-
-        shadow_cfg = section_card_shadow()
-        if shadow_cfg:
-            shadow = QGraphicsDropShadowEffect(frame)
-            shadow.setBlurRadius(shadow_cfg["blur_radius"])
-            shadow.setOffset(shadow_cfg["offset_x"], shadow_cfg["offset_y"])
-            shadow.setColor(QColor(*shadow_cfg["color"]))
-            frame.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(12, 10, 12, 8)
-        toolbar.setSpacing(8)
-
-        icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), log_title_icon_color(), 14)
-        if not icon.isNull():
-            icon_label.setPixmap(icon.pixmap(14, 14))
-        icon_label.setFixedSize(16, 16)
-        icon_label.setStyleSheet(transparent_background_style())
-        toolbar.addWidget(icon_label)
-
-        title = QLabel("Serial Log")
-        title.setStyleSheet(log_title_style())
-        toolbar.addWidget(title)
-
-        toolbar.addStretch()
-
-        _icon_btn_pad = "6px"
-        _icon_btn_size = 14
-
-        def _to_icon_only(btn, svg_name, color):
-            btn.setText("")
-            _icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), color, _icon_btn_size)
-            if not _icon.isNull():
-                btn.setIcon(_icon)
-            btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
-
-        self._sc_filter_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
+        """主日志面板：SerialLogPanel(full 过滤 + Save + 状态栏) + Mixin facade 别名。"""
+        panel = SerialLogPanel(
+            title="Serial Log",
+            filter_mode="full",
+            show_save_button=True,
+            status_bar="primary",
+            with_shadow=True,
+            max_lines=self._sc_max_log_lines,
+            show_timestamp=self._sc_show_timestamp,
         )
-        _to_icon_only(self._sc_filter_btn, "filter.svg", _CLR_TEXT_BTN_LOG)
-        self._sc_filter_btn.setCheckable(True)
-        self._sc_filter_btn.setStyleSheet(
-            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
-        )
-        self._sc_filter_btn.setToolTip("Filter\nShow only log lines matching a keyword or regex")
-        toolbar.addWidget(self._sc_filter_btn)
+        panel.ntp_timestamp_provider = self._sc_ntp_timestamp
+        panel.entry_renderer = self._sc_render_log_html
+        panel.export_fast_path = self._sc_export_fast_path
+        panel.raw_appended.connect(self._sc_write_to_log_files)
+        panel.save_toggled.connect(self._sc_on_save_toggle)
+        panel.cleared.connect(self._sc_on_primary_logs_cleared)
+        panel.clicked.connect(self._sc_on_primary_panel_clicked)
 
-        self._sc_copy_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
-        )
-        _to_icon_only(self._sc_copy_btn, "copy.svg", _CLR_TEXT_BTN_LOG)
-        self._sc_copy_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        self._sc_copy_btn.setToolTip("Copy\nCopy all current log content to the clipboard")
-        toolbar.addWidget(self._sc_copy_btn)
-
-        self._sc_export_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
-        )
-        _to_icon_only(self._sc_export_btn, "export.svg", _CLR_TEXT_BTN_LOG)
-        self._sc_export_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        self._sc_export_btn.setToolTip("Export\nSave the current log content as a file")
-        toolbar.addWidget(self._sc_export_btn)
-
-        self._sc_save_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "save.svg"), "Save", tone="log"
-        )
-        _to_icon_only(self._sc_save_btn, "save.svg", _CLR_TEXT_BTN_LOG)
-        self._sc_save_btn.setCheckable(True)
-        self._sc_save_btn.setStyleSheet(
-            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
-        )
-        self._sc_save_btn.setToolTip("Save\nSave logs to a file and keep appending new logs")
-        toolbar.addWidget(self._sc_save_btn)
-
-        self._sc_clear_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
-        )
-        _to_icon_only(self._sc_clear_btn, "trash.svg", _CLR_TEXT_BTN_LOG)
-        self._sc_clear_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        self._sc_clear_btn.setToolTip("Clear\nClear all log content in the console")
-        toolbar.addWidget(self._sc_clear_btn)
-
-        self._sc_scroll_lock_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
-        )
-        self._sc_scroll_lock_btn.setText("")
-        self._sc_scroll_lock_btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
-        self._sc_scroll_lock_btn.setCheckable(True)
-        self._sc_scroll_lock_btn.setChecked(True)
-        self._sc_scroll_lock_btn.setStyleSheet(
-            log_icon_button_style(checked_variant="green", padding=_icon_btn_pad)
-        )
-        self._sc_scroll_lock_btn.setToolTip(
-            "Auto-scroll\nAutomatically scroll to the latest log line"
-        )
-        self._sc_bind_toggle_icon(
-            self._sc_scroll_lock_btn,
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
-            auto_scroll_icon_colors(),
-            _icon_btn_size,
-        )
-        toolbar.addWidget(self._sc_scroll_lock_btn)
-
-        layout.addLayout(toolbar)
-
-        self._sc_filter_row = QWidget()
-        self._sc_filter_row.setVisible(False)
-        self._sc_filter_row.setStyleSheet(transparent_background_style())
-        filter_root = QVBoxLayout(self._sc_filter_row)
-        filter_root.setContentsMargins(12, 0, 12, 8)
-        filter_root.setSpacing(6)
-
-        fl = QHBoxLayout()
-        fl.setContentsMargins(0, 0, 0, 0)
-        fl.setSpacing(8)
-        self._sc_filter_input = QLineEdit()
-        self._sc_filter_input.setPlaceholderText("Enter keyword or regex, press Enter to filter...")
-        self._sc_filter_input.setStyleSheet(filter_input_style())
-        fl.addWidget(self._sc_filter_input, 1)
-
-        self._sc_filter_match_label = QLabel("")
-        self._sc_filter_match_label.setStyleSheet(filter_match_label_style())
-        fl.addWidget(self._sc_filter_match_label)
-        filter_root.addLayout(fl)
-
-        opts = QHBoxLayout()
-        opts.setContentsMargins(0, 0, 0, 0)
-        opts.setSpacing(10)
-
-        self._sc_filter_regex_cb = QCheckBox("Regex")
-        self._sc_filter_regex_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_filter_regex_cb.setToolTip("Enable regex matching")
-        opts.addWidget(self._sc_filter_regex_cb)
-
-        self._sc_filter_case_cb = QCheckBox("Match Case")
-        self._sc_filter_case_cb.setStyleSheet(self._sc_checkbox_style())
-        opts.addWidget(self._sc_filter_case_cb)
-
-        self._sc_filter_invert_cb = QCheckBox("Invert")
-        self._sc_filter_invert_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_filter_invert_cb.setToolTip("Show non-matching lines")
-        opts.addWidget(self._sc_filter_invert_cb)
-
-        self._sc_filter_highlight_only_cb = QCheckBox("Highlight Only")
-        self._sc_filter_highlight_only_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_filter_highlight_only_cb.setToolTip(
-            "Keep all logs visible, highlight matching text instead of filtering lines"
-        )
-        opts.addWidget(self._sc_filter_highlight_only_cb)
-
-        opts.addSpacing(8)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setFixedHeight(14)
-        sep.setStyleSheet(separator_style(transparent=True))
-        opts.addWidget(sep)
-
-        opts.addSpacing(4)
-
-        before_lbl = QLabel("Before")
-        before_lbl.setStyleSheet(small_label_style())
-        opts.addWidget(before_lbl)
-        self._sc_filter_before_spin = QSpinBox()
-        self._sc_filter_before_spin.setRange(0, 999)
-        self._sc_filter_before_spin.setValue(0)
-        self._sc_filter_before_spin.setFixedSize(56, 24)
-        self._sc_filter_before_spin.setToolTip("Show N lines before matched lines")
-        self._sc_filter_before_spin.setStyleSheet(compact_spinbox_style(padding="0px 2px"))
-        opts.addWidget(self._sc_filter_before_spin)
-        before_unit = QLabel("lines")
-        before_unit.setStyleSheet(small_label_style(size=11))
-        opts.addWidget(before_unit)
-
-        opts.addSpacing(4)
-
-        after_lbl = QLabel("After")
-        after_lbl.setStyleSheet(small_label_style())
-        opts.addWidget(after_lbl)
-        self._sc_filter_after_spin = QSpinBox()
-        self._sc_filter_after_spin.setRange(0, 999)
-        self._sc_filter_after_spin.setValue(0)
-        self._sc_filter_after_spin.setFixedSize(56, 24)
-        self._sc_filter_after_spin.setToolTip("Show N lines after matched lines")
-        self._sc_filter_after_spin.setStyleSheet(compact_spinbox_style(padding="0px 2px"))
-        opts.addWidget(self._sc_filter_after_spin)
-        after_unit = QLabel("lines")
-        after_unit.setStyleSheet(small_label_style(size=11))
-        opts.addWidget(after_unit)
-
-        opts.addStretch()
-        filter_root.addLayout(opts)
-
-        layout.addWidget(self._sc_filter_row)
-
-        self._sc_log_edit = QTextEdit()
-        self._sc_log_edit.setReadOnly(True)
-        self._sc_log_edit.setContextMenuPolicy(Qt.CustomContextMenu)
-        self._sc_log_edit.setStyleSheet(log_edit_style() + SERIAL_SCROLLBAR_STYLE)
-        self._sc_log_edit.document().setDefaultStyleSheet(log_document_style())
-        self._sc_log_edit.document().setMaximumBlockCount(self._sc_max_log_lines)
-        layout.addWidget(self._sc_log_edit, 1)
-
-        if self._sc_log_edit.verticalScrollBar():
-            self._sc_log_edit.verticalScrollBar().valueChanged.connect(self._sc_on_user_scroll)
-
-        self._sc_status_bar = self._build_sc_status_bar()
-        layout.addWidget(self._sc_status_bar)
-
-        frame.mousePressEvent = lambda event: self._sc_on_primary_panel_clicked(event)
-        self._sc_log_edit.mousePressEvent = lambda event, orig=self._sc_log_edit.mousePressEvent: (
-            self._sc_on_primary_panel_clicked(event), orig(event)
-        )
-
-        return frame
+        self._sc_log_panel = panel
+        self._sc_log_area = panel
+        self._sc_log_edit = panel.log_edit
+        self._sc_all_logs = panel.all_logs
+        self._sc_filter_btn = panel.filter_btn
+        self._sc_filter_row = panel.filter_row
+        self._sc_filter_input = panel.filter_input
+        self._sc_filter_match_label = panel.filter_match_label
+        self._sc_filter_regex_cb = panel.filter_regex_cb
+        self._sc_filter_case_cb = panel.filter_case_cb
+        self._sc_filter_invert_cb = panel.filter_invert_cb
+        self._sc_filter_highlight_only_cb = panel.filter_highlight_only_cb
+        self._sc_filter_before_spin = panel.filter_before_spin
+        self._sc_filter_after_spin = panel.filter_after_spin
+        self._sc_copy_btn = panel.copy_btn
+        self._sc_export_btn = panel.export_btn
+        self._sc_save_btn = panel.save_btn
+        self._sc_clear_btn = panel.clear_btn
+        self._sc_scroll_lock_btn = panel.scroll_lock_btn
+        self._sc_status_bar = panel.status_bar
+        self._sc_status_port_label = panel.status_port_label
+        self._sc_status_baud_label = panel.status_baud_label
+        self._sc_status_rx_label = panel.status_rx_label
+        self._sc_status_tx_label = panel.status_tx_label
+        self._sc_status_autobaud_label = panel.status_autobaud_label
+        return panel
 
     # --- send area ---
 
@@ -522,296 +344,53 @@ class LogPanelMixin:
             p["frame"].show()
 
     def _build_extra_log_panel(self, config):
-        frame = QFrame()
-        frame.setObjectName("scLogFrame")
-        frame.setStyleSheet(log_frame_style(with_border=True))
-        frame.setContextMenuPolicy(Qt.CustomContextMenu)
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(6, 4, 6, 2)
-        toolbar.setSpacing(4)
-
-        icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), log_title_icon_color(), 14)
-        if not icon.isNull():
-            icon_label.setPixmap(icon.pixmap(14, 14))
-        icon_label.setFixedSize(16, 16)
-        icon_label.setStyleSheet(transparent_background_style())
-        toolbar.addWidget(icon_label)
-
-        title_text = config.get("title", "Serial Log")
-        title = QLabel(title_text)
-        title.setStyleSheet(log_title_style())
-        toolbar.addWidget(title)
-
-        toolbar.addStretch()
-
-        _icon_btn_pad = "6px"
-        _icon_btn_size = 14
-
-        def _to_icon_only(btn, svg_name, color):
-            btn.setText("")
-            _icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), color, _icon_btn_size)
-            if not _icon.isNull():
-                btn.setIcon(_icon)
-            btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
-
-        filter_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
+        """额外内嵌日志面板：SerialLogPanel(simple 过滤 + basic 状态栏) + dict facade。"""
+        comp = SerialLogPanel(
+            title=config.get("title", "Serial Log"),
+            filter_mode="simple",
+            status_bar="basic",
+            compact_toolbar=True,
+            with_border=True,
+            max_lines=5000,
+            notify_on_copy_export=True,
+            port_text=f"Port: {config.get('port', 'Unconnected')}",
+            baud_text=f"Baud rate: {config.get('baudrate', '-')}",
         )
-        _to_icon_only(filter_btn, "filter.svg", _CLR_TEXT_BTN_LOG)
-        filter_btn.setCheckable(True)
-        filter_btn.setStyleSheet(
-            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
-        )
-        filter_btn.setToolTip("Filter\nShow only log lines matching a keyword or regex")
-        toolbar.addWidget(filter_btn)
-
-        copy_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
-        )
-        _to_icon_only(copy_btn, "copy.svg", _CLR_TEXT_BTN_LOG)
-        copy_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        copy_btn.setToolTip("Copy\nCopy all current log content to the clipboard")
-        toolbar.addWidget(copy_btn)
-
-        export_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
-        )
-        _to_icon_only(export_btn, "export.svg", _CLR_TEXT_BTN_LOG)
-        export_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        export_btn.setToolTip("Export\nSave the current log content as a file")
-        toolbar.addWidget(export_btn)
-
-        clear_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
-        )
-        _to_icon_only(clear_btn, "trash.svg", _CLR_TEXT_BTN_LOG)
-        clear_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
-        clear_btn.setToolTip("Clear\nClear all log content in the console")
-        toolbar.addWidget(clear_btn)
-
-        scroll_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
-        )
-        scroll_btn.setText("")
-        scroll_btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
-        scroll_btn.setCheckable(True)
-        scroll_btn.setChecked(True)
-        scroll_btn.setStyleSheet(
-            log_icon_button_style(checked_variant="green", padding=_icon_btn_pad)
-        )
-        scroll_btn.setToolTip("Auto-scroll\nAutomatically scroll to the latest log line")
-        self._sc_bind_toggle_icon(
-            scroll_btn,
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
-            auto_scroll_icon_colors(),
-            _icon_btn_size,
-        )
-        toolbar.addWidget(scroll_btn)
-
-        layout.addLayout(toolbar)
-
-        filter_row = QWidget()
-        filter_row.setVisible(False)
-        filter_row.setStyleSheet(transparent_background_style())
-        filter_layout = QHBoxLayout(filter_row)
-        filter_layout.setContentsMargins(6, 0, 6, 4)
-        filter_layout.setSpacing(6)
-        filter_input = QLineEdit()
-        filter_input.setPlaceholderText("Enter keyword or regex...")
-        filter_input.setStyleSheet(filter_input_style())
-        filter_layout.addWidget(filter_input, 1)
-        filter_match_label = QLabel("")
-        filter_match_label.setStyleSheet(filter_match_label_style())
-        filter_layout.addWidget(filter_match_label)
-        layout.addWidget(filter_row)
-
-        log_edit = QTextEdit()
-        log_edit.setReadOnly(True)
-        log_edit.setContextMenuPolicy(Qt.CustomContextMenu)
-        log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SERIAL_SCROLLBAR_STYLE)
-        log_edit.document().setDefaultStyleSheet(log_document_style())
-        log_edit.document().setMaximumBlockCount(5000)
-        layout.addWidget(log_edit, 1)
-
-        status_bar = QFrame()
-        status_bar.setObjectName("scStatusBar")
-        status_bar.setFixedHeight(30)
-        status_bar.setStyleSheet(status_bar_style())
-        sb_layout = QHBoxLayout(status_bar)
-        sb_layout.setContentsMargins(12, 2, 12, 2)
-        sb_layout.setSpacing(16)
-
-        port_label = QLabel(f"Port: {config.get('port', 'Unconnected')}")
-        port_label.setStyleSheet(status_label_style("error", compact=True))
-        sb_layout.addWidget(port_label)
-
-        baud_label = QLabel(f"Baud rate: {config.get('baudrate', '-')}")
-        baud_label.setStyleSheet(status_label_style("muted"))
-        sb_layout.addWidget(baud_label)
-
-        rx_label = QLabel("RX: 0 B")
-        rx_label.setStyleSheet(status_label_style("rx", compact=True))
-        sb_layout.addWidget(rx_label)
-
-        tx_label = QLabel("TX: 0 B")
-        tx_label.setStyleSheet(status_label_style("tx", compact=True))
-        sb_layout.addWidget(tx_label)
-
-        sb_layout.addStretch()
-        layout.addWidget(status_bar)
+        comp.setContextMenuPolicy(Qt.CustomContextMenu)
 
         panel = {
-            "frame": frame,
-            "log_edit": log_edit,
-            "clear_btn": clear_btn,
-            "scroll_btn": scroll_btn,
-            "filter_btn": filter_btn,
-            "filter_row": filter_row,
-            "filter_input": filter_input,
-            "filter_match_label": filter_match_label,
-            "copy_btn": copy_btn,
-            "export_btn": export_btn,
-            "port_label": port_label,
-            "baud_label": baud_label,
-            "rx_label": rx_label,
-            "tx_label": tx_label,
-            "title_label": title,
+            "frame": comp,
+            "log_edit": comp.log_edit,
+            "clear_btn": comp.clear_btn,
+            "scroll_btn": comp.scroll_lock_btn,
+            "filter_btn": comp.filter_btn,
+            "filter_row": comp.filter_row,
+            "filter_input": comp.filter_input,
+            "filter_match_label": comp.filter_match_label,
+            "copy_btn": comp.copy_btn,
+            "export_btn": comp.export_btn,
+            "port_label": comp.status_port_label,
+            "baud_label": comp.status_baud_label,
+            "rx_label": comp.status_rx_label,
+            "tx_label": comp.status_tx_label,
+            "title_label": comp.title_label,
             "config": config,
             "conn": None,
             "read_thread": None,
             "read_worker": None,
-            "rx_bytes": 0,
-            "tx_bytes": 0,
-            "auto_scroll": True,
-            "appending": False,
             "paused": False,
-            "all_logs": [],
-            "pending_html": [],
             "session_id": None,
         }
 
-        clear_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_clear(p))
-        scroll_btn.clicked.connect(lambda checked, p=panel: self._sc_extra_panel_toggle_scroll(p, checked))
-        filter_btn.clicked.connect(lambda checked, p=panel: self._sc_extra_panel_toggle_filter(p, checked))
-        copy_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_copy(p))
-        export_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_export(p))
-        filter_input.returnPressed.connect(lambda p=panel: self._sc_extra_panel_apply_filter(p))
-
-        frame.customContextMenuRequested.connect(
-            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, frame.mapToGlobal(pos))
+        comp.customContextMenuRequested.connect(
+            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, comp.mapToGlobal(pos))
         )
-        log_edit.customContextMenuRequested.connect(
-            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, log_edit.mapToGlobal(pos))
+        comp.log_edit.customContextMenuRequested.connect(
+            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, comp.log_edit.mapToGlobal(pos))
         )
-        frame.mousePressEvent = lambda event, p=panel: self._sc_on_log_panel_clicked(p, event)
-        log_edit.mouseReleaseEvent = lambda event, p=panel, orig=log_edit.mouseReleaseEvent: (
-            self._sc_on_log_panel_clicked(p, event), orig(event)
-        )
-
-        if log_edit.verticalScrollBar():
-            log_edit.verticalScrollBar().valueChanged.connect(
-                lambda val, p=panel: self._sc_extra_panel_on_scroll(p, val)
-            )
+        comp.clicked.connect(lambda p=panel: self._sc_on_log_panel_clicked(p, None))
 
         return panel
-
-    def _sc_extra_panel_clear(self, panel):
-        panel["all_logs"].clear()
-        panel["pending_html"].clear()
-        panel["log_edit"].clear()
-        panel["rx_bytes"] = 0
-        panel["tx_bytes"] = 0
-        panel["rx_label"].setText("RX: 0 B")
-        panel["tx_label"].setText("TX: 0 B")
-        panel["auto_scroll"] = True
-        panel["scroll_btn"].setChecked(True)
-
-    def _sc_extra_panel_toggle_scroll(self, panel, checked):
-        panel["auto_scroll"] = checked
-        if checked:
-            sb = panel["log_edit"].verticalScrollBar()
-            if sb:
-                sb.setValue(sb.maximum())
-
-    def _sc_extra_panel_toggle_filter(self, panel, checked):
-        panel["filter_row"].setVisible(checked)
-        if not checked:
-            panel["filter_input"].clear()
-            panel["filter_match_label"].setText("")
-            self._sc_extra_panel_show_all_logs(panel)
-        else:
-            panel["filter_input"].setFocus()
-
-    def _sc_extra_panel_copy(self, panel):
-        from PySide6.QtWidgets import QApplication
-        text = panel["log_edit"].toPlainText()
-        if text:
-            QApplication.clipboard().setText(text)
-            self._sc_extra_panel_append_log(panel, "[INFO] Log copied to clipboard", _CLR_TEXT_INFO)
-
-    def _sc_extra_panel_export(self, panel):
-        from PySide6.QtWidgets import QFileDialog
-        title_text = panel.get("title_label")
-        default_name = title_text.text() if title_text else "serial_log"
-        default_name = default_name.replace(" ", "_").lower()
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Log", f"{default_name}.log", "Log Files (*.log);;Text Files (*.txt);;All (*.*)"
-        )
-        if not file_path:
-            return
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(panel["log_edit"].toPlainText())
-            self._sc_extra_panel_append_log(panel, f"[INFO] Log exported: {file_path}", _CLR_TEXT_INFO)
-        except Exception as e:
-            self._sc_extra_panel_append_log(panel, f"[ERROR] Export failed: {e}", extra_log_error_color())
-
-    def _sc_extra_panel_apply_filter(self, panel):
-        keyword = panel["filter_input"].text().strip()
-        if not keyword:
-            self._sc_extra_panel_show_all_logs(panel)
-            panel["filter_match_label"].setText("")
-            return
-        log_edit = panel["log_edit"]
-        log_edit.clear()
-        count = 0
-        for msg, html in panel["all_logs"]:
-            if keyword.lower() in msg.lower():
-                log_edit.append(html)
-                count += 1
-        panel["filter_match_label"].setText(f"{count} match{'es' if count != 1 else ''}")
-        if panel["auto_scroll"]:
-            sb = log_edit.verticalScrollBar()
-            if sb:
-                sb.setValue(sb.maximum())
-
-    def _sc_extra_panel_show_all_logs(self, panel):
-        log_edit = panel["log_edit"]
-        log_edit.clear()
-        for _, html in panel["all_logs"]:
-            log_edit.append(html)
-        if panel["auto_scroll"]:
-            sb = log_edit.verticalScrollBar()
-            if sb:
-                sb.setValue(sb.maximum())
-
-    def _sc_extra_panel_on_scroll(self, panel, value):
-        if panel.get("appending"):
-            return
-        sb = panel["log_edit"].verticalScrollBar()
-        if sb and sb.maximum() > 0:
-            at_bottom = value >= sb.maximum() - 5
-            if not at_bottom and panel["auto_scroll"]:
-                panel["auto_scroll"] = False
-                panel["scroll_btn"].setChecked(False)
-            elif at_bottom and not panel["auto_scroll"]:
-                panel["auto_scroll"] = True
-                panel["scroll_btn"].setChecked(True)
 
     def _sc_on_primary_panel_clicked(self, event):
         if self._sc_active_log_panel_index != 0:
@@ -1077,46 +656,10 @@ class LogPanelMixin:
     def _sc_extra_panel_on_data(self, panel, data: bytes):
         if panel.get("paused"):
             return
-        panel["rx_bytes"] += len(data)
-        panel["rx_label"].setText(self._sc_format_bytes("RX", panel["rx_bytes"]))
-        display = data.decode("utf-8", errors="replace")
-        for line in display.splitlines():
-            if line.strip():
-                self._sc_extra_panel_append_log(panel, f"[RX] {line}", _CLR_RX)
+        panel["frame"].append_rx_data(data)
 
     def _sc_extra_panel_append_log(self, panel, message, color=_CLR_TEXT_BODY):
-        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> '
-        html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
-        panel["all_logs"].append((message, html))
-        panel["pending_html"].append(html)
-
-    def _sc_flush_extra_panels(self):
-        for panel in self._sc_extra_log_panels:
-            if not panel["pending_html"]:
-                continue
-            batch = panel["pending_html"][:200]
-            panel["pending_html"] = panel["pending_html"][200:]
-            log_edit = panel["log_edit"]
-            sb = log_edit.verticalScrollBar()
-            prev_value = sb.value() if sb else 0
-            panel["appending"] = True
-            try:
-                log_edit.setUpdatesEnabled(False)
-                cursor = log_edit.textCursor()
-                cursor.beginEditBlock()
-                for html in batch:
-                    log_edit.append(html)
-                cursor.endEditBlock()
-                log_edit.setUpdatesEnabled(True)
-                if panel["auto_scroll"]:
-                    if sb:
-                        sb.setValue(sb.maximum())
-                elif sb:
-                    sb.setValue(prev_value)
-            finally:
-                panel["appending"] = False
+        panel["frame"].append_log(message, color)
 
     def _sc_on_sidebar_toggle(self, checked):
         self._sc_sidebar_visible = checked
@@ -1160,7 +703,7 @@ class LogPanelMixin:
 
         dlg.display_font_combo.setCurrentText(getattr(self, '_sc_display_font', 'Consolas'))
         dlg.display_font_size_spin.setValue(getattr(self, '_sc_display_font_size', 11))
-        dlg.display_auto_scroll_cb.setChecked(self._sc_auto_scroll)
+        dlg.display_auto_scroll_cb.setChecked(self._sc_log_panel.auto_scroll)
         dlg.display_word_wrap_cb.setChecked(getattr(self, '_sc_word_wrap', True))
         dlg.display_show_line_num_cb.setChecked(getattr(self, '_sc_show_line_num', False))
 
@@ -1192,6 +735,7 @@ class LogPanelMixin:
 
             self._sc_show_timestamp = dlg.show_time_cb.isChecked()
             self._sc_rx_show_time_cb.setChecked(self._sc_show_timestamp)
+            self._sc_log_panel.show_timestamp = self._sc_show_timestamp
             self._sc_apply_ntp_setting(dlg.rx_use_ntp_cb.isChecked())
             self._sc_apply_max_log_lines(dlg.rx_max_lines_spin.value())
 
@@ -1228,8 +772,7 @@ class LogPanelMixin:
                     ) + SERIAL_SCROLLBAR_STYLE
                 )
 
-            self._sc_auto_scroll = dlg.display_auto_scroll_cb.isChecked()
-            self._sc_scroll_lock_btn.setChecked(self._sc_auto_scroll)
+            self._sc_log_panel.set_auto_scroll(dlg.display_auto_scroll_cb.isChecked())
 
             self._sc_word_wrap = dlg.display_word_wrap_cb.isChecked()
             from PySide6.QtWidgets import QTextEdit as _QTE
@@ -1249,11 +792,7 @@ class LogPanelMixin:
         if value == getattr(self, '_sc_max_log_lines', self._SC_MAX_LOG_LINES_DEFAULT):
             return
         self._sc_max_log_lines = value
-        self._sc_log_edit.document().setMaximumBlockCount(value)
-        if len(self._sc_all_logs) > value:
-            self._sc_all_logs = self._sc_all_logs[-value:]
-            if not self._sc_is_filter_active():
-                self._sc_rebuild_log_view()
+        self._sc_log_panel.set_max_lines(value)
 
     def _sc_apply_auto_detect_settings(self, dlg):
         enable = dlg.auto_detect_enable_cb.isChecked()
@@ -1438,44 +977,31 @@ class LogPanelMixin:
             self._sc_stop_ntp_sync()
 
     def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
-        self._sc_log_line_counter += 1
-        line_no = self._sc_log_line_counter
-        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
-        ntp_ts = self._sc_ntp_timestamp()
-        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> ' if ts else ""
-        ntp_html = (
-            f'<span style="color:{_CLR_TEXT_ACCENT};">[NTP]</span> '
-            f'<span style="color:{_CLR_TEXT_TIME};">{ntp_ts}</span> '
-            if ntp_ts else ""
-        )
-        html = f'{ts_html}{ntp_html}<span style="color:{color};">{escaped}</span>'
-        prefix = ts
-        if ntp_ts:
-            prefix = f"{prefix} [NTP] {ntp_ts}" if prefix else f"[NTP] {ntp_ts}"
-        raw = f"{prefix} {message}" if prefix else message
-        self._sc_all_logs.append((raw, html, line_no))
-        if len(self._sc_all_logs) > self._sc_max_log_lines:
-            self._sc_all_logs = self._sc_all_logs[-self._sc_max_log_lines:]
-        self._sc_write_to_log_files(raw)
-        if self._sc_is_filter_active():
-            self._sc_filter_dirty = True
-        else:
-            rendered = self._sc_render_log_html(
-                html, line_no,
-                apply_filter_highlight=self._sc_is_filter_highlight_only_active()
-            )
-            self._sc_pending_html.append(rendered)
+        self._sc_log_panel.append_log(message, color)
+
+    def _sc_export_fast_path(self):
+        """导出优先路径：临时日志落盘文件（flush 后供组件直接复制）。"""
+        temp_file = getattr(self, "_sc_log_temp_path", None)
+        if temp_file and os.path.isfile(temp_file):
+            handle = getattr(self, "_sc_log_temp_handle", None)
+            if handle is not None:
+                try:
+                    handle.flush()
+                except OSError:
+                    pass
+            return temp_file
+        return None
 
     # --- 日志渲染：行号 + 右键高亮 + 过滤高亮 ---
 
     def _sc_render_log_html(self, base_html, line_no, apply_filter_highlight=False):
-        """对基础 HTML 应用行号前缀、右键关键词高亮、过滤高亮（可选）。"""
+        """对基础 HTML 应用行号前缀、右键关键词高亮、过滤高亮（可选，状态取自组件）。"""
         html = base_html
-        if apply_filter_highlight and self._sc_filter_applied_pattern:
-            html = self._sc_html_with_filter_highlight(
-                html, self._sc_filter_applied_pattern,
-                self._sc_filter_applied_use_regex, self._sc_filter_applied_case
+        panel = self._sc_log_panel
+        if apply_filter_highlight and panel.filter_applied_pattern:
+            html = SerialLogPanel.html_with_filter_highlight(
+                html, panel.filter_applied_pattern,
+                panel.filter_applied_use_regex, panel.filter_applied_case,
             )
         if self._sc_highlight_keywords:
             html = self._sc_apply_keyword_highlights(html)
@@ -1601,100 +1127,6 @@ class LogPanelMixin:
             return
         menu.exec(self._sc_log_edit.mapToGlobal(pos))
 
-    def _sc_flush_pending_logs(self):
-        if self._sc_is_filter_active():
-            if getattr(self, '_sc_filter_dirty', False):
-                self._sc_filter_dirty = False
-                before = self._sc_filter_applied_before
-                after = self._sc_filter_applied_after
-                if before == 0 and after == 0:
-                    self._sc_flush_filter_incremental()
-                else:
-                    self._sc_apply_filter()
-        elif self._sc_pending_html:
-            batch = self._sc_pending_html[:200]
-            self._sc_pending_html = self._sc_pending_html[200:]
-            sb = self._sc_log_edit.verticalScrollBar()
-            prev_value = sb.value() if sb else 0
-            self._sc_appending = True
-            try:
-                self._sc_log_edit.setUpdatesEnabled(False)
-                cursor = self._sc_log_edit.textCursor()
-                cursor.beginEditBlock()
-                for html in batch:
-                    self._sc_log_edit.append(html)
-                cursor.endEditBlock()
-                self._sc_log_edit.setUpdatesEnabled(True)
-                if self._sc_auto_scroll:
-                    self._sc_scroll_to_bottom()
-                elif sb:
-                    sb.setValue(prev_value)
-            finally:
-                self._sc_appending = False
-        self._sc_flush_extra_panels()
-
-    def _sc_flush_filter_incremental(self):
-        pattern = self._sc_filter_applied_pattern
-        if not pattern:
-            return
-        use_regex = self._sc_filter_applied_use_regex
-        case_sensitive = self._sc_filter_applied_case
-        invert = self._sc_filter_applied_invert
-
-        compiled = None
-        if use_regex:
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                compiled = re.compile(pattern, flags)
-            except re.error:
-                return
-
-        start_idx = self._sc_filter_last_count
-        new_html = []
-        new_match_count = 0
-
-        for i in range(start_idx, len(self._sc_all_logs)):
-            raw = self._sc_all_logs[i][0]
-            if compiled is not None:
-                hit = bool(compiled.search(raw))
-            elif case_sensitive:
-                hit = pattern in raw
-            else:
-                hit = pattern.lower() in raw.lower()
-            if invert:
-                hit = not hit
-            if hit:
-                new_match_count += 1
-                base_html = self._sc_all_logs[i][1]
-                line_no = self._sc_all_logs[i][2]
-                rendered = self._sc_render_log_html(
-                    base_html, line_no,
-                    apply_filter_highlight=not invert
-                )
-                new_html.append(rendered)
-
-        self._sc_filter_last_count = len(self._sc_all_logs)
-        prev_text = self._sc_filter_match_label.text()
-        prev_count = 0
-        if prev_text.startswith("Matched: "):
-            try:
-                prev_count = int(prev_text.split(":")[1].strip().split()[0])
-            except (ValueError, IndexError):
-                pass
-        total_match = prev_count + new_match_count
-        self._sc_filter_match_label.setText(f"Matched: {total_match} lines")
-
-        if new_html:
-            self._sc_log_edit.setUpdatesEnabled(False)
-            cursor = self._sc_log_edit.textCursor()
-            cursor.beginEditBlock()
-            for html in new_html:
-                self._sc_log_edit.append(html)
-            cursor.endEditBlock()
-            self._sc_log_edit.setUpdatesEnabled(True)
-            if self._sc_auto_scroll:
-                self._sc_scroll_to_bottom()
-
     def _sc_append_system(self, message: str, force_primary: bool = False):
         color_map = {"INFO": _CLR_TEXT_INFO, "WARN": _CLR_WARNING, "ERROR": _CLR_ERROR}
         tag = ""
@@ -1713,16 +1145,4 @@ class LogPanelMixin:
                 )
                 return
         self._sc_append_log(message, color)
-
-    @staticmethod
-    def _sc_format_bytes(prefix, n):
-        if n < 1024:
-            return f"{prefix}: {n} B"
-        elif n < 1024 * 1024:
-            return f"{prefix}: {n / 1024:.1f} KB"
-        else:
-            return f"{prefix}: {n / (1024 * 1024):.2f} MB"
-
-    # --- ui helpers ---
-
 

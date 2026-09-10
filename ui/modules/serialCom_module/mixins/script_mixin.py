@@ -1021,8 +1021,7 @@ class ScriptMixin:
 
         ok = self._sc_send_to_focused_panel(data)
         if ok and self._sc_active_log_panel_index == 0:
-            self._sc_tx_bytes += len(data)
-            self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+            self._sc_log_panel.add_tx_bytes(len(data))
             if self._sc_show_send:
                 display = data.hex(' ') if send_hex else cmd
                 self._sc_append_log(f"[TX] {display}", _CLR_TX)

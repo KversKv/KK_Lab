@@ -527,43 +527,6 @@ class ToolbarMixin:
 
         return grp
 
-    # --- log area ---
-
-
-    def _build_sc_status_bar(self):
-        frame = QFrame()
-        frame.setObjectName("scStatusBar")
-        frame.setFixedHeight(32)
-        frame.setStyleSheet(status_bar_style())
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 3, 12, 3)
-        layout.setSpacing(18)
-
-        self._sc_status_port_label = QLabel("\u2022 Port: Unconnected")
-        self._sc_status_port_label.setStyleSheet(status_label_style("error", compact=True))
-        layout.addWidget(self._sc_status_port_label)
-
-        self._sc_status_baud_label = QLabel("Baud rate (bps): -")
-        self._sc_status_baud_label.setStyleSheet(status_label_style("muted", compact=True))
-        layout.addWidget(self._sc_status_baud_label)
-
-        self._sc_status_rx_label = QLabel("RX: 0 B")
-        self._sc_status_rx_label.setStyleSheet(status_label_style("rx", compact=True))
-        layout.addWidget(self._sc_status_rx_label)
-
-        self._sc_status_tx_label = QLabel("TX: 0 B")
-        self._sc_status_tx_label.setStyleSheet(status_label_style("tx", compact=True))
-        layout.addWidget(self._sc_status_tx_label)
-
-        self._sc_status_autobaud_label = QLabel("")
-        self._sc_status_autobaud_label.setStyleSheet(status_label_style("accent", compact=True))
-        self._sc_status_autobaud_label.setVisible(False)
-        layout.addWidget(self._sc_status_autobaud_label)
-
-        layout.addStretch()
-
-        return frame
-
     # --- signal binding ---
 
     def _bind_sc_signals(self):
@@ -577,23 +540,9 @@ class ToolbarMixin:
         self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
         self._sc_chart_btn.clicked.connect(self._sc_open_chart_dialog)
 
-        self._sc_filter_btn.clicked.connect(self._sc_on_filter_toggle)
-        self._sc_filter_input.returnPressed.connect(self._sc_apply_filter)
-        self._sc_filter_input.textChanged.connect(self._sc_on_filter_input_changed)
-        self._sc_filter_regex_cb.toggled.connect(self._sc_on_filter_option_changed)
-        self._sc_filter_case_cb.toggled.connect(self._sc_on_filter_option_changed)
-        self._sc_filter_invert_cb.toggled.connect(self._sc_on_filter_option_changed)
-        self._sc_filter_highlight_only_cb.toggled.connect(self._sc_on_filter_option_changed)
-        self._sc_filter_before_spin.valueChanged.connect(self._sc_on_filter_option_changed)
-        self._sc_filter_after_spin.valueChanged.connect(self._sc_on_filter_option_changed)
+        # 过滤/复制/导出/保存/清屏/滚动锁均由 SerialLogPanel 内部连接，
+        # 此处仅挂主面板特有的右键高亮菜单。
         self._sc_log_edit.customContextMenuRequested.connect(self._sc_on_log_context_menu)
-        self._sc_copy_btn.clicked.connect(self._sc_copy_logs)
-        self._sc_export_btn.clicked.connect(self._sc_export_logs)
-        self._sc_save_btn.clicked.connect(self._sc_on_save_toggle)
-        self._sc_clear_btn.clicked.connect(self._sc_clear_logs)
-        self._sc_scroll_lock_btn.clicked.connect(
-            lambda c: setattr(self, '_sc_auto_scroll', c)
-        )
 
         self._sc_send_btn.clicked.connect(self._sc_on_send)
         self._sc_send_input.returnPressed.connect(self._sc_on_send)
