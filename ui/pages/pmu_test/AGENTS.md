@@ -30,7 +30,7 @@
 - 结果落 `Results/`，文件名带时间戳 + 芯片型号。
 - 新增子测试：UI 在 `ui/pages/pmu_test/`、analysis+worker 在 `core/pmu_test/<name>/`，并注册进 `TEST_TAB_MAP`。
 - GPADC 最近测试管理（本会话内存记录，`_recent_test_records`，上限 `RECENT_TEST_LIMIT`）：
-  - 管理栏位于 Curve 右侧 `recent_curve_splitter`（水平 QSplitter），chart 头部 `toggle_recent_btn` 可折叠/展开（记住宽度）；
+  - 管理栏位于 Curve 右侧 `recent_curve_splitter`（水平 QSplitter），chart 头部 `toggle_recent_btn` 可折叠/展开（记住宽度），默认折叠；
   - 每条记录按 `id % 8` 稳定分配专属曲线色（`_record_color`），列表项前景色 / 图例 / 曲线三处一致；显示名经 `_record_display_name`（优先用户 Rename 的 label）贯通列表/对比图图例/单次图图例；
   - 列表 SingleSelection：选中变化（`_on_recent_selection_changed`，用 `selectedItems()` 而非 `currentItem()`——clearSelection 后 currentItem 不清空）同步高亮对比图中对应记录（图例加粗），其余记录曲线/符号/包络带半透明（`_plot_comparison_record` 的 `dimmed`，alpha 90）；
   - 列表右键菜单（`_show_recent_item_menu`）：Rename（QInputDialog 改 label）/ Load Curve / Check·Uncheck / Remove / Clear All；`_refresh_recent_test_list` 重建时按 record id 记忆并恢复勾选+选中状态（勿回退为全 Unchecked，Rename 后 Compare 依赖此行为）；

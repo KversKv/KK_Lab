@@ -1071,11 +1071,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.export_result_btn = QPushButton("Export Result")
         self.export_result_btn.setObjectName("tool_btn")
 
-        # Recent 管理栏折叠/展开开关（面板在 Curve 右侧）
-        self.toggle_recent_btn = QPushButton("Recent ◀")
+        # Recent 管理栏折叠/展开开关（面板在 Curve 右侧，默认折叠）
+        self.toggle_recent_btn = QPushButton("Recent ▶")
         self.toggle_recent_btn.setObjectName("tool_btn")
         self.toggle_recent_btn.setCheckable(True)
-        self.toggle_recent_btn.setChecked(True)
+        self.toggle_recent_btn.setChecked(False)
         self.toggle_recent_btn.setToolTip("显示/隐藏最近测试管理栏")
 
         chart_top.addWidget(chart_title)
@@ -1117,6 +1117,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.recent_curve_splitter.setStretchFactor(0, 1)
         self.recent_curve_splitter.setStretchFactor(1, 0)
         self.recent_curve_splitter.setSizes([1200, 260])
+        # 默认折叠 Recent 管理栏（展开宽度沿用 _recent_panel_sizes 默认值）
+        self.recent_curve_splitter.widget(1).setVisible(False)
 
         right_col.addWidget(self.recent_curve_splitter, 1)
 
