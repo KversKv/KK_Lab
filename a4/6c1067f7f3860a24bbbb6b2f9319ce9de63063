@@ -1,0 +1,76 @@
+ui/modules/serialCom_module/mixins/log_panel_mixin.py
+  s_b0e7fdb076f6e7::t_368e7061c74255 823-837
+  s_b0e7fdb076f6e7::t_0244328a14b50b 600-601
+  s_b0e7fdb076f6e7::t_6d8e8574751c4c 691
+  s_b0e7fdb076f6e7::t_4da439ec3b187b 804-805
+  s_b0e7fdb076f6e7::t_6d51bd0f379ede 1015,1042
+  s_b0e7fdb076f6e7::t_ebe3b20b5fd878 1078-1079
+  s_b0e7fdb076f6e7::t_89187c6ec90d69 874-875
+  s_b0e7fdb076f6e7::t_fb06af5413e5a7 894
+  s_b0e7fdb076f6e7::t_cc5b5efd3d4d0f 924
+  s_b0e7fdb076f6e7::t_e614b9126a235a 1102-1119
+  s_b0e7fdb076f6e7::t_b46d2bfe7b5743 1617-1633
+  s_b0e7fdb076f6e7::t_33498ab7d169d7 692
+  s_b0e7fdb076f6e7::t_2f30b9abd528ba 552-561,565,567-570,576-578,584-586,592-594,604-607,612
+ui/modules/serialCom_module/serialCom_module_frame.py
+  s_b0e7fdb076f6e7::t_dccd29ba817a38 1676-1677,1679-1680,1683-1684
+  s_b0e7fdb076f6e7::t_9734ed01297ea8 1724-1725,1731-1732
+  s_b0e7fdb076f6e7::t_b01631a79b0f77 1468,1545
+  s_b0e7fdb076f6e7::t_b5abce7813abe7 1467
+  s_b0e7fdb076f6e7::t_1a00a5106b4489 1761-1762
+  s_b0e7fdb076f6e7::t_cfcd74f597cd60 1667,1672-1675,1678,1681-1682,1685-1723,1726-1730,1733-1760,1763-1776
+  s_b0e7fdb076f6e7::t_4c03272546b052 1500-1502,1504-1506,1508-1510,1518,1520-1523,1525-1528,1531-1544
+  s_b0e7fdb076f6e7::t_98d6c6cd52cda9 1496-1499,1503,1507,1511,1515-1517,1519,1524
+  s_b0e7fdb076f6e7::t_c40078d576a0f0 1553-1555
+  s_b0e7fdb076f6e7::t_5a5ea9fbfbbdb4 1792-1803
+tests/test_serialcom_multipanel_sync.py
+  s_b0e7fdb076f6e7::t_470dc4c9534dff 1-62,65,76-118,122-162,184-208
+  s_b0e7fdb076f6e7::t_4f638b5761ad53 119-121
+  s_b0e7fdb076f6e7::t_8b645745282a65 63-64
+  s_b0e7fdb076f6e7::t_f355e487554149 163-183
+  s_b0e7fdb076f6e7::t_5f41485a8e4cb5 66-75
+DIRECTORY_STRUCTURE.txt
+  s_b0e7fdb076f6e7::t_8927dd3d312a98 725
+ui/modules/AGENTS.md
+  s_b0e7fdb076f6e7::t_6e725b80ca7492 35
+  s_b0e7fdb076f6e7::t_50fb6f6e29ee60 36
+ui/modules/serialCom_module/mixins/filter_save_mixin.py
+  s_b0e7fdb076f6e7::t_8a94aafc4b9add 626-627
+ui/modules/serialCom_module/mixins/connection_mixin.py
+  s_b0e7fdb076f6e7::t_41fe5cf7011762 686,699-710,720-737
+  s_b0e7fdb076f6e7::t_7c7594921b22ed 884-888,892-896
+  s_b0e7fdb076f6e7::t_273f93910ee65a 572-578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "a46c1067f7f3860a24bbbb6b2f9319ce9de63063",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_b0e7fdb076f6e7": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa2852d526a29f7a1727981",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_name": "Edit",
+        "source_scene": "agent",
+        "operation_id": "6aa29516526a29f7a1727b5b",
+        "session_id": "6aa2852d526a29f7a1727981",
+        "tool_use_id": "6aa29516526a29f7a1727b5b",
+        "external_session_id": "6aa2852d526a29f7a1727981",
+        "client_type": "ide",
+        "display_model_name": "Kimi-K3",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit"
+      }
+    }
+  }
+}
