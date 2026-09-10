@@ -1,0 +1,153 @@
+ui/pages/pmu_test/pmu_output_voltage.py
+  s_2b7c7d5a906586::t_1c74c0ad32ca24 941
+  s_2b7c7d5a906586::t_aac6b519e7eecd 937
+  s_2b7c7d5a906586::t_058cee95fc93d9 22
+  s_2b7c7d5a906586::t_d016f6ed1be0d2 969
+  s_2b7c7d5a906586::t_ffb5dae099b23d 965
+  s_2b7c7d5a906586::t_5a338bdcb67d3f 26
+ui/pages/charger_test/config_traverse_test.py
+  s_2b7c7d5a906586::t_19b199ecd982c1 14
+  s_2b7c7d5a906586::t_9dbe3d33b2a4e6 638
+  s_2b7c7d5a906586::t_d7701174bbdd40 618
+  s_2b7c7d5a906586::t_2c755fa0741a8b 630
+  s_2b7c7d5a906586::t_33acc9ae742ebf 21
+  s_2b7c7d5a906586::t_679ddfc7f0a4cb 626
+  s_2b7c7d5a906586::t_7059d5691e50c9 622
+  s_2b7c7d5a906586::t_e21cc5871f8e6b 634
+ui/pages/pmu_test/pmu_isGain_ui.py
+  s_2b7c7d5a906586::t_2b968b92884fe9 29
+  s_2b7c7d5a906586::t_32d602d65c842f 480
+  s_2b7c7d5a906586::t_bf5150eebdd8a9 484
+tests/check_wheel_line_edit.py
+  s_2b7c7d5a906586::t_87b5afbcbea806 1-146
+ui/widgets/wheel_line_edit.py
+  s_2b7c7d5a906586::t_ec644e7ae34dac 1-138
+ui/pages/oscilloscope/oscilloscope_base_ui.py
+  s_2b7c7d5a906586::t_3ca3ee266cedad 18
+  s_2b7c7d5a906586::t_7227c3d7212124 6
+  s_2b7c7d5a906586::t_47b4ab5a14bd51 1152
+  s_2b7c7d5a906586::t_74d64883f4d948 1349-1350
+  s_2b7c7d5a906586::t_6e24a32044888c 1362,1373,1385
+  s_2b7c7d5a906586::t_1da94f67e51c75 1295
+ui/pages/consumption_test/view_config.py
+  s_2b7c7d5a906586::t_8a13745495618a 796
+  s_2b7c7d5a906586::t_a51d47f04560dc 117
+  s_2b7c7d5a906586::t_96ebe252b1816a 739
+  s_2b7c7d5a906586::t_ca097ca2bff972 40
+  s_2b7c7d5a906586::t_b3794889af17bd 36
+  s_2b7c7d5a906586::t_02fe8e632ceb7a 697
+  s_2b7c7d5a906586::t_95fab2878f585c 143
+ui/pages/vmin_hunter/vmin_hunter_ui.py
+  s_2b7c7d5a906586::t_c1fbdbb487508f 491
+  s_2b7c7d5a906586::t_7a47bfd6a7151a 548
+  s_2b7c7d5a906586::t_9fe18680cd264a 557
+  s_2b7c7d5a906586::t_1da99b8731c681 688
+  s_2b7c7d5a906586::t_282ec1a97fb441 698-703
+  s_2b7c7d5a906586::t_11a580655fd24f 546
+  s_2b7c7d5a906586::t_abeecf69e0423f 559
+  s_2b7c7d5a906586::t_f31884d91c84bb 550
+  s_2b7c7d5a906586::t_9d1848e65e0056 561
+  s_2b7c7d5a906586::t_4a46e1a4b97406 555
+  s_2b7c7d5a906586::t_c6a1ab1b153f05 552
+  s_2b7c7d5a906586::t_f4c367e54130b1 38
+ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py
+  s_2b7c7d5a906586::t_1490d0ffb9fa66 2600-2601
+ui/pages/charger_test/status_register_test.py
+  s_2b7c7d5a906586::t_f0d370e444a50c 831
+  s_2b7c7d5a906586::t_5aa6d51f65928a 20
+  s_2b7c7d5a906586::t_3c564181551ef4 828
+  s_2b7c7d5a906586::t_67837653e714b9 834
+  s_2b7c7d5a906586::t_21225f6efdf110 780
+  s_2b7c7d5a906586::t_e428e4e955d3ac 14
+ui/pages/pmu_test/pmu_oscp_ui.py
+  s_2b7c7d5a906586::t_33913b3e01486b 549
+  s_2b7c7d5a906586::t_60acbf8f28c5a5 9
+  s_2b7c7d5a906586::t_1f6f3104f4d1e4 543
+  s_2b7c7d5a906586::t_942c619a6a014a 17
+ui/pages/charger_test/regulation_voltage_ui.py
+  s_2b7c7d5a906586::t_57cf71f5be2160 676
+  s_2b7c7d5a906586::t_d000c17d2924f9 688
+  s_2b7c7d5a906586::t_f882799dc50f60 680
+  s_2b7c7d5a906586::t_9843251b641321 684
+  s_2b7c7d5a906586::t_cdb6a93fdd9fb4 672
+  s_2b7c7d5a906586::t_cd96e18dfbccb6 14
+  s_2b7c7d5a906586::t_858500166edc8b 19
+  s_2b7c7d5a906586::t_3c964f19a4f682 668
+DIRECTORY_STRUCTURE.txt
+  s_2b7c7d5a906586::t_431312663e68ae 322
+ui/pages/AGENTS.md
+  s_2b7c7d5a906586::t_03da9c5ea65313 34
+ui/pages/charger_test/iterm_test.py
+  s_2b7c7d5a906586::t_24d057c198bffc 1136
+  s_2b7c7d5a906586::t_8aca3baf4a8342 1140
+  s_2b7c7d5a906586::t_f9340df9446f6a 1132
+  s_2b7c7d5a906586::t_6a150a03bc1673 1128
+  s_2b7c7d5a906586::t_6799c17f72e927 17
+  s_2b7c7d5a906586::t_839247bc1b2eff 22
+  s_2b7c7d5a906586::t_03da1cfd5a1377 1120
+  s_2b7c7d5a906586::t_4126df526af164 1124
+ui/pages/module_test/_sections/left_rail.py
+  s_2b7c7d5a906586::t_548b2ca2067b7d 26
+  s_2b7c7d5a906586::t_4da3907b71894e 99
+ui/pages/pmu_test/gpadc_test_ui.py
+  s_2b7c7d5a906586::t_d93eccda07c428 777
+  s_2b7c7d5a906586::t_e9bb375987d5bb 10
+  s_2b7c7d5a906586::t_5f40eb50d89366 918,920
+  s_2b7c7d5a906586::t_f601bfc36d6e44 781
+ui/pages/n6705c_power_analyzer/AGENTS.md
+  s_2b7c7d5a906586::t_64f0a642ee4b28 27
+ui/pages/pmu_test/clk_test_ui.py
+  s_2b7c7d5a906586::t_5d72cfc9e50e6a 19
+  s_2b7c7d5a906586::t_6351c5b123df5c 8
+  s_2b7c7d5a906586::t_5dca9ec085660a 522-523
+ui/pages/n6705c_power_analyzer/widgets.py
+  s_2b7c7d5a906586::t_f0d575d2cc489f 65,72
+  s_2b7c7d5a906586::t_954b596452af48 6
+  s_2b7c7d5a906586::t_281edc91d68752 7
+ui/pages/vmin_hunter/vmin_single_test_ui.py
+  s_2b7c7d5a906586::t_4c94662b692638 121
+  s_2b7c7d5a906586::t_500f701267162d 123
+  s_2b7c7d5a906586::t_c0ee2f591280a4 109
+  s_2b7c7d5a906586::t_f81269390cbcf1 56
+  s_2b7c7d5a906586::t_020c7c8a0bae97 21
+  s_2b7c7d5a906586::t_5c453a6dd409ec 107
+ui/pages/chamber/chamber_control_ui.py
+  s_2b7c7d5a906586::t_213d577549aebf 535
+  s_2b7c7d5a906586::t_d6163fbc685687 454
+  s_2b7c7d5a906586::t_d30231bc6a65e4 539
+  s_2b7c7d5a906586::t_992802a7d4040b 543
+  s_2b7c7d5a906586::t_449f36728ae492 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "110927c45a99ccb800396260ed9b6f8d8a4c4225",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_2b7c7d5a906586": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa23465526a29f7a172711d",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa23e19526a29f7a1727372",
+        "display_model_name": "Kimi-K3",
+        "tool_name": "Edit",
+        "operation_id": "6aa23e19526a29f7a1727372",
+        "session_id": "6aa23465526a29f7a172711d",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "external_session_id": "6aa23465526a29f7a172711d",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide"
+      }
+    }
+  }
+}
