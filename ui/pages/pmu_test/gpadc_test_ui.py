@@ -160,6 +160,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._init_ui_elements()
         self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
+        self.sync_chamber_from_manager()
 
     def _register_ai_ui_actions(self):
         """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。

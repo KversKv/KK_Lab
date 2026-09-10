@@ -862,6 +862,10 @@ class ChamberControlUI(QWidget):
             self._instrument_manager.connection_failed.connect(
                 self._on_manager_connect_failed
             )
+            # 页面懒创建可能错过已发生的连接广播，补拉一次当前会话
+            sessions = self._instrument_manager.find_sessions(role="chamber", connected_only=True)
+            if sessions:
+                self._on_manager_session_connected(sessions[0].session_id)
 
     def _on_manager_session_connected(self, session_id: str):
         session = self._instrument_manager.get_session(session_id)

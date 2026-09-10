@@ -18,6 +18,7 @@
 ## 接口契约（对外不可破坏）
 
 - 连接 Mixin 统一提供：`_build_<instrument>_frame()` 返回 QWidget；内部维护仪器实例并暴露给页面。
+- **ChamberConnectionMixin 连接态 = 推送 + 拉取双通道**：`init_chamber_connection` 末尾自动从 manager 补拉一次已有 chamber 会话（页面懒创建会错过 `session_connected` 广播），`build_chamber_connection_widgets` 末尾据拉取结果刷连接态 UI；公开 `sync_chamber_from_manager()`（对齐 `sync_n6705c_from_top` 语义，变化才 emit `chamber_connection_changed`），页面构造尾部 / 容器 `_sync_from_top` 应级联调用。
 - 仪器实例必须通过 `instruments.factory.create_*` 获取，禁止直接 `new` 驱动类。
 - 必须支持 `DEBUG_MOCK` 分支，使用 `instruments.mock.mock_instruments.MockXxx`。
 - `ExecutionLogsFrame` 必须经工厂方法 `ExecutionLogsFrame.wrap_with(...)` 装配，禁止手写 `QSplitter` 样板。

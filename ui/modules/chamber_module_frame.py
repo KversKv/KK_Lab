@@ -265,6 +265,7 @@ class ChamberConnectionMixin:
         self.current_chamber_session_id = None
         self.chamber = None
         self.is_chamber_connected = False
+        self._chamber_synced_resource = None
         self._chamber_syncing = False
         self._chamber_search_thread = None
         self._chamber_search_worker = None
@@ -282,6 +283,11 @@ class ChamberConnectionMixin:
             self._chamber_instrument_manager.connection_failed.connect(
                 self._on_chamber_manager_connection_failed
             )
+
+        # 页面懒创建可能错过已发生的连接广播，构造期补拉一次会话状态（仅状态字段，不触 UI）
+        session = self._find_connected_chamber_session()
+        if session is not None:
+            self._apply_chamber_session_state(session)
 
     def build_chamber_connection_widgets(self, layout):
         self.chamber_status_label = QLabel("● Not Connected")
@@ -317,6 +323,13 @@ class ChamberConnectionMixin:
         btn_row.addWidget(self.chamber_search_btn)
         btn_row.addWidget(self.chamber_connect_btn)
         layout.addLayout(btn_row)
+
+        # 构造期已拉取到已连接会话时，控件初始状态直接反映连接态
+        if self.is_chamber_connected:
+            idx = self.chamber_type_combo.findData(self.current_chamber_type)
+            if idx >= 0:
+                self.chamber_type_combo.setCurrentIndex(idx)
+            self._update_chamber_connection_ui(True, self._chamber_synced_resource or "Connected")
 
     def bind_chamber_signals(self):
         self.chamber_type_combo.currentIndexChanged.connect(self._on_chamber_type_changed)
@@ -413,6 +426,56 @@ class ChamberConnectionMixin:
         if hasattr(self, "append_log"):
             self.append_log(f"[Chamber] Connection failed: {error}")
         self._update_chamber_connection_ui(False, "Error")
+        self.chamber_connection_changed.emit(False)
+
+    def _find_connected_chamber_session(self):
+        mgr = self._chamber_instrument_manager
+        if mgr is None:
+            return None
+        for snap in mgr.find_sessions(role="chamber", connected_only=True):
+            session = mgr.get_session(snap.session_id)
+            if session is not None and session.connected:
+                return session
+        return None
+
+    def _apply_chamber_session_state(self, session):
+        self.chamber = session.instance
+        self.is_chamber_connected = True
+        self.current_chamber_type = session.instrument_type
+        self.current_chamber_session_id = session.session_id
+        self._chamber_synced_resource = session.resource
+
+    def sync_chamber_from_manager(self):
+        """主动从 InstrumentManager 拉取 chamber 连接态（对齐 sync_n6705c_from_top 语义）。"""
+        session = self._find_connected_chamber_session()
+        if session is not None:
+            changed = (
+                not self.is_chamber_connected
+                or self.current_chamber_session_id != session.session_id
+            )
+            self._apply_chamber_session_state(session)
+            if hasattr(self, "chamber_status_label"):
+                idx = self.chamber_type_combo.findData(session.instrument_type)
+                if idx >= 0:
+                    self.chamber_type_combo.setCurrentIndex(idx)
+                self._update_chamber_connection_ui(True, session.resource)
+            if changed:
+                if hasattr(self, "append_log"):
+                    self.append_log(
+                        f"[Chamber] Synced {chamber_type_label(session.instrument_type)}: {session.resource}"
+                    )
+                self.chamber_connection_changed.emit(True)
+            return
+        if not self.is_chamber_connected and self.chamber is None:
+            return
+        self.chamber = None
+        self.is_chamber_connected = False
+        self.current_chamber_session_id = None
+        self._chamber_synced_resource = None
+        if hasattr(self, "chamber_status_label"):
+            self._update_chamber_connection_ui(False, "Not Connected")
+        if hasattr(self, "append_log"):
+            self.append_log("[Chamber] Disconnected (synced).")
         self.chamber_connection_changed.emit(False)
 
     def _on_chamber_search(self):

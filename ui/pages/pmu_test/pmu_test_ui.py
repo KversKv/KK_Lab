@@ -240,6 +240,8 @@ class PMUTestUI(QWidget):
                 sub_ui.sync_n6705c_from_top()
             elif hasattr(sub_ui, '_sync_from_top'):
                 sub_ui._sync_from_top()
+            if hasattr(sub_ui, 'sync_chamber_from_manager'):
+                sub_ui.sync_chamber_from_manager()
 
     def get_current_test(self):
         """获取当前测试key"""
