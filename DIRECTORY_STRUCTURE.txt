@@ -417,6 +417,7 @@ ui/
 │   │   ├── pmu_oscp_ui.py             # OSCP (过流保护) 测试界面
 │   │   ├── pmu_output_voltage.py     # 输出电压测试界面
 │   │   ├── gpadc_test_ui.py          # GPADC 测试界面
+│   │   ├── gpadc_multi_temp_panel.py # GPADC 多通道高低温联合测试配置面板（通道表/前置配置/存取）
 │   │   └── clk_test_ui.py            # 时钟测试界面
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面

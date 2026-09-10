@@ -70,6 +70,25 @@ QComboBox QAbstractItemView {
     color: $text_secondary;
     selection-background-color: $surface_raised;
 }
+QPlainTextEdit {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    padding: $space_1 $space_2;
+    color: $text_secondary;
+    font-family: $font_mono;
+}
+QPlainTextEdit:hover {
+    border-color: $border_strong;
+}
+QPlainTextEdit:focus {
+    border-color: $border_focus;
+}
+QPlainTextEdit:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
 QPushButton {
     background-color: $surface_card;
     border: 1px solid $border_strong;
@@ -226,4 +245,18 @@ QTableView::indicator:checked {
 QTreeView::indicator:disabled, QListView::indicator:disabled,
 QTableView::indicator:disabled {
     opacity: 0.4;
+}
+
+/* ---------- 弹窗内配置分组卡片（#cfgSection） ----------
+   分组区域统一卡片底色 + 细边框 + 小标题，替代裸布局散落。 */
+QFrame#cfgSection {
+    background-color: $surface_card;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+}
+QLabel#cfgSectionTitle {
+    color: $text_muted;
+    font-size: $font_caption;
+    font-weight: 700;
+    background: transparent;
 }

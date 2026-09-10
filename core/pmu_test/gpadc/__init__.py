@@ -11,6 +11,12 @@ from .gpadc_analysis import (
     describe_algorithm,
 )
 from .gpadc_worker import TestWorker
+from .gpadc_multi_temp import (
+    parse_hw_int,
+    parse_iic_command_text,
+    run_multi_ch_temp_test,
+    writes_to_command_text,
+)
 
 __all__ = [
     "compute_reg_stats",
@@ -21,4 +27,8 @@ __all__ = [
     "apply_algorithm",
     "describe_algorithm",
     "TestWorker",
+    "parse_hw_int",
+    "parse_iic_command_text",
+    "run_multi_ch_temp_test",
+    "writes_to_command_text",
 ]

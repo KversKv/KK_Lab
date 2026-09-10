@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
     QTextEdit, QProgressBar, QListWidget, QListWidgetItem, QAbstractItemView,
-    QSplitter, QMenu, QInputDialog
+    QSplitter, QMenu, QInputDialog, QTabWidget, QFileDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter
@@ -51,7 +51,11 @@ from core.pmu_test.gpadc import (
     ALGORITHM_REGISTRY,
     apply_algorithm,
     describe_algorithm,
+    parse_hw_int,
+    run_multi_ch_temp_test,
 )
+from ui.pages.pmu_test.gpadc_multi_temp_panel import MultiChTempPanel
+from ui.resource_path import get_user_data_dir
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
     CAP_GET_CONFIG,
@@ -83,6 +87,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     TEST_FORCE_VOLTAGE = "Force Voltage Test"
     TEST_HIGH_LOW_TEMP = "High-Low Temp Test"
     TEST_TEMP_CONSISTENCY = "Temp Consistency Test"
+    TEST_MULTI_CH_TEMP = "Multi-Ch Temp Test"
 
     # 最近测试记录上限（超出丢弃最旧）
     RECENT_TEST_LIMIT = 10
@@ -101,8 +106,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     INSTRUMENT_MAP = {
         TEST_1000CNT: [],
         TEST_FORCE_VOLTAGE: ["n6705c"],
-        TEST_HIGH_LOW_TEMP: ["n6705c", "chamber"],
+        TEST_HIGH_LOW_TEMP: ["chamber"],
         TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
+        TEST_MULTI_CH_TEMP: ["n6705c", "chamber"],
     }
 
     def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
@@ -679,6 +685,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.test_item_combo.addItem(self.TEST_FORCE_VOLTAGE, self.TEST_FORCE_VOLTAGE)
         self.test_item_combo.addItem(self.TEST_HIGH_LOW_TEMP, self.TEST_HIGH_LOW_TEMP)
         self.test_item_combo.addItem(self.TEST_TEMP_CONSISTENCY, self.TEST_TEMP_CONSISTENCY)
+        self.test_item_combo.addItem(self.TEST_MULTI_CH_TEMP, self.TEST_MULTI_CH_TEMP)
         test_item_layout.addWidget(self.test_item_combo)
         left_col.addWidget(test_item_panel)
 
@@ -974,6 +981,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         left_col.addWidget(params_panel)
 
+        # 多通道高低温测试配置（仅 Multi-Ch Temp Test 测试项可见）
+        self.multi_ch_panel = MultiChTempPanel(self)
+        self.multi_ch_panel.save_requested.connect(self._on_save_multi_ch_config)
+        self.multi_ch_panel.load_requested.connect(self._on_load_multi_ch_config)
+        self.multi_ch_panel.hide()
+        left_col.addWidget(self.multi_ch_panel)
+
         left_col.addStretch()
 
         self.left_scroll.setWidget(left_content)
@@ -1162,6 +1176,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         self.bind_n6705c_signals()
         self.bind_chamber_signals()
+        self.chamber_connection_changed.connect(self._update_temp_hint)
         self.serial_data_received.connect(self._on_uart_rx_data)
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
@@ -1324,7 +1339,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.params_mode_label.setText("1000 COUNT TEST")
             self.voltage_params_frame.hide()
             self.temp_params_frame.hide()
-            self.temp_hint_label.hide()
             self.voltage_channel_label.hide()
             self.voltage_channel.hide()
             self.start_test_btn.setText("▶ START TEST")
@@ -1333,7 +1347,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.params_mode_label.setText("VOLTAGE SWEEP")
             self.voltage_params_frame.show()
             self.temp_params_frame.hide()
-            self.temp_hint_label.hide()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
             self.start_test_btn.setText("▶ START TEST")
@@ -1342,16 +1355,23 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.params_mode_label.setText("TEMPERATURE SWEEP")
             self.voltage_params_frame.hide()
             self.temp_params_frame.show()
-            self.temp_hint_label.show()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
+        elif test_item == self.TEST_MULTI_CH_TEMP:
+            self.params_mode_label.setText("MULTI-CH TEMPERATURE")
+            self.voltage_params_frame.hide()
+            self.temp_params_frame.show()
+            # 扫压参数逐通道配置，页面级 Voltage Channel 隐藏
+            self.voltage_channel_label.hide()
+            self.voltage_channel.hide()
             self.start_test_btn.setText("▶ START TEST")
             self._start_btn_text = "▶ START TEST"
         else:
             self.params_mode_label.setText("VOLTAGE + TEMPERATURE")
             self.voltage_params_frame.show()
             self.temp_params_frame.show()
-            self.temp_hint_label.show()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
             self.start_test_btn.setText("▶ START TEST")
@@ -1362,6 +1382,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         calib_unit = "°C" if test_item == self.TEST_HIGH_LOW_TEMP else "V"
         self.calib_low_label.setText(f"Calib Low ({calib_unit})")
         self.calib_high_label.setText(f"Calib High ({calib_unit})")
+
+        # 多通道高低温测试的通道配置面板
+        self.multi_ch_panel.setVisible(test_item == self.TEST_MULTI_CH_TEMP)
+
+        self._update_temp_hint()
+
+    def _update_temp_hint(self):
+        """温度类测试项且温箱未连接时才提示连接温箱"""
+        needs_chamber = "chamber" in self.INSTRUMENT_MAP.get(self.current_test_item, [])
+        self.temp_hint_label.setVisible(needs_chamber and not self.is_chamber_connected)
 
     def _set_btn_connected(self, btn):
         update_connect_button_state(btn, connected=True)
@@ -1464,6 +1494,28 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 soak_time=self.soak_time.value(),
                 sample_cnt=sample_cnt,
             )
+        elif test_item == self.TEST_MULTI_CH_TEMP:
+            channels = self.multi_ch_panel.get_channels()
+            if not any(c.get('enabled', True) for c in channels):
+                self._append_log("[ERROR] Multi-Ch Temp Test: 无已启用的通道")
+                self.set_system_status("错误: 无已启用通道", is_error=True)
+                self.is_test_running = False
+                self._update_test_button_state(False)
+                self._set_ui_enabled(True)
+                return
+            fn = self._run_multi_ch_temp_test
+            kwargs = dict(
+                device_addr=iic_device_addr,
+                reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
+                temp_min=self.temp_min.value(),
+                temp_max=self.temp_max.value(),
+                temp_step=self.temp_step.value(),
+                soak_time=self.soak_time.value(),
+                sample_cnt=sample_cnt,
+                channels=channels,
+                pre_config=self.multi_ch_panel.get_pre_config(),
+            )
         else:
             self._stop_test()
             return
@@ -1562,6 +1614,95 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         )
         return ('temp_consistency', result)
 
+    def _run_multi_ch_temp_test(self, device_addr, reg_addr, iic_weight,
+                                temp_min, temp_max, temp_step, soak_time, sample_cnt,
+                                channels, pre_config, stop_check=None):
+        """多通道高低温联合测试：流程在 core/pmu_test/gpadc/gpadc_multi_temp.py（纯函数）。
+
+        本方法仅做仪器/回调装配：温箱 + N6705C + IIC 写/读 + GPADC 采样回调。
+        """
+        self._test_worker.log.emit("[INFO] RUN TEST_MULTI_CH_TEMP TEST")
+
+        if DEBUG_MOCK:
+            if not hasattr(self, "_mock_i2c"):
+                self._mock_i2c = MockI2C()
+            chamber = MockChamber()
+            vol_source = MockN6705C()
+            vol_source._mock_i2c = self._mock_i2c
+        else:
+            if not hasattr(self, 'chamber') or not self.is_chamber_connected:
+                self._test_worker.log.emit("[ERROR] Chamber not connected")
+                self.set_system_status("错误: 温箱未连接", is_error=True)
+                return None
+            chamber = self.chamber
+            need_sweep = any(
+                c.get('enabled', True) and c.get('sweep_enabled') for c in channels
+            )
+            if need_sweep and (self.n6705c is None or not self.is_connected):
+                self._test_worker.log.emit("[ERROR] N6705C not connected")
+                self.set_system_status("错误: N6705C未连接", is_error=True)
+                return None
+            vol_source = self.n6705c if need_sweep else None
+            if (self._acq_mode_snapshot == 'UART'
+                    and any((c.get('switch_writes_text') or c.get('switch_writes'))
+                            for c in channels if c.get('enabled', True))):
+                self._test_worker.log.emit(
+                    "[INFO] UART 采集模式下，通道切换仍经 I2C 接口写入"
+                )
+
+        def _write_fn(dev, reg, val, width, high=-1, low=-1):
+            if DEBUG_MOCK:
+                self._mock_i2c.write(dev, reg, val, width)
+                return
+            if not hasattr(self, "deviceI2C"):
+                self.deviceI2C = I2CInterface()
+                self.set_system_status("I2C接口初始化成功")
+            self.deviceI2C.write(dev, reg, val, width, high, low)
+
+        def _read_reg_fn(dev, reg, width):
+            if DEBUG_MOCK:
+                return self._mock_i2c.read(dev, reg, width)
+            if not hasattr(self, "deviceI2C"):
+                self.deviceI2C = I2CInterface()
+                self.set_system_status("I2C接口初始化成功")
+            return self.deviceI2C.read(dev, reg, width)
+
+        def _sample_fn(ch_cfg, cnt, stop, mock_hint=None):
+            dev = parse_hw_int(ch_cfg.get('read_dev'), device_addr)
+            reg = parse_hw_int(ch_cfg.get('read_reg'), reg_addr)
+            width = int(ch_cfg.get('read_width') or 0) or iic_weight
+            if DEBUG_MOCK and mock_hint is not None:
+                self._mock_i2c.set_mock_voltage(mock_hint)
+            return self._gpadc_read_by_cnts(
+                dev, reg, width,
+                get_reg_cnt=cnt,
+                return_raw=False,
+                stop_check=stop,
+            )
+
+        result = run_multi_ch_temp_test(
+            chamber=chamber,
+            vol_source=vol_source,
+            write_fn=_write_fn,
+            read_reg_fn=_read_reg_fn,
+            sample_fn=_sample_fn,
+            channels=channels,
+            pre_config=pre_config,
+            temp_min=temp_min,
+            temp_max=temp_max,
+            temp_step=temp_step,
+            soak_time=soak_time,
+            sample_cnt=sample_cnt,
+            default_dev=device_addr,
+            default_width=iic_weight,
+            mock_mode=DEBUG_MOCK,
+            log_fn=self._test_worker.log.emit,
+            status_fn=lambda msg, is_err=False: self.set_system_status(msg, is_err),
+            stop_check=stop_check,
+            progress_callback=lambda v: self._test_worker.progress.emit(v),
+        )
+        return ('multi_ch_temp', result)
+
     def _on_test_done(self, payload):
         if payload is None:
             return
@@ -1624,6 +1765,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self._append_log("[RESULT] Temp Consistency Test completed")
                 self.set_system_status("GPADC温度一致性测试完成")
 
+        elif kind == 'multi_ch_temp':
+            if result is not None:
+                self._set_curve_view_all(True)
+                # 扫压通道逐温度行做两点标定（与 temp_consistency 同语义），结果附回 channel dict
+                self._compute_multi_ch_calibration(result)
+                self._plot_multi_ch_temp_curves(result)
+                self._export_data = {'multi_ch_temp': result}
+                self._append_log("[RESULT] Multi-Ch Temp Test completed")
+                self.set_system_status("GPADC多通道温度测试完成")
+
         # 记入最近测试列表，供后续对比/载入
         self._record_recent_test(kind, result)
         # 曲线类测试完成后，当前图上显示的就是这条记录（右键切换 Curve View 时据此重绘）
@@ -1673,6 +1824,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         if self._export_data is None:
             self._append_log("[WARN] No test result to export.")
+            return
+
+        # 多通道高低温测试：每通道一个 sheet 的专用导出
+        if 'multi_ch_temp' in self._export_data:
+            self._export_multi_ch_temp(self._export_data['multi_ch_temp'])
             return
 
         params   = self._export_data['params']
@@ -1864,6 +2020,171 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         chart.series[2].graphicalProperties.line.solidFill = "F0A040"
         ws.add_chart(chart, f"{chart_anchor_col}{chart_data_start_row}")
 
+    def _export_multi_ch_temp(self, result):
+        """多通道高低温测试导出：Summary 汇总 + 每通道一个 sheet（原始 + 标定数据）。"""
+        import openpyxl
+        from openpyxl.styles import (Font, PatternFill, Alignment,
+                                     Border, Side)
+        from openpyxl.utils import get_column_letter
+        from pathlib import Path
+        import datetime
+        import re
+
+        results_dir = Path(__file__).parent.parent.parent.parent / "Results"
+        results_dir.mkdir(exist_ok=True)
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = results_dir / f"GPADC_MultiChTemp_{ts}.xlsx"
+
+        hdr_fill = PatternFill("solid", fgColor="0A1735")
+        hdr_font = Font(bold=True, color="00D39A", size=11)
+        val_font = Font(color="000000", size=10)
+        sub_fill = PatternFill("solid", fgColor="0D1F40")
+        sub_font = Font(bold=True, color="7E96BF", size=10)
+        thin_side = Side(style="thin", color="1B2847")
+        thin_border = Border(left=thin_side, right=thin_side,
+                             top=thin_side, bottom=thin_side)
+
+        def _hdr(ws, row, col, text):
+            c = ws.cell(row=row, column=col, value=text)
+            c.fill = hdr_fill
+            c.font = hdr_font
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+            return c
+
+        def _val(ws, row, col, value):
+            c = ws.cell(row=row, column=col, value=value)
+            c.font = val_font
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+            if isinstance(value, float):
+                c.number_format = "0.000000"
+            return c
+
+        def _sub(ws, row, col, text):
+            c = ws.cell(row=row, column=col, value=text)
+            c.fill = sub_fill
+            c.font = sub_font
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            c.border = thin_border
+            return c
+
+        temp_list = result.get('temp') or []
+        channels = result.get('channels') or []
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Summary"
+        ws.column_dimensions["A"].width = 26
+        ws.column_dimensions["B"].width = 20
+        ws.column_dimensions["C"].width = 22
+        ws.column_dimensions["D"].width = 22
+
+        row = 1
+        _hdr(ws, row, 1, "GPADC Multi-Ch Temp Test Summary")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        row += 1
+        meta_items = [
+            ("Test Time", ts),
+            ("Temp Range (°C)", f"{temp_list[0]:.1f} ~ {temp_list[-1]:.1f}" if temp_list else "N/A"),
+            ("Temp Points", len(temp_list)),
+            ("Sample Count", result.get('sample_cnt', 0)),
+            ("Channel Count", len(channels)),
+        ]
+        for key, value in meta_items:
+            _sub(ws, row, 1, key)
+            _val(ws, row, 2, value)
+            row += 1
+
+        row += 1
+        _hdr(ws, row, 1, "Channels")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        row += 1
+        for col, text in enumerate(("Name", "Sweep", "Voltage Range (V)", "Data Rows"), start=1):
+            _sub(ws, row, col, text)
+        row += 1
+        for ch in channels:
+            _val(ws, row, 1, ch.get('name') or "CH")
+            _val(ws, row, 2, "Yes" if ch.get('sweep') else "No")
+            if ch.get('sweep'):
+                vpts = ch.get('voltage') or []
+                vrange = f"{vpts[0]:.3f} ~ {vpts[-1]:.3f}" if vpts else "N/A"
+            else:
+                vrange = "(fixed-point)"
+            _val(ws, row, 3, vrange)
+            _val(ws, row, 4, len(ch.get('mean') or []))
+            row += 1
+
+        if self._chart_image_bytes is not None:
+            try:
+                from openpyxl.drawing.image import Image as XLImage
+                self._chart_image_bytes.seek(0)
+                img = XLImage(self._chart_image_bytes)
+                img.width = 720
+                img.height = 420
+                ws.add_image(img, f"{get_column_letter(6)}1")
+            except Exception as ex:
+                self._append_log(f"[WARN] Embed chart image failed: {ex}")
+
+        for ch in channels:
+            ch_name = ch.get('name') or "CH"
+            sheet_name = re.sub(r"[\[\]:*?/\\]", "_", f"CH_{ch_name}")[:31]
+            ws = wb.create_sheet(sheet_name)
+            for col_idx in range(1, 12):
+                ws.column_dimensions[get_column_letter(col_idx)].width = 14
+
+            row = 1
+            _hdr(ws, row, 1, f"Channel: {ch_name} ({'voltage sweep' if ch.get('sweep') else 'fixed-point'})")
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+            row += 2
+
+            if ch.get('sweep'):
+                vpts = ch.get('voltage') or []
+                matrices = [("Mean (LSB)", ch.get('mean') or []),
+                            ("Min (LSB)", ch.get('min') or []),
+                            ("Max (LSB)", ch.get('max') or [])]
+                if ch.get('mean_cali'):
+                    matrices.append(("Mean Cali (V)", ch['mean_cali']))
+                for tag, matrix in matrices:
+                    _hdr(ws, row, 1, tag)
+                    ws.merge_cells(start_row=row, start_column=1,
+                                   end_row=row, end_column=max(2, len(vpts) + 1))
+                    row += 1
+                    _sub(ws, row, 1, "Temp \\ Voltage (V)")
+                    for j, v in enumerate(vpts):
+                        _sub(ws, row, 2 + j, f"{v:.3f}")
+                    row += 1
+                    for i, t in enumerate(temp_list):
+                        if i >= len(matrix):
+                            break
+                        _val(ws, row, 1, f"{t:.1f}")
+                        for j in range(len(matrix[i])):
+                            _val(ws, row, 2 + j, float(matrix[i][j]))
+                        row += 1
+                    row += 1
+            else:
+                _sub(ws, row, 1, "Temp (°C)")
+                _sub(ws, row, 2, "ADC Mean (LSB)")
+                _sub(ws, row, 3, "ADC Min (LSB)")
+                _sub(ws, row, 4, "ADC Max (LSB)")
+                row += 1
+                mean_list = ch.get('mean') or []
+                min_list = ch.get('min') or []
+                max_list = ch.get('max') or []
+                for i in range(len(mean_list)):
+                    t = temp_list[i] if i < len(temp_list) else i
+                    _val(ws, row, 1, float(t))
+                    _val(ws, row, 2, float(mean_list[i]))
+                    if i < len(min_list):
+                        _val(ws, row, 3, float(min_list[i]))
+                    if i < len(max_list):
+                        _val(ws, row, 4, float(max_list[i]))
+                    row += 1
+
+        wb.save(str(filename))
+        self._append_log(f"[INFO] Result exported to: {filename}")
+
     def _set_ui_enabled(self, enabled):
         widgets = [
             self.n6705c_combo, self.n6705c_search_btn, self.n6705c_connect_btn,
@@ -1881,11 +2202,60 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
             self.load_recent_btn, self.clear_recent_btn,
+            self.multi_ch_panel,
         ]
         for widget in widgets:
             widget.setEnabled(enabled)
         for spin in self._algo_param_widgets.values():
             spin.setEnabled(enabled)
+
+    def _on_save_multi_ch_config(self):
+        """保存页面完整配置（含多通道与前置配置）到 JSON 文件。"""
+        import json
+        from pathlib import Path
+
+        cfg = self.get_test_config()
+        cfg['test_item'] = self.TEST_MULTI_CH_TEMP
+        payload = {"schema_version": 1, "page": "gpadc", "config": cfg}
+
+        start_dir = Path(get_user_data_dir("gpadc_configs"))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存 GPADC 配置", str(start_dir / "multi_ch_temp.json"),
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            self._append_log(f"[INFO] 配置已保存: {path}")
+        except Exception as e:
+            logger.error("保存 GPADC 配置失败: %s", e, exc_info=True)
+            self._append_log(f"[ERROR] 配置保存失败: {e}")
+
+    def _on_load_multi_ch_config(self):
+        """从 JSON 文件加载配置并回填（含测试项切换、多通道与前置配置）。"""
+        import json
+
+        start_dir = get_user_data_dir("gpadc_configs")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "加载 GPADC 配置", start_dir, "JSON Files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as e:
+            logger.error("加载 GPADC 配置失败: %s", e, exc_info=True)
+            self._append_log(f"[ERROR] 配置加载失败: {e}")
+            return
+        cfg = payload.get("config") if isinstance(payload, dict) else None
+        if not isinstance(cfg, dict):
+            self._append_log("[ERROR] 配置文件格式无效（缺少 config 段）")
+            return
+        ok, msg = self.apply_config_to_controls(cfg)
+        self._append_log(f"[INFO] 配置加载: {msg}")
 
     def get_test_config(self):
         acquisition_mode = 'IIC' if self.iic_radio.isChecked() else 'UART'
@@ -1913,6 +2283,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'calib_low': self.calib_low.text(),
             'calib_high': self.calib_high.text(),
             'algorithm': self._collect_algorithm_config(),
+            'multi_channels': self.multi_ch_panel.get_channels(),
+            'pre_config': self.multi_ch_panel.get_pre_config(),
         }
 
     def update_test_result(self, result):
@@ -2036,6 +2408,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 f"INL={params.get('inl', 0.0):.3f} DNL={params.get('dnl', 0.0):.3f} "
                 f"ENOB={params.get('enob', 0.0):.3f} R²={params.get('linearity', 0.0):.4f}"
             )
+        elif kind == 'multi_ch_temp':
+            record['raw'] = result
+            temps = result.get('temp') or []
+            chs = result.get('channels') or []
+            record['summary'] = f"{len(chs)} CH x {len(temps)} T"
         else:  # temp_consistency
             record['raw'] = result
             temps = result.get('temp') or []
@@ -2256,6 +2633,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 'raw': record.get('raw'),
                 'calibration': record.get('calibration'),
             }
+        elif kind == 'multi_ch_temp':
+            raw = record.get('raw') or {}
+            self._plot_multi_ch_temp_curves(raw)
+            self._export_data = {'multi_ch_temp': raw}
         else:  # temp_consistency
             raw = record.get('raw') or {}
             self._plot_temp_consistency_curves(raw)
@@ -2746,6 +3127,39 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._append_log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
 
         return adc_raw_data, mean_cali, adc_min_cali, adc_max_cali
+
+    def _compute_multi_ch_calibration(self, result):
+        """多通道温度测试：扫压通道逐温度行两点标定（与 temp_consistency 同语义）。
+
+        标定矩阵附回 channel dict（mean_cali/min_cali/max_cali），供绘图与导出使用。
+        定点采样通道无输入参考扫描，不做标定。
+        """
+        for ch in (result.get('channels') or []):
+            if not ch.get('sweep'):
+                continue
+            vpts = ch.get('voltage') or []
+            mean_rows = ch.get('mean') or []
+            min_rows = ch.get('min') or []
+            max_rows = ch.get('max') or []
+            mean_cali_rows, min_cali_rows, max_cali_rows = [], [], []
+            k = b = 0.0
+            for i in range(len(mean_rows)):
+                k, b, mean_cali, min_cali, max_cali, *_ = compute_calibration(
+                    vpts, mean_rows[i],
+                    min_rows[i] if i < len(min_rows) else [],
+                    max_rows[i] if i < len(max_rows) else [],
+                    calib_points=self._calib_points_snapshot,
+                )
+                mean_cali_rows.append(mean_cali)
+                min_cali_rows.append(min_cali)
+                max_cali_rows.append(max_cali)
+            ch['mean_cali'] = mean_cali_rows
+            ch['min_cali'] = min_cali_rows
+            ch['max_cali'] = max_cali_rows
+            if mean_cali_rows:
+                self._append_log(
+                    f"[INFO] CH {ch.get('name')}: Calibration k={k:.6f} (LSB/V), b={b:.6f} (LSB)"
+                )
 
     def gpadc_high_low_temp_test(
         self,
@@ -3581,6 +3995,123 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._append_log(f"[ERROR] Error plotting temp consistency curves: {e}")
             logger.error("Error plotting temp consistency curves: %s", e, exc_info=True)
 
+    def _plot_multi_ch_temp_curves(self, result):
+        """多通道高低温测试曲线：每通道一个 Tab。
+
+        扫压通道：X=电压，每温度一条曲线（调色板色系，可选 Min-Max 包络带）；
+        定点通道：X=温度，Mean 主线 + 可选 Min/Max 虚线。
+        """
+        try:
+            import pyqtgraph as pg
+            import numpy as np
+
+            temp_list = result.get('temp') or []
+            channels = result.get('channels') or []
+            show_band = self._is_curve_view_enabled('band')
+
+            self._clear_chart_placeholder()
+            layout = self.chart_placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.chart_placeholder)
+            layout.setContentsMargins(6, 6, 6, 6)
+            layout.setSpacing(6)
+
+            tabs = QTabWidget()
+            palette = self._COMPARE_PALETTE
+
+            for ch in channels:
+                name = ch.get('name') or "CH"
+                pw = pg.PlotWidget()
+                pw.setBackground("#0a1735")
+                pw.showGrid(x=True, y=True, alpha=0.15)
+                self._attach_curve_context_menu(pw)
+                for axis_name in ("left", "bottom"):
+                    axis = pw.getAxis(axis_name)
+                    axis.setTextPen(pg.mkPen("#a0b4d8"))
+                    axis.setPen(pg.mkPen("#3a4f7a"))
+
+                if ch.get('sweep'):
+                    vpts = np.array(ch.get('voltage') or [], dtype=float)
+                    pw.setLabel("left", "ADC Code", color="#a0b4d8")
+                    pw.setLabel("bottom", "Input Voltage (V)", color="#a0b4d8")
+                    mean_matrix = ch.get('mean') or []
+                    min_matrix = ch.get('min') or []
+                    max_matrix = ch.get('max') or []
+                    for i, t in enumerate(temp_list):
+                        if i >= len(mean_matrix):
+                            break
+                        color = palette[i % len(palette)]
+                        mean_row = np.array(mean_matrix[i], dtype=float)
+                        n = min(len(vpts), len(mean_row))
+                        if n == 0:
+                            continue
+                        if show_band and i < len(min_matrix) and i < len(max_matrix):
+                            min_row = np.array(min_matrix[i], dtype=float)
+                            max_row = np.array(max_matrix[i], dtype=float)
+                            m = min(n, len(min_row), len(max_row))
+                            if m > 0:
+                                fill = pg.FillBetweenItem(
+                                    pg.PlotDataItem(vpts[:m], max_row[:m]),
+                                    pg.PlotDataItem(vpts[:m], min_row[:m]),
+                                    brush=pg.mkBrush(
+                                        int(color[1:3], 16),
+                                        int(color[3:5], 16),
+                                        int(color[5:7], 16),
+                                        35,
+                                    ),
+                                )
+                                pw.addItem(fill)
+                        pw.plot(vpts[:n], mean_row[:n],
+                                pen=pg.mkPen(color=color, width=2),
+                                symbol="o", symbolSize=4,
+                                symbolBrush=color, symbolPen=None,
+                                name=f"{t:.1f}°C")
+                else:
+                    mean_list = ch.get('mean') or []
+                    min_list = ch.get('min') or []
+                    max_list = ch.get('max') or []
+                    n = min(len(temp_list), len(mean_list))
+                    x = np.array(temp_list[:n], dtype=float)
+                    mean_arr = np.array(mean_list[:n], dtype=float)
+                    pw.setLabel("left", "ADC Code", color="#a0b4d8")
+                    pw.setLabel("bottom", "Temperature (°C)", color="#a0b4d8")
+                    color = "#00d39a"
+                    if n > 0:
+                        if show_band and len(min_list) >= n and len(max_list) >= n:
+                            min_arr = np.array(min_list[:n], dtype=float)
+                            max_arr = np.array(max_list[:n], dtype=float)
+                            pw.plot(x, max_arr, pen=pg.mkPen(color="#f0a040", width=1,
+                                                             style=Qt.DashLine))
+                            pw.plot(x, min_arr, pen=pg.mkPen(color="#f0a040", width=1,
+                                                             style=Qt.DashLine))
+                        pw.plot(x, mean_arr,
+                                pen=pg.mkPen(color=color, width=2),
+                                symbol="o", symbolSize=5,
+                                symbolBrush=color, symbolPen=None,
+                                name="Mean")
+                tabs.addTab(pw, name)
+
+            layout.addWidget(tabs, 1)
+
+            # 快照（当前 Tab）供 Excel 嵌入
+            try:
+                import io
+                from PySide6.QtCore import QBuffer, QIODevice
+                pixmap = tabs.grab()
+                qbuf = QBuffer()
+                qbuf.open(QIODevice.WriteOnly)
+                pixmap.save(qbuf, "PNG")
+                raw = bytes(qbuf.data())
+                qbuf.close()
+                self._chart_image_bytes = io.BytesIO(raw)
+            except Exception as ex:
+                self._append_log(f"[WARN] Chart snapshot failed: {ex}")
+                self._chart_image_bytes = None
+
+        except Exception as e:
+            self._append_log(f"[ERROR] Error plotting multi-ch temp curves: {e}")
+            logger.error("Error plotting multi-ch temp curves: %s", e, exc_info=True)
+
     def _plot_temperature_adc_curve(self, temp_data, adc_data):
         """绘制温度-ADC曲线到UI"""
         try:
@@ -3887,6 +4418,18 @@ Temperature (°C) | ADC Value
                         continue
                 applied.append("algorithm")
                 touched.append(self.algorithm_combo)
+
+        # 多通道高低温测试：通道列表与前置配置
+        channels = cfg.get("multi_channels")
+        if channels is not None:
+            self.multi_ch_panel.set_channels(channels)
+            applied.append("multi_channels")
+            touched.append(self.multi_ch_panel)
+        pre_config = cfg.get("pre_config")
+        if pre_config is not None:
+            self.multi_ch_panel.set_pre_config(pre_config)
+            applied.append("pre_config")
+            touched.append(self.multi_ch_panel)
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
