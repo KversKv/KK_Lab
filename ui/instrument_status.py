@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt
 
@@ -33,6 +34,10 @@ class InstrumentStatusPanel:
 
     def create_bottom_widget(self):
         bottom_widget = QWidget()
+        # 垂直 Fixed：不随 left_nav 高度不足被压缩，也不吃拉伸；高度 = 内容
+        # sizeHint（空载约 55px = 分隔线1 + 间距12 + Help42），仪器连接行
+        # 增减时经 sizeHint 自适应，常驻可见于滚动区之外。
+        bottom_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         bottom_widget.setStyleSheet("""
             QWidget {
                 background: transparent;

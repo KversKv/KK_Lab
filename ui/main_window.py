@@ -135,6 +135,10 @@ logger = get_logger(__name__)
 # 紧凑（最小）视图窗口尺寸：仅容纳 Quick Setup 面板（双设备列宽 ~950 + 页边距）
 _COMPACT_VIEW_SIZE = (1000, 460)
 
+# 最小窗口尺寸（逻辑像素）：left_nav(187) + right_content(min 400) + AI 面板
+# 可放的底线；低于 640 高时 left_nav 三段式（Logo/滚动区/状态面板）无法保证可读。
+_MIN_WINDOW_SIZE = (966, 640)
+
 
 def _ai_caps(page) -> set[str]:
     """安全获取页面的 AI 能力集（未实现 ai_capabilities 返回空集）。
@@ -332,6 +336,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._resize_origin = None
         self.setMouseTracking(True)
         resize_and_center_window(self)
+        self.setMinimumSize(*_MIN_WINDOW_SIZE)
 
         self.test_manager = TestManager()
         self.visa_instrument = VisaInstrument()
@@ -567,9 +572,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.right_content_layout.addWidget(self.instrument_ui_container)
 
         main_splitter.addWidget(self.right_content)
-        main_splitter.setSizes([187, 1013])
+        # 初始比例 187 : 剩余（默认窗口 1600 宽 → 1413），不依赖内容撑开
+        main_splitter.setSizes([187, 1413])
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
+        main_splitter.setChildrenCollapsible(False)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(1, False)
         self.main_splitter = main_splitter
@@ -614,8 +621,10 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         outer_splitter.setStretchFactor(0, 1)
         outer_splitter.setStretchFactor(1, 0)
+        outer_splitter.setChildrenCollapsible(False)
         outer_splitter.setCollapsible(0, False)
         outer_splitter.setCollapsible(1, False)
+        self.ai_panel.setMinimumWidth(260)
         self.outer_splitter = outer_splitter
         self.main_layout.addWidget(outer_splitter)
 
@@ -1867,8 +1876,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             if page is not None:
                 page.set_compact_mode(False)
             self.left_nav.setVisible(True)
-            # 解除紧凑视图的固定尺寸约束（QWIDGETSIZE_MAX = 16777215）
-            self.setMinimumSize(0, 0)
+            # 解除紧凑视图的固定尺寸约束（QWIDGETSIZE_MAX = 16777215），
+            # 并还原全局最小窗口约束（紧凑态 setFixedSize 曾将其覆盖）
+            self.setMinimumSize(*_MIN_WINDOW_SIZE)
             self.setMaximumSize(16777215, 16777215)
             # 紧凑还原的 geometry 优先于切页时的 geometry 记忆
             # （紧凑态下切页会在 _hide_all_instrument_uis 记录紧凑尺寸）
@@ -2128,6 +2138,13 @@ class MainWindow(CleanupMixin, QMainWindow):
         except Exception:  # noqa: BLE001
             logger.debug("DWM 圆角设置失败（系统不支持，忽略）", exc_info=True)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # 按窗口高度切换 left_nav 密度令牌（阈值/滞回见 NavController）
+        nav = getattr(self, "nav", None)
+        if nav is not None:
+            nav.update_density(self.height())
+
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == QEvent.WindowStateChange and getattr(self, "top_bar", None) is not None:
@@ -2155,6 +2172,33 @@ class MainWindow(CleanupMixin, QMainWindow):
         except Exception:  # noqa: BLE001
             logger.debug("系统菜单弹出失败", exc_info=True)
             return False
+
+    def _apply_minmax_info(self, msg):
+        """WM_GETMINMAXINFO：把最小/最大轨迹尺寸与 Qt 尺寸约束同步。
+
+        WM_NCCALCSIZE 返回 0 使客户区 == 窗口矩形（无原生非客户区），故
+        ptMinTrackSize = minimumSize × DPR（物理像素）即可，无需标题栏/边框
+        补偿；防止经原生边框拖拽绕过 Qt setMinimumSize。固定尺寸态（紧凑
+        视图）同步钳制 ptMaxTrackSize，使原生拖拽同样不可改变窗口大小。
+        """
+        applied = False
+        try:
+            mmi = _MINMAXINFO.from_address(int(msg.lParam))
+            dpr = self.devicePixelRatioF() or 1.0
+            min_w = self.minimumWidth()
+            min_h = self.minimumHeight()
+            if min_w > 0 and min_h > 0:
+                mmi.ptMinTrackSize.x = int(round(min_w * dpr))
+                mmi.ptMinTrackSize.y = int(round(min_h * dpr))
+                applied = True
+            max_w = self.maximumWidth()
+            max_h = self.maximumHeight()
+            if 0 < max_w < 16777215 and 0 < max_h < 16777215:
+                mmi.ptMaxTrackSize.x = int(round(max_w * dpr))
+                mmi.ptMaxTrackSize.y = int(round(max_h * dpr))
+        except Exception:  # noqa: BLE001
+            logger.debug("最小轨迹尺寸写入失败", exc_info=True)
+        return self._adjust_maximized_size(msg) or applied
 
     def _adjust_maximized_size(self, msg):
         try:
@@ -2204,7 +2248,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                     return True, 0
                 return False, 0
             if msg.message == _WM_GETMINMAXINFO:
-                if self._adjust_maximized_size(msg):
+                if self._apply_minmax_info(msg):
                     return True, 0
                 return False, 0
             if msg.message == _WM_NCRBUTTONUP and msg.wParam == _HTCAPTION:

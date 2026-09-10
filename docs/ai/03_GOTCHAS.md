@@ -488,7 +488,7 @@ app.installEventFilter(_WinFilter())
 
 **根因**：`widget.hide()` 只把布局标脏，**`QLayout` 的 minimumSize 缓存要等下一轮 posted 布局事件（LayoutRequest）处理后才刷新**（实测 0ms 时 min 仍为旧值 ~897，30ms 后才变 331）。窗口 `resize()` 到低于旧 minimum 的尺寸时，Qt 同步把窗口顶回旧 minimum。`singleShot(0)` 与 `processEvents()` 都可能赶在缓存刷新之前执行，白干。
 
-**修复**：用 `setFixedSize(w, h)` **同步钉死**目标尺寸（显式 min/max 优先于布局计算值，立即生效）；退出紧凑视图时 `setMinimumSize(0, 0)` + `setMaximumSize(16777215, 16777215)`（`QWIDGETSIZE_MAX`）解除约束，再 `restoreGeometry`。
+**修复**：用 `setFixedSize(w, h)` **同步钉死**目标尺寸（显式 min/max 优先于布局计算值，立即生效）；退出紧凑视图时 `setMinimumSize(*_MIN_WINDOW_SIZE)`（原为 `(0, 0)`，现还原全局最小约束 966×640）+ `setMaximumSize(16777215, 16777215)`（`QWIDGETSIZE_MAX`）解除固定尺寸，再 `restoreGeometry`。
 
 **固定尺寸 → 自适应**：钉死的过渡尺寸若偏大（如固定 460 但内容只需 331）会留底部空白；在 posted LayoutRequest 处理完后再 `_fit_compact_size()`：`layout().activate()` 后取 `sizeHint()` / `minimumSizeHint()` 的 max 做高度、保持宽度下限，重新 `setFixedSize`（实测 80ms 延迟足够，冒烟 22 断言全绿）。
 
@@ -498,3 +498,16 @@ app.installEventFilter(_WinFilter())
 - 退出约束时注意**清掉同帧内其它 `setGeometry` 记忆**（如 `_restore_page_switch_geometry` 的切页 geometry 快照），否则切页恢复会用紧凑尺寸覆盖还原尺寸（紧凑态下程序切页场景，见 [main_window.py](../../../ui/main_window.py) `_on_compact_view_toggled`）。
 - 参考实现：[main_window.py](../../../ui/main_window.py) `_COMPACT_VIEW_SIZE` / `_on_compact_view_toggled` / `_fit_compact_size`（2026-09，N6705C Quick Setup 最小视图）；冒烟脚本 [tests/diag_compact_view.py](../../../tests/diag_compact_view.py)。
 - 相关坑：**默认首页（N6705C）装载早于 `top_bar` 创建**，挂在 `_fade_in_widget` 的按钮可见性同步会因 `top_bar is None` 跳过且再无触发——初始化序列里 `top_bar` 创建后须补一次显式同步（`_sync_compact_view_button`）。
+
+## 35. QLabel 的 QSS `padding` 动态重 polish 后与尺寸约束失同步（分组标题被裁）
+
+**现象**：left_nav 分组标题用 QSS `min-height == max-height` 钉高、`padding-top` 充当组间距，并按窗口密度经 `setProperty("density")` + `unpolish/polish` 切档。切到 dense 后标题文字几乎不可见——实测标题总高 24px 但 `contentsRect()` 仅 2px。
+
+**根因**：QLabel 的 QSS `padding` 会在 polish 时物化进 `QWidget::contentsMargins`；动态属性切换重 polish 后，**min/max 尺寸约束按新规则（dense padding 8）更新，而 `contentsMargins` 仍按旧值（comfortable padding 20）扣减**，总高 24 − 旧 padding 22 = 2px 内容区。跨规则用 `padding` 简写整体覆盖亦非可靠路径（实测无效）。
+
+**修复**：**随密度变化的东西别放 QSS padding**。组间距改由布局内 `QSpacerItem` 承担（`_apply_density` 里 `changeSize` + 布局 `invalidate`），标题 QSS 仅保留恒定的 `min/max-height: 14px` 与 `padding: 0px 4px`。导航按钮不受影响：其 QSS `padding: 0` 恒定，且文字区由内部 layout 提供、不经 `contentsRect`。
+
+**要点**：
+
+- 经验法则：动态属性（`[density="..."]` 类）驱动的 QSS 变体中，`min/max-height` 切档可靠；**`padding` 切档对 QLabel 不可靠**（尺寸路径与 contentsMargins 路径可能各自解析）。
+- 参考实现：[nav_controller.py](../../../ui/nav_controller.py) `_LEFT_NAV_QSS` / `_add_group_title` / `_apply_density`；回归断言见 [tests/test_nav_layout_smoke.py](../../../tests/test_nav_layout_smoke.py)（dense 下标题内容区 ≥12px）。

@@ -4,6 +4,7 @@ from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QButtonGroup,
+    QScrollArea, QSizePolicy, QSpacerItem,
 )
 from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -21,6 +22,82 @@ _PAGE_SVGS_DIR = os.path.join(
 
 _SUBMENU_HIDE_DELAY = 220
 
+# ── 密度令牌（按窗口高度切换，逻辑像素）──
+_DENSITY_COMFORTABLE_MIN = 760
+_DENSITY_COMPACT_MIN = 700
+_DENSITY_HYSTERESIS = 12  # 滞回带，避免阈值附近来回抖动
+
+# 密度 → 按钮内部布局 margins（内容区恒定 24px，容纳 18px 图标 + 文字行）
+_DENSITY_BUTTON_MARGINS = {
+    "comfortable": (10, 6, 10, 6),
+    "compact": (10, 4, 10, 4),
+    "dense": (10, 2, 10, 2),
+}
+
+# 密度 → 导航容器 layout spacing
+_DENSITY_LAYOUT_SPACING = {"comfortable": 6, "compact": 4, "dense": 3}
+
+# 密度 → 分组间距（标题前置 QSpacerItem 高度；不用 QSS padding 实现，原因见下）
+_DENSITY_GROUP_GAP = {"comfortable": 20, "compact": 14, "dense": 8}
+
+# left_nav 三段式 + 密度令牌 QSS。
+# 按钮/标题高度一律 QSS min-height == max-height 钉死（盒模型：总高 =
+# content(min/max-height) + 上下 padding + 2×border；按钮 border:none、
+# padding:0）。
+# 坑：QLabel 的 QSS padding 会在 polish 时写入 QWidget::contentsMargins，
+# 密度属性切换重 polish 后，min/max 尺寸约束按新规则更新、contentsMargins
+# 却仍按旧值扣减（实测 dense 下标题总高 24 而 contentsRect 仅 2px，文字
+# 被裁）。故分组标题不设随密度变化的 padding，组间距改由布局内
+# QSpacerItem 承担，标题 QSS padding 保持恒定。
+_LEFT_NAV_QSS = """
+QFrame#leftNav {
+    background-color: #0b1020;
+    border: none;
+    border-radius: 0px;
+}
+QLabel#navLogo {
+    color: #7ea1ff;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 4px 4px 8px 4px;
+    border: none;
+    background: transparent;
+}
+QScrollArea#navScrollArea {
+    background: transparent;
+    border: none;
+}
+QWidget#navScrollContent {
+    background: transparent;
+}
+QLabel#navGroupTitle {
+    color: #7b93bf;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    border: none;
+    background: transparent;
+    min-height: 14px;
+    max-height: 14px;
+    padding: 0px 4px;
+}
+SidebarNavButton[density="comfortable"] {
+    min-height: 36px;
+    max-height: 36px;
+    padding: 0px;
+}
+SidebarNavButton[density="compact"] {
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0px;
+}
+SidebarNavButton[density="dense"] {
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+}
+"""
+
 
 class NavController:
     nav_page_requested = None
@@ -35,6 +112,13 @@ class NavController:
         self._collection_btn_hovered = False
         self._pmu_tool_btn_hovered = False
         self._vmin_hunter_btn_hovered = False
+
+        # 密度令牌状态：comfortable / compact / dense（由 update_density 驱动）
+        self._density = "comfortable"
+        self._density_widgets = []
+        self._group_gap_items = []
+        self._nav_layout = None
+        self.nav_scroll_area = None
 
         self.current_pa_mode = "analyser"
         self.current_pmu_test_key = None
@@ -71,47 +155,46 @@ class NavController:
         }
 
     def create_left_nav(self):
+        """构建 left_nav 三段式：Logo（固定）/ 导航滚动区（唯一伸缩）/ 底部状态面板。
+
+        底部状态面板由 MainWindow 向返回的 root_layout 末尾追加（固定段，
+        不压缩、不进滚动区）。导航按钮/分组标题高度由密度令牌 QSS
+        （min-height == max-height）钉死；高度不足时滚动区出纵向滚动条，
+        而非整体等比压缩控件。
+        """
         left_nav = QFrame()
         left_nav.setFixedWidth(187)
         left_nav.setObjectName("leftNav")
-        left_nav.setStyleSheet("""
-            QFrame#leftNav {
-                background-color: #0b1020;
-                border: none;
-                border-radius: 0px;
-            }
-        """)
+        left_nav.setStyleSheet(_LEFT_NAV_QSS)
 
-        left_nav_layout = QVBoxLayout(left_nav)
-        left_nav_layout.setContentsMargins(10, 14, 10, 14)
-        left_nav_layout.setSpacing(6)
+        root_layout = QVBoxLayout(left_nav)
+        root_layout.setContentsMargins(10, 14, 10, 14)
+        root_layout.setSpacing(6)
 
+        # ── 段 1：Logo（垂直 Fixed，永不压缩、不进滚动区）
         logo_label = QLabel("LabControl Pro")
-        logo_label.setStyleSheet("""
-            QLabel {
-                color: #7ea1ff;
-                font-size: 14px;
-                font-weight: 700;
-                padding: 4px 4px 8px 4px;
-                border: none;
-                background: transparent;
-            }
-        """)
-        left_nav_layout.addWidget(logo_label)
+        logo_label.setObjectName("navLogo")
+        logo_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        root_layout.addWidget(logo_label)
 
-        instruments_title = QLabel("INSTRUMENTS")
-        instruments_title.setStyleSheet("""
-            QLabel {
-                color: #5f78a8;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                padding: 6px 4px 2px 4px;
-                border: none;
-                background: transparent;
-            }
-        """)
-        left_nav_layout.addWidget(instruments_title)
+        # ── 段 2：导航滚动区（唯一伸缩段；横向 AlwaysOff + widgetResizable，
+        #    滚动条 gutter 稳定，不引起横向抖动）
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("navScrollArea")
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        nav_container = QWidget()
+        nav_container.setObjectName("navScrollContent")
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(_DENSITY_LAYOUT_SPACING[self._density])
+        self._nav_layout = nav_layout
+
+        self._add_group_title("INSTRUMENTS", nav_layout, first=True)
 
         self.n6705c_power_analyzer_btn = SidebarNavButton(
             "N6705C", "", os.path.join(_PAGE_SVGS_DIR, "zap.svg")
@@ -126,91 +209,55 @@ class NavController:
             "Chamber", "", os.path.join(_PAGE_SVGS_DIR, "thermometer.svg")
         )
 
-        left_nav_layout.addWidget(self.n6705c_power_analyzer_btn)
-        left_nav_layout.addWidget(self.oscilloscope_btn)
-        left_nav_layout.addWidget(self.chamber_btn)
+        self._register_nav_button(self.n6705c_power_analyzer_btn, nav_layout)
+        self._register_nav_button(self.oscilloscope_btn, nav_layout)
+        self._register_nav_button(self.chamber_btn, nav_layout)
 
-        automation_title = QLabel("AUTOMATION")
-        automation_title.setStyleSheet("""
-            QLabel {
-                color: #7b93bf;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                padding: 10px 4px 2px 4px;
-                border: none;
-                background: transparent;
-            }
-        """)
-        left_nav_layout.addWidget(automation_title)
+        self._add_group_title("AUTOMATION", nav_layout)
 
         self.pmu_test_btn = SidebarNavButton(
             "PMU Test", "", os.path.join(_PAGE_SVGS_DIR, "settings.svg")
         )
-        left_nav_layout.addWidget(self.pmu_test_btn)
+        self._register_nav_button(self.pmu_test_btn, nav_layout)
 
         self.charger_test_btn = SidebarNavButton(
             "Charger Test", "", os.path.join(_PAGE_SVGS_DIR, "battery.svg")
         )
-        left_nav_layout.addWidget(self.charger_test_btn)
+        self._register_nav_button(self.charger_test_btn, nav_layout)
 
         self.module_test_btn = SidebarNavButton(
             "Module Test", "", os.path.join(_PAGE_SVGS_DIR, "module_test.svg")
         )
-        left_nav_layout.addWidget(self.module_test_btn)
+        self._register_nav_button(self.module_test_btn, nav_layout)
 
         self.consumption_test_btn = SidebarNavButton(
             "Consumption Test", "", os.path.join(_PAGE_SVGS_DIR, "gauge.svg")
         )
-        left_nav_layout.addWidget(self.consumption_test_btn)
+        self._register_nav_button(self.consumption_test_btn, nav_layout)
 
         self.vmin_hunter_btn = SidebarNavButton(
             "VminHunter", "", os.path.join(_PAGE_SVGS_DIR, "crosshair.svg")
         )
-        left_nav_layout.addWidget(self.vmin_hunter_btn)
+        self._register_nav_button(self.vmin_hunter_btn, nav_layout)
 
-        tools_title = QLabel("TOOLS")
-        tools_title.setStyleSheet("""
-            QLabel {
-                color: #7b93bf;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                padding: 10px 4px 2px 4px;
-                border: none;
-                background: transparent;
-            }
-        """)
-        left_nav_layout.addWidget(tools_title)
+        self._add_group_title("TOOLS", nav_layout)
 
         self.pmu_btn = SidebarNavButton(
             "PMU", "", os.path.join(_PAGE_SVGS_DIR, "zap.svg")
         )
-        left_nav_layout.addWidget(self.pmu_btn)
+        self._register_nav_button(self.pmu_btn, nav_layout)
 
         self.collection_btn = SidebarNavButton(
             "Collection", "", os.path.join(_PAGE_SVGS_DIR, "settings.svg")
         )
-        left_nav_layout.addWidget(self.collection_btn)
+        self._register_nav_button(self.collection_btn, nav_layout)
 
-        orchestration_title = QLabel("ORCHESTRATION")
-        orchestration_title.setStyleSheet("""
-            QLabel {
-                color: #7b93bf;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                padding: 10px 4px 2px 4px;
-                border: none;
-                background: transparent;
-            }
-        """)
-        left_nav_layout.addWidget(orchestration_title)
+        self._add_group_title("ORCHESTRATION", nav_layout)
 
         self.orchestrator_btn = SidebarNavButton(
             "Orchestrator", "", os.path.join(_PAGE_SVGS_DIR, "network.svg")
         )
-        left_nav_layout.addWidget(self.orchestrator_btn)
+        self._register_nav_button(self.orchestrator_btn, nav_layout)
 
         self.nav_button_group = QButtonGroup(self._host)
         self.nav_button_group.setExclusive(True)
@@ -228,10 +275,89 @@ class NavController:
 
         self._refresh_nav_arrow_state()
 
-        left_nav_layout.addSpacing(20)
-        left_nav_layout.addStretch()
+        # 末尾 stretch 把按钮顶到上方；高度不足时由滚动条接管而非压缩按钮
+        nav_layout.addStretch(1)
+        scroll_area.setWidget(nav_container)
+        root_layout.addWidget(scroll_area, 1)
+        self.nav_scroll_area = scroll_area
 
-        return left_nav, left_nav_layout
+        return left_nav, root_layout
+
+    def _add_group_title(self, text, layout, first=False):
+        """添加分组标题；组间距由前置 QSpacerItem 承担（密度令牌驱动）。
+
+        标题高度恒 14px（QSS min==max + 恒定 padding），不设随密度变化的
+        QSS padding：QLabel 的 QSS padding 会写入 contentsMargins，动态
+        属性重 polish 后与尺寸约束不同步（实测 dense 下标题内容区仅 2px）。
+        """
+        if not first:
+            gap = _DENSITY_GROUP_GAP[self._density]
+            spacer = QSpacerItem(0, gap, QSizePolicy.Fixed, QSizePolicy.Fixed)
+            layout.addItem(spacer)
+            self._group_gap_items.append(spacer)
+        label = QLabel(text)
+        label.setObjectName("navGroupTitle")
+        label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(label)
+
+    def _register_nav_button(self, btn, layout):
+        """登记导航按钮：垂直 Fixed + 密度属性。
+
+        解除 SidebarNavButton 构造里 setFixedHeight(48) 的硬约束
+        （QWIDGETSIZE_MAX = 16777215），高度统一交给密度 QSS
+        （min-height == max-height），保证 28/32/36px 档位不被压缩。
+        """
+        btn.setProperty("density", self._density)
+        btn.setMinimumHeight(0)
+        btn.setMaximumHeight(16777215)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._density_widgets.append(btn)
+        layout.addWidget(btn)
+
+    def update_density(self, height):
+        """按窗口高度切换密度令牌（阈值 760/700，带 12px 滞回防临界抖动）。"""
+        cur = self._density
+        h = int(height)
+        if cur == "comfortable":
+            if h < _DENSITY_COMFORTABLE_MIN - _DENSITY_HYSTERESIS:
+                new = "compact" if h >= _DENSITY_COMPACT_MIN else "dense"
+            else:
+                new = cur
+        elif cur == "dense":
+            if h >= _DENSITY_COMPACT_MIN + _DENSITY_HYSTERESIS:
+                new = "comfortable" if h >= _DENSITY_COMFORTABLE_MIN else "compact"
+            else:
+                new = cur
+        else:  # compact
+            if h >= _DENSITY_COMFORTABLE_MIN + _DENSITY_HYSTERESIS:
+                new = "comfortable"
+            elif h < _DENSITY_COMPACT_MIN - _DENSITY_HYSTERESIS:
+                new = "dense"
+            else:
+                new = cur
+        if new != cur:
+            self._apply_density(new)
+
+    def _apply_density(self, density):
+        """应用密度：刷新按钮的 density 属性并 polish 重刷 QSS；组间距
+        spacer、按钮内边距、容器 spacing 同步切档，保证内容区可读。"""
+        self._density = density
+        margins = _DENSITY_BUTTON_MARGINS[density]
+        gap = _DENSITY_GROUP_GAP[density]
+        for item in self._group_gap_items:
+            item.changeSize(0, gap, QSizePolicy.Fixed, QSizePolicy.Fixed)
+        if self._nav_layout is not None:
+            self._nav_layout.setSpacing(_DENSITY_LAYOUT_SPACING[density])
+            self._nav_layout.invalidate()
+        for w in self._density_widgets:
+            w.setProperty("density", density)
+            if isinstance(w, SidebarNavButton):
+                inner = w.layout()
+                if inner is not None:
+                    inner.setContentsMargins(*margins)
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.updateGeometry()
 
     def _refresh_nav_arrow_state(self):
         nav_buttons = [
