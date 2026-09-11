@@ -221,7 +221,8 @@ class ToolbarMixin:
         )
         self._sc_pause_btn.setCheckable(True)
         self._sc_pause_btn.setToolTip(
-            "Pause\nFreeze the log display; incoming data is kept and shown again after resume"
+            "Pause\nFreeze the log display; incoming data is kept and shown again after resume.\n"
+            "Mutually exclusive with Stop (last clicked wins)"
         )
         self._sc_bind_toggle_icon(
             self._sc_pause_btn,
@@ -236,7 +237,8 @@ class ToolbarMixin:
         )
         self._sc_stop_btn.setCheckable(True)
         self._sc_stop_btn.setToolTip(
-            "Stop\nDrop incoming RX data while staying connected; click again to resume receiving"
+            "Stop\nDrop incoming RX data while staying connected; click again to resume receiving.\n"
+            "Mutually exclusive with Pause (last clicked wins)"
         )
         self._sc_bind_toggle_icon(
             self._sc_stop_btn,

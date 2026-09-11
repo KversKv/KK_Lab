@@ -722,6 +722,7 @@ class ConnectionMixin:
         auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
         self._sc_baud_combo.setEditable(not auto_detect_on)
         self._sc_baud_combo.setEnabled(not auto_detect_on)
+        self._sc_sync_top_control_state()
 
     def _sc_sync_top_control_state(self):
         if not hasattr(self, "_sc_connect_btn"):
@@ -741,12 +742,14 @@ class ConnectionMixin:
             pause_btn.blockSignals(True)
             pause_btn.setChecked(paused)
             pause_btn.setText("Resume" if paused else "Pause")
+            pause_btn.setEnabled(connected)
             pause_btn.blockSignals(False)
         stop_btn = getattr(self, "_sc_stop_btn", None)
         if stop_btn is not None:
             stop_btn.blockSignals(True)
             stop_btn.setChecked(stopped)
             stop_btn.setText("Resume" if stopped else "Stop")
+            stop_btn.setEnabled(connected)
             stop_btn.blockSignals(False)
 
     def _sc_on_baudrate_changed(self):
@@ -898,9 +901,14 @@ class ConnectionMixin:
         """Pause：仅冻结日志区显示；RX 数据照常接收保留，恢复后日志不丢失。"""
         panel = self._sc_active_extra_panel()
         if panel is not None:
+            if checked and panel.get("stopped"):
+                # Stop 与 Pause 互斥（后点生效）：恢复接收并保留数据
+                panel["stopped"] = False
             panel["paused"] = checked
             panel["frame"].set_display_paused(checked)
         else:
+            if checked and getattr(self, "_sc_stopped", False):
+                self._sc_stopped = False
             self._sc_paused = checked
             self._sc_log_panel.set_display_paused(checked)
         self._sc_sync_top_control_state()
@@ -909,8 +917,15 @@ class ConnectionMixin:
         """Stop：保持连接但丢弃 RX 接收数据；再次点击（Resume）后接着接收显示。"""
         panel = self._sc_active_extra_panel()
         if panel is not None:
+            if checked and panel.get("paused"):
+                # Stop 与 Pause 互斥（后点生效）：先解冻显示再丢弃新数据
+                panel["paused"] = False
+                panel["frame"].set_display_paused(False)
             panel["stopped"] = checked
         else:
+            if checked and getattr(self, "_sc_paused", False):
+                self._sc_paused = False
+                self._sc_log_panel.set_display_paused(False)
             self._sc_stopped = checked
         self._sc_sync_top_control_state()
 
