@@ -1,8 +1,8 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "COM6 - USB Serial Port (COM6)",
-    "baudrate": "1152000",
+    "port": "COM44 - USB-Enhanced-SERIAL-C CH9114 (COM44)",
+    "baudrate": "921600",
     "auto_detect": false,
     "databits": "8",
     "stopbits": "1",
@@ -36,15 +36,17 @@
     "show_system_log": true,
     "line_by_line": false,
     "sidebar_visible": true,
+    "footer_visible": true,
     "show_line_num": false,
     "center_split_sizes": [
-      683,
-      178
+      686,
+      185
     ],
     "log_auto_save": false,
     "log_save_path": ""
   },
   "send_history": [
+    "Test2",
     "IBRT_UI:pairing_mode_test",
     "test2",
     "test1"
@@ -215,10 +217,24 @@
     ]
   },
   "window": {
-    "x": 71,
-    "y": 312,
-    "width": 1592,
-    "height": 969,
+    "x": 636,
+    "y": 204,
+    "width": 1603,
+    "height": 979,
     "maximized": false
-  }
+  },
+  "extra_panels": [
+    {
+      "title": "P2",
+      "port": "COM5",
+      "baudrate": 921600,
+      "databit": 8,
+      "stopbit": "1",
+      "parity": "None",
+      "flow": "None",
+      "auto_connect": true,
+      "independent_window": false,
+      "connected": true
+    }
+  ]
 }
