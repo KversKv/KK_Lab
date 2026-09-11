@@ -1,0 +1,83 @@
+ui/modules/serialCom_module/mixins/filter_save_mixin.py
+  s_a5fd575282c7fb::t_948b4d554b22d8 378-492
+ui/modules/serialCom_module/mixins/connection_mixin.py
+  s_a5fd575282c7fb::t_233d4a3e0a91da 1014-1016
+  s_a5fd575282c7fb::t_ff53962fdb1ae9 812-813
+  s_a5fd575282c7fb::t_b95014459145ac 762
+  s_a5fd575282c7fb::t_aff9da7d691048 35,41
+  s_a5fd575282c7fb::t_dcb6fd42ecb27e 544
+  s_a5fd575282c7fb::t_ebac04d5e9e255 757-758,763-780
+tests/test_serialcom_multipanel_sync.py
+  s_a5fd575282c7fb::t_47a0e29f633eff 346-348,356-373
+ui/modules/serialCom_module/serialCom_module_frame.py
+  s_a5fd575282c7fb::t_c84f4725684589 1573
+  s_a5fd575282c7fb::t_289007ae3e32fc 1684-1796,1798
+  s_a5fd575282c7fb::t_29503e062a438b 615-647
+  s_a5fd575282c7fb::t_62551a3d0b9c0a 329-331
+  s_a5fd575282c7fb::t_948bf24c59d3f7 443-444,446-447
+  s_a5fd575282c7fb::t_2190c541aace69 1529,1534,1539-1543
+ui/modules/serialCom_module/mixins/toolbar_mixin.py
+  s_a5fd575282c7fb::t_2bd90271fc69de 533,550,557,562
+  s_a5fd575282c7fb::t_7ae95ddaf278d6 607-613
+  s_a5fd575282c7fb::t_cc7f16f92f8556 509
+  s_a5fd575282c7fb::t_482595a939a4ed 629-637
+  s_a5fd575282c7fb::t_923de92c4549a4 624-628,638-654,656-658,660-664,668-714,721-741,743-752,754-755,757-762,764-770,772-778,780-785,787-792,794-798
+  s_a5fd575282c7fb::t_3aa49156fbafbb 715-720
+  s_a5fd575282c7fb::t_bfb3443f5ecb85 655,659,665-667
+  s_a5fd575282c7fb::t_f80f7f36ff20f5 742
+  s_a5fd575282c7fb::t_12f743ba992d01 482
+  s_a5fd575282c7fb::t_d7efae90b998ab 753,756,763,771,779,786,793
+ui/modules/serialCom_module/mixins/send_mixin.py
+  s_a5fd575282c7fb::t_bc886112128411 546,557-562,565,573
+  s_a5fd575282c7fb::t_6a2026ba99975e 494-508,514,521,523,527-528
+ui/modules/serialCom_module/mixins/log_panel_mixin.py
+  s_a5fd575282c7fb::t_e1c2bbef0c2df3 298-301,306,319,325,334-336,341-342,345-348,359-372
+  s_a5fd575282c7fb::t_1fc2156082df76 458
+  s_a5fd575282c7fb::t_b4cd4994021503 814-816
+  h_bab89651263f0f 296-297,351,373
+  s_a5fd575282c7fb::t_f29e041fa4d396 349-350
+  s_a5fd575282c7fb::t_7cc15b3ca82384 656
+  s_a5fd575282c7fb::t_7381a521ef8440 394
+  s_a5fd575282c7fb::t_82818346cfc0b8 932-938
+  s_a5fd575282c7fb::t_28f232847e1832 445,449,472,485-487,496-497
+  s_a5fd575282c7fb::t_0b86673a8629d8 776-783
+ui/modules/AGENTS.md
+  s_a5fd575282c7fb::t_b65d4c78c6e31c 36
+  s_a5fd575282c7fb::t_ce461380c66494 38
+tests/test_serialcom_sidebar_follow.py
+  s_a5fd575282c7fb::t_11bb15ee13554b 1-55,60-211
+  s_a5fd575282c7fb::t_6cf1d3d9827065 56-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "3082a6fb6feb70d755166d519152c2b712cd68af",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_a5fd575282c7fb": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa38bf4526a29f7a17280d8",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "session_id": "6aa38bf4526a29f7a17280d8",
+        "source_scene": "agent",
+        "operation_id": "6aa3a0ca526a29f7a17282ce",
+        "client_type": "ide",
+        "display_model_name": "Kimi-K3",
+        "external_session_id": "6aa38bf4526a29f7a17280d8",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "bash",
+        "tool_use_id": "6aa3a0ca526a29f7a17282ce",
+        "tool_name": "RunCommand"
+      }
+    }
+  }
+}
