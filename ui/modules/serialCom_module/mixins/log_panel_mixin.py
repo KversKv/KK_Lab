@@ -292,6 +292,68 @@ class LogPanelMixin:
             force_primary=True,
         )
 
+    def _sc_restore_persisted_panels(self, data: dict):
+        """重开时恢复多串口布局：额外内嵌面板 + 独立浮窗（含各自几何与连接态）。"""
+        if not isinstance(data, dict) or not hasattr(self, "_sc_log_grid"):
+            return
+
+        restored_panels = 0
+        extra_cfgs = data.get("extra_panels")
+        if isinstance(extra_cfgs, list):
+            for raw_cfg in extra_cfgs[:3]:
+                if not isinstance(raw_cfg, dict):
+                    continue
+                cfg = dict(raw_cfg)
+                cfg["independent_window"] = False
+                cfg["auto_connect"] = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
+                panel = self._build_extra_log_panel(cfg)
+                self._sc_extra_log_panels.append(panel)
+                restored_panels += 1
+                if cfg.get("auto_connect"):
+                    self._sc_extra_panel_connect(panel)
+            if restored_panels:
+                self._sc_relayout_log_panels()
+                self._sc_remove_log_btn.setEnabled(True)
+
+        restored_windows = 0
+        win_cfgs = data.get("independent_windows")
+        if isinstance(win_cfgs, list):
+            for raw_cfg in win_cfgs:
+                if not isinstance(raw_cfg, dict):
+                    continue
+                cfg = dict(raw_cfg)
+                geo = cfg.pop("geometry", None)
+                cfg["independent_window"] = True
+                cfg["auto_connect"] = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
+                self._sc_open_independent_window(cfg)
+                win = self._sc_independent_windows[-1] if getattr(self, "_sc_independent_windows", None) else None
+                if win is not None:
+                    self._sc_apply_independent_window_geometry(win, geo)
+                restored_windows += 1
+
+        if restored_panels or restored_windows:
+            self._sc_append_system(
+                f"[INFO] Restored multi-serial layout: {restored_panels} panel(s), "
+                f"{restored_windows} independent window(s)",
+                force_primary=True,
+            )
+
+    def _sc_apply_independent_window_geometry(self, win, geo):
+        if not isinstance(geo, dict):
+            return
+        width = int(geo.get("width", 0) or 0)
+        height = int(geo.get("height", 0) or 0)
+        if width > 0 and height > 0:
+            saved = QRect(int(geo.get("x", 0)), int(geo.get("y", 0)), width, height)
+            available = self._sc_screen_available_geometry_for(saved.center())
+            width = min(width, available.width())
+            height = min(height, available.height())
+            x = min(max(saved.x(), available.x()), available.right() - width + 1)
+            y = min(max(saved.y(), available.y()), available.bottom() - height + 1)
+            win.setGeometry(x, y, width, height)
+        if geo.get("maximized"):
+            win.showMaximized()
+
     def _sc_on_remove_log_panel(self):
         if not self._sc_extra_log_panels:
             return

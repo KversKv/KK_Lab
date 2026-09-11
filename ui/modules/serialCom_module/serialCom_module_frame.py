@@ -329,6 +329,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_load_persisted_state()
         self._sc_start_temp_log()
         self._sc_start_port_hotplug()
+        self._sc_sync_top_control_state()
 
     # --- toolbar ---
 
@@ -693,6 +694,42 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             persisted["window"] = window_state
         elif isinstance(getattr(self, "_sc_window_geometry", None), dict):
             persisted["window"] = self._sc_window_geometry
+
+        extra_panels = []
+        for panel in getattr(self, "_sc_extra_log_panels", []) or []:
+            cfg = panel.get("config")
+            if not isinstance(cfg, dict):
+                continue
+            panel_cfg = dict(cfg)
+            panel_cfg.pop("connected", None)
+            panel_cfg["independent_window"] = False
+            panel_cfg["connected"] = bool(self._sc_extra_panel_is_connected(panel))
+            extra_panels.append(panel_cfg)
+        if extra_panels:
+            persisted["extra_panels"] = extra_panels
+
+        independent_windows = []
+        for win in list(getattr(self, "_sc_independent_windows", []) or []):
+            cfg = getattr(win, "_config", None)
+            if not isinstance(cfg, dict):
+                continue
+            win_cfg = dict(cfg)
+            win_cfg.pop("geometry", None)
+            win_cfg.pop("connected", None)
+            win_cfg["independent_window"] = True
+            win_cfg["connected"] = bool(win.is_connected())
+            geom = win.normalGeometry() if win.isMaximized() else win.geometry()
+            if geom.width() > 0 and geom.height() > 0:
+                win_cfg["geometry"] = {
+                    "x": int(geom.x()),
+                    "y": int(geom.y()),
+                    "width": int(geom.width()),
+                    "height": int(geom.height()),
+                    "maximized": bool(win.isMaximized()),
+                }
+            independent_windows.append(win_cfg)
+        if independent_windows:
+            persisted["independent_windows"] = independent_windows
         return persisted
 
     def _sc_apply_persisted_state(self, data: dict) -> None:
@@ -802,6 +839,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     self._sc_history_combo.addItems(self._sc_send_history)
                     self._sc_history_combo.setCurrentIndex(-1)
                     self._sc_history_combo.blockSignals(False)
+                self._sc_hist_nav_reset()
 
             qc = data.get("quick_commands")
             if isinstance(qc, dict):
@@ -826,6 +864,8 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     self._sc_chart_config = ChartConfig.from_dict(chart_cfg)
                 except Exception:
                     logger.error("恢复 chart 配置失败", exc_info=True)
+
+            self._sc_restore_persisted_panels(data)
         else:
             for key, attr in (
                 ("rx_display_hex", "_sc_rx_display_hex"),
@@ -849,6 +889,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     self._sc_history_combo.addItems(self._sc_send_history)
                     self._sc_history_combo.setCurrentIndex(-1)
                     self._sc_history_combo.blockSignals(False)
+                self._sc_hist_nav_reset()
 
         # 同步 RX/TX Format 滑动开关的视觉态，避免重启后 UI 显示与实际解析格式不一致
         if hasattr(self, "_sc_rx_toggle"):
@@ -991,6 +1032,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             self._sc_history_combo.clear()
             self._sc_history_combo.setCurrentIndex(-1)
             self._sc_history_combo.blockSignals(False)
+        self._sc_hist_nav_reset()
 
         self._sc_sidebar_visible = True
         if hasattr(self, "_sc_sidebar_widget"):
@@ -1518,6 +1560,11 @@ class _IndependentSerialWindow(QWidget):
             self._do_disconnect()
         else:
             self._do_connect()
+
+    def is_connected(self) -> bool:
+        if DEBUG_MOCK:
+            return self._connect_btn.text() == "Disconnect"
+        return self._conn is not None and self._conn.is_open
 
     def _do_connect(self):
         port = self._config.get("port", "")

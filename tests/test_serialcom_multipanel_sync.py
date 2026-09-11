@@ -124,6 +124,9 @@ def test_top_controls_follow_focus():
     w.show()
     app.processEvents()
 
+    # 未连接时 Pause/Stop 应禁用
+    assert not w._sc_pause_btn.isEnabled() and not w._sc_stop_btn.isEnabled(), "启动未连接时 Pause/Stop 未禁用"
+
     config = {
         "title": "P2", "port": "COM5", "baudrate": 115200,
         "databit": 8, "stopbit": "1", "parity": "None", "flow": "None",
@@ -136,11 +139,13 @@ def test_top_controls_follow_focus():
     w._sc_on_log_panel_clicked(panel, None)
     assert w._sc_active_extra_panel() is panel, "聚焦面板解析失败"
     assert w._sc_connect_btn.text() == "Connect", "聚焦未连接面板时按钮应为 Connect"
+    assert not w._sc_pause_btn.isEnabled() and not w._sc_stop_btn.isEnabled(), "聚焦未连接面板时 Pause/Stop 未禁用"
 
     # 顶部 Connect -> 连接聚焦面板（Mock）
     w._sc_on_connect_toggle()
     assert panel.get("session_id") is not None, "面板 Mock 连接未建立会话"
     assert w._sc_connect_btn.text() == "Disconnect", "面板连接后按钮未变 Disconnect"
+    assert w._sc_pause_btn.isEnabled() and w._sc_stop_btn.isEnabled(), "面板连接后 Pause/Stop 未启用"
 
     # Pause 分发到面板且不影响主串口；新语义：冻结显示但保留数据
     w._sc_on_pause(True)
@@ -183,10 +188,35 @@ def test_top_controls_follow_focus():
     w._sc_extra_panel_on_data(panel, b"resumed\n")
     assert panel["frame"].rx_bytes > rx_before, "Stop 恢复后应继续接收"
 
+    # Pause/Stop 互斥（后点生效）：Stop 中点 Pause -> Stop 释放、Pause 生效
+    w._sc_on_stop(True)
+    assert panel["stopped"] is True, "前置 Stop 未生效"
+    w._sc_on_pause(True)
+    assert panel["paused"] is True and panel["stopped"] is False, "Pause 未互斥释放 Stop"
+    assert w._sc_pause_btn.isChecked() and not w._sc_stop_btn.isChecked(), "互斥后按钮勾选状态错误"
+    # Pause 中点 Stop -> Pause 释放、Stop 生效
+    w._sc_on_stop(True)
+    assert panel["stopped"] is True and panel["paused"] is False, "Stop 未互斥释放 Pause"
+    assert w._sc_stop_btn.isChecked() and not w._sc_pause_btn.isChecked(), "互斥后按钮勾选状态错误"
+    w._sc_on_stop(False)
+
+    # 主面板互斥
+    w._sc_on_primary_panel_clicked()
+    w._sc_do_connect()
+    w._sc_on_stop(True)
+    w._sc_on_pause(True)
+    assert w._sc_paused is True and w._sc_stopped is False, "主面板 Pause 未互斥释放 Stop"
+    w._sc_on_stop(True)
+    assert w._sc_stopped is True and w._sc_paused is False, "主面板 Stop 未互斥释放 Pause"
+    w._sc_on_stop(False)
+    w._sc_do_disconnect()
+    w._sc_on_log_panel_clicked(panel, None)
+
     # Disconnect 断开聚焦面板
     w._sc_on_connect_toggle()
     assert w._sc_connect_btn.text() == "Connect", "Disconnect 后按钮未恢复 Connect"
     assert panel.get("session_id") is None, "Disconnect 后面板会话未移除"
+    assert not w._sc_pause_btn.isEnabled() and not w._sc_stop_btn.isEnabled(), "Disconnect 后 Pause/Stop 未禁用"
 
     # 面板 auto-scroll：贴底关闭后来数据不得复活且画面冻结
     w._sc_on_primary_panel_clicked()
@@ -215,11 +245,127 @@ def test_top_controls_follow_focus():
     app.processEvents()
 
 
+def test_multipanel_layout_persist_restore():
+    """多开串口的窗口记忆：额外面板 + 独立浮窗（几何/连接态）随配置保存并在重开时恢复。"""
+    import json
+
+    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.mixins.log_panel_mixin as lpm
+    import ui.modules.serialCom_module.mixins.connection_mixin as cm
+
+    frame.DEBUG_MOCK = True
+    lpm.DEBUG_MOCK = True
+    cm.DEBUG_MOCK = True
+
+    from ui.modules.serialCom_module.serialCom_module_frame import MODE_FULL, SerialComMixin
+
+    class _SmokeWidget(SerialComMixin, QWidget):
+        serial_connection_changed = Signal(bool)
+        serial_data_received = Signal(bytes)
+
+        def append_log(self, msg):
+            self._sc_append_system(msg, force_primary=True)
+
+    def _clear_multi(w):
+        for p in list(w._sc_extra_log_panels):
+            w._sc_remove_specific_panel(p)
+        for win in list(getattr(w, "_sc_independent_windows", []) or []):
+            win.close()
+        app.processEvents()
+
+    app = _ensure_app()
+
+    # --- w1：构造 1 额外面板（已连接）+ 1 独立浮窗（自定义几何、已连接） ---
+    w1 = _SmokeWidget()
+    w1.init_serial_connection(mode=MODE_FULL, prefix="Persist1")
+    root1 = QVBoxLayout(w1)
+    w1.complete_serialComWidget(root1)
+    w1.resize(900, 500)
+    w1.show()
+    app.processEvents()
+    _clear_multi(w1)
+
+    cfg_panel = {
+        "title": "P2", "port": "COM5", "baudrate": 115200,
+        "databit": 8, "stopbit": "1", "parity": "None", "flow": "None",
+        "auto_connect": False,
+    }
+    panel = w1._build_extra_log_panel(cfg_panel)
+    w1._sc_extra_log_panels.append(panel)
+    w1._sc_relayout_log_panels()
+    w1._sc_extra_panel_connect(panel)
+    assert w1._sc_extra_panel_is_connected(panel), "w1 面板 Mock 连接失败"
+
+    cfg_win = {
+        "title": "W1", "port": "COM7", "baudrate": 921600,
+        "databit": 8, "stopbit": "1", "parity": "None", "flow": "None",
+        "auto_connect": False, "independent_window": True,
+    }
+    w1._sc_open_independent_window(cfg_win)
+    win1 = w1._sc_independent_windows[-1]
+    avail = app.primaryScreen().availableGeometry()
+    gx, gy = avail.x() + 10, avail.y() + 10
+    gw, gh = min(640, avail.width() - 20), min(420, avail.height() - 20)
+    win1.setGeometry(gx, gy, gw, gh)
+    win1._do_connect()
+    app.processEvents()
+    assert win1.is_connected(), "w1 独立浮窗 Mock 连接失败"
+
+    state = w1._sc_collect_persisted_state()
+    json.dumps(state)  # 必须可 JSON 序列化
+    assert len(state.get("extra_panels", [])) == 1, "未采集到额外面板"
+    assert state["extra_panels"][0]["port"] == "COM5", "面板端口采集错误"
+    assert state["extra_panels"][0]["connected"] is True, "面板连接态采集错误"
+    assert len(state.get("independent_windows", [])) == 1, "未采集到独立浮窗"
+    geo = state["independent_windows"][0].get("geometry")
+    assert geo and (geo["x"], geo["y"], geo["width"], geo["height"]) == (gx, gy, gw, gh), "浮窗几何采集错误"
+    assert state["independent_windows"][0]["connected"] is True, "浮窗连接态采集错误"
+
+    w1.close_serial()
+    for win in list(w1._sc_independent_windows):
+        win.close()
+    w1.deleteLater()
+    app.processEvents()
+
+    # --- w2：模拟重开，应用持久化状态 -> 面板/浮窗/几何/连接态恢复 ---
+    w2 = _SmokeWidget()
+    w2.init_serial_connection(mode=MODE_FULL, prefix="Persist2")
+    root2 = QVBoxLayout(w2)
+    w2.complete_serialComWidget(root2)
+    w2.resize(900, 500)
+    w2.show()
+    app.processEvents()
+    _clear_multi(w2)
+
+    w2._sc_apply_persisted_state(state)
+    app.processEvents()
+
+    assert len(w2._sc_extra_log_panels) == 1, "额外面板未恢复"
+    rp = w2._sc_extra_log_panels[0]
+    assert rp["config"].get("port") == "COM5", "恢复面板端口错误"
+    assert w2._sc_extra_panel_is_connected(rp), "恢复面板未按连接态重连"
+
+    assert len(getattr(w2, "_sc_independent_windows", [])) == 1, "独立浮窗未恢复"
+    rw = w2._sc_independent_windows[0]
+    rgeo = rw.geometry()
+    assert (rgeo.x(), rgeo.y(), rgeo.width(), rgeo.height()) == (gx, gy, gw, gh), (
+        f"浮窗几何恢复错误: {(rgeo.x(), rgeo.y(), rgeo.width(), rgeo.height())} != {(gx, gy, gw, gh)}"
+    )
+    assert rw._config.get("auto_connect") is True, "浮窗连接态未映射为 auto_connect"
+
+    for win in list(w2._sc_independent_windows):
+        win.close()
+    w2.close_serial()
+    w2.deleteLater()
+    app.processEvents()
+
+
 def _run_standalone():
     failed = False
     for name, fn in [
         ("test_independent_window_buttons_and_autoscroll", test_independent_window_buttons_and_autoscroll),
         ("test_top_controls_follow_focus", test_top_controls_follow_focus),
+        ("test_multipanel_layout_persist_restore", test_multipanel_layout_persist_restore),
     ]:
         try:
             fn()

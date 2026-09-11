@@ -266,6 +266,7 @@ SerialSession (QObject)
 
 - 用户配置目录：`_sc_user_config_dir()`，主路径 `_sc_persisted_path()`，回退 `_sc_fallback_path()`。
 - 落盘内容：快捷指令、脚本、窗口几何、分割器尺寸、RX/TX/Log/Display/Auto-Detect 设置。
+- 多开串口记忆：`extra_panels`（内嵌面板 config + `connected`）与 `independent_windows`（浮窗 config + `connected` + `geometry`）随主配置落盘；重开时 `_sc_restore_persisted_panels()` 恢复面板/浮窗/几何，`connected` 映射为 `auto_connect`（关闭时连着 → 重开自动重连）。
 - `_sc_migrate_legacy_config()` 处理旧版本配置迁移。
 - 关闭时 `closeEvent` → `_sc_save_persisted_state()` + `close_serial()` + 关闭独立窗口。
 
