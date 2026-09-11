@@ -1,0 +1,41 @@
+ui/modules/serialCom_module/mixins/toolbar_mixin.py
+  s_984b4c357c256a::t_cfee64e91fde24 224-225
+  s_984b4c357c256a::t_44a6805f38ef40 240-241
+ui/modules/serialCom_module/mixins/connection_mixin.py
+  s_984b4c357c256a::t_ecbf20efd6be77 725
+  s_984b4c357c256a::t_7853374f99ca99 745,752
+  s_984b4c357c256a::t_74c861d5fdb7ad 904-906,910-911,920-923,926-928
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "32960a9aeba1acf8e49310da47da809b97bc0c87",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_984b4c357c256a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa2b56e526a29f7a1727ee4",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6aa2b56e526a29f7a1727ee4",
+        "session_id": "6aa2b56e526a29f7a1727ee4",
+        "display_model_name": "Kimi-K3",
+        "operation_id": "6aa3637c526a29f7a1727fda",
+        "edit_kind": "file_edit",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_use_id": "6aa3637c526a29f7a1727fda",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "tool_name": "Edit"
+      }
+    }
+  }
+}
