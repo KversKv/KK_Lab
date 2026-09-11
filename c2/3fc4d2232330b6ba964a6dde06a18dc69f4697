@@ -1,0 +1,78 @@
+user_data/SerialCom/KK_SerialConsole.json
+  s_984b4c357c256a::t_bd4b38013e6fb2 225-229,231-234,236,238-239
+  s_47d1bc6613754c::t_99fc03919a46ce 4,39,42-43,220-223
+  s_04b7b48198c5e2::t_7919d0226535a6 5,49,230,235,237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "c23fc4d2232330b6ba964a6dde06a18dc69f4697",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_04b7b48198c5e2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa36457526a29f7a1727fde",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "bash",
+        "external_session_id": "6aa36457526a29f7a1727fde",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "Kimi-K3",
+        "tool_use_id": "6aa3899b526a29f7a17280a4",
+        "tool_name": "RunCommand",
+        "client_type": "ide",
+        "session_id": "6aa36457526a29f7a1727fde",
+        "operation_id": "6aa3899b526a29f7a17280a4"
+      }
+    },
+    "s_47d1bc6613754c": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa389ee526a29f7a17280a8",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "display_model_name": "Kimi-K3",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "session_id": "6aa389ee526a29f7a17280a8",
+        "tool_name": "RunCommand",
+        "tool_use_id": "6aa38a01526a29f7a17280b3",
+        "external_session_id": "6aa389ee526a29f7a17280a8",
+        "operation_id": "6aa38a01526a29f7a17280b3",
+        "edit_kind": "bash"
+      }
+    },
+    "s_984b4c357c256a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa2b56e526a29f7a1727ee4",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "session_id": "6aa2b56e526a29f7a1727ee4",
+        "external_session_id": "6aa2b56e526a29f7a1727ee4",
+        "tool_name": "Edit",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "operation_id": "6aa3637c526a29f7a1727fda",
+        "display_model_name": "Kimi-K3",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "tool_use_id": "6aa3637c526a29f7a1727fda"
+      }
+    }
+  }
+}
