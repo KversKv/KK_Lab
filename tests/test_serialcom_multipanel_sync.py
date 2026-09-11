@@ -343,7 +343,9 @@ def test_multipanel_layout_persist_restore():
     assert len(w2._sc_extra_log_panels) == 1, "额外面板未恢复"
     rp = w2._sc_extra_log_panels[0]
     assert rp["config"].get("port") == "COM5", "恢复面板端口错误"
-    assert w2._sc_extra_panel_is_connected(rp), "恢复面板未按连接态重连"
+    # 新语义：恢复后不立即硬连，登记待连清单，首次枚举后单次尝试
+    assert not w2._sc_extra_panel_is_connected(rp), "恢复面板不应在恢复时同步硬连"
+    assert rp in getattr(w2, "_sc_pending_autoconnect_panels", []), "恢复面板未登记待回连清单"
 
     assert len(getattr(w2, "_sc_independent_windows", [])) == 1, "独立浮窗未恢复"
     rw = w2._sc_independent_windows[0]
@@ -351,7 +353,24 @@ def test_multipanel_layout_persist_restore():
     assert (rgeo.x(), rgeo.y(), rgeo.width(), rgeo.height()) == (gx, gy, gw, gh), (
         f"浮窗几何恢复错误: {(rgeo.x(), rgeo.y(), rgeo.width(), rgeo.height())} != {(gx, gy, gw, gh)}"
     )
-    assert rw._config.get("auto_connect") is True, "浮窗连接态未映射为 auto_connect"
+    assert rw._config.get("auto_connect") is False, "浮窗不应在构造时自行连接"
+    assert rw in getattr(w2, "_sc_pending_autoconnect_windows", []), "恢复浮窗未登记待回连清单"
+
+    # 模拟首次枚举完成：触发单次回连尝试 -> 面板/浮窗均按连接态重连，清单清空
+    w2._sc_try_pending_autoconnect()
+    app.processEvents()
+    assert w2._sc_extra_panel_is_connected(rp), "恢复面板未按连接态重连"
+    assert rw.is_connected(), "恢复浮窗未按连接态重连"
+    assert not w2._sc_pending_autoconnect_panels and not w2._sc_pending_autoconnect_windows, "待回连清单未清空"
+
+    # 再次触发（模拟运行期热插拔广播）：已断开的也不再自动重连
+    w2._sc_extra_panel_do_disconnect(rp)
+    rw._do_disconnect()
+    app.processEvents()
+    w2._sc_try_pending_autoconnect()
+    app.processEvents()
+    assert not w2._sc_extra_panel_is_connected(rp), "热插拔场景禁止自动重连面板"
+    assert not rw.is_connected(), "热插拔场景禁止自动重连浮窗"
 
     for win in list(w2._sc_independent_windows):
         win.close()

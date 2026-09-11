@@ -491,27 +491,41 @@ class SendMixin:
         if not text:
             return
 
-        if self._sc_line_by_line:
+        # TX 设置跟随聚焦面板：额外面板读 panel config，主面板读 Mixin 属性
+        focused_panel = self._sc_active_extra_panel()
+        if focused_panel is not None:
+            fcfg = focused_panel["config"]
+            tx_hex = bool(fcfg.get("tx_hex", False))
+            line_ending = fcfg.get("line_ending", "\r\n")
+            line_by_line = bool(fcfg.get("line_by_line", False))
+            show_send = bool(fcfg.get("show_send", True))
+        else:
+            tx_hex = bool(getattr(self, "_sc_tx_display_hex", False))
+            line_ending = getattr(self, "_sc_line_ending", "\r\n")
+            line_by_line = bool(getattr(self, "_sc_line_by_line", False))
+            show_send = bool(getattr(self, "_sc_show_send", True))
+
+        if line_by_line:
             lines = text.split("\\n")
         else:
             lines = [text]
 
         for line in lines:
-            if self._sc_tx_display_hex:
+            if tx_hex:
                 try:
                     data = bytes.fromhex(line.replace(" ", ""))
                 except ValueError:
                     self._sc_append_system(f"[ERROR] Invalid HEX: {line}")
                     return
             else:
-                data = (line + self._sc_line_ending).encode("utf-8")
+                data = (line + line_ending).encode("utf-8")
 
-            ok = self._sc_send_to_focused_panel(data)
+            ok = self._sc_send_to_focused_panel(data, show_send=show_send, tx_hex=tx_hex)
             if ok:
                 if self._sc_active_log_panel_index == 0:
                     self._sc_log_panel.add_tx_bytes(len(data))
-                    if self._sc_show_send:
-                        display = line if not self._sc_tx_display_hex else data.hex(' ')
+                    if show_send:
+                        display = line if not tx_hex else data.hex(' ')
                         self._sc_append_log(f"[TX] {display}", _CLR_TX)
             else:
                 self._sc_append_system("[ERROR] Send failed, serial not connected")
@@ -529,7 +543,7 @@ class SendMixin:
         self._sc_hist_nav_reset()
         self._sc_send_input.clear()
 
-    def _sc_send_to_focused_panel(self, data) -> bool:
+    def _sc_send_to_focused_panel(self, data, show_send=True, tx_hex=False) -> bool:
         if self._sc_active_log_panel_index == 0:
             return self.serial_send(data)
 
@@ -540,11 +554,15 @@ class SendMixin:
         panel = self._sc_extra_log_panels[panel_idx]
         conn = panel.get("conn")
 
+        def _echo_tx():
+            if not show_send:
+                return
+            display = data.hex(' ') if tx_hex else data.decode("utf-8", errors="replace")
+            self._sc_extra_panel_append_log(panel, f"[TX] {display}", _CLR_TX)
+
         if DEBUG_MOCK:
             panel["frame"].add_tx_bytes(len(data))
-            self._sc_extra_panel_append_log(
-                panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
-            )
+            _echo_tx()
             return True
 
         if conn is None or not conn.is_open:
@@ -552,9 +570,7 @@ class SendMixin:
         try:
             conn.write(data)
             panel["frame"].add_tx_bytes(len(data))
-            self._sc_extra_panel_append_log(
-                panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
-            )
+            _echo_tx()
             return True
         except Exception as e:
             self._sc_extra_panel_append_log(panel, f"[ERROR] Send failed: {e}", extra_log_error_color())

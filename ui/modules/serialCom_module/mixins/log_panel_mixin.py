@@ -293,11 +293,17 @@ class LogPanelMixin:
         )
 
     def _sc_restore_persisted_panels(self, data: dict):
-        """重开时恢复多串口布局：额外内嵌面板 + 独立浮窗（含各自几何与连接态）。"""
+        """重开时恢复多串口布局：额外内嵌面板 + 独立浮窗（含各自几何）。
+
+        连接态恢复为非阻塞单次尝试：此处只重建面板并登记待连清单，
+        待首次端口枚举完成（热插拔基线广播）后由 _sc_try_pending_autoconnect
+        统一试连一次，失败仅打日志不重试；运行期热插拔不触发回连。
+        """
         if not isinstance(data, dict) or not hasattr(self, "_sc_log_grid"):
             return
 
         restored_panels = 0
+        pending_panels = []
         extra_cfgs = data.get("extra_panels")
         if isinstance(extra_cfgs, list):
             for raw_cfg in extra_cfgs[:3]:
@@ -310,12 +316,13 @@ class LogPanelMixin:
                 self._sc_extra_log_panels.append(panel)
                 restored_panels += 1
                 if cfg.get("auto_connect"):
-                    self._sc_extra_panel_connect(panel)
+                    pending_panels.append(panel)
             if restored_panels:
                 self._sc_relayout_log_panels()
                 self._sc_remove_log_btn.setEnabled(True)
 
         restored_windows = 0
+        pending_windows = []
         win_cfgs = data.get("independent_windows")
         if isinstance(win_cfgs, list):
             for raw_cfg in win_cfgs:
@@ -324,12 +331,23 @@ class LogPanelMixin:
                 cfg = dict(raw_cfg)
                 geo = cfg.pop("geometry", None)
                 cfg["independent_window"] = True
-                cfg["auto_connect"] = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
+                want_autoconnect = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
+                # 禁止浮窗在构造时自行 singleShot 连接，统一由宿主在首次枚举后尝试
+                cfg["auto_connect"] = False
                 self._sc_open_independent_window(cfg)
                 win = self._sc_independent_windows[-1] if getattr(self, "_sc_independent_windows", None) else None
                 if win is not None:
                     self._sc_apply_independent_window_geometry(win, geo)
+                    if want_autoconnect:
+                        pending_windows.append(win)
                 restored_windows += 1
+
+        self._sc_pending_autoconnect_panels = pending_panels
+        self._sc_pending_autoconnect_windows = pending_windows
+        if pending_panels or pending_windows:
+            # 兜底：热插拔监控不可用（非 Windows / DEBUG_MOCK）时延迟尝试一次
+            # receiver 传 self：窗口已销毁时不再触发，避免泄漏连接
+            QTimer.singleShot(800, self, self._sc_try_pending_autoconnect)
 
         if restored_panels or restored_windows:
             self._sc_append_system(
@@ -337,6 +355,21 @@ class LogPanelMixin:
                 f"{restored_windows} independent window(s)",
                 force_primary=True,
             )
+
+    def _sc_try_pending_autoconnect(self):
+        """重开窗口后的单次自动回连尝试：首次端口枚举完成后执行，失败仅打日志不重试。"""
+        panels = getattr(self, "_sc_pending_autoconnect_panels", None) or []
+        windows = getattr(self, "_sc_pending_autoconnect_windows", None) or []
+        if not panels and not windows:
+            return
+        self._sc_pending_autoconnect_panels = []
+        self._sc_pending_autoconnect_windows = []
+        for panel in panels:
+            if panel in self._sc_extra_log_panels and not self._sc_extra_panel_is_connected(panel):
+                self._sc_extra_panel_connect(panel)
+        for win in windows:
+            if win in (getattr(self, "_sc_independent_windows", []) or []) and not win.is_connected():
+                win._do_connect()
 
     def _sc_apply_independent_window_geometry(self, win, geo):
         if not isinstance(geo, dict):
@@ -358,6 +391,7 @@ class LogPanelMixin:
         if not self._sc_extra_log_panels:
             return
         panel = self._sc_extra_log_panels.pop()
+        self._sc_extra_panel_stop_save(panel)
         self._sc_extra_panel_disconnect(panel)
         panel["frame"].setParent(None)
         panel["frame"].deleteLater()
@@ -408,10 +442,11 @@ class LogPanelMixin:
             p["frame"].show()
 
     def _build_extra_log_panel(self, config):
-        """额外内嵌日志面板：SerialLogPanel(full 过滤 + basic 状态栏) + dict facade。"""
+        """额外内嵌日志面板：SerialLogPanel(full 过滤 + Save + basic 状态栏) + dict facade。"""
         comp = SerialLogPanel(
             title=config.get("title", "Serial Log"),
             filter_mode="full",
+            show_save_button=True,
             status_bar="basic",
             compact_toolbar=True,
             with_border=True,
@@ -420,6 +455,7 @@ class LogPanelMixin:
             port_text=f"Port: {config.get('port', 'Unconnected')}",
             baud_text=f"Baud rate: {config.get('baudrate', '-')}",
         )
+        comp.show_timestamp = bool(config.get("show_timestamp", True))
         comp.setContextMenuPolicy(Qt.CustomContextMenu)
 
         panel = {
@@ -433,6 +469,7 @@ class LogPanelMixin:
             "filter_match_label": comp.filter_match_label,
             "copy_btn": comp.copy_btn,
             "export_btn": comp.export_btn,
+            "save_btn": comp.save_btn,
             "port_label": comp.status_port_label,
             "baud_label": comp.status_baud_label,
             "rx_label": comp.status_rx_label,
@@ -445,6 +482,9 @@ class LogPanelMixin:
             "paused": False,
             "stopped": False,
             "session_id": None,
+            "save_handle": None,
+            "save_path": None,
+            "save_keep_timestamp": True,
         }
 
         # 面板管理项注入组件内置右键菜单（Highlight 项由组件统一提供）
@@ -453,6 +493,8 @@ class LogPanelMixin:
             lambda pos, p=panel: self._sc_extra_panel_context_menu(p, comp.mapToGlobal(pos))
         )
         comp.clicked.connect(lambda p=panel: self._sc_on_log_panel_clicked(p, None))
+        comp.save_toggled.connect(lambda checked, p=panel: self._sc_extra_panel_on_save_toggle(p, checked))
+        comp.raw_appended.connect(lambda raw, p=panel: self._sc_extra_panel_write_save(p, raw))
 
         return panel
 
@@ -611,6 +653,7 @@ class LogPanelMixin:
             return
         idx = self._sc_extra_log_panels.index(panel)
         self._sc_extra_log_panels.remove(panel)
+        self._sc_extra_panel_stop_save(panel)
         self._sc_extra_panel_disconnect(panel)
         panel["frame"].setParent(None)
         panel["frame"].deleteLater()
@@ -730,7 +773,14 @@ class LogPanelMixin:
         # Stop 语义：保持连接但丢弃 RX 数据；Pause 由组件 display_paused 处理（数据保留）
         if panel.get("stopped"):
             return
-        panel["frame"].append_rx_data(data)
+        if panel["config"].get("rx_hex", False):
+            panel["frame"].add_rx_bytes(len(data))
+            display = data.hex(' ')
+            for line in display.splitlines():
+                if line.strip():
+                    self._sc_extra_panel_append_log(panel, f"[RX] {line}", _CLR_RX)
+        else:
+            panel["frame"].append_rx_data(data)
 
     def _sc_extra_panel_append_log(self, panel, message, color=_CLR_TEXT_BODY):
         panel["frame"].append_log(message, color)
@@ -761,6 +811,9 @@ class LogPanelMixin:
 
     def _sc_open_settings_dialog(self):
         from ui.modules.serialCom_module.serialCom_module_frame import _SerialSettingsDialog
+        # 设置对话框是主面板/全局语义：先把侧栏切回主面板视图，关闭后恢复聚焦视图
+        if getattr(self, "_sc_sidebar_bound_index", None) is not None:
+            self._sc_sidebar_load_focus(force_primary=True)
         dlg = _SerialSettingsDialog(self)
 
         dlg.port_combo.clear()
@@ -875,6 +928,13 @@ class LogPanelMixin:
                 self._sc_rebuild_log_view()
 
             self._sc_apply_auto_detect_settings(dlg)
+
+            # 控件当前为主面板视图：Serial 值写回主面板真值
+            self._sc_sidebar_store_serial()
+
+        # 恢复聚焦面板侧栏视图（焦点在主面板时 no-op）
+        if getattr(self, "_sc_sidebar_bound_index", None) is not None:
+            self._sc_sync_sidebar_to_focus()
 
     def _sc_apply_max_log_lines(self, value):
         value = max(500, min(int(value), self._SC_MAX_LOG_LINES_LIMIT))

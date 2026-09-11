@@ -479,7 +479,7 @@ class ToolbarMixin:
         row1.addWidget(self._make_sc_label("Format"))
         row1.addStretch()
         self._sc_rx_toggle = _MiniSlideToggle("ASCII", "HEX")
-        self._sc_rx_toggle.toggled.connect(lambda v: setattr(self, '_sc_rx_display_hex', v == "HEX"))
+        self._sc_rx_toggle.toggled.connect(self._sc_on_rx_format_toggled)
         row1.addWidget(self._sc_rx_toggle)
         layout.addLayout(row1)
 
@@ -506,7 +506,7 @@ class ToolbarMixin:
         self._sc_rx_show_time_cb = QCheckBox("Show Time (ms)")
         self._sc_rx_show_time_cb.setChecked(True)
         self._sc_rx_show_time_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_rx_show_time_cb.toggled.connect(lambda v: setattr(self, '_sc_show_timestamp', v))
+        self._sc_rx_show_time_cb.toggled.connect(self._sc_on_show_time_toggled)
         layout.addWidget(self._sc_rx_show_time_cb)
 
         self._sc_show_system_cb = QCheckBox("Show System Log")
@@ -530,7 +530,7 @@ class ToolbarMixin:
         row1.addWidget(self._make_sc_label("Format"))
         row1.addStretch()
         self._sc_tx_toggle = _MiniSlideToggle("ASCII", "HEX")
-        self._sc_tx_toggle.toggled.connect(lambda v: setattr(self, '_sc_tx_display_hex', v == "HEX"))
+        self._sc_tx_toggle.toggled.connect(self._sc_on_tx_format_toggled)
         row1.addWidget(self._sc_tx_toggle)
         layout.addLayout(row1)
 
@@ -547,21 +547,19 @@ class ToolbarMixin:
         f = self._sc_ending_combo.font()
         f.setPixelSize(12)
         self._sc_ending_combo.setFont(f)
-        self._sc_ending_combo.currentIndexChanged.connect(
-            lambda i: setattr(self, '_sc_line_ending', self._sc_ending_combo.itemData(i) or "")
-        )
+        self._sc_ending_combo.currentIndexChanged.connect(self._sc_on_line_ending_changed)
         row_ending.addWidget(self._sc_ending_combo)
         layout.addLayout(row_ending)
 
         self._sc_show_send_cb = QCheckBox("Show Sent Data")
         self._sc_show_send_cb.setChecked(True)
         self._sc_show_send_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_show_send_cb.toggled.connect(lambda v: setattr(self, '_sc_show_send', v))
+        self._sc_show_send_cb.toggled.connect(self._sc_on_show_send_toggled)
         layout.addWidget(self._sc_show_send_cb)
 
         self._sc_line_by_line_cb = QCheckBox("Line by Line")
         self._sc_line_by_line_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_line_by_line_cb.toggled.connect(lambda v: setattr(self, '_sc_line_by_line', v))
+        self._sc_line_by_line_cb.toggled.connect(self._sc_on_line_by_line_toggled)
         layout.addWidget(self._sc_line_by_line_cb)
 
         return grp
@@ -606,6 +604,13 @@ class ToolbarMixin:
         if _baud_line_edit is not None:
             _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
 
+        # Serial Config 控件变更即时写回当前聚焦目标（侧栏跟随聚焦面板）
+        for _c in (
+            self._sc_port_combo, self._sc_databit_combo, self._sc_flow_combo,
+            self._sc_stopbit_combo, self._sc_parity_combo,
+        ):
+            _c.activated.connect(lambda _idx: self._sc_sidebar_store_serial())
+
         self.serial_data_received.connect(self._sc_on_data_received)
 
         self._sc_auto_detect_cb.toggled.connect(self._sc_on_auto_detect_toggled)
@@ -615,6 +620,181 @@ class ToolbarMixin:
         self._sc_rx_flush_timer.timeout.connect(self._sc_flush_rx_line_buf)
 
         self._sc_install_filter_shortcut()
+
+    # --- 侧栏跟随聚焦面板：Serial / RX / TX Config ---
+    # 真值：主面板 Serial = self._sc_primary_serial_cfg（控件仅视图）；
+    #       额外面板 = panel["config"]；RX/TX 主面板 = Mixin 属性，额外 = config 键。
+    # 控件变更即时写目标；焦点切换时 _sc_sync_top_control_state 尾部调 _sc_sync_sidebar_to_focus 载入。
+
+    def _sc_sidebar_bound_panel(self):
+        """侧栏当前绑定的额外面板（按 bound_index）；绑定主面板时返回 None。"""
+        idx = getattr(self, "_sc_sidebar_bound_index", 0) or 0
+        if idx <= 0:
+            return None
+        panels = getattr(self, "_sc_extra_log_panels", []) or []
+        pi = idx - 1
+        return panels[pi] if 0 <= pi < len(panels) else None
+
+    def _sc_sidebar_serial_cfg_from_controls(self) -> dict:
+        baud_text = self._sc_baud_combo.currentText().strip()
+        try:
+            baud = int(baud_text)
+        except ValueError:
+            baud = baud_text
+        return {
+            "port": self._sc_port_combo.currentText().strip(),
+            "baudrate": baud,
+            "auto_detect": self._sc_auto_detect_cb.isChecked(),
+            "databit": self._sc_databit_combo.currentText(),
+            "flow": self._sc_flow_combo.currentText(),
+            "stopbit": self._sc_stopbit_combo.currentText(),
+            "parity": self._sc_parity_combo.currentText(),
+        }
+
+    def _sc_sidebar_store_serial(self):
+        """侧栏 Serial 控件值即时写回绑定目标。"""
+        if getattr(self, "_sc_sidebar_bound_index", None) is None:
+            return  # 初始化（persisted 回放）完成前不写，避免污染真值
+        cfg = self._sc_sidebar_serial_cfg_from_controls()
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_primary_serial_cfg = cfg
+        else:
+            panel["config"].update(cfg)
+
+    def _sc_sidebar_load_focus(self, force_primary=False):
+        """从绑定目标读配置 → 侧栏控件（blockSignals，不触发写回）。"""
+        panel = None if force_primary else self._sc_active_extra_panel()
+        widgets = [
+            self._sc_port_combo, self._sc_baud_combo, self._sc_auto_detect_cb,
+            self._sc_databit_combo, self._sc_flow_combo, self._sc_stopbit_combo,
+            self._sc_parity_combo, self._sc_rx_show_time_cb, self._sc_show_system_cb,
+            self._sc_ending_combo, self._sc_show_send_cb, self._sc_line_by_line_cb,
+            self._sc_rx_auto_flush_cb, self._sc_rx_auto_flush_spin,
+        ]
+        for w in widgets:
+            w.blockSignals(True)
+        try:
+            if panel is None:
+                cfg = getattr(self, "_sc_primary_serial_cfg", None) or self._sc_sidebar_serial_cfg_from_controls()
+                rx_hex = bool(getattr(self, "_sc_rx_display_hex", False))
+                show_time = bool(getattr(self, "_sc_show_timestamp", True))
+                tx_hex = bool(getattr(self, "_sc_tx_display_hex", False))
+                line_ending = getattr(self, "_sc_line_ending", "\r\n")
+                show_send = bool(getattr(self, "_sc_show_send", True))
+                line_by_line = bool(getattr(self, "_sc_line_by_line", False))
+                connected = bool(getattr(self, "_serial_connected", False))
+                auto_detect = bool(cfg.get("auto_detect", True))
+                self._sc_auto_detect_cb.setEnabled(True)
+                self._sc_rx_auto_flush_cb.setEnabled(True)
+                self._sc_rx_auto_flush_spin.setEnabled(True)
+                self._sc_show_system_cb.setEnabled(True)
+                self._sc_show_system_cb.setChecked(bool(getattr(self, "_sc_show_system_log", False)))
+            else:
+                cfg = panel["config"]
+                rx_hex = bool(cfg.get("rx_hex", False))
+                show_time = bool(cfg.get("show_timestamp", True))
+                tx_hex = bool(cfg.get("tx_hex", False))
+                line_ending = cfg.get("line_ending", "\r\n")
+                show_send = bool(cfg.get("show_send", True))
+                line_by_line = bool(cfg.get("line_by_line", False))
+                connected = self._sc_extra_panel_is_connected(panel)
+                auto_detect = False
+                # Auto-Detect / Auto Flush / System Log 为主面板专属功能
+                self._sc_auto_detect_cb.setChecked(False)
+                self._sc_auto_detect_cb.setEnabled(False)
+                self._sc_rx_auto_flush_cb.setEnabled(False)
+                self._sc_rx_auto_flush_spin.setEnabled(False)
+                self._sc_show_system_cb.setEnabled(False)
+
+            port_text = str(cfg.get("port", "") or "")
+            if port_text and self._sc_port_combo.findText(port_text) < 0:
+                self._sc_port_combo.addItem(port_text)
+            if port_text:
+                self._sc_port_combo.setCurrentText(port_text)
+            else:
+                self._sc_port_combo.setCurrentIndex(-1)
+            baud_text = str(cfg.get("baudrate", "115200"))
+            if self._sc_baud_combo.findText(baud_text) < 0:
+                self._sc_baud_combo.addItem(baud_text)
+            self._sc_baud_combo.setCurrentText(baud_text)
+            self._sc_databit_combo.setCurrentText(str(cfg.get("databit", "8")))
+            self._sc_flow_combo.setCurrentText(str(cfg.get("flow", "None")))
+            self._sc_stopbit_combo.setCurrentText(str(cfg.get("stopbit", "1")))
+            self._sc_parity_combo.setCurrentText(str(cfg.get("parity", "None")))
+
+            self._sc_port_combo.setEnabled(not connected)
+            self._sc_baud_combo.setEditable(not auto_detect)
+            self._sc_baud_combo.setEnabled(not auto_detect)
+
+            self._sc_rx_toggle.set_value("HEX" if rx_hex else "ASCII")
+            self._sc_rx_show_time_cb.setChecked(show_time)
+            self._sc_tx_toggle.set_value("HEX" if tx_hex else "ASCII")
+            for i in range(self._sc_ending_combo.count()):
+                if (self._sc_ending_combo.itemData(i) or "") == line_ending:
+                    self._sc_ending_combo.setCurrentIndex(i)
+                    break
+            self._sc_show_send_cb.setChecked(show_send)
+            self._sc_line_by_line_cb.setChecked(line_by_line)
+        finally:
+            for w in widgets:
+                w.blockSignals(False)
+        self._sc_sidebar_bound_index = 0 if force_primary else self._sc_active_log_panel_index
+
+    def _sc_sync_sidebar_to_focus(self):
+        """焦点切换时重载侧栏（由 _sc_sync_top_control_state 尾部调用）。"""
+        bound = getattr(self, "_sc_sidebar_bound_index", None)
+        if bound is None or not hasattr(self, "_sc_port_combo"):
+            return
+        if bound == self._sc_active_log_panel_index:
+            return
+        self._sc_sidebar_load_focus()
+
+    # --- RX/TX 分流 handler：绑定主面板写 Mixin 属性；额外面板写 panel config ---
+
+    def _sc_on_rx_format_toggled(self, v):
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_rx_display_hex = (v == "HEX")
+        else:
+            panel["config"]["rx_hex"] = (v == "HEX")
+
+    def _sc_on_show_time_toggled(self, checked):
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_show_timestamp = checked
+        else:
+            panel["config"]["show_timestamp"] = checked
+            panel["frame"].show_timestamp = checked
+
+    def _sc_on_tx_format_toggled(self, v):
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_tx_display_hex = (v == "HEX")
+        else:
+            panel["config"]["tx_hex"] = (v == "HEX")
+
+    def _sc_on_line_ending_changed(self, index):
+        val = self._sc_ending_combo.itemData(index) or ""
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_line_ending = val
+        else:
+            panel["config"]["line_ending"] = val
+
+    def _sc_on_show_send_toggled(self, checked):
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_show_send = checked
+        else:
+            panel["config"]["show_send"] = checked
+
+    def _sc_on_line_by_line_toggled(self, checked):
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            self._sc_line_by_line = checked
+        else:
+            panel["config"]["line_by_line"] = checked
 
 
     @staticmethod

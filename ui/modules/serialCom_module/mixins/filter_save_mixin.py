@@ -375,4 +375,119 @@ class FilterSaveMixin:
     def _sc_scroll_to_bottom(self):
         self._sc_log_panel.scroll_to_bottom()
 
+    # --- 额外内嵌面板保存（每面板独立 handle/path，与主面板单份状态互不影响） ---
+
+    def _sc_extra_panel_on_save_toggle(self, panel, checked: bool):
+        if checked:
+            if not self._sc_extra_panel_start_save(panel):
+                btn = panel.get("save_btn")
+                if btn is not None:
+                    btn.setChecked(False)
+        else:
+            self._sc_extra_panel_stop_save(panel)
+
+    def _sc_extra_panel_start_save(self, panel) -> bool:
+        from ui.modules.serialCom_module.serialCom_module_frame import _SerialSaveDialog
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        title = panel["config"].get("title", "") or panel["config"].get("port", "") or "extra"
+        title_safe = re.sub(r'[^\w\-.]', '_', str(title))
+        default_name = f"serial_log_{title_safe}_{ts}.txt"
+        dlg = _SerialSaveDialog(
+            self,
+            default_dir=default_dir,
+            default_name=default_name,
+            keep_timestamp=panel.get("save_keep_timestamp", True),
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return False
+        cfg = dlg.get_config()
+        save_dir = cfg["directory"]
+        name = cfg["name"]
+        keep_ts = cfg["keep_timestamp"]
+        if not name:
+            name = default_name
+        if not name.lower().endswith(".txt"):
+            name += ".txt"
+        if not save_dir:
+            save_dir = self._sc_fallback_dir()
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except OSError as exc:
+            logger.error("Save: cannot create directory %s", save_dir, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot create directory:\n{exc}")
+            return False
+        file_path = os.path.join(save_dir, name)
+        if os.path.exists(file_path):
+            reply = QMessageBox.question(
+                self, "Save",
+                f"File already exists:\n{file_path}\n\nOverwrite it?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return False
+        try:
+            handle = open(file_path, "w", encoding="utf-8")
+        except OSError as exc:
+            logger.error("Save: cannot open file %s", file_path, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot open file:\n{exc}")
+            return False
+
+        panel["save_keep_timestamp"] = keep_ts
+        try:
+            for raw, _html, _no in panel["frame"].all_logs:
+                out = raw if keep_ts else self._sc_strip_timestamp(raw)
+                handle.write(out + "\n")
+            handle.flush()
+        except OSError:
+            logger.error("Save: failed writing buffer to %s", file_path, exc_info=True)
+            try:
+                handle.close()
+            except OSError:
+                pass
+            QMessageBox.warning(self, "Save", "Failed to write existing buffer.")
+            return False
+
+        panel["save_handle"] = handle
+        panel["save_path"] = file_path
+        self._sc_extra_panel_append_log(panel, f"[INFO] Save started: {file_path}", _CLR_TEXT_INFO)
+        return True
+
+    def _sc_extra_panel_stop_save(self, panel):
+        handle = panel.get("save_handle")
+        if handle is None:
+            return
+        try:
+            handle.flush()
+            handle.close()
+        except OSError:
+            pass
+        panel["save_handle"] = None
+        path = panel.get("save_path")
+        if path:
+            self._sc_extra_panel_append_log(panel, f"[INFO] Save stopped: {path}", _CLR_TEXT_INFO)
+        panel["save_path"] = None
+        btn = panel.get("save_btn")
+        if btn is not None and btn.isChecked():
+            btn.setChecked(False)
+
+    def _sc_extra_panel_write_save(self, panel, raw: str):
+        handle = panel.get("save_handle")
+        if handle is None:
+            return
+        line = raw if panel.get("save_keep_timestamp", True) else self._sc_strip_timestamp(raw)
+        try:
+            handle.write(line + "\n")
+            handle.flush()
+        except OSError:
+            try:
+                handle.close()
+            except OSError:
+                pass
+            panel["save_handle"] = None
+            panel["save_path"] = None
+            btn = panel.get("save_btn")
+            if btn is not None:
+                btn.setChecked(False)
+
 

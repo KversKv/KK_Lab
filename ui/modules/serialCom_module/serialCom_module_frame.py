@@ -325,8 +325,10 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         parent_layout.addLayout(outer)
 
         self._bind_sc_signals()
-
         self._sc_load_persisted_state()
+        # 侧栏跟随聚焦面板：主面板 Serial 真值初始化（持久化回放后、首次焦点同步前）
+        self._sc_primary_serial_cfg = self._sc_sidebar_serial_cfg_from_controls()
+        self._sc_sidebar_bound_index = self._sc_active_log_panel_index
         self._sc_start_temp_log()
         self._sc_start_port_hotplug()
         self._sc_sync_top_control_state()
@@ -438,12 +440,11 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         if saved.width() <= 0 or saved.height() <= 0:
             return self._sc_default_window_geometry()
 
+        # 恢复只截断"超出可用区域"部分；禁按 margin 压尺寸
+        # （对齐 n6705c_datalog 修复：150% DPI 下 margin 40 逻辑 px = 60 物理 px 空白）
         available = self._sc_screen_available_geometry_for(saved.center())
-        margin = self._SC_WINDOW_MARGIN
-        max_w = max(1, available.width() - margin)
-        max_h = max(1, available.height() - margin)
-        width = min(saved.width(), max_w)
-        height = min(saved.height(), max_h)
+        width = min(saved.width(), available.width())
+        height = min(saved.height(), available.height())
 
         x = min(max(saved.x(), available.x()), available.right() - width + 1)
         y = min(max(saved.y(), available.y()), available.bottom() - height + 1)
@@ -611,27 +612,39 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         return normalized
 
     def _sc_collect_persisted_state(self) -> dict:
-        port_text = ""
-        if hasattr(self, "_sc_port_combo"):
-            port_text = self._sc_port_combo.currentText()
-        baud_text = "921600"
-        if hasattr(self, "_sc_baud_combo"):
-            baud_text = self._sc_baud_combo.currentText()
-        auto_detect = False
-        if hasattr(self, "_sc_auto_detect_cb"):
-            auto_detect = self._sc_auto_detect_cb.isChecked()
-        databit = "8"
-        if hasattr(self, "_sc_databit_combo"):
-            databit = self._sc_databit_combo.currentText()
-        stopbit = "1"
-        if hasattr(self, "_sc_stopbit_combo"):
-            stopbit = self._sc_stopbit_combo.currentText()
-        parity = "None"
-        if hasattr(self, "_sc_parity_combo"):
-            parity = self._sc_parity_combo.currentText()
-        flow_ctrl = "None"
-        if hasattr(self, "_sc_flow_combo"):
-            flow_ctrl = self._sc_flow_combo.currentText()
+        # 主面板 Serial 真值在 _sc_primary_serial_cfg（侧栏会随聚焦面板切换显示值）；
+        # 仅在真值不存在（未初始化）时回退读控件
+        pcfg = getattr(self, "_sc_primary_serial_cfg", None)
+        if isinstance(pcfg, dict):
+            port_text = str(pcfg.get("port", "") or "")
+            baud_text = str(pcfg.get("baudrate", "921600"))
+            auto_detect = bool(pcfg.get("auto_detect", False))
+            databit = str(pcfg.get("databit", "8"))
+            stopbit = str(pcfg.get("stopbit", "1"))
+            parity = str(pcfg.get("parity", "None"))
+            flow_ctrl = str(pcfg.get("flow", "None"))
+        else:
+            port_text = ""
+            if hasattr(self, "_sc_port_combo"):
+                port_text = self._sc_port_combo.currentText()
+            baud_text = "921600"
+            if hasattr(self, "_sc_baud_combo"):
+                baud_text = self._sc_baud_combo.currentText()
+            auto_detect = False
+            if hasattr(self, "_sc_auto_detect_cb"):
+                auto_detect = self._sc_auto_detect_cb.isChecked()
+            databit = "8"
+            if hasattr(self, "_sc_databit_combo"):
+                databit = self._sc_databit_combo.currentText()
+            stopbit = "1"
+            if hasattr(self, "_sc_stopbit_combo"):
+                stopbit = self._sc_stopbit_combo.currentText()
+            parity = "None"
+            if hasattr(self, "_sc_parity_combo"):
+                parity = self._sc_parity_combo.currentText()
+            flow_ctrl = "None"
+            if hasattr(self, "_sc_flow_combo"):
+                flow_ctrl = self._sc_flow_combo.currentText()
 
         auto_detect_config = {}
         if hasattr(self, "_sc_auto_baud_monitor"):
@@ -1513,15 +1526,21 @@ class _IndependentSerialWindow(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
 
-        # 统一日志面板（full 过滤 + RX/TX 状态栏 + Copy/Export 通知）
+        # 统一日志面板（full 过滤 + Save + RX/TX 状态栏 + Copy/Export 通知）
         self._panel = SerialLogPanel(
             title=title,
             filter_mode="full",
             show_title=False,
+            show_save_button=True,
             status_bar="rxtx",
             max_lines=5000,
             notify_on_copy_export=True,
         )
+        self._save_handle = None
+        self._save_path = None
+        self._save_keep_timestamp = True
+        self._panel.save_toggled.connect(self._on_save_toggle)
+        self._panel.raw_appended.connect(self._write_save_line)
 
         port_text = config.get("port", "N/A")
         baud_text = str(config.get("baudrate", "N/A"))
@@ -1551,7 +1570,7 @@ class _IndependentSerialWindow(QWidget):
 
         if config.get("auto_connect", False):
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(200, self._do_connect)
+            QTimer.singleShot(200, self, self._do_connect)
 
     def _toggle_connect(self):
         if DEBUG_MOCK and self._connect_btn.text() == "Disconnect":
@@ -1662,7 +1681,121 @@ class _IndependentSerialWindow(QWidget):
     def _on_data_received(self, data: bytes):
         self._panel.append_rx_data(data)
 
+    # --- 保存到文件（与主面板语义一致：先写已有缓冲，再持续追加） ---
+
+    @staticmethod
+    def _strip_timestamp(raw: str) -> str:
+        return re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s', '', raw)
+
+    def _on_save_toggle(self, checked: bool):
+        if checked:
+            if not self._start_save():
+                btn = self._panel.save_btn
+                if btn is not None:
+                    btn.setChecked(False)
+        else:
+            self._stop_save()
+
+    def _start_save(self) -> bool:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        title_safe = re.sub(r'[^\w\-.]', '_', str(self._config.get("title", "") or "window"))
+        dlg = _SerialSaveDialog(
+            self,
+            default_dir="",
+            default_name=f"serial_log_{title_safe}_{ts}.txt",
+            keep_timestamp=self._save_keep_timestamp,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return False
+        cfg = dlg.get_config()
+        save_dir = cfg["directory"]
+        name = cfg["name"]
+        keep_ts = cfg["keep_timestamp"]
+        if not name:
+            name = f"serial_log_{title_safe}_{ts}.txt"
+        if not name.lower().endswith(".txt"):
+            name += ".txt"
+        if not save_dir:
+            self._panel.append_log("[ERROR] Save: no directory selected")
+            return False
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except OSError as exc:
+            logger.error("Save: cannot create directory %s", save_dir, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot create directory:\n{exc}")
+            return False
+        file_path = os.path.join(save_dir, name)
+        if os.path.exists(file_path):
+            reply = QMessageBox.question(
+                self, "Save",
+                f"File already exists:\n{file_path}\n\nOverwrite it?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return False
+        try:
+            handle = open(file_path, "w", encoding="utf-8")
+        except OSError as exc:
+            logger.error("Save: cannot open file %s", file_path, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot open file:\n{exc}")
+            return False
+
+        self._save_keep_timestamp = keep_ts
+        try:
+            for raw, _html, _no in self._panel.all_logs:
+                out = raw if keep_ts else self._strip_timestamp(raw)
+                handle.write(out + "\n")
+            handle.flush()
+        except OSError:
+            logger.error("Save: failed writing buffer to %s", file_path, exc_info=True)
+            try:
+                handle.close()
+            except OSError:
+                pass
+            QMessageBox.warning(self, "Save", "Failed to write existing buffer.")
+            return False
+
+        self._save_handle = handle
+        self._save_path = file_path
+        self._panel.append_log(f"[INFO] Save started: {file_path}")
+        return True
+
+    def _stop_save(self):
+        if self._save_handle is None:
+            return
+        try:
+            self._save_handle.flush()
+            self._save_handle.close()
+        except OSError:
+            pass
+        self._save_handle = None
+        if self._save_path:
+            self._panel.append_log(f"[INFO] Save stopped: {self._save_path}")
+        self._save_path = None
+        btn = self._panel.save_btn
+        if btn is not None and btn.isChecked():
+            btn.setChecked(False)
+
+    def _write_save_line(self, raw: str):
+        if self._save_handle is None:
+            return
+        line = raw if self._save_keep_timestamp else self._strip_timestamp(raw)
+        try:
+            self._save_handle.write(line + "\n")
+            self._save_handle.flush()
+        except OSError:
+            try:
+                self._save_handle.close()
+            except OSError:
+                pass
+            self._save_handle = None
+            self._save_path = None
+            btn = self._panel.save_btn
+            if btn is not None:
+                btn.setChecked(False)
+
     def closeEvent(self, event):
+        self._stop_save()
         self._do_disconnect()
         super().closeEvent(event)
 

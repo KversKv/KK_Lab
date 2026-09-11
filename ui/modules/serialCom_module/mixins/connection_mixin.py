@@ -32,11 +32,13 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     MODE_INLINE,
     _CLR_CONNECT_TEXT,
     _CLR_DISCONNECT_TEXT,
+    _CLR_TEXT_INFO,
     _SERIAL_BTN_HEIGHT,
     _SERIAL_BTN_ICON_SIZE,
     _SERIAL_BTN_RADIUS,
     _SVG_SERIAL_DIR,
     SerialDarkComboBox,
+    extra_log_error_color,
     inline_serial_label_style,
     inline_serial_search_button_extra_style,
     main_connect_button_style,
@@ -539,6 +541,7 @@ class ConnectionMixin:
         self._stop_serial_read()
         if hasattr(self, '_sc_extra_log_panels'):
             for panel in self._sc_extra_log_panels:
+                self._sc_extra_panel_stop_save(panel)
                 if panel.get("read_worker"):
                     panel["read_worker"].stop()
                 if panel.get("read_thread") and panel["read_thread"].isRunning():
@@ -751,9 +754,30 @@ class ConnectionMixin:
             stop_btn.setText("Resume" if stopped else "Stop")
             stop_btn.setEnabled(connected)
             stop_btn.blockSignals(False)
+        # 侧栏 Serial/RX/TX Config 跟随聚焦面板
+        self._sc_sync_sidebar_to_focus()
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()
+        panel = self._sc_sidebar_bound_panel()
+        if panel is not None:
+            # 侧栏跟随聚焦面板：额外面板 baud 写 config，已连接则即时应用
+            try:
+                baud = int(baud_text)
+            except ValueError:
+                self._sc_extra_panel_append_log(panel, f"[ERROR] Invalid baud rate: {baud_text}", extra_log_error_color())
+                return
+            panel["config"]["baudrate"] = baud
+            conn = panel.get("conn")
+            if conn is not None and getattr(conn, "is_open", False):
+                try:
+                    conn.baudrate = baud
+                    panel["baud_label"].setText(f"Baud rate: {baud}")
+                    self._sc_extra_panel_append_log(panel, f"[INFO] Baud rate updated: {baud}", _CLR_TEXT_INFO)
+                except Exception as e:
+                    self._sc_extra_panel_append_log(panel, f"[ERROR] Failed to set baud rate: {e}", extra_log_error_color())
+            return
+
         try:
             baudrate = int(baud_text)
         except ValueError:
@@ -785,6 +809,8 @@ class ConnectionMixin:
             self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}", force_primary=True)
 
     def _sc_on_auto_detect_toggled(self, checked):
+        if self._sc_active_extra_panel() is not None:
+            return  # Auto-Detect 仅主面板；聚焦额外面板时控件已禁用
         self._sc_baud_combo.setEditable(not checked)
         self._sc_baud_combo.setEnabled(not checked)
         self._sc_auto_baud_monitor.enabled = checked
@@ -985,6 +1011,9 @@ class ConnectionMixin:
         if combo is None:
             return
         ports = list(ports)
+        # 重开窗口的待回连面板/浮窗：首次枚举（基线广播）后尝试一次；
+        # 之后运行期热插拔广播时清单已空，不会触发自动重连
+        self._sc_try_pending_autoconnect()
         prev_texts = [combo.itemText(i) for i in range(combo.count())]
         if prev_texts == ports:
             return
