@@ -747,6 +747,14 @@ class ToolbarMixin:
         if bound is None or not hasattr(self, "_sc_port_combo"):
             return
         if bound == self._sc_active_log_panel_index:
+            # 焦点未变但连接态可能已变（同面板 Connect/Disconnect）：
+            # 仅刷新连接相关的 Port 使能，不做全量重载以免打断可编辑 baud 输入
+            panel = self._sc_active_extra_panel()
+            if panel is None:
+                connected = bool(getattr(self, "_serial_connected", False))
+            else:
+                connected = self._sc_extra_panel_is_connected(panel)
+            self._sc_port_combo.setEnabled(not connected)
             return
         self._sc_sidebar_load_focus()
 
