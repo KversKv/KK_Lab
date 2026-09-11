@@ -1,0 +1,69 @@
+tests/test_serialcom_multipanel_sync.py
+  s_984b4c357c256a::t_de801bc6f5c190 127-129,142,148
+  s_984b4c357c256a::t_8533d7f2d22fe7 248-362,368
+  s_984b4c357c256a::t_0e49143e92fed6 191-214
+  s_984b4c357c256a::t_aab561f84ab009 219
+ui/modules/serialCom_module/mixins/log_panel_mixin.py
+  s_984b4c357c256a::t_d33c4d749dafe9 295-356
+ui/modules/serialCom_module/serialCom_module_frame.md
+  s_984b4c357c256a::t_ad545c3e876824 269
+ui/modules/AGENTS.md
+  s_984b4c357c256a::t_3a03e985f9a0ad 35
+  s_984b4c357c256a::t_b568db1c3d4485 36
+ui/modules/serialCom_module/serialCom_module_frame.py
+  h_bab89651263f0f 332,697-732,842,867-868,892,1564-1568
+  s_04b7b48198c5e2::t_09547234b7a642 1035
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7fd358fa9de20e28032193935b6d940e679b99c4",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_04b7b48198c5e2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa36457526a29f7a1727fde",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6aa3899b526a29f7a17280a4",
+        "tool_name": "RunCommand",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_use_id": "6aa3899b526a29f7a17280a4",
+        "source_scene": "agent",
+        "external_session_id": "6aa36457526a29f7a1727fde",
+        "client_type": "ide",
+        "session_id": "6aa36457526a29f7a1727fde",
+        "display_model_name": "Kimi-K3",
+        "edit_kind": "bash"
+      }
+    },
+    "s_984b4c357c256a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa2b56e526a29f7a1727ee4",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "operation_id": "6aa3637c526a29f7a1727fda",
+        "display_model_name": "Kimi-K3",
+        "tool_name": "Edit",
+        "session_id": "6aa2b56e526a29f7a1727ee4",
+        "external_session_id": "6aa2b56e526a29f7a1727ee4",
+        "tool_use_id": "6aa3637c526a29f7a1727fda",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "source_scene": "agent"
+      }
+    }
+  }
+}
