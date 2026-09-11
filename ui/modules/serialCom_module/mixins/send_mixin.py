@@ -218,6 +218,12 @@ class SendMixin:
             "Inject command... (Use \u2191/\u2193 arrow keys for command history)"
         )
         self._sc_send_input.setClearButtonEnabled(False)
+        # ↑/↓ 终端式历史导航状态（idx=-1 表示未在浏览，stash 保存浏览前的输入）
+        self._sc_hist_nav_idx = -1
+        self._sc_hist_nav_stash = ""
+        self._sc_send_input.installEventFilter(self)
+        self._sc_history_combo.installEventFilter(self)  # 组合框持焦时按键同样拦截
+        self._sc_send_input.textEdited.connect(lambda *_: self._sc_hist_nav_reset())
         send_row.addWidget(self._sc_history_combo, 1)
 
         self._sc_send_btn = QPushButton("Send")
@@ -450,6 +456,36 @@ class SendMixin:
     # --- scripts ---
 
 
+    def _sc_hist_nav_reset(self):
+        self._sc_hist_nav_idx = -1
+        self._sc_hist_nav_stash = ""
+
+    def _sc_hist_nav_move(self, older: bool):
+        """终端式历史浏览：↑ 逐条走向更早的历史指令，↓ 回到更新直至恢复浏览前输入。"""
+        history = self._sc_send_history
+        if not history:
+            return
+        if older:
+            if self._sc_hist_nav_idx < 0:
+                self._sc_hist_nav_stash = self._sc_send_input.text()
+                new_idx = 0
+            else:
+                new_idx = min(self._sc_hist_nav_idx + 1, len(history) - 1)
+            self._sc_hist_nav_idx = new_idx
+            self._sc_send_input.setText(history[new_idx])
+        else:
+            if self._sc_hist_nav_idx < 0:
+                return
+            new_idx = self._sc_hist_nav_idx - 1
+            if new_idx < 0:
+                text = self._sc_hist_nav_stash
+                self._sc_hist_nav_reset()
+                self._sc_send_input.setText(text)
+            else:
+                self._sc_hist_nav_idx = new_idx
+                self._sc_send_input.setText(history[new_idx])
+        self._sc_send_input.end(False)
+
     def _sc_on_send(self):
         text = self._sc_send_input.text()
         if not text:
@@ -490,6 +526,7 @@ class SendMixin:
             self._sc_history_combo.setCurrentIndex(-1)
             self._sc_history_combo.blockSignals(False)
 
+        self._sc_hist_nav_reset()
         self._sc_send_input.clear()
 
     def _sc_send_to_focused_panel(self, data) -> bool:
@@ -1167,12 +1204,22 @@ class SendMixin:
     # --- 快捷指令按钮：拖拽排序（容器层 eventFilter） ---
 
     def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
+        # 发送输入框/历史组合框：↑ 上一条历史指令 / ↓ 更新一条（弹窗展开时保持默认导航）
+        send_input = getattr(self, "_sc_send_input", None)
+        combo = getattr(self, "_sc_history_combo", None)
+        if (send_input is not None and obj is send_input) or (combo is not None and obj is combo):
+            if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+                if combo is not None and combo.view().isVisible():
+                    return False
+                self._sc_hist_nav_move(older=(event.key() == Qt.Key_Up))
+                return True
+            return False
         # 仅处理快捷指令容器上的拖拽事件；其它一律放行
         from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdButton
         container = getattr(self, "_sc_qc_btn_container", None)
         if container is not None and obj is container:
             etype = event.type()
-            from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
             if etype == QEvent.DragEnter:
                 if event.mimeData().hasFormat(_QuickCmdButton._MIME_TYPE):
                     event.acceptProposedAction()
