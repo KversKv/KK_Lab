@@ -8,7 +8,8 @@
 3. 切回主面板 -> 侧栏恢复主面板真值；
 4. 面板 config 生效路径：rx_hex 数据渲染、show_send=False 不回显；
 5. 聚焦额外面板时采集持久化，主面板 serial 段不串值；
-6. 同面板 Connect/Disconnect（焦点不变）时侧栏 Port 使能跟随连接态。
+6. 同面板 Connect/Disconnect（焦点不变）时侧栏 Port 使能跟随连接态；
+7. 主面板右键 Settings 改名 + ui.primary_panel_title 持久化往返。
 
 可独立运行：
     python tests/test_serialcom_sidebar_follow.py
@@ -228,11 +229,66 @@ def test_sidebar_port_enable_follows_conn_state():
     app.processEvents()
 
 
+def test_primary_panel_rename():
+    """主面板右键 Settings 改名 + ui.primary_panel_title 持久化往返。
+
+    主面板串口参数由侧栏持有，Settings 仅改名（name_only 对话框）。
+    """
+    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    from PySide6.QtWidgets import QDialog, QMenu
+
+    app, w = _make_widget()
+
+    assert w._sc_primary_panel_title == "Serial Log"
+    assert w._sc_log_panel.title_label.text() == "Serial Log"
+    # 主面板右键菜单已注入 Settings 入口
+    assert w._sc_log_panel.context_menu_extra is not None
+    menu = QMenu(w)
+    w._sc_log_panel.context_menu_extra(menu)
+    assert any(a.text() == "Settings..." for a in menu.actions()), "主面板右键缺 Settings 入口"
+    menu.deleteLater()
+
+    # Mock 对话框（name_only）→ 改名
+    class _FakeDlg:
+        def __init__(self, cfg, parent=None, name_only=False):
+            assert name_only is True, "主面板 Settings 应为 name_only 模式"
+            assert cfg.get("title") == "Serial Log"
+        def exec(self):
+            return QDialog.Accepted
+        def get_config(self):
+            return {"title": "Main Console"}
+
+    orig_dlg = frame._PanelSettingsDialog
+    frame._PanelSettingsDialog = _FakeDlg
+    try:
+        w._sc_primary_panel_settings()
+    finally:
+        frame._PanelSettingsDialog = orig_dlg
+    app.processEvents()
+    assert w._sc_primary_panel_title == "Main Console", "改名未写真值"
+    assert w._sc_log_panel.title_label.text() == "Main Console", "改名未刷新标题"
+
+    # 持久化往返：collect -> 重置 -> apply 恢复
+    persisted = w._sc_collect_persisted_state()
+    assert persisted["ui"].get("primary_panel_title") == "Main Console", "标题未随 ui 段采集"
+    w._sc_primary_panel_title = "Serial Log"
+    w._sc_log_panel.title_label.setText("Serial Log")
+    w._sc_apply_persisted_state(persisted)
+    app.processEvents()
+    assert w._sc_primary_panel_title == "Main Console", "apply 未恢复真值"
+    assert w._sc_log_panel.title_label.text() == "Main Console", "apply 未恢复标题"
+
+    w.close()
+    w.deleteLater()
+    app.processEvents()
+
+
 if __name__ == "__main__":
     tests = [
         test_sidebar_follows_focus,
         test_sidebar_settings_dialog_forces_primary_view,
         test_sidebar_port_enable_follows_conn_state,
+        test_primary_panel_rename,
     ]
     failed = 0
     for fn in tests:

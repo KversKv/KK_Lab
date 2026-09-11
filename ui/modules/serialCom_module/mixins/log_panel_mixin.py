@@ -203,7 +203,7 @@ class LogPanelMixin:
     def _build_sc_log_area(self):
         """主日志面板：SerialLogPanel(full 过滤 + Save + 状态栏) + Mixin facade 别名。"""
         panel = SerialLogPanel(
-            title="Serial Log",
+            title=getattr(self, "_sc_primary_panel_title", "Serial Log"),
             filter_mode="full",
             show_save_button=True,
             status_bar="primary",
@@ -220,6 +220,8 @@ class LogPanelMixin:
         panel.save_toggled.connect(self._sc_on_save_toggle)
         panel.cleared.connect(self._sc_on_primary_logs_cleared)
         panel.clicked.connect(self._sc_on_primary_panel_clicked)
+        # 主面板右键追加 Settings（改名），与额外面板同一入口语义
+        panel.context_menu_extra = self._sc_primary_panel_menu_extra
 
         self._sc_log_panel = panel
         self._sc_log_area = panel
@@ -504,6 +506,26 @@ class LogPanelMixin:
             self._sc_active_session_id = "primary"
             self._sc_session_manager.set_active_session("primary")
             self._sc_update_panel_focus_style()
+
+    def _sc_primary_panel_menu_extra(self, menu):
+        """主面板右键追加项：Settings（改名；串口参数由侧栏持有，不重复入口）。"""
+        settings_act = QAction("Settings...", self)
+        settings_act.triggered.connect(self._sc_primary_panel_settings)
+        menu.addAction(settings_act)
+
+    def _sc_primary_panel_settings(self):
+        """主面板 Settings：仅改名，真值 _sc_primary_panel_title 随 ui 段持久化。"""
+        from ui.modules.serialCom_module.serialCom_module_frame import _PanelSettingsDialog
+        dlg = _PanelSettingsDialog(
+            {"title": getattr(self, "_sc_primary_panel_title", "Serial Log")},
+            parent=self, name_only=True,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        title = dlg.get_config().get("title", "Serial Log")
+        self._sc_primary_panel_title = title
+        self._sc_log_panel.title_label.setText(title)
+        self._sc_append_system(f"[INFO] Panel renamed: {title}", force_primary=True)
 
     def _sc_active_extra_panel(self):
         idx = getattr(self, "_sc_active_log_panel_index", 0)

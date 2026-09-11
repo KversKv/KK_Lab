@@ -229,6 +229,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_script_timer.timeout.connect(self._sc_script_on_timeout)
         self._sc_sidebar_visible = True
         self._sc_footer_visible = True
+        self._sc_primary_panel_title = "Serial Log"
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
 
@@ -360,6 +361,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 "sidebar_visible": True,
                 "footer_visible": True,
                 "show_line_num": False,
+                "primary_panel_title": "Serial Log",
                 "center_split_sizes": [680, 185],
             },
             "send_history": [],
@@ -688,6 +690,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
             "footer_visible": getattr(self, "_sc_footer_visible", True),
             "show_line_num": getattr(self, "_sc_show_line_num", False),
+            "primary_panel_title": getattr(self, "_sc_primary_panel_title", "Serial Log"),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
             "log_save_path": getattr(self, "_sc_log_save_path", ""),
             "center_split_sizes": (
@@ -828,6 +831,11 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 ):
                     if key in ui_cfg:
                         setattr(self, attr, ui_cfg[key])
+                if "primary_panel_title" in ui_cfg:
+                    title = str(ui_cfg.get("primary_panel_title") or "Serial Log")
+                    self._sc_primary_panel_title = title
+                    if getattr(self, "_sc_log_panel", None) is not None:
+                        self._sc_log_panel.title_label.setText(title)
                 if "show_system_log" in ui_cfg and hasattr(self, "_sc_show_system_cb"):
                     self._sc_show_system_cb.blockSignals(True)
                     self._sc_show_system_cb.setChecked(bool(ui_cfg["show_system_log"]))
@@ -1052,6 +1060,10 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             self._sc_sidebar_widget.setVisible(True)
         if hasattr(self, "_sc_sidebar_toggle_btn"):
             self._sc_sidebar_toggle_btn.setChecked(True)
+
+        self._sc_primary_panel_title = "Serial Log"
+        if getattr(self, "_sc_log_panel", None) is not None:
+            self._sc_log_panel.title_label.setText("Serial Log")
 
         self._sc_footer_visible = True
         if hasattr(self, "_sc_quick_area"):
@@ -1354,14 +1366,14 @@ class _AddLogPanelDialog(_FramelessChromeDialog):
 
 class _PanelSettingsDialog(_FramelessChromeDialog):
 
-    def __init__(self, current_config: dict, parent=None):
+    def __init__(self, current_config: dict, parent=None, name_only: bool = False):
         super().__init__(parent, title="PANEL SETTINGS", icon_name="settings.svg")
         self._apply_content_style(_DLG_STYLE)
 
         root = self._content
         root.setSpacing(12)
 
-        title = QLabel("Serial Port Settings")
+        title = QLabel("Rename Panel" if name_only else "Serial Port Settings")
         title.setObjectName("dlgSectionTitle")
         root.addWidget(title)
 
@@ -1460,9 +1472,16 @@ class _PanelSettingsDialog(_FramelessChromeDialog):
         grid.addWidget(self._flow_combo, 6, 1)
 
         root.addLayout(grid)
+        if name_only:
+            for row in range(1, 7):
+                for col in range(2):
+                    item = grid.itemAtPosition(row, col)
+                    if item is not None and item.widget() is not None:
+                        item.widget().setVisible(False)
 
         self._auto_connect_cb = QCheckBox("Auto connect after apply")
         self._auto_connect_cb.setChecked(True)
+        self._auto_connect_cb.setVisible(not name_only)
         root.addWidget(self._auto_connect_cb)
 
         root.addSpacing(4)
