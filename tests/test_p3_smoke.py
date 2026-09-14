@@ -58,11 +58,15 @@ def test_class_attr_differentiation():
 def test_get_test_config_keys_and_defaults():
     ui = _make()
     cfg = ui.ldo_test_ui.get_test_config()
-    expected = {"selected_items", "chip_name", "module_name", "operator",
+    expected = {"selected_items", "chip_name", "module_name", "test_condition",
+                "operator",
                 "temp_test_enabled", "temperature", "temp_soak_s",
-                "temp_tolerance_c", "temp_wait_s", "vin_channel", "vout_channel",
-                "iload_channel", "vout_nominal_mv", "device_addr", "width_flag",
-                "scope_vout_channel", "item_overrides"}
+                "temp_tolerance_c", "temp_wait_s", "vbat_channel", "vin_channel",
+                "vout_channel", "force_channel", "volt_method",
+                "iload_channel", "vout_nominal_mv", "max_iload_ma",
+                "device_addr", "width_flag",
+                "scope_vout_channel", "item_overrides",
+                "module_config_enabled", "module_config_yaml", "judge_criteria"}
     assert set(cfg.keys()) == expected
     assert cfg["vout_nominal_mv"] == 1800
     assert ui.dcdc_test_ui.get_test_config()["vout_nominal_mv"] == 1200

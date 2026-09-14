@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Max Iload → Vin 限流 (Max Iload + 0.1) A 的 Mock 全流程校验。
+"""Max Iload → Vbat 限流 (Max Iload + 0.1) A 的 Mock 全流程校验。
 
 覆盖三点：
-  A. DUT 配置 Max Iload 输入框经 ModuleConfigStore collect/restore 往返；
-  B. runner 测试开始前把 Vin 通道限流设为 (max_iload_ma/1000 + 0.1) A，
-     且测试项 setup_source_channel 重配 Vin 时保持同一限流（MockN6705C
-     记录的最终 _channel_current_limits 断言）；
+  A. DUT 配置 Max Iload 输入框经 ModuleConfigStore collect/restore 往返，
+     以及 Vbat/Vin 双通道配置的往返与旧配置（仅 vin_channel）回落语义；
+  B. runner 测试开始前把 Vbat 通道限流设为 (max_iload_ma/1000 + 0.1) A，
+     且测试项 setup_source_channel 重配 Vbat 时保持同一限流（MockN6705C
+     记录的最终 _channel_current_limits 断言；cfg 直传旧键 vin_channel 走回落）；
   C. 旧配置缺 max_iload_ma 键时回落默认 400mA → 0.5A（与旧硬编码一致）。
 
 用法：.venv\\Scripts\\python.exe tests\\check_vin_current_limit.py
@@ -97,6 +98,27 @@ def check_ui_roundtrip() -> None:
     check("A4 旧配置缺键不覆盖默认值", panel3.max_iload_spin.value() == 400,
           f"got {panel3.max_iload_spin.value()!r}")
 
+    # A5: Vbat/Vin 双通道往返 + 旧配置（仅 vin_channel）回落语义
+    panel5 = DutConfigPanel("ldo")
+    panel5.vbat_ch_combo.setCurrentIndex(3)  # CH 4
+    panel5.vin_ch_combo.setCurrentIndex(1)   # CH 2
+    cfg5 = _make_store(panel5).collect()
+    check("A5a collect 双通道键", cfg5.get("vbat_channel") == "CH 4"
+          and cfg5.get("vin_channel") == "CH 2",
+          f"got {cfg5.get('vbat_channel')!r}/{cfg5.get('vin_channel')!r}")
+    panel6 = DutConfigPanel("ldo")
+    _make_store(panel6).restore(cfg5)
+    check("A5b restore 双通道回填", panel6.vbat_ch_combo.currentText() == "CH 4"
+          and panel6.vin_ch_combo.currentText() == "CH 2",
+          f"got {panel6.vbat_ch_combo.currentText()!r}/{panel6.vin_ch_combo.currentText()!r}")
+    panel7 = DutConfigPanel("ldo")
+    panel7.vin_ch_combo.setCurrentIndex(2)   # CH 3（改动以便观察旧配置不覆盖）
+    _make_store(panel7).restore({"vin_channel": "CH 4"})  # 旧格式：无 vbat_channel 键
+    check("A5c 旧配置 vin_channel 回落到 Vbat", panel7.vbat_ch_combo.currentText() == "CH 4",
+          f"got {panel7.vbat_ch_combo.currentText()!r}")
+    check("A5d 旧配置不覆盖新 Vin 通道", panel7.vin_ch_combo.currentText() == "CH 3",
+          f"got {panel7.vin_ch_combo.currentText()!r}")
+
 
 def check_helper() -> None:
     check("C1 缺键回落 0.5A", abs(vin_current_limit_a({}) - 0.5) < 1e-9,
@@ -138,9 +160,9 @@ def check_runner(app: QApplication) -> None:
 
     check("B1 runner 跑完", done["ok"])
     limit = mock._channel_current_limits.get(1)
-    check("B2 Vin ch1 最终限流 0.7A (600mA+0.1A)",
+    check("B2 Vbat ch1 最终限流 0.7A (600mA+0.1A)",
           limit is not None and abs(limit - 0.7) < 1e-9, f"got {limit!r}")
-    pre = [m for m in logs if m.startswith("[PRE] Vin 通道")]
+    pre = [m for m in logs if m.startswith("[PRE] Vbat 通道")]
     check("B3 [PRE] 限流日志", bool(pre) and "0.700 A" in pre[0], f"got {pre!r}")
 
 

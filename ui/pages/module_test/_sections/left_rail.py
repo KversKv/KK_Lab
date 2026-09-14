@@ -62,7 +62,7 @@ class DutConfigPanel(QWidget):
         self.vout_nominal_spin.setValue(1800 if module_type == "ldo" else 1200)
         grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
 
-        # 设计的最大带载电流：测试开始前 Vin 通道限流设为 (Max Iload + 0.1) A
+        # 设计的最大带载电流：测试开始前 Vbat 通道限流设为 (Max Iload + 0.1) A
         self.max_iload_spin = QSpinBox()
         self.max_iload_spin.setRange(0, 10000)
         self.max_iload_spin.setValue(400)
@@ -75,7 +75,13 @@ class DutConfigPanel(QWidget):
         self.volt_method_combo.currentIndexChanged.connect(self._on_volt_method_changed)
         grid.add_row("电压测试方式", self.volt_method_combo)
 
+        # Vbat 通道：DUT 主供电（原 Vin 通道角色，限流/偏置等既有逻辑均走此通道）
+        self.vbat_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
+        grid.add_row("Vbat 通道", self.vbat_ch_combo)
+
+        # Vin 通道：独立输入源，Dropout 与 Output Voltage Scan 输入偏置专用
         self.vin_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
+        self.vin_ch_combo.setCurrentIndex(1)
         grid.add_row("Vin 通道", self.vin_ch_combo)
 
         self.vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])

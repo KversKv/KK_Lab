@@ -397,12 +397,22 @@ def setup_vout_meter(ctx: "ItemContext", *, force: bool = False) -> None:
     setup_meter_channel(ctx, parse_channel(ctx.config.get("vout_channel", 1)))
 
 
+def vbat_channel(cfg: dict, default: int = 1) -> int:
+    """Vbat 通道（DUT 主供电）读取唯一出口。
+
+    新配置读 ``vbat_channel`` 键；旧配置无此键时回落 ``vin_channel``
+    （旧配置的 Vin 通道语义即 Vbat）。独立 Vin 通道（Dropout /
+    Output Voltage Scan 输入偏置）读 ``vin_channel`` 键，不走本函数。
+    """
+    return parse_channel(cfg.get("vbat_channel") or cfg.get("vin_channel", default))
+
+
 def vin_current_limit_a(cfg: dict) -> float:
-    """Vin 通道限流（A）= Max Iload（cfg["max_iload_ma"]，mA）+ 0.1 A 余量。
+    """Vbat 通道限流（A）= Max Iload（cfg["max_iload_ma"]，mA）+ 0.1 A 余量。
 
     DUT 配置 Max Iload（设计最大带载电流，默认 400mA，旧配置无此键回落），
-    测试开始前由 runner 统一下发 Vin 通道限流；各测试项 setup_source_channel
-    重配 Vin 通道时经本函数保持同一限流（current_limit 测试项用更高限流除外）。
+    测试开始前由 runner 统一下发 Vbat 通道限流；各测试项 setup_source_channel
+    重配 Vbat 通道时经本函数保持同一限流（current_limit 测试项用更高限流除外）。
     """
     return max(float(cfg.get("max_iload_ma", 400)), 0.0) / 1000.0 + 0.1
 
@@ -501,13 +511,30 @@ def teardown_load(ctx: "ItemContext", channel: int) -> None:
 def restore_vin(ctx: "ItemContext", channel: int, voltage: float) -> None:
     """扫 Vin 类测试项收尾：把 VIN 通道还原回标称电压（DUT 供电态）。
 
-    line_reg / dropout 等项把 Vin 扫到非默认值后直接返回，通道停在末点电压
-    会污染后续测试项 / 让 DUT 掉电。仅回写电压，不关通道（VIN 是 DUT 电源）。
+    line_reg / line_transient 等项把 Vbat 扫到非默认值后直接返回，通道停在
+    末点电压会污染后续测试项 / 让 DUT 掉电。仅回写电压，不关通道（Vbat 是
+    DUT 电源）。独立 Vin 通道（非 DUT 电源）收尾用 teardown_vin 关断。
     """
     try:
         ctx.n6705c.set_voltage(channel, voltage)
     except Exception:  # noqa: BLE001
         logger.error("restore vin ch%d failed", channel, exc_info=True)
+
+
+def teardown_vin(ctx: "ItemContext", channel: int) -> None:
+    """独立 Vin 通道收尾：主动关断输出。
+
+    独立 Vin 通道（``vin_channel``）仅服务 Dropout / Output Voltage Scan
+    输入偏置，非 DUT 主供电，测试完成须关断输出，避免通道挂压污染后续
+    测试项。守卫：误配置与 Vbat 同通道时跳过（防 DUT 掉电）。
+    """
+    if channel == vbat_channel(ctx.config):
+        logger.warning("teardown vin skipped: ch%d == vbat channel", channel)
+        return
+    try:
+        ctx.n6705c.channel_off(channel)
+    except Exception:  # noqa: BLE001
+        logger.error("teardown vin ch%d failed", channel, exc_info=True)
 
 
 def create_i2c(ctx: "ItemContext"):
@@ -631,8 +658,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     """各挡位输出电压扫描（LDO / DCDC 共用）。
 
     严格对齐 ui/pages/pmu_test/pmu_output_voltage.py 的逻辑：
-      1. Vin 通道按 ``vin_v`` 偏置上电（PS2Q，对齐其它项 Vin 偏置模式；
-         PMU 侧扫描线程不管 Vin 通道，此步为本侧特有，豁免双向同步）；
+      1. 独立 Vin 通道（DUT Config「Vin 通道」，``vin_channel`` 键，非 Vbat）
+         按 ``vin_v`` 偏置上电（PS2Q；PMU 侧扫描线程不管 Vin 通道，此步为
+         本侧特有，豁免双向同步）；Vbat 主供电不干预（前置工序保证）；
          Vout 直接读 Iload 负载通道电压（2026-09-07 用户规则：CCLoad
          通道并接 DUT 输出，MEAS:VOLT? 单次查询完成，免示波器入位/复测，
          不走 measure_vout / setup_vout_meter）；
@@ -642,7 +670,8 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
          校验失败 / 尾部饱和时经 confirm_fn 弹窗交由用户决定是否继续；
       5. 以参考步进判据双向剔除死区/饱和段（_compute_valid_range），
          取有效段算范围/步进/线性度；
-      6. 结束（含停止/异常路径）在 finally 兜底恢复寄存器默认值。
+      6. 结束（含停止/异常路径）在 finally 兜底恢复寄存器默认值、关断
+         负载通道与独立 Vin 通道输出（teardown_vin，非 DUT 主供电）。
     """
     from core.module_test.result_model import ItemResult
 
@@ -658,12 +687,24 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     min_code = cfg_int(cfg, "min_code", 0)
     max_code = cfg_int(cfg, "max_code", 255)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    # 输入偏置走独立 Vin 通道（非 Vbat 主供电），默认 CH 2 与 DUT 配置一致
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
     vin_v = float(cfg.get("vin_v", 3.8))
 
     def _scan_vout() -> float:
         # 扫描全程 Vout 直接读 Iload 负载通道电压（CCLoad 通道并接 DUT 输出）
         return safe_measure(ctx.n6705c, "measure_voltage", iload_ch, 0.0)
+
+    bit_count = msb - lsb + 1
+    mask = (1 << bit_count) - 1
+    max_code = min(max_code, mask)
+    min_code = max(min_code, 0)
+
+    # code 范围校验前置于通道上电：无效范围直接返回，不涉及通道关断
+    total_points = max_code - min_code + 1
+    if total_points <= 0:
+        ctx.log_fn(f"[{item_key}] [ERROR] Invalid code range (min >= max).")
+        return _skipped("无效的 code 范围（min >= max）")
 
     i2c = create_i2c(ctx)
     if ctx.is_mock:
@@ -671,19 +712,8 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
 
     setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
-    bit_count = msb - lsb + 1
-    mask = (1 << bit_count) - 1
-
     default_reg = i2c.read(device_addr, reg_addr, width_flag)
     data_base = default_reg & (~(mask << lsb))
-
-    max_code = min(max_code, mask)
-    min_code = max(min_code, 0)
-
-    total_points = max_code - min_code + 1
-    if total_points <= 0:
-        ctx.log_fn(f"[{item_key}] [ERROR] Invalid code range (min >= max).")
-        return _skipped("无效的 code 范围（min >= max）")
 
     # 扫描全程挂 1mA 轻载（先写电流再开通道，结束后关断）
     setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
@@ -896,6 +926,8 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
                 logger.error("Failed to restore register default value", exc_info=True)
         # 收尾关断负载通道（CCLoad 开启态禁设 0mA，直接 channel_off）
         teardown_load(ctx, iload_ch)
+        # 独立 Vin 通道仅服务本项输入偏置，收尾主动关断输出
+        teardown_vin(ctx, vin_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"],
@@ -1271,7 +1303,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
 
     cfg = ctx.config
     scope_ch = int(cfg.get("scope_vout_channel", 1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     i_start = float(cfg.get("iload_start_ma", 0))
@@ -1295,7 +1327,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
@@ -1444,7 +1476,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     cfg = ctx.config
     groups = cfg.get("line_transient_groups") or DEFAULT_LINE_TRANSIENT_GROUPS
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
@@ -1457,10 +1489,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
 
     if not ctx.is_mock:
-        _reset_arb_state(ctx, [vin_ch])
+        _reset_arb_state(ctx, [vbat_ch])
         # Line Transient 输出不挂载：显式关断 Iload 通道（可能沿用上一项
         # 遗留的开启态），只 channel_off 不归零（CCLoad 禁设 0mA，硬红线 12）
-        if iload_ch != vin_ch:
+        if iload_ch != vbat_ch:
             teardown_load(ctx, iload_ch)
 
     for idx, g in enumerate(groups):
@@ -1486,18 +1518,18 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
             try:
                 # 先停掉上一轮遗留 ARB 并等 initiated 清零，否则改参数报 +308
                 try:
-                    _arb_stop_and_wait(ctx, vin_ch)
+                    _arb_stop_and_wait(ctx, vbat_ch)
                 except Exception:  # noqa: BLE001
                     logger.error("arb_stop before group %d failed", idx + 1,
                                  exc_info=True)
-                ctx.n6705c.set_mode(vin_ch, "PS2Q")
-                ctx.n6705c.channel_on(vin_ch)
-                ctx.n6705c.set_arb_pulse(vin_ch, vin0_v, vin1_v,
+                ctx.n6705c.set_mode(vbat_ch, "PS2Q")
+                ctx.n6705c.channel_on(vbat_ch)
+                ctx.n6705c.set_arb_pulse(vbat_ch, vin0_v, vin1_v,
                                          period / 2.0, 0.0, period / 2.0, freq)
                 # 勾选 Continuous（ARB:TERM:LAST ON）：须在形状配置后、arb_on 前
-                ctx.n6705c.set_arb_continuous(vin_ch, True)
+                ctx.n6705c.set_arb_continuous(vbat_ch, True)
                 ctx.n6705c.restore_arb_trigger_source()
-                ctx.n6705c.arb_on(vin_ch)
+                ctx.n6705c.arb_on(vbat_ch)
 
                 # 先关闭其它通道、波形强度设 100%（便于看清过冲/欠冲）
                 if hasattr(ctx.scope, "close_all_channels"):
@@ -1575,11 +1607,11 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 try:
                     # 停 ARB 并轮询 initiated 清零，否则紧跟的
                     # ARB:COUN/VOLT:MODE FIX 报 +308（连续脉冲时清除较慢）
-                    _arb_stop_and_wait(ctx, vin_ch)
-                    ctx.n6705c.set_arb_continuous(vin_ch, False)
-                    ctx.n6705c.exit_arb_voltage(vin_ch)
+                    _arb_stop_and_wait(ctx, vbat_ch)
+                    ctx.n6705c.set_arb_continuous(vbat_ch, False)
+                    ctx.n6705c.exit_arb_voltage(vbat_ch)
                 except Exception:  # noqa: BLE001
-                    logger.error("exit arb ch%d failed", vin_ch, exc_info=True)
+                    logger.error("exit arb ch%d failed", vbat_ch, exc_info=True)
 
         rows.append([idx + 1, vin0_v, vin1_v, freq,
                      round(over, 3), round(under, 3), round(vpp, 3)])
@@ -1591,7 +1623,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         # 恢复 Vin 正常输出（全自动流程后续项默认 DUT 有电，VIN 通道不干预）
-        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
+        restore_vin(ctx, vbat_ch, float(cfg.get("vin_v", 3.8)))
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path,

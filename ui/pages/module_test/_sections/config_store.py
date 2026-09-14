@@ -57,6 +57,9 @@ class ModuleConfigStore:
             "temp_soak_s": dut.temp_soak_spin.value(),
             "temp_tolerance_c": dut.temp_tolerance_spin.value(),
             "temp_wait_s": dut.temp_wait_spin.value(),
+            # Vbat 通道：DUT 主供电（旧配置无 vbat_channel 键时 restore 回落 vin_channel）
+            "vbat_channel": dut.vbat_ch_combo.currentText(),
+            # Vin 通道：独立输入源（Dropout / Output Voltage Scan 输入偏置专用）
             "vin_channel": dut.vin_ch_combo.currentText(),
             "vout_channel": dut.vout_ch_combo.currentText(),
             "iload_channel": dut.iload_ch_combo.currentText(),
@@ -65,7 +68,7 @@ class ModuleConfigStore:
             # 电压测试方式：n6705c=Vout 通道电压表 / scope=示波器平均值（旧配置无此键回落 n6705c）
             "volt_method": dut.volt_method_combo.currentData() or "n6705c",
             "vout_nominal_mv": dut.vout_nominal_spin.value(),
-            # 设计最大带载电流（mA）：测试开始前 Vin 限流 = max_iload_ma/1000 + 0.1 A
+            # 设计最大带载电流（mA）：测试开始前 Vbat 限流 = max_iload_ma/1000 + 0.1 A
             "max_iload_ma": dut.max_iload_spin.value(),
             "device_addr": dut.device_addr_edit.text().strip(),
             "width_flag": dut.width_flag_combo.currentData(),
@@ -105,7 +108,12 @@ class ModuleConfigStore:
             dut.test_condition_edit.setText(str(cfg["test_condition"]))
         if "operator" in cfg:
             dut.operator_edit.setText(str(cfg["operator"]))
-        _set_combo(dut.vin_ch_combo, cfg.get("vin_channel"))
+        # Vbat 通道：新配置读 vbat_channel；旧配置无此键回落 vin_channel（旧语义即 Vbat）
+        _set_combo(dut.vbat_ch_combo, cfg.get("vbat_channel", cfg.get("vin_channel")))
+        # Vin 通道：仅新格式（含 vbat_channel 键）回填；旧配置的 vin_channel 是
+        # Vbat 语义，不能误填到新 Vin 通道（保持控件默认值）
+        if "vbat_channel" in cfg:
+            _set_combo(dut.vin_ch_combo, cfg.get("vin_channel"))
         _set_combo(dut.vout_ch_combo, cfg.get("vout_channel"))
         _set_combo(dut.iload_ch_combo, cfg.get("iload_channel"))
         _set_combo(dut.force_ch_combo,

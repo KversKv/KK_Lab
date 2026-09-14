@@ -14,12 +14,12 @@ from core.module_test._common import (
     measure_vout, mock_jitter, parse_channel, restore_vin, run_line_transient,
     run_load_capability_ripple, run_load_transient, run_vout_scan,
     safe_measure, set_load_current, settle, setup_load_channel,
-    setup_source_channel, setup_vout_meter, teardown_load, vin_current_limit_a,
-    write_csv,
+    setup_source_channel, setup_vout_meter, teardown_load, teardown_vin,
+    vbat_channel, vin_current_limit_a, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, channel_select, line_transient_groups, load_knee,
+    ParamSpec, average_cnt, line_transient_groups, load_knee,
     load_sweep, quiescent_params, reg_scan_params, settle_time,
     transient_groups, vin_bias, vin_sweep, vout_tol,
 )
@@ -47,7 +47,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     i_start = float(cfg.get("iload_start_ma", 1))
     i_end = float(cfg.get("iload_end_ma", 200))
     i_step = float(cfg.get("iload_step_ma", 20))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vbat_ch = vbat_channel(cfg, 2)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     vin_v = float(cfg.get("vin_v", 3.8))
@@ -60,7 +60,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     rows: list[list[float]] = []
     guard_tripped = False
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
     # 0mA 点走关断而非设 0mA（硬红线 12）；复用 ripple 参数时起始可能为 0
@@ -113,7 +113,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vin_start = float(cfg.get("vin_start_v", 3.2))
     vin_end = float(cfg.get("vin_end_v", 4.2))
     vin_step = float(cfg.get("vin_step_v", 0.2))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vbat_ch = vbat_channel(cfg, 2)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     settle_s = float(cfg.get("settle_time_s", 0.01))
@@ -125,7 +125,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list[float]] = []
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_start, current_limit=vin_current_limit_a(cfg))
         # 本项全程挂 1mA 轻载（先写电流再开通道，结束后关断）
         setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
         # 轻载开启后等待建立稳态，再开始扫描
@@ -140,7 +140,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
             v = mock_jitter(v, 0.001)
         else:
             try:
-                ctx.n6705c.set_voltage(vin_ch, vin)
+                ctx.n6705c.set_voltage(vbat_ch, vin)
             except Exception:  # noqa: BLE001
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
@@ -151,7 +151,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
-        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
+        restore_vin(ctx, vbat_ch, float(cfg.get("vin_v", 3.8)))
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
@@ -178,7 +178,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
 
     item_key = "ldo_quiescent"
     cfg = ctx.config
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg, 1)
     # 外供源专用 force_channel（旧配置无此键回落 vout_channel）
     vout_src_ch = parse_channel(cfg.get("force_channel",
                                         cfg.get("vout_channel", 2)))
@@ -190,7 +190,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     en_regs = parse_enable_regs(cfg)
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
     header = ["Vin (V)", "Vout (V)", "dIvin (uA)", "dIvout (uA)"]
     if en_regs is None:
@@ -199,12 +199,12 @@ def quiescent(ctx: ItemContext) -> ItemResult:
             ivin = mock_jitter(80.0, 0.05)
         else:
             settle(ctx, max(settle_s * 4, 0.2))
-            ivin = measure_avg(ctx, "measure_current", vin_ch,
+            ivin = measure_avg(ctx, "measure_current", vbat_ch,
                                count=avg_cnt, settle_s=settle_s) * 1e6
         row = [vin_v, "", round(ivin, 3), ""]
         ctx.log_fn(f"[{item_key}] (fallback) Ivin={ivin:.3f} uA")
     else:
-        d = iq_diff_measure(ctx, item_key, vin_ch, vout_src_ch,
+        d = iq_diff_measure(ctx, item_key, vbat_ch, vout_src_ch,
                             vout_nom + vout_offset, en_regs, settle_s, avg_cnt,
                             mock_base_ua=80.0)
         row = [vin_v, round(vout_nom + vout_offset, 4), d[0], d[1]]
@@ -270,8 +270,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     iload_ma = float(cfg.get("dropout_iload_ma", 100))
-    # Drop Vin 通道可单独覆盖（弹窗 dropout_vin_channel），缺省跟随 DUT Config 的 Vin 通道
-    vin_ch = parse_channel(cfg.get("dropout_vin_channel") or cfg.get("vin_channel", 2))
+    # Drop Vin 走 DUT Config 的独立 Vin 通道（非 Vbat 主供电通道）
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
     vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
@@ -318,7 +318,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
                 ok_at_min_vin = True
             vin -= vin_step
         teardown_load(ctx, iload_ch)
-        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
+        # 独立 Vin 通道仅服务本项输入扫描（非 DUT 主供电），收尾主动关断输出
+        teardown_vin(ctx, vin_ch)
     if ok_at_min_vin:
         note = f"在最低 Vin={vin_lo:.3f}V 下仍正常输出（压差负载 {iload_ma:g}mA），未触发压差"
     elif dropout_mv is not None and dropout_mv > 0:
@@ -348,7 +349,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     item_key = "ldo_current_limit"
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vbat_ch = vbat_channel(cfg, 2)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     ilim_start = float(cfg.get("ilim_start_ma", 50))
@@ -371,7 +372,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
         ilim_ma = 300.0
         ipk_ma = max(r[2] for r in rows) if rows else ilim_ma
     else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.0)
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=1.0)
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=ilim_start / 1000.0)
         threshold_mv = nominal_mv * (1.0 - tol)
@@ -418,7 +419,7 @@ def output_noise(ctx: ItemContext) -> ItemResult:
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     center_hz = float(cfg.get("noise_center_freq_khz", 50.0)) * 1e3
     span_hz = float(cfg.get("noise_freq_span_khz", 100.0)) * 1e3
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vbat_ch = vbat_channel(cfg, 2)
     vin_v = float(cfg.get("vin_v", 3.8))
 
     png_path = None
@@ -426,7 +427,7 @@ def output_noise(ctx: ItemContext) -> ItemResult:
         ctx.log_fn(f"[{item_key}] [MOCK] FFT center={center_hz / 1e3:g}kHz, "
                    f"span={span_hz / 1e3:g}kHz")
     else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         try:
             ctx.scope.set_channel_display(scope_ch, True)
             # 先做 Auto Ripple 通道配置（时基/档位/偏移），FFT 才有正确输入信号
@@ -531,7 +532,6 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_dropout": ("Dropout Voltage", dropout, False, False, (
         ParamSpec("dropout_iload_ma", "压差负载", "float", 100.0, "mA", maximum=100000.0),
-        channel_select("dropout_vin_channel", "Drop Vin 通道", base_key="vin_channel"),
         ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
         ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
         ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),

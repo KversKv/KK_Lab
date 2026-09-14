@@ -15,7 +15,7 @@ from core.module_test._common import (
     run_load_capability_ripple, run_load_transient, run_vout_scan,
     safe_measure, set_load_current, settle, setup_load_channel,
     setup_scope_timebase, setup_source_channel, setup_vout_meter, teardown_load,
-    vin_current_limit_a, write_csv,
+    vbat_channel, vin_current_limit_a, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -55,7 +55,7 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     i_start = float(cfg.get("iload_start_ma", 1))
     i_end = float(cfg.get("iload_end_ma", 200))
     i_step = float(cfg.get("iload_step_ma", 20))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     vout_v_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
@@ -68,10 +68,10 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     # 空载 baseline（扣除源侧自身电流），参考 PMU baseline 逻辑
     # 注意：在负载通道开启前测，硬红线禁止 CCLoad 开启下设 0mA
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         settle(ctx, max(settle_s * 4, 0.2))
-        iin_base = measure_avg(ctx, "measure_current", vin_ch, count=5, settle_s=settle_s)
+        iin_base = measure_avg(ctx, "measure_current", vbat_ch, count=5, settle_s=settle_s)
         setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
     else:
         iin_base = 0.0
@@ -91,8 +91,8 @@ def efficiency(ctx: ItemContext) -> ItemResult:
             vout = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
                                 default=vout_v_nom)
             iout = abs(measure_avg(ctx, "measure_current", iload_ch, count=avg_cnt, settle_s=settle_s))
-            iin = measure_avg(ctx, "measure_current", vin_ch, count=avg_cnt, settle_s=settle_s)
-            vin_meas = measure_avg(ctx, "measure_voltage", vin_ch, count=avg_cnt, settle_s=settle_s,
+            iin = measure_avg(ctx, "measure_current", vbat_ch, count=avg_cnt, settle_s=settle_s)
+            vin_meas = measure_avg(ctx, "measure_voltage", vbat_ch, count=avg_cnt, settle_s=settle_s,
                                    default=vin_v)
             denom = vin_meas * max(iin - iin_base, 1e-9)
             eff = (vout * iout) / denom * 100 if denom > 0 else 0
@@ -125,7 +125,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 1))
     settle_s = float(cfg.get("settle_time_s", 0.01))
@@ -134,7 +134,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     guard_tripped = False
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
     # 0mA 点走关断而非设 0mA（硬红线 12）；复用 ripple 参数时起始可能为 0
@@ -184,7 +184,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vin_start = float(cfg.get("vin_start_v", 3.2))
     vin_end = float(cfg.get("vin_end_v", 4.2))
     vin_step = float(cfg.get("vin_step_v", 0.2))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
 
@@ -197,7 +197,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_start, current_limit=vin_current_limit_a(cfg))
         # 本项全程挂 1mA 轻载（先写电流再开通道，结束后关断）
         setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
         # 轻载开启后等待建立稳态，再开始扫描
@@ -211,7 +211,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
             v = mock_jitter(v, 0.001)
         else:
             try:
-                ctx.n6705c.set_voltage(vin_ch, vin)
+                ctx.n6705c.set_voltage(vbat_ch, vin)
             except Exception:  # noqa: BLE001
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
@@ -220,7 +220,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
-        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
+        restore_vin(ctx, vbat_ch, float(cfg.get("vin_v", 3.8)))
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
     delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
@@ -246,7 +246,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
 
     item_key = "dcdc_quiescent"
     cfg = ctx.config
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     # 外供源专用 force_channel（旧配置无此键回落 vout_channel）
     vout_src_ch = parse_channel(cfg.get("force_channel",
                                         cfg.get("vout_channel", 2)))
@@ -259,7 +259,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
     header = ["Vin (V)", "Vout (V)", "dIvin (uA)", "dIvout (uA)"]
     if en_regs is None:
@@ -268,12 +268,12 @@ def quiescent(ctx: ItemContext) -> ItemResult:
             ivin = mock_jitter(60.0, 0.05)
         else:
             settle(ctx, max(settle_s * 4, 0.2))
-            ivin = measure_avg(ctx, "measure_current", vin_ch,
+            ivin = measure_avg(ctx, "measure_current", vbat_ch,
                                count=avg_cnt, settle_s=settle_s) * 1e6
         row = [vin_v, "", round(ivin, 3), ""]
         ctx.log_fn(f"[{item_key}] (fallback) Ivin={ivin:.3f} uA")
     else:
-        d = iq_diff_measure(ctx, item_key, vin_ch, vout_src_ch,
+        d = iq_diff_measure(ctx, item_key, vbat_ch, vout_src_ch,
                             vout_nom + vout_offset, en_regs, settle_s, avg_cnt,
                             mock_base_ua=60.0)
         row = [vin_v, round(vout_nom + vout_offset, 4), d[0], d[1]]
@@ -371,7 +371,7 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
         return _skipped(item_key, "Switching Frequency", "未连接示波器，跳过")
     cfg = ctx.config
     scope_ch = int(cfg.get("scope_vout_channel", 1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     i_start = float(cfg.get("iload_start_ma", 1))
@@ -385,7 +385,7 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     measured_rows: list[dict] = []
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
@@ -450,7 +450,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     i_start = float(cfg.get("ilim_start_ma", 100))
     i_end = float(cfg.get("ilim_end_ma", 800))
     i_step = float(cfg.get("ilim_step_ma", 20))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 1))
@@ -459,7 +459,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.5)
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=1.5)
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
 
@@ -565,7 +565,7 @@ def topology(ctx: ItemContext) -> ItemResult:
     cfg = ctx.config
     topo = str(cfg.get("topology", "Buck"))
     isolated = bool(cfg.get("isolated", False))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vbat_ch = vbat_channel(cfg)
     vin_v = float(cfg.get("vin_v", 3.8))
     nominal_v = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.01))
@@ -574,10 +574,10 @@ def topology(ctx: ItemContext) -> ItemResult:
         vin_meas = mock_jitter(vin_v, 0.005)
         vout_meas = mock_jitter(nominal_v, 0.005)
     else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         settle(ctx, max(settle_s * 4, 0.2))
-        vin_meas = measure_avg(ctx, "measure_voltage", vin_ch, count=3, settle_s=settle_s,
+        vin_meas = measure_avg(ctx, "measure_voltage", vbat_ch, count=3, settle_s=settle_s,
                                default=vin_v)
         vout_meas = measure_vout(ctx, count=3, settle_s=settle_s,
                                  default=nominal_v)
