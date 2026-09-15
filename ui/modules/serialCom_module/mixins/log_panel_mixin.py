@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Property, QEasingCurve, QMimeData, QObject, QPoint, QPropertyAnimation,
-    QRect, QRectF, QSize, Qt, QThread, QTimer, Signal,
+    QRect, QRectF, QSize, Qt, QThread, Signal,
 )
 from PySide6.QtGui import (
     QAction, QColor, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen,
@@ -297,15 +297,12 @@ class LogPanelMixin:
     def _sc_restore_persisted_panels(self, data: dict):
         """重开时恢复多串口布局：额外内嵌面板 + 独立浮窗（含各自几何）。
 
-        连接态恢复为非阻塞单次尝试：此处只重建面板并登记待连清单，
-        待首次端口枚举完成（热插拔基线广播）后由 _sc_try_pending_autoconnect
-        统一试连一次，失败仅打日志不重试；运行期热插拔不触发回连。
+        仅恢复布局与配置，不自动回连；历史 `connected` 键读取后直接丢弃。
         """
         if not isinstance(data, dict) or not hasattr(self, "_sc_log_grid"):
             return
 
         restored_panels = 0
-        pending_panels = []
         extra_cfgs = data.get("extra_panels")
         if isinstance(extra_cfgs, list):
             for raw_cfg in extra_cfgs[:3]:
@@ -313,18 +310,16 @@ class LogPanelMixin:
                     continue
                 cfg = dict(raw_cfg)
                 cfg["independent_window"] = False
-                cfg["auto_connect"] = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
+                cfg.pop("connected", None)
+                cfg["auto_connect"] = False
                 panel = self._build_extra_log_panel(cfg)
                 self._sc_extra_log_panels.append(panel)
                 restored_panels += 1
-                if cfg.get("auto_connect"):
-                    pending_panels.append(panel)
             if restored_panels:
                 self._sc_relayout_log_panels()
                 self._sc_remove_log_btn.setEnabled(True)
 
         restored_windows = 0
-        pending_windows = []
         win_cfgs = data.get("independent_windows")
         if isinstance(win_cfgs, list):
             for raw_cfg in win_cfgs:
@@ -333,23 +328,13 @@ class LogPanelMixin:
                 cfg = dict(raw_cfg)
                 geo = cfg.pop("geometry", None)
                 cfg["independent_window"] = True
-                want_autoconnect = bool(cfg.pop("connected", cfg.get("auto_connect", False)))
-                # 禁止浮窗在构造时自行 singleShot 连接，统一由宿主在首次枚举后尝试
+                cfg.pop("connected", None)
                 cfg["auto_connect"] = False
                 self._sc_open_independent_window(cfg)
                 win = self._sc_independent_windows[-1] if getattr(self, "_sc_independent_windows", None) else None
                 if win is not None:
                     self._sc_apply_independent_window_geometry(win, geo)
-                    if want_autoconnect:
-                        pending_windows.append(win)
                 restored_windows += 1
-
-        self._sc_pending_autoconnect_panels = pending_panels
-        self._sc_pending_autoconnect_windows = pending_windows
-        if pending_panels or pending_windows:
-            # 兜底：热插拔监控不可用（非 Windows / DEBUG_MOCK）时延迟尝试一次
-            # receiver 传 self：窗口已销毁时不再触发，避免泄漏连接
-            QTimer.singleShot(800, self, self._sc_try_pending_autoconnect)
 
         if restored_panels or restored_windows:
             self._sc_append_system(
@@ -357,21 +342,6 @@ class LogPanelMixin:
                 f"{restored_windows} independent window(s)",
                 force_primary=True,
             )
-
-    def _sc_try_pending_autoconnect(self):
-        """重开窗口后的单次自动回连尝试：首次端口枚举完成后执行，失败仅打日志不重试。"""
-        panels = getattr(self, "_sc_pending_autoconnect_panels", None) or []
-        windows = getattr(self, "_sc_pending_autoconnect_windows", None) or []
-        if not panels and not windows:
-            return
-        self._sc_pending_autoconnect_panels = []
-        self._sc_pending_autoconnect_windows = []
-        for panel in panels:
-            if panel in self._sc_extra_log_panels and not self._sc_extra_panel_is_connected(panel):
-                self._sc_extra_panel_connect(panel)
-        for win in windows:
-            if win in (getattr(self, "_sc_independent_windows", []) or []) and not win.is_connected():
-                win._do_connect()
 
     def _sc_apply_independent_window_geometry(self, win, geo):
         if not isinstance(geo, dict):

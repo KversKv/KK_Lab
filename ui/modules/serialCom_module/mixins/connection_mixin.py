@@ -1011,9 +1011,6 @@ class ConnectionMixin:
         if combo is None:
             return
         ports = list(ports)
-        # 重开窗口的待回连面板/浮窗：首次枚举（基线广播）后尝试一次；
-        # 之后运行期热插拔广播时清单已空，不会触发自动重连
-        self._sc_try_pending_autoconnect()
         prev_texts = [combo.itemText(i) for i in range(combo.count())]
         if prev_texts == ports:
             return
