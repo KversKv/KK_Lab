@@ -168,7 +168,8 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     """静态电流（Iq），差分测法（默认工作态单次测量）。
 
     SOC 场景下不能把 Vin 电流直接当静态电流。测法：
-      1. 外供 Vout 源通道 = 实测 Vout + 偏置（默认 +20mV）；
+      1. 外供 Vout 源通道 = 首项前实测基准 V0 + 偏置（默认 +20mV，
+         V0 读取失败时回落标称电压）；
       2. 使能被测 LDO（写 ENABLE 双寄存器 on），记 Vin/Vout 两通道电流；
       3. 关断被测 LDO（写 ENABLE 双寄存器 off），再记 Vin/Vout 两通道电流；
       4. ΔI_vin、ΔI_vout 分列显示，并注明 Vin/Vout 电压值（设定值）。
@@ -204,11 +205,14 @@ def quiescent(ctx: ItemContext) -> ItemResult:
         row = [vin_v, "", round(ivin, 3), ""]
         ctx.log_fn(f"[{item_key}] (fallback) Ivin={ivin:.3f} uA")
     else:
+        # 外供 Vout = 首项前实测基准 V0 + 偏置；V0 读取失败时回落标称电压
+        vout_supply = (ctx.vout_baseline_v if ctx.vout_baseline_v is not None
+                       else vout_nom) + vout_offset
         d = iq_diff_measure(ctx, item_key, vbat_ch, vout_src_ch,
-                            vout_nom + vout_offset, en_regs, settle_s, avg_cnt,
+                            vout_supply, en_regs, settle_s, avg_cnt,
                             mock_base_ua=80.0)
-        row = [vin_v, round(vout_nom + vout_offset, 4), d[0], d[1]]
-        ctx.log_fn(f"[{item_key}] Vin={vin_v}V Vout={vout_nom + vout_offset:.4f}V "
+        row = [vin_v, round(vout_supply, 4), d[0], d[1]]
+        ctx.log_fn(f"[{item_key}] Vin={vin_v}V Vout={vout_supply:.4f}V "
                    f"dIvin={d[0]} dIvout={d[1]} uA")
         # 关断外供前先把 ENABLE 寄存器还原回测量前状态
         from core.module_test.mode_manager import restore_dut_enable

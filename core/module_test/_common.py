@@ -39,6 +39,9 @@ class ItemContext:
     # measure_vout 越窗/无效复测判定用；None = 本 ctx 尚未入位）
     _scope_vout_v0: float | None = None
     _scope_vout_ch: int | None = None
+    # runner 首项前实测的 Vout 基准 V0（单位 V，_record_vout_baseline 注入；
+    # None = 读取失败或未记录，使用方须自行回落标称值）
+    vout_baseline_v: float | None = None
 
 
 def parse_channel(value: Any) -> int:

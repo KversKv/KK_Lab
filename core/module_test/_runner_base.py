@@ -359,6 +359,8 @@ class ModuleTestRunner(QThread):
                 item_cfg.update(override)
 
             ctx = self._make_ctx(item_cfg)
+            # 注入首项前实测基准 V0，供测试项使用（如 quiescent 外供 Vout 基准）
+            ctx.vout_baseline_v = vout_baseline
             item_t0 = time.monotonic()
             try:
                 result: ItemResult = run_fn(ctx)
