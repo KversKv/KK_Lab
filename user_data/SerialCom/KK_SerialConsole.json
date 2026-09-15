@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "COM44 - USB-Enhanced-SERIAL-C CH9114 (COM44)",
+    "port": "",
     "baudrate": "921600",
     "auto_detect": false,
     "databits": "8",
@@ -35,12 +35,13 @@
     "show_send": true,
     "show_system_log": true,
     "line_by_line": false,
-    "sidebar_visible": true,
-    "footer_visible": true,
+    "sidebar_visible": false,
+    "footer_visible": false,
     "show_line_num": false,
+    "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      686,
-      185
+      843,
+      0
     ],
     "log_auto_save": false,
     "log_save_path": ""
@@ -217,24 +218,24 @@
     ]
   },
   "window": {
-    "x": 636,
-    "y": 204,
-    "width": 1603,
-    "height": 979,
+    "x": 381,
+    "y": 263,
+    "width": 2196,
+    "height": 943,
     "maximized": false
   },
   "extra_panels": [
     {
-      "title": "P2",
-      "port": "COM5",
+      "title": "Serial Log 2",
+      "port": "COM6",
       "baudrate": 921600,
       "databit": 8,
       "stopbit": "1",
       "parity": "None",
       "flow": "None",
-      "auto_connect": true,
+      "auto_connect": false,
       "independent_window": false,
-      "connected": true
+      "connected": false
     }
   ]
 }
