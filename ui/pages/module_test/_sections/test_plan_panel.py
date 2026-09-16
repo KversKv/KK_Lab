@@ -1,6 +1,6 @@
 """TestPlanPanel — 测试项面板（工具行 + TestPlanView + 委托）。
 
-- 工具行：搜索框 / 全选(切换) / 仅失败(切换) / 已选计数；
+- 工具行：搜索框 / 全选(切换) / 仅失败(切换) / Save All / 已选计数；
 - 视图：``QTreeView`` + ``TestPlanModel`` + ``QSortFilterProxyModel``（名称过滤、
   仅失败过滤），分组默认展开；
 - 委托：``_StatusBadgeDelegate``（状态徽章着色 + running 呼吸点）、
@@ -225,6 +225,7 @@ class TestPlanPanel(QWidget):
 
     paramsRequested = Signal(str)   # item_key
     saveResultRequested = Signal(str)  # item_key（点击保存结果列图标）
+    saveAllRequested = Signal()  # 工具行 Save All（保存全部已勾选且有结果项）
     selectionChanged = Signal()
 
     def __init__(self, registry: Mapping, standalone: Sequence[str] = (),
@@ -270,6 +271,11 @@ class TestPlanPanel(QWidget):
         bar.addWidget(self.only_failed_btn)
 
         bar.addStretch()
+        self.save_all_btn = QPushButton("Save All")
+        self.save_all_btn.setProperty("variant", "ghost")
+        self.save_all_btn.setToolTip("一键保存当前已勾选且有结果的测试项")
+        self.save_all_btn.clicked.connect(self.saveAllRequested)
+        bar.addWidget(self.save_all_btn)
         self._stats_label = self._make_stats_label()
         bar.addWidget(self._stats_label)
         root.addLayout(bar)

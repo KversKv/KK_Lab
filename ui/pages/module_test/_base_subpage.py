@@ -137,6 +137,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.test_plan = TestPlanPanel(self.ITEMS_REGISTRY, self.STANDALONE_ITEMS)
         self.test_plan.paramsRequested.connect(self._open_item_params)
         self.test_plan.saveResultRequested.connect(self._on_save_item_result)
+        self.test_plan.saveAllRequested.connect(self._on_save_all_results)
         self.detail_dock = DetailDock()
         self.detail_dock.openReportRequested.connect(self._on_open_report)
         self.detail_dock.openOutputDirRequested.connect(self._on_open_output_dir)
@@ -629,6 +630,45 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.detail_dock.log_panel.append_log(
             f"[SAVE] {item.name} 结果已保存：{entry_dir}")
         Toast.popup(self, f"已保存：{item.name}", severity="success")
+
+    def _on_save_all_results(self) -> None:
+        """Save All：一键保存当前已勾选且本次会话已有结果的测试项。"""
+        keys = self.test_plan.selected_keys()
+        if not keys:
+            Toast.popup(self, "未勾选任何测试项", severity="info")
+            return
+        saved, failed, no_result = 0, 0, 0
+        for item_key in keys:
+            pair = self._item_results.get(item_key)
+            if pair is None:
+                no_result += 1
+                continue
+            item, source = pair
+            try:
+                entry_dir = save_item_result(self.MODULE_TYPE, item, source)
+            except Exception:  # noqa: BLE001 - 保存失败仅提示，不影响页面
+                _logger.error("保存测试项结果失败: %s", item_key, exc_info=True)
+                self.detail_dock.log_panel.append_log(
+                    f"[SAVE] [ERROR] {item_key} 结果保存失败，详见日志。")
+                failed += 1
+                continue
+            self.detail_dock.log_panel.append_log(
+                f"[SAVE] {item.name} 结果已保存：{entry_dir}")
+            saved += 1
+        if saved == 0 and failed == 0:
+            self.detail_dock.log_panel.append_log(
+                "[SAVE] 勾选项本次会话均无测试结果，请先运行。")
+            Toast.popup(self, "勾选项本次会话尚无测试结果，请先运行",
+                        severity="warning")
+            return
+        summary = f"已保存 {saved} 项"
+        if failed:
+            summary += f"，失败 {failed} 项"
+        if no_result:
+            summary += f"，{no_result} 项无结果已跳过"
+        self.detail_dock.log_panel.append_log(f"[SAVE] Save All 完成：{summary}")
+        Toast.popup(self, summary,
+                    severity="error" if failed else "success")
 
     def _on_export_saved_results(self) -> None:
         """导出已保存结果：弹窗勾选若干已保存项，后台聚合导出到 final 目录。"""
