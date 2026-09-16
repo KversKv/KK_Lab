@@ -3,18 +3,11 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_vout_scan",
-      "ldo_load_reg",
-      "ldo_line_reg",
-      "ldo_quiescent",
-      "ldo_ripple",
-      "ldo_output_noise",
-      "ldo_load_transient",
-      "ldo_line_transient"
+      "ldo_dropout"
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_12",
-    "test_condition": "Normal_Bias; VIN=0.85V",
+    "test_condition": "Normal_Bias; VIN=0.9V",
     "operator": "KK",
     "temp_test_enabled": false,
     "temperature": "",
@@ -135,8 +128,8 @@
       },
       "ldo_dropout": {
         "dropout_iload_ma": 100.0,
-        "dropout_vin_hi_v": 1.8,
-        "dropout_vin_lo_v": 1.0,
+        "dropout_vin_hi_v": 1.2,
+        "dropout_vin_lo_v": 0.6,
         "dropout_vin_step_v": 0.02,
         "vout_tol": 0.02,
         "settle_time_s": 0.01,

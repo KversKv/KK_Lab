@@ -3,10 +3,17 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_dropout"
+      "ldo_vout_scan",
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_ripple",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient"
     ],
     "chip_name": "BES1860",
-    "module_name": "LDO_05",
+    "module_name": "LDO_13",
     "test_condition": "LP_Mode",
     "operator": "KK",
     "temp_test_enabled": false,
@@ -30,10 +37,10 @@
         "vin_v": 4.0,
         "average_cnt": 5,
         "settle_time_s": 0.05,
-        "iq_en_dr_addr": "0x08",
-        "iq_en_addr": "0x08",
-        "iq_en_dr_bit": 10,
-        "iq_en_bit": 9,
+        "iq_en_dr_addr": "0x000C",
+        "iq_en_addr": "0x000C",
+        "iq_en_dr_bit": 11,
+        "iq_en_bit": 10,
         "iq_on_dr_val": 1,
         "iq_on_en_val": 1,
         "iq_off_dr_val": 1,
@@ -41,7 +48,7 @@
         "iq_vout_offset_mv": 20.0
       },
       "ldo_vout_scan": {
-        "reg_addr": "0x68",
+        "reg_addr": "0x0085",
         "msb": 4,
         "lsb": 0,
         "min_code": 0,
