@@ -1592,7 +1592,8 @@ class OscilloscopeBaseUI(QWidget):
         self.capture_image_label.setPixmap(scaled)
         self.capture_image_label.show()
         self.capture_placeholder_widget.hide()
-        self.append_log("[INFO] Screenshot captured and displayed.")
+        QApplication.clipboard().setPixmap(pixmap)
+        self.append_log("[INFO] Screenshot captured, displayed and copied to clipboard.")
 
     def _on_capture_context_menu(self, pos):
         if self._current_pixmap is None:
