@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QSpinBox,
+    QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
@@ -37,12 +37,15 @@ class DutConfigPanel(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(8)
+        root.setSpacing(6)
 
-        # label_width 88：最宽标签「Vout 标称 (mV)」实测 80px（Segoe UI 9 @96dpi），
-        # 72 会被右对齐裁掉左缘（旧坑："out 标称 (mV)"）
-        grid = FormGrid(columns=2, label_width=dp(88))
-        self._grid = grid
+        # 全部 FormGrid 登记入 _grids（module_theme.style_form_rows 统一遍历）
+        self._grids: list[FormGrid] = []
+
+        # —— 基本信息 ——
+        root.addWidget(self._group_header("基本信息", first=True))
+        grid = self._new_grid()
+        self._grid = grid  # 兼容旧引用（validate/module_theme）
 
         self.chip_name_edit = QLineEdit()
         self.chip_name_edit.setPlaceholderText("如 BES1307")
@@ -54,68 +57,82 @@ class DutConfigPanel(QWidget):
 
         self.test_condition_edit = QLineEdit()
         self.test_condition_edit.setPlaceholderText("如 常温正常供电 / 高温满载")
-        grid.add_row("测试条件", self.test_condition_edit, col_span=2)
+        grid.add_row("测试条件", self.test_condition_edit)
 
         self.operator_edit = QLineEdit()
         grid.add_row("操作员", self.operator_edit)
+        root.addWidget(grid)
+
+        # —— 电气参数 ——
+        root.addWidget(self._group_header("电气参数"))
+        elec_grid = self._new_grid()
 
         self.vout_nominal_spin = QSpinBox()
         self.vout_nominal_spin.setRange(0, 6000)
         self.vout_nominal_spin.setValue(1800 if module_type == "ldo" else 1200)
-        grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
+        elec_grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
 
         # 设计的最大带载电流：测试开始前 Vbat 通道限流设为 (Max Iload + 0.1) A
         self.max_iload_spin = QSpinBox()
         self.max_iload_spin.setRange(0, 10000)
         self.max_iload_spin.setValue(400)
-        grid.add_row("Max Iload (mA)", self.max_iload_spin)
+        elec_grid.add_row("Max Iload (mA)", self.max_iload_spin)
 
         # 电压测试方式：N6705C=Vout 通道电压表；scope=示波器输出通道平均值
         self.volt_method_combo = self._make_combo([])
         self.volt_method_combo.addItem("N6705C", "n6705c")
         self.volt_method_combo.addItem("示波器", "scope")
         self.volt_method_combo.currentIndexChanged.connect(self._on_volt_method_changed)
-        grid.add_row("电压测试方式", self.volt_method_combo)
+        elec_grid.add_row("电压测试方式", self.volt_method_combo)
+        root.addWidget(elec_grid)
+
+        # —— 通道分配 ——
+        root.addWidget(self._group_header("通道分配"))
+        ch_grid = self._new_grid()
 
         # Vbat 通道：DUT 主供电（原 Vin 通道角色，限流/偏置等既有逻辑均走此通道）
         self.vbat_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
-        grid.add_row("Vbat 通道", self.vbat_ch_combo)
+        ch_grid.add_row("Vbat 通道", self.vbat_ch_combo)
 
         # Vin 通道：独立输入源，Dropout 与 Output Voltage Scan 输入偏置专用
         self.vin_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.vin_ch_combo.setCurrentIndex(1)
-        grid.add_row("Vin 通道", self.vin_ch_combo)
+        ch_grid.add_row("Vin 通道", self.vin_ch_combo)
 
         self.vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
         # 仅 N6705C 方式需要 Vout 电压测量通道（scope 方式走示波器通道）
-        self._row_vout = grid.add_row("Vout CH", self.vout_ch_combo)
+        self._row_vout = ch_grid.add_row("Vout CH", self.vout_ch_combo)
         self._on_volt_method_changed(self.volt_method_combo.currentIndex())
 
         # quiescent 静态电流差分测量的 Vout 外供源通道（与测量方式无关）
         self.force_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.force_ch_combo.setCurrentIndex(1)
-        grid.add_row("Force CH", self.force_ch_combo)
+        ch_grid.add_row("Force CH", self.force_ch_combo)
 
         self.iload_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
-        grid.add_row("Iload 通道", self.iload_ch_combo)
+        ch_grid.add_row("Iload 通道", self.iload_ch_combo)
 
         self.scope_vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
-        grid.add_row("示波器通道", self.scope_vout_ch_combo)
+        ch_grid.add_row("示波器通道", self.scope_vout_ch_combo)
+        root.addWidget(ch_grid)
+
+        # —— I2C 配置 ——
+        root.addWidget(self._group_header("I2C 配置"))
+        i2c_grid = self._new_grid()
 
         self.device_addr_edit = HexWheelLineEdit("0x00")
         self.device_addr_edit.setPlaceholderText("如 0x62")
-        grid.add_row("Device 地址", self.device_addr_edit)
+        i2c_grid.add_row("Device 地址", self.device_addr_edit)
 
         self.width_flag_combo = self._make_combo([])
         self.width_flag_combo.addItem("8-bit", int(I2CWidthFlag.BIT_8))
         self.width_flag_combo.addItem("10-bit", int(I2CWidthFlag.BIT_10))
         self.width_flag_combo.addItem("32-bit", int(I2CWidthFlag.BIT_32))
         self.width_flag_combo.setCurrentIndex(1)
-        grid.add_row("Width Flag", self.width_flag_combo)
-
-        root.addWidget(grid)
+        i2c_grid.add_row("Width Flag", self.width_flag_combo)
+        root.addWidget(i2c_grid)
 
         # —— 高低温测试（勾选后展开温度相关设置，与旧联动一致）——
         self.temp_test_check = QCheckBox("高低温测试")
@@ -128,7 +145,7 @@ class DutConfigPanel(QWidget):
         self._temp_panel = QWidget()
         temp_lay = QVBoxLayout(self._temp_panel)
         temp_lay.setContentsMargins(0, 0, 0, 0)
-        temp_grid = FormGrid(columns=2, label_width=dp(88))
+        temp_grid = self._new_grid()
         self._temp_grid = temp_grid
 
         self.temperature_edit = QLineEdit()
@@ -155,6 +172,32 @@ class DutConfigPanel(QWidget):
         self._on_temp_toggled(False)
 
     # ------------------------------------------------------------------ 构造辅助
+    def _new_grid(self) -> FormGrid:
+        """新建单列 FormGrid 并登记（标签右对齐宽度 88，编辑器整列拉伸）。
+
+        label_width 88：最宽标签「Vout 标称 (mV)」实测 80px（Segoe UI 9 @96dpi），
+        72 会被右对齐裁掉左缘（旧坑："out 标称 (mV)"）。
+        """
+        grid = FormGrid(columns=1, label_width=dp(88))
+        self._grids.append(grid)
+        return grid
+
+    @staticmethod
+    def _group_header(text: str, *, first: bool = False) -> QWidget:
+        """分组标题行：caption 文本 + 右侧细分隔线（复用 cardSeparator 样式）。"""
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0 if first else 4, 0, 0)
+        lay.setSpacing(8)
+        lbl = QLabel(text)
+        lbl.setProperty("role", "caption")
+        lay.addWidget(lbl)
+        line = QFrame()
+        line.setObjectName("cardSeparator")
+        line.setFixedHeight(1)
+        lay.addWidget(line, 1)
+        return w
+
     def _make_combo(self, items: list[str]) -> DarkComboBox:
         """统一构造 DarkComboBox：设 Expanding 水平 sizePolicy，与 QLineEdit/QSpinBox
         一致拉伸填满 FormGrid 列宽，避免下拉菜单比输入框窄。"""
@@ -175,7 +218,8 @@ class DutConfigPanel(QWidget):
     # ------------------------------------------------------------------ 校验
     def validate(self) -> FormRow | None:
         """行内校验；返回第一个错误行（None = 通过）。不弹窗。"""
-        self._grid.clear_errors()
+        for g in self._grids:
+            g.clear_errors()
         if not self.chip_name_edit.text().strip():
             self._row_chip.set_error("芯片名称为必填项")
             return self._row_chip

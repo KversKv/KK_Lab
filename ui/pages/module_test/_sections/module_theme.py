@@ -181,7 +181,7 @@ def apply_subpage_extras(subpage) -> None:
     watch_chip_zero(subpage.run_bar)
     style_result_table(subpage.detail_dock.result_table)
     style_cards(subpage)
-    # DUT 配置 + 高低温两个 FormGrid 的标签右对齐 / 必填红星（仅本页实例）
+    # DUT 配置各分组 FormGrid（含高低温）的标签右对齐 / 必填红星（仅本页实例）
     dut = subpage.left_rail.dut_panel
-    style_form_rows(dut._grid)
-    style_form_rows(dut._temp_grid)
+    for grid in dut._grids:
+        style_form_rows(grid)
