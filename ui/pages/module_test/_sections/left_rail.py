@@ -200,6 +200,9 @@ class LeftRail(QWidget):
         """host: 子页基类实例（持有连接 Mixin，负责 build/bind 连接控件）。"""
         super().__init__(parent)
         self._host = host
+        # objectName 供 module_dark.qss 钉背景：裸 QWidget 无 QSS 背景兜底时，
+        # autoFillBackground 会按 app 默认浅色调色板刷白卡片间隙（真实环境坑）
+        self.setObjectName("leftRail")
         self.setMinimumWidth(dp(280))
         self.setMaximumWidth(dp(360))
 

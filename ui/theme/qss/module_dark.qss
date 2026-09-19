@@ -519,8 +519,13 @@ QLabel#formUnit { color: $text_disabled; font-size: $font_caption; }
 /* ============================================================
    左栏滚动区（LeftRail 的 QScrollArea 容器）：透底无边框融入页面，
    滚动条沿用页面既有样式，不另行定制。
+   LeftRail 本体须显式钉 $surface_page：它是裸 QWidget（MainWindow QSS
+   裸 QFrame 规则兜不住），autoFillBackground 会按 app 浅色调色板刷白。
    ============================================================ */
 QScrollArea#leftRailScroll {
     background: transparent;
     border: none;
+}
+QWidget#leftRail {
+    background: $surface_page;
 }
