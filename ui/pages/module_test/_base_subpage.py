@@ -14,7 +14,9 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout, QMessageBox, QScrollArea, QSplitter, QVBoxLayout, QWidget,
+)
 
 from core.module_test._common import VOLT_METHOD_SCOPE, cfg_int
 from core.module_test.module_config import ModuleConfigWorker
@@ -131,7 +133,17 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.left_rail = LeftRail(self, self.MODULE_TYPE)
         self.left_rail.module_config_panel.execRequested.connect(
             self._on_exec_module_config)
-        body.addWidget(self.left_rail)
+        # 左栏包 QScrollArea：窗口高度不足时出滚动条，而非把表单行压扁
+        # （pmu/charger/consumption 各页 left_scroll 同范式；宽度约束沿用 LeftRail 自身）
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setObjectName("leftRailScroll")
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setMinimumWidth(self.left_rail.minimumWidth())
+        self.left_scroll.setMaximumWidth(self.left_rail.maximumWidth())
+        self.left_scroll.setWidget(self.left_rail)
+        body.addWidget(self.left_scroll)
         center = QVBoxLayout()
         center.setSpacing(8)
         self.test_plan = TestPlanPanel(self.ITEMS_REGISTRY, self.STANDALONE_ITEMS)
@@ -802,5 +814,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
 
     def show_connection_panel(self) -> None:
         self.left_rail.show_connection()
+        # 连接卡在左栏顶部：滚回顶确保展开后可见（左栏已包 QScrollArea）
+        self.left_scroll.verticalScrollBar().setValue(0)
     # AI 契约（ai_* / _register_ai_ui_actions）由 _sections/ai_contract.py 的
     # ModuleTestAIContract mixin 提供。

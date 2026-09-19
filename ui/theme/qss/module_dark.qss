@@ -515,3 +515,12 @@ QLabel#formUnit { color: $text_disabled; font-size: $font_caption; }
     color: #6B7683;
 }
 #ModuleTestSubPage QFrame#logContainer QPushButton#levelChip:hover { background-color: #232B36; }
+
+/* ============================================================
+   左栏滚动区（LeftRail 的 QScrollArea 容器）：透底无边框融入页面，
+   滚动条沿用页面既有样式，不另行定制。
+   ============================================================ */
+QScrollArea#leftRailScroll {
+    background: transparent;
+    border: none;
+}

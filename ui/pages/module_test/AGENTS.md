@@ -18,7 +18,7 @@
 - `ModuleTestUI` 构造透传：`n6705c_top / mso64b_top / chamber_ui / instrument_manager / ui_action_registry`。
 - `TEST_TAB_MAP`：`ldo=0 / dcdc=1`；暴露 `set_current_test / get_current_test / _sync_from_top` 供枢纽调用。
 - 共享基类 [_base_subpage.py](./_base_subpage.py)：两子页（LDO/DCDC）复用的被测配置区 / AI 契约。
-- **布局/运行态**：顶层 `CommandBar + QStackedWidget`；子页 = LeftRail(连接/DUT Card) + QSplitter(TestPlanPanel | DetailDock) + RunControlBar；运行态经 `RunState` + `_apply_run_state()` 单一入口。[widgets.py](./widgets.py) 仅为旧入口 re-export shim（勿新增引用，P5 删除）；`prompt_config_manager_once()` 默认非模态 InfoBanner（`force_dialog=True` 才弹窗）。
+- **布局/运行态**：顶层 `CommandBar + QStackedWidget`；子页 = `QScrollArea#leftRailScroll`(LeftRail 连接/DUT Card) + QSplitter(TestPlanPanel | DetailDock) + RunControlBar；运行态经 `RunState` + `_apply_run_state()` 单一入口。[widgets.py](./widgets.py) 仅为旧入口 re-export shim（勿新增引用，P5 删除）；`prompt_config_manager_once()` 默认非模态 InfoBanner（`force_dialog=True` 才弹窗）。
 - **样式**：色值/样式一律走 `ui/theme/`（tokens + `qss/*.qss`），经 `apply_qss(w, name)` 注入（ui/ 唯一 setStyleSheet 白名单点），禁内联 `setStyleSheet` 与裸 `#RRGGBB`。
 - **本页暗色主题（页面专属增量，不改全局/共享源）**：`tokens.py` 末尾的 `module_dark_tokens()` + `qss/module_dark.qss`（LOG 区仅增量覆盖，沿用 `#logContainer` 等共享 objectName，不重写 log_frame.qss）+ [_sections/module_theme.py](./_sections/module_theme.py) 唯一装配入口（`apply_qss_theme` 注入 token，`apply_subpage_extras` 对 run_bar/result_table/cards/form 做实例级视觉追加）；子页 `_build_ui` 设 `objectName="ModuleTestSubPage"` 且末尾调 `apply_subpage_extras(self)`；Pill 绘制在 [ui/widgets/badge_delegate.py](../../../ui/widgets/badge_delegate.py)（优先取 `module_dark_tokens`）。日志面板用 `LogPanel`（限批 flush/20000 行上限），等级过滤为多选 chips（`_LevelChipsFilter`，空集=全显；`_PillSwitcher` 已 deprecated 勿用）。
 
@@ -65,6 +65,7 @@
 ## 局部坑点
 
 - **DUT 表单 label_width=dp(88)**：`#formLabel` 字号 = `$font_caption`(11px)，最宽标签「Max Iload (mA)」实测 80px，旧 72 被 `AlignRight`（`style_form_rows` 右对齐）裁掉左缘（"lax Iload"）；两 FormGrid（DUT/温度）须同宽。搜索框内嵌 SVG 必须按 16px 渲染（QLineEdit action iconSize 固定 16），见 [docs/ai/03_GOTCHAS §36](../../../docs/ai/03_GOTCHAS.md)。
+- **左栏必须经 `left_scroll`（QScrollArea）挂载**：三卡全展开自然高 ~980px 超默认窗口可用高，裸挂 body 会被 QVBoxLayout 把表单行压扁；滚动区宽约束取自 `left_rail.minimumWidth()/maximumWidth()`（单一事实源在 LeftRail），横向恒 off，`show_connection_panel` 须滚回顶。
 - 样式：`_setup_style = get_page_base_qss() + get_table_qss() + START_BTN_STYLE + page_extra`，色值只取 `ui.theme` token；启停按钮 objectName 固定 `primaryStartBtn`/`stopBtn`。严禁把 `START_BTN_STYLE`（整段带选择器的 QSS）嵌进 `#xxx{...}` 声明块——无效 QSS，样式静默失效。
 - 结果落 `Results/module_test/{module_type}/{芯片}_{模块}_{测试条件}_{时间戳}/`（`_runner_base._safe_dir_part` 清洗 Windows 非法字符、空段省略、全空回落纯时间戳；测试条件 = DUT 配置 `test_condition_edit`（cfg 键 `test_condition`），旧配置无此键回落空段省略）；报告元信息同步两字段：`ModuleTestResult.module_name/test_condition`（runner 自 cfg 填充）→ `build_report_data` meta → 前端 `renderMeta`（Module Name / Test Condition）与 XLSX meta（模块名称 / 测试条件）；新增测试项落 `core/module_test/{ldo,dcdc}/items/`。
 - **XLSX 导出**：[core/module_test/xlsx_export.py](../../../core/module_test/xlsx_export.py)（纯函数无 Qt）。截图锚定：`measured["screenshots"]` 的 `Iload (mA)` 键按 CSV 首列数值匹配数据行（行高 `px×0.75+4`），未匹配/单波形（`waveform_png`）堆叠数据区下方每行一张。依赖 openpyxl+Pillow（缺则 RuntimeError 不静默丢图；spec hiddenimports 已加）。入口仅两处：报告页「下载 XLSX」与报告目录 `XLSX/`。
