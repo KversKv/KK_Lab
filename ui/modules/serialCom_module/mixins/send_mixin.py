@@ -530,15 +530,16 @@ class SendMixin:
             else:
                 self._sc_append_system("[ERROR] Send failed, serial not connected")
 
-        if text not in self._sc_send_history:
-            self._sc_send_history.insert(0, text)
-            if len(self._sc_send_history) > 50:
-                self._sc_send_history.pop()
-            self._sc_history_combo.blockSignals(True)
-            self._sc_history_combo.clear()
-            self._sc_history_combo.addItems(self._sc_send_history)
-            self._sc_history_combo.setCurrentIndex(-1)
-            self._sc_history_combo.blockSignals(False)
+        if text in self._sc_send_history:
+            self._sc_send_history.remove(text)
+        self._sc_send_history.insert(0, text)
+        if len(self._sc_send_history) > 50:
+            self._sc_send_history.pop()
+        self._sc_history_combo.blockSignals(True)
+        self._sc_history_combo.clear()
+        self._sc_history_combo.addItems(self._sc_send_history)
+        self._sc_history_combo.setCurrentIndex(-1)
+        self._sc_history_combo.blockSignals(False)
 
         self._sc_hist_nav_reset()
         self._sc_send_input.clear()
