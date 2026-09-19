@@ -64,6 +64,7 @@
 
 ## 局部坑点
 
+- **DUT 表单 label_width=dp(88)**：`#formLabel` 字号 = `$font_caption`(11px)，最宽标签「Max Iload (mA)」实测 80px，旧 72 被 `AlignRight`（`style_form_rows` 右对齐）裁掉左缘（"lax Iload"）；两 FormGrid（DUT/温度）须同宽。搜索框内嵌 SVG 必须按 16px 渲染（QLineEdit action iconSize 固定 16），见 [docs/ai/03_GOTCHAS §36](../../../docs/ai/03_GOTCHAS.md)。
 - 样式：`_setup_style = get_page_base_qss() + get_table_qss() + START_BTN_STYLE + page_extra`，色值只取 `ui.theme` token；启停按钮 objectName 固定 `primaryStartBtn`/`stopBtn`。严禁把 `START_BTN_STYLE`（整段带选择器的 QSS）嵌进 `#xxx{...}` 声明块——无效 QSS，样式静默失效。
 - 结果落 `Results/module_test/{module_type}/{芯片}_{模块}_{测试条件}_{时间戳}/`（`_runner_base._safe_dir_part` 清洗 Windows 非法字符、空段省略、全空回落纯时间戳；测试条件 = DUT 配置 `test_condition_edit`（cfg 键 `test_condition`），旧配置无此键回落空段省略）；报告元信息同步两字段：`ModuleTestResult.module_name/test_condition`（runner 自 cfg 填充）→ `build_report_data` meta → 前端 `renderMeta`（Module Name / Test Condition）与 XLSX meta（模块名称 / 测试条件）；新增测试项落 `core/module_test/{ldo,dcdc}/items/`。
 - **XLSX 导出**：[core/module_test/xlsx_export.py](../../../core/module_test/xlsx_export.py)（纯函数无 Qt）。截图锚定：`measured["screenshots"]` 的 `Iload (mA)` 键按 CSV 首列数值匹配数据行（行高 `px×0.75+4`），未匹配/单波形（`waveform_png`）堆叠数据区下方每行一张。依赖 openpyxl+Pillow（缺则 RuntimeError 不静默丢图；spec hiddenimports 已加）。入口仅两处：报告页「下载 XLSX」与报告目录 `XLSX/`。

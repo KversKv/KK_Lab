@@ -251,9 +251,11 @@ class TestPlanPanel(QWidget):
         self.search_edit.setPlaceholderText("搜索测试项…（Ctrl+F）")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setMaximumWidth(240)
-        # 左侧内嵌放大镜图标（纯视觉，占位由 QSS #searchEdit padding-left 提供）
+        # 左侧内嵌放大镜图标（纯视觉，占位由 QSS #searchEdit padding-left 提供）；
+        # 必须按 16px 渲染：QLineEdit action 按钮 iconSize 固定 16×16，小于 16
+        # 会被放大插值发虚（docs/ai/03_GOTCHAS §36）
         _muted = current_theme().text_muted
-        self.search_edit.addAction(tinted_svg_icon(_SEARCH_ICON, _muted, 14),
+        self.search_edit.addAction(tinted_svg_icon(_SEARCH_ICON, _muted, 16),
                                    QLineEdit.LeadingPosition)
         self.search_edit.textChanged.connect(self._proxy.set_needle)
         bar.addWidget(self.search_edit)

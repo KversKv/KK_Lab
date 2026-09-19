@@ -511,3 +511,17 @@ app.installEventFilter(_WinFilter())
 
 - 经验法则：动态属性（`[density="..."]` 类）驱动的 QSS 变体中，`min/max-height` 切档可靠；**`padding` 切档对 QLabel 不可靠**（尺寸路径与 contentsMargins 路径可能各自解析）。
 - 参考实现：[nav_controller.py](../../../ui/nav_controller.py) `_LEFT_NAV_QSS` / `_add_group_title` / `_apply_density`；回归断言见 [tests/test_nav_layout_smoke.py](../../../tests/test_nav_layout_smoke.py)（dense 下标题内容区 ≥12px）。
+
+## 36. `QLineEdit.addAction` 内嵌图标必须按 16px 渲染（小尺寸放大发虚）
+
+**现象**：搜索框 `addAction(icon, LeadingPosition)` 内嵌的放大镜 SVG 模糊发虚，同页其它 SVG（QSS `image:` 渲染）却清晰；DPR=1 也复现，与高 DPI 无关。
+
+**根因**：Qt6 中 `QLineEdit` action 按钮（`QLineEditIconButton`）`iconSize` 固定 **16×16**（实测 Fusion/Windows 一致）；`tinted_svg_icon(path, color, 14)` 只提供 14px pixmap，绘制时 14→16 放大插值 → 模糊。不是 §23 的 DPR 问题。
+
+**规则**：
+
+- 塞进 `QLineEdit.addAction` 的图标渲染尺寸一律取 **16**，勿凭视觉估 12/14；其它入口（`QPushButton.setIcon`、delegate `paint`）按各自实际 iconSize/绘制矩形取同名尺寸。
+- 与 §23 一致：仍按逻辑大小渲染，禁 `setDevicePixelRatio`。
+- 存量同坑：`execution_logs_module_frame` 日志搜索框用 12px，修复时按此规则改 16。
+
+**参考**：[test_plan_panel.py](../../../ui/pages/module_test/_sections/test_plan_panel.py) 搜索框（14→16 修复点）。

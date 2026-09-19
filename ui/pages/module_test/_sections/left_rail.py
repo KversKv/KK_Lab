@@ -39,7 +39,9 @@ class DutConfigPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        grid = FormGrid(columns=2, label_width=dp(72))
+        # label_width 88：最宽标签「Vout 标称 (mV)」实测 80px（Segoe UI 9 @96dpi），
+        # 72 会被右对齐裁掉左缘（旧坑："out 标称 (mV)"）
+        grid = FormGrid(columns=2, label_width=dp(88))
         self._grid = grid
 
         self.chip_name_edit = QLineEdit()
@@ -126,7 +128,7 @@ class DutConfigPanel(QWidget):
         self._temp_panel = QWidget()
         temp_lay = QVBoxLayout(self._temp_panel)
         temp_lay.setContentsMargins(0, 0, 0, 0)
-        temp_grid = FormGrid(columns=2, label_width=dp(72))
+        temp_grid = FormGrid(columns=2, label_width=dp(88))
         self._temp_grid = temp_grid
 
         self.temperature_edit = QLineEdit()
