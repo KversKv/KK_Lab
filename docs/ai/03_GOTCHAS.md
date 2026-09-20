@@ -525,3 +525,17 @@ app.installEventFilter(_WinFilter())
 - 存量同坑：`execution_logs_module_frame` 日志搜索框用 12px，修复时按此规则改 16。
 
 **参考**：[test_plan_panel.py](../../../ui/pages/module_test/_sections/test_plan_panel.py) 搜索框（14→16 修复点）。
+
+## 37. pyqtgraph 可拖拽 GraphicsItem 禁用 `ItemIsMovable`（吞右键/破坏 scene 点击分发）
+
+**现象**：给 `pg.TextItem` 加 `ItemIsMovable` 实现拖拽后，右键点在该 item 上时 `scene().sigMouseClicked` 不发射，挂在 signal 上的右键菜单成了死代码；左键拖拽却正常。
+
+**根因**：`ItemIsMovable` 使 Qt 层 `QGraphicsItem::mousePressEvent` 连**右键按下也 accept** 并成为 mouseGrabber（实测 PySide6），release 直接给 grabber → `GraphicsScene.mouseReleaseEvent` 因 `mouseGrabberItem() is not None` 不生成 `MouseClickEvent` → `sigMouseClicked` 静默丢失。
+
+**规则**：
+
+- pyqtgraph item 的拖拽/点击一律走其原生分发：`hoverEvent` 里 `ev.acceptDrags(Qt.LeftButton)` 注册拖拽意愿 + `mouseDragEvent`（`isStart/buttonDownPos/isFinish` 三段式，参照 `InfiniteLine`）+ `mouseClickEvent`（任意按钮右键菜单在此 accept）。
+- `mouseClickEvent` 里 `menu.exec()` 弹模态菜单是安全既有模式（同 `InfiniteLine.sigClicked` 链）；注意 `ev.screenPos()` 返回 `pg.Point`（QPointF 子类），`QMenu.exec` 只接受 `QPoint`，须先 `QPoint(int(sp.x()), int(sp.y()))` 转换，否则抛 `TypeError: wrong argument types`。
+- 页面若对 ViewBox 挂了 `eventFilter` 抢左键（如通道拖拽/marker 拖拽），须先 hit-test 自定义 item 并放行，否则两套拖拽逻辑打架。
+
+**参考**：[n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) `PairAnnotationItem`。

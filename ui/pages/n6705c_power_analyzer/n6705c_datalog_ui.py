@@ -138,6 +138,10 @@ EXTRA_MARKER_COLORS = [
 
 _BAND_CEILING = 0.88
 
+# 成对 Marker 区间注释（Δt/avg 文本框）：默认字号与可选字号
+_ANN_DEFAULT_FONT = 10
+_ANN_FONT_SIZES = (8, 10, 12, 14, 16, 18, 20, 24)
+
 # Measurement 表 Avg 列高亮：琥珀金前景 + 提亮背景，与斑马纹行区分
 _MEAS_AVG_FG = "#ffd166"
 _MEAS_AVG_BG = "#1c2b4f"
@@ -272,6 +276,46 @@ def _auto_format(value, base_unit):
             return f"{value * 1000:.4f} {units[0]}"
         else:
             return f"0.0000 {units[1]}"
+
+
+class PairAnnotationItem(pg.TextItem):
+    """成对 Marker 区间注释文本框：左键按住拖拽自由移动，右键弹出字体大小菜单。
+
+    注意：不能用 ItemIsMovable 实现拖拽——它会让 Qt 层连右键按下也一并 accept 成为
+    grabber，吞掉 scene 的点击分发；这里沿用 InfiniteLine 的 pyqtgraph 原生
+    hoverEvent/mouseDragEvent/mouseClickEvent 分发模式。
+    """
+
+    def __init__(self, html, moved_callback, context_callback, **kwargs):
+        super().__init__(html=html, **kwargs)
+        self._moved_callback = moved_callback
+        self._context_callback = context_callback
+        self._drag_offset = None
+        self.pair_ref = None      # ("AB", None) 或 ("X", pair_idx)，由创建方赋值
+        self.default_pos = None   # 未加手动偏移时的默认锚点 (x, y)，由创建方赋值
+        self.setCursor(Qt.SizeAllCursor)
+
+    def hoverEvent(self, ev):
+        if not ev.isExit():
+            ev.acceptDrags(Qt.LeftButton)
+
+    def mouseDragEvent(self, ev):
+        if ev.button() != Qt.LeftButton:
+            return
+        ev.accept()
+        if ev.isStart():
+            self._drag_offset = self.pos() - self.mapToParent(ev.buttonDownPos())
+        if self._drag_offset is not None:
+            self.setPos(self._drag_offset + self.mapToParent(ev.pos()))
+        if ev.isFinish():
+            self._drag_offset = None
+            if self._moved_callback is not None:
+                self._moved_callback(self)
+
+    def mouseClickEvent(self, ev):
+        if ev.button() == Qt.RightButton and self._context_callback is not None:
+            ev.accept()
+            self._context_callback(self, ev.screenPos())
 
 
 class ToggleLabel(QLabel):
@@ -1183,6 +1227,9 @@ class N6705CDatalogUI(QWidget):
         self._extra_marker_regions = []
         self._extra_marker_text_items = []
         self._marker_ab_text_item = None
+        self._ab_ann_dx = 0.0
+        self._ab_ann_dy = 0.0
+        self._ab_ann_font = _ANN_DEFAULT_FONT
         self._marker_follow_line = None
         self.box_zoom_enabled = False
         self._b_time_offset = 0.0
@@ -4506,6 +4553,9 @@ class N6705CDatalogUI(QWidget):
         if event.type() == QEvent.GraphicsSceneMousePress:
             if event.button() == Qt.LeftButton and self._pending_marker is None and not self.box_zoom_enabled:
                 scene_pos = event.scenePos()
+                if self._find_annotation_at_scene(scene_pos) is not None:
+                    # 按下点在 annotation 上：交给其自身的 pyqtgraph 拖拽分发，避免误触发通道拖拽
+                    return super().eventFilter(obj, event)
                 snap_marker = self._find_nearest_marker_at_scene(scene_pos)
                 if snap_marker:
                     self._marker_drag_target = snap_marker
@@ -5942,12 +5992,58 @@ class N6705CDatalogUI(QWidget):
         elif chosen == freeze_action:
             self._toggle_marker_freeze(which)
 
+    @staticmethod
+    def _parse_extra_marker_tag(tag):
+        """解析 'X{pair_idx}_{which}' 形式的 extra marker 标签，返回 (pair_idx, which)。"""
+        if not isinstance(tag, str) or not tag.startswith("X"):
+            return None, None
+        try:
+            pi_str, w = tag[1:].split("_")
+            return int(pi_str), w
+        except ValueError:
+            return None, None
+
+    def _marker_display_label(self, tag):
+        """Marker 内部标签（A/B 或 extra 的 X{pi}_{w}）→ 界面显示用字母。"""
+        if tag in ("A", "B"):
+            return tag
+        pi, w = self._parse_extra_marker_tag(tag)
+        if pi is not None and pi < len(self._extra_markers):
+            return self._extra_markers[pi][f"label{w}"]
+        return tag
+
+    def _get_marker_pos(self, tag):
+        if tag == "A":
+            return self.marker_a_pos
+        if tag == "B":
+            return self.marker_b_pos
+        pi, w = self._parse_extra_marker_tag(tag)
+        if pi is not None and pi < len(self._extra_markers):
+            return self._extra_markers[pi].get(f"pos{w}")
+        return None
+
+    def _set_marker_pos(self, tag, x):
+        if tag == "A":
+            self._place_marker_a(x)
+            return
+        if tag == "B":
+            self._place_marker_b(x)
+            return
+        pi, w = self._parse_extra_marker_tag(tag)
+        if pi is not None and pi < len(self._extra_markers):
+            em = self._extra_markers[pi]
+            em[f"pos{w}"] = x
+            line = em.get(f"line{w}")
+            if line is not None:
+                line.setValue(x)
+
     def _set_marker_position_dialog(self, which):
         """弹窗直接输入横坐标（单位 s）来设置 Marker 位置。"""
-        cur = self.marker_a_pos if which == "A" else self.marker_b_pos
+        cur = self._get_marker_pos(which)
+        which_label = self._marker_display_label(which)
 
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Set Marker {which} Position")
+        dialog.setWindowTitle(f"Set Marker {which_label} Position")
         dialog.setFixedWidth(320)
         dialog.setStyleSheet(dss.dlg_style())
 
@@ -5955,7 +6051,7 @@ class N6705CDatalogUI(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel(f"Set Marker {which} Position")
+        title = QLabel(f"Set Marker {which_label} Position")
         title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
@@ -5994,23 +6090,22 @@ class N6705CDatalogUI(QWidget):
             QMessageBox.warning(self, "无效输入", f"无法解析 X 坐标：{text!r}")
             return
 
-        if which == "A":
-            self._place_marker_a(x_val)
-        else:
-            self._place_marker_b(x_val)
+        self._set_marker_pos(which, x_val)
         self._update_marker_region()
         self._update_marker_analysis()
 
     def _move_marker_delta_dialog(self, which, other):
         """弹窗输入相对另一 Marker 的时间距离（单位 ms）来移动 Marker。"""
-        other_pos = self.marker_a_pos if other == "A" else self.marker_b_pos
+        other_pos = self._get_marker_pos(other)
+        which_label = self._marker_display_label(which)
+        other_label = self._marker_display_label(other)
         if other_pos is None:
-            QMessageBox.warning(self, "无法移动", f"Marker {other} 尚未放置，无法使用 Δ 定位。")
+            QMessageBox.warning(self, "无法移动", f"Marker {other_label} 尚未放置，无法使用 Δ 定位。")
             return
-        cur = self.marker_a_pos if which == "A" else self.marker_b_pos
+        cur = self._get_marker_pos(which)
 
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Move Marker {which} (Δ to {other})")
+        dialog.setWindowTitle(f"Move Marker {which_label} (Δ to {other_label})")
         dialog.setFixedWidth(320)
         dialog.setStyleSheet(dss.dlg_style())
 
@@ -6018,15 +6113,15 @@ class N6705CDatalogUI(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel(f"Move Marker {which} (Δ to {other})")
+        title = QLabel(f"Move Marker {which_label} (Δ to {other_label})")
         title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
-        ref_label = QLabel(f"Marker {other} 当前位置: {other_pos:.6f} s")
+        ref_label = QLabel(f"Marker {other_label} 当前位置: {other_pos:.6f} s")
         ref_label.setWordWrap(True)
         layout.addWidget(ref_label)
 
-        delta_label = QLabel(f"Δ to {other} (ms)")
+        delta_label = QLabel(f"Δ to {other_label} (ms)")
         layout.addWidget(delta_label)
         delta_edit = SelectAllLineEdit()
         delta_edit.setPlaceholderText("e.g. 2.5")
@@ -6063,10 +6158,7 @@ class N6705CDatalogUI(QWidget):
             return
 
         x_val = other_pos + delta_ms / 1000.0
-        if which == "A":
-            self._place_marker_a(x_val)
-        else:
-            self._place_marker_b(x_val)
+        self._set_marker_pos(which, x_val)
         self._update_marker_region()
         self._update_marker_analysis()
 
@@ -6180,8 +6272,10 @@ class N6705CDatalogUI(QWidget):
             )
             self.plot_widget.addItem(self.marker_region)
             self.marker_region.setZValue(-10)
-            self._marker_ab_text_item = self._create_pair_annotation(t1, t2, "#d4a514")
+            self._marker_ab_text_item = self._create_pair_annotation(
+                t1, t2, "#d4a514", self._ab_ann_dx, self._ab_ann_dy, self._ab_ann_font)
             if self._marker_ab_text_item:
+                self._marker_ab_text_item.pair_ref = ("AB", None)
                 self.plot_widget.addItem(self._marker_ab_text_item, ignoreBounds=True)
 
         for region in self._extra_marker_regions:
@@ -6197,7 +6291,7 @@ class N6705CDatalogUI(QWidget):
                 pass
         self._extra_marker_text_items.clear()
 
-        for em in self._extra_markers:
+        for pair_idx, em in enumerate(self._extra_markers):
             if em["pos1"] is not None and em["pos2"] is not None:
                 t1 = min(em["pos1"], em["pos2"])
                 t2 = max(em["pos1"], em["pos2"])
@@ -6209,29 +6303,100 @@ class N6705CDatalogUI(QWidget):
                 self.plot_widget.addItem(region)
                 region.setZValue(-10)
                 self._extra_marker_regions.append(region)
-                text_item = self._create_pair_annotation(t1, t2, em["color1"])
+                text_item = self._create_pair_annotation(
+                    t1, t2, em["color1"],
+                    em.get("ann_dx", 0.0), em.get("ann_dy", 0.0),
+                    em.get("ann_font", _ANN_DEFAULT_FONT))
                 if text_item:
+                    text_item.pair_ref = ("X", pair_idx)
                     self.plot_widget.addItem(text_item, ignoreBounds=True)
                     self._extra_marker_text_items.append(text_item)
 
-    def _create_pair_annotation(self, t1, t2, color):
+    def _create_pair_annotation(self, t1, t2, color, dx=0.0, dy=0.0, font_size=_ANN_DEFAULT_FONT):
         delta = t2 - t1
         if delta <= 0:
             return None
         delta_str = _format_time(delta)
         avg_str = self._compute_pair_avg_str(t1, t2)
         mid_x = (t1 + t2) / 2
-        text_item = pg.TextItem(
+        base_y = 1.0
+        text_item = PairAnnotationItem(
             html=f"<div style='background:#0a1733dd; padding:2px 6px; "
                  f"border: 1px solid {color}; border-radius:3px; "
-                 f"font-size:10px; font-weight:600; color:{color};'>"
+                 f"font-size:{font_size}px; font-weight:600; color:{color};'>"
                  f"\u0394t={delta_str}"
                  f"{avg_str}</div>",
+            moved_callback=self._on_annotation_moved,
+            context_callback=self._show_annotation_menu_at,
             anchor=(0.5, 0),
         )
         text_item.setZValue(90)
-        text_item.setPos(mid_x, 1.0)
+        text_item.default_pos = (mid_x, base_y)
+        text_item.setPos(mid_x + dx, base_y + dy)
         return text_item
+
+    def _on_annotation_moved(self, item):
+        """annotation 拖拽结束：记录相对默认锚点的偏移，重建时保持位置。"""
+        if item.default_pos is None or item.pair_ref is None:
+            return
+        dx = item.x() - item.default_pos[0]
+        dy = item.y() - item.default_pos[1]
+        scope, idx = item.pair_ref
+        if scope == "AB":
+            self._ab_ann_dx = dx
+            self._ab_ann_dy = dy
+        elif idx < len(self._extra_markers):
+            em = self._extra_markers[idx]
+            em["ann_dx"] = dx
+            em["ann_dy"] = dy
+
+    def _find_annotation_at_scene(self, scene_pos):
+        """返回 scene_pos 命中的成对 Marker annotation（未命中返回 None）。"""
+        candidates = []
+        if self._marker_ab_text_item is not None:
+            candidates.append(self._marker_ab_text_item)
+        candidates.extend(self._extra_marker_text_items)
+        for item in candidates:
+            try:
+                if item.sceneBoundingRect().contains(scene_pos):
+                    return item
+            except Exception:
+                continue
+        return None
+
+    def _show_annotation_menu_at(self, item, screen_pos):
+        """右键 annotation：更改字体大小。"""
+        if item.pair_ref is None:
+            return
+        # ev.screenPos() 返回 pg.Point(QPointF)，QMenu.exec 只接受 QPoint
+        screen_pos = QPoint(int(screen_pos.x()), int(screen_pos.y()))
+        scope, idx = item.pair_ref
+        if scope == "AB":
+            cur_size = self._ab_ann_font
+        elif idx < len(self._extra_markers):
+            cur_size = self._extra_markers[idx].get("ann_font", _ANN_DEFAULT_FONT)
+        else:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(dss.menu_style())
+        size_menu = menu.addMenu("字体大小")
+        size_actions = {}
+        for size in _ANN_FONT_SIZES:
+            act = size_menu.addAction(f"{size} px")
+            act.setCheckable(True)
+            act.setChecked(size == cur_size)
+            size_actions[act] = size
+
+        chosen = menu.exec(screen_pos)
+        if chosen is None or chosen not in size_actions:
+            return
+        new_size = size_actions[chosen]
+        if scope == "AB":
+            self._ab_ann_font = new_size
+        else:
+            self._extra_markers[idx]["ann_font"] = new_size
+        self._update_marker_region()
 
     def _compute_pair_avg_str(self, t1, t2):
         if not self.datalog_data:
@@ -6389,6 +6554,9 @@ class N6705CDatalogUI(QWidget):
             "line2": None,
             "color1": color1,
             "color2": color2,
+            "ann_dx": 0.0,
+            "ann_dy": 0.0,
+            "ann_font": _ANN_DEFAULT_FONT,
         }
         self._extra_markers.append(em)
         self._place_extra_marker_line(em, "1")
@@ -6492,6 +6660,9 @@ class N6705CDatalogUI(QWidget):
                     pass
             self.marker_a_pos = first["pos1"]
             self.marker_b_pos = first["pos2"]
+            self._ab_ann_dx = first.get("ann_dx", 0.0)
+            self._ab_ann_dy = first.get("ann_dy", 0.0)
+            self._ab_ann_font = first.get("ann_font", _ANN_DEFAULT_FONT)
             self._place_marker_a(self.marker_a_pos)
             self._place_marker_b(self.marker_b_pos)
 
@@ -6563,10 +6734,16 @@ class N6705CDatalogUI(QWidget):
             delete_action = menu.addAction("Delete Marker A && B")
             pair_type = "AB"
         elif marker_tag.startswith("X"):
-            parts = marker_tag[1:].split("_")
-            pi = int(parts[0])
-            if pi < len(self._extra_markers):
+            pi, which_w = self._parse_extra_marker_tag(marker_tag)
+            if pi is not None and pi < len(self._extra_markers):
                 em = self._extra_markers[pi]
+                other_w = "2" if which_w == "1" else "1"
+                other = f"X{pi}_{other_w}"
+                other_pos = em.get(f"pos{other_w}")
+                move_abs_action = menu.addAction(f"Move To (Abs : s)")
+                move_delta_action = menu.addAction(f"Move To (Δ to {em[f'label{other_w}']} : ms)")
+                move_delta_action.setEnabled(other_pos is not None)
+                menu.addSeparator()
                 delete_action = menu.addAction(f"Delete Marker {em['label1']} && {em['label2']}")
                 pair_type = "EXTRA"
                 pair_idx = pi
