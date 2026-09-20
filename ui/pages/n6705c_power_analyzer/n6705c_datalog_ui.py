@@ -7161,7 +7161,7 @@ class N6705CDatalogUI(QWidget):
                 seg_avg = 0.0
 
             self._set_meas_cell(ch_idx, 0, _display_label(label), color_hex, bg=row_bg)
-            self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), _MEAS_AVG_FG, bg=_MEAS_AVG_BG, bold=True)
+            self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), color_hex, bg=_MEAS_AVG_BG, bold=True)
 
         row_h = 28
         total_h = (num_rows + 1) * row_h + 4
@@ -7295,7 +7295,7 @@ class N6705CDatalogUI(QWidget):
                 else:
                     val_str = ""
                 if metric_key == "avg":
-                    self._set_meas_cell(row, col, val_str, _MEAS_AVG_FG, bg=_MEAS_AVG_BG, bold=True)
+                    self._set_meas_cell(row, col, val_str, color_hex, bg=_MEAS_AVG_BG, bold=True)
                 else:
                     self._set_meas_cell(row, col, val_str, color_hex, bg=row_bg)
                 col += 1
