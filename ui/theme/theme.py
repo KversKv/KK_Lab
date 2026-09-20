@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from string import Template
 
@@ -173,12 +174,17 @@ def load_qss(name: str, theme: Tokens | None = None, **overrides: str) -> str:
     return Template(text).safe_substitute(mapping)
 
 
-def apply_qss(widget, name: str, theme: Tokens | None = None, **overrides: str) -> None:
+def apply_qss(widget, name: str | Sequence[str], theme: Tokens | None = None,
+              **overrides: str) -> None:
     """白名单样式注入点：全 ui/ 唯一允许调 ``setStyleSheet`` 的地方。
 
     组件/页面一律 ``apply_qss(self, "controls")`` 等，禁止直接 setStyleSheet。
+    ``name`` 传多个时按序合并注入（同优先级后声明者生效），用于同一根节点
+    需要共享 QSS + 页面 QSS 真实级联的场景（如 Module Test 顶层容器）。
     """
-    widget.setStyleSheet(load_qss(name, theme, **overrides))  # noqa: whitelist
+    names = (name,) if isinstance(name, str) else tuple(name)
+    widget.setStyleSheet(  # noqa: whitelist
+        "\n".join(load_qss(n, theme, **overrides) for n in names))
 
 
 # ------------------------------------------------------------------ 应用入口

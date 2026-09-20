@@ -13,7 +13,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 def _rgba(hex_color: str, alpha: float) -> str:
@@ -161,45 +161,15 @@ def light_tokens() -> Tokens:
 
 
 # ---------------------------------------------------------------------------
-# Module Test 页面专属暗色主题（2026-08 视觉重构）。
-# 独立 token 集，与全局 dark_tokens() 完全解耦——不修改 dark_tokens / legacy /
-# token_map 任何共享定义；仅在 Module Test 页面经 apply_qss(self, "module_dark",
-# theme=module_dark_tokens()) 局部注入（该页面实例级覆盖，其它页面不受影响）。
+# Module Test 页面 token（2026-08 视觉重构引入；2026-09 主题适配统一）。
+# 历史上是独立 GitHub-dark 风色板（灰蓝底 + 蓝主色），与其它页面观感割裂；
+# 现与全局 dark_tokens() 同盘（深蓝底 + 紫主色），仅保留页面专属几何差异。
 # 新增语义 token（surface_hover/surface_selected/text_data/progress_track 等）
-# 由 qss/module_dark.qss 经 apply_qss(**overrides) 注入，不在此扩展 Tokens 字段。
+# 仍由 qss/module_dark.qss 经 apply_qss(**overrides) 注入，不在此扩展 Tokens 字段。
 def module_dark_tokens() -> Tokens:
-    """Module Test 专属暗色 token（GitHub-dark 风中性灰蓝底 + 蓝主色）。
+    """Module Test 页面 token：全局 dark 调色板 + 本页几何差异（行高 34）。
 
-    复用全局 ``Tokens`` dataclass 的既有字段承载新色板；新增语义 token
-    一律走 ``module_dark.qss`` 的 overrides，保证零共享改动。
+    保留独立函数名仅为稳定既有调用点（badge_delegate / test_plan_panel /
+    module_theme）；色板与 ``dark_tokens()`` 完全一致。
     """
-    return Tokens(
-        name="module_dark",
-        surface_page="#0E1116",
-        surface_card="#161B22",
-        surface_raised="#1C232C",
-        surface_input="#1C232C",
-        text_primary="#E6EDF5",
-        text_secondary="#9AA7B6",
-        text_muted="#6B7683",
-        text_disabled="#4A545F",
-        text_on_accent="#FFFFFF",
-        border_subtle="#212934",
-        border_default="#2A323D",
-        border_strong="#3A4450",
-        border_focus="#5896FF",
-        accent_default="#5896FF",
-        accent_hover="#74AAFF",
-        accent_pressed="#3E7BE0",
-        state_success=_state("#3FB950"),
-        state_warning=_state("#D29922"),
-        state_error=_state("#F85149"),
-        state_info=_state("#58A6FF"),
-        state_running=_state("#58A6FF"),
-        state_skipped=_state("#8B98A9", bg_alpha=0.12, border_alpha=0.20),
-        font_ui='"Inter", "Microsoft YaHei UI", "Segoe UI", sans-serif',
-        font_mono='"JetBrains Mono", "Consolas", monospace',
-        font_scale=FontScale(caption=11, body=13, subtitle=13, title=15, display=20),
-        radius_sm=4, radius_md=6, radius_lg=10,
-        control_h_compact=28, control_h=32, table_row_h=34, icon_size=16,
-    )
+    return replace(dark_tokens(), name="module_dark", table_row_h=34)

@@ -13,9 +13,9 @@ Pill 规格（2026-08 暗色重构，色值全部取自 ``ui.theme.tokens``）�
 - ``paint_item_background()``：自定义委托覆盖 ``paint()`` 前先由 QStyle
   绘制选中/hover 背景（否则 ``::item:selected`` 背景在该列不生效）。
 
-主题说明（2026-08）：Module Test 用独立 ``module_dark_tokens()``（**不改全局**
-``dark_tokens()``）。委托经 ``_badge_theme()`` 解析——优先本页 token，失败回退
-``current_theme()``（保证委托在任何页面自包含可用、且本页用对色板）。
+主题说明（2026-09）：Module Test 经 ``module_dark_tokens()`` 取色（与全局
+``dark_tokens()`` 同盘，仅几何差异）。委托经 ``_badge_theme()`` 解析——优先本页
+token，失败回退 ``current_theme()``（保证委托在任何页面自包含可用）。
 """
 from __future__ import annotations
 
@@ -45,10 +45,10 @@ def parse_qcolor(color_str: str) -> QColor:
 
 
 def _badge_theme():
-    """解析徽章用主题：优先 Module Test 专属 token，失败回退全局当前主题。
+    """解析徽章用主题：优先 Module Test 页面 token，失败回退全局当前主题。
 
-    Module Test 经独立 ``module_dark_tokens()`` 换肤（不改全局 dark_tokens），
-    故这里显式优先取它，保证本页徽章用对新色板；其它页面回退 ``current_theme``。
+    ``module_dark_tokens()`` 与全局 dark_tokens 同盘（仅行高等几何差异），
+    显式优先取它保证本页徽章行内几何一致；其它页面回退 ``current_theme``。
     """
     try:
         from ui.theme.tokens import module_dark_tokens

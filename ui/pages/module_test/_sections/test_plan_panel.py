@@ -98,7 +98,7 @@ class _StatusBadgeDelegate(QStyledItemDelegate):
             return
         status = index.data(StatusRole) or ST_IDLE
         text = index.data(Qt.DisplayRole) or ""
-        # Module Test 专属 token（与全局 dark_tokens 解耦，本页用对新色板）
+        # Module Test 页面 token（与全局 dark_tokens 同盘，仅几何差异）
         theme = module_dark_tokens()
         state = getattr(theme, self._STATE_ATTR.get(status, "state_skipped"))
 

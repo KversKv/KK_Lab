@@ -33,10 +33,10 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 from log_config import get_logger
 
+from ui.pages.module_test._sections import module_theme
 from ui.pages.module_test._sections.command_bar import CommandBar
 from ui.pages.module_test.dcdc_test_ui import DCDCTestUI
 from ui.pages.module_test.ldo_test_ui import LDOTestUI
-from ui.theme import apply_qss
 
 logger = get_logger(__name__)
 
@@ -56,7 +56,10 @@ class ModuleTestUI(QWidget):
         self._ui_action_registry = ui_action_registry
 
         self._config_prompted: set[str] = set()
-        apply_qss(self, "controls")
+        # objectName 供 module_dark.qss 钉页面底色；顶层注入 controls+module_dark
+        # 合并样式（修顶栏 CommandBar 主题断层，与子页同 token 盘）
+        self.setObjectName("ModuleTestShell")
+        module_theme.apply_shell_theme(self)
         self._create_layout()
 
         # 首次进入模块测试时，对当前子页提示一次加载配置（非模态 Banner）

@@ -21,12 +21,13 @@ from PySide6.QtWidgets import QLabel, QTableView
 from ui.theme import apply_qss, dp, refresh_style
 
 # Module Dark 新增语义 token（未进共享 Tokens，经 overrides 注入 module_dark.qss）
+# 色值随 2026-09 主题适配归一到全局 dark 调色板族（紫主色 #5b3df5 / 深蓝田）。
 _OVERRIDES = {
     "surface_hover": "rgba(255, 255, 255, 10)",
-    "surface_selected": "rgba(88, 150, 255, 36)",
-    "text_data": "#7EE0C8",
-    "focus_glow": "rgba(88, 150, 255, 51)",
-    "progress_track": "#232B36",
+    "surface_selected": "rgba(63, 58, 138, 96)",
+    "text_data": "#15d1a3",
+    "focus_glow": "rgba(91, 61, 245, 51)",
+    "progress_track": "#07111f",
     "progress_h": f"{dp(4)}px",
     "progress_radius": f"{dp(2)}px",
     "badge_h": f"{dp(20)}px",
@@ -48,6 +49,18 @@ def apply_qss_theme(widget) -> None:
     """向指定子页根注入 module_dark 主题（叠加共享 controls/table 之上）。"""
     from ui.theme.tokens import module_dark_tokens
     apply_qss(widget, "module_dark", theme=module_dark_tokens(),
+              **_OVERRIDES, **_icon_overrides())
+
+
+def apply_shell_theme(container) -> None:
+    """向顶层容器（ModuleTestUI）注入 共享 controls + module_dark 合并样式。
+
+    顶栏 CommandBar / StatusPill / 标题 / 配置名 chip 的规则在 module_dark.qss，
+    只注入子页根时命中不了顶层 CommandBar（非子页后代）——此处合并注入修复
+    顶栏主题断层；controls.qss 保留给 Toast/Segmented 等共享控件。
+    """
+    from ui.theme.tokens import module_dark_tokens
+    apply_qss(container, ["controls", "module_dark"], theme=module_dark_tokens(),
               **_OVERRIDES, **_icon_overrides())
 
 

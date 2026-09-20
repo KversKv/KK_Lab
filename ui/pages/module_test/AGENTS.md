@@ -19,8 +19,8 @@
 - `TEST_TAB_MAP`：`ldo=0 / dcdc=1`；暴露 `set_current_test / get_current_test / _sync_from_top` 供枢纽调用。
 - 共享基类 [_base_subpage.py](./_base_subpage.py)：两子页（LDO/DCDC）复用的被测配置区 / AI 契约。
 - **布局/运行态**：顶层 `CommandBar + QStackedWidget`；子页 = `QScrollArea#leftRailScroll`(LeftRail 连接/DUT Card) + QSplitter(TestPlanPanel | DetailDock) + RunControlBar；运行态经 `RunState` + `_apply_run_state()` 单一入口。[widgets.py](./widgets.py) 仅为旧入口 re-export shim（勿新增引用，P5 删除）；`prompt_config_manager_once()` 默认非模态 InfoBanner（`force_dialog=True` 才弹窗）。
-- **样式**：色值/样式一律走 `ui/theme/`（tokens + `qss/*.qss`），经 `apply_qss(w, name)` 注入（ui/ 唯一 setStyleSheet 白名单点），禁内联 `setStyleSheet` 与裸 `#RRGGBB`。
-- **本页暗色主题（页面专属增量，不改全局/共享源）**：`tokens.py` 末尾的 `module_dark_tokens()` + `qss/module_dark.qss`（LOG 区仅增量覆盖，沿用 `#logContainer` 等共享 objectName，不重写 log_frame.qss）+ [_sections/module_theme.py](./_sections/module_theme.py) 唯一装配入口（`apply_qss_theme` 注入 token，`apply_subpage_extras` 对 run_bar/result_table/cards/form 做实例级视觉追加）；子页 `_build_ui` 设 `objectName="ModuleTestSubPage"` 且末尾调 `apply_subpage_extras(self)`；Pill 绘制在 [ui/widgets/badge_delegate.py](../../../ui/widgets/badge_delegate.py)（优先取 `module_dark_tokens`）。日志面板用 `LogPanel`（限批 flush/20000 行上限），等级过滤为多选 chips（`_LevelChipsFilter`，空集=全显；`_PillSwitcher` 已 deprecated 勿用）。
+- **样式**：色值/样式一律走 `ui/theme/`（tokens + `qss/*.qss`），经 `apply_qss(w, name)` 注入（ui/ 唯一 setStyleSheet 白名单点，支持多文件合并），禁内联 `setStyleSheet` 与裸 `#RRGGBB`。
+- **本页主题（2026-09 起与全局 dark 同盘，勿再扩独立色板）**：`module_dark_tokens()` = `dark_tokens()` 换名 + 行高 34（历史独立 GitHub-dark 色板已废弃）；`qss/module_dark.qss` 仅页面骨架/几何规则，LOG 区直接沿用共享 log_frame.qss（禁再增量覆盖）。装配入口 [_sections/module_theme.py](./_sections/module_theme.py)：顶层容器 `apply_shell_theme`（controls+module_dark 合并注入，修 CommandBar 断层，容器须 `objectName="ModuleTestShell"`）；子页 `apply_qss_theme` + `_build_ui` 末尾 `apply_subpage_extras(self)`（子页 `objectName="ModuleTestSubPage"`，对 run_bar/result_table/cards/form 实例级视觉追加）；Pill 绘制在 [ui/widgets/badge_delegate.py](../../../ui/widgets/badge_delegate.py)。日志面板用 `LogPanel`（限批 flush/20000 行上限），等级过滤为多选 chips（`_LevelChipsFilter`，空集=全显；`_PillSwitcher` 已 deprecated 勿用）。
 
 ## 局部约定
 

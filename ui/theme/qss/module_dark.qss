@@ -1,8 +1,10 @@
-/* module_dark.qss — Module Test 页面专属暗色主题（2026-08 视觉重构）。
+/* module_dark.qss — Module Test 页面骨架样式（2026-08 视觉重构；
+   2026-09 主题适配：token 归一全局 dark 调色板，本文件只保留页面骨架/几何规则）。
 
-   作用范围：仅注入 Module Test 子页根节点（apply_qss(self, "module_dark",
-   theme=module_dark_tokens(), **overrides)），在共享 controls.qss / table.qss
-   之上**级联叠加**（不清空、不改共享 QSS，不影响其它页面）。
+   作用范围：注入 Module Test 顶层容器（ModuleTestUI，修顶栏断层）与各子页
+   根节点（apply_qss(self, "module_dark", theme=module_dark_tokens(), **overrides)），
+   色值全部来自 token（与全局 dark 同盘），不影响其它页面。
+   日志区不再增量覆盖——直接沿用共享 log_frame.qss（与其它页面一致）。
 
    新增语义 token（本文件专用，经 overrides 注入，未进共享 Tokens）：
      $surface_hover  $surface_selected  $text_data  $focus_glow
@@ -11,7 +13,7 @@
      $branch_closed_svg  $clear_circle_svg  $switch_on_svg  $switch_off_svg */
 
 /* ======================= 页面底 ======================= */
-#ModuleTestSubPage {
+#ModuleTestShell, #ModuleTestSubPage {
     background-color: $surface_page;
 }
 
@@ -460,61 +462,6 @@ QLabel#formUnit { color: $text_disabled; font-size: $font_caption; }
     border: none;
     border-bottom: 1px solid $border_subtle;
 }
-
-/* ============================================================
-   LOG 区 —— 纯增量叠加段（**不重写**共享 log_frame.qss，仅按本页新
-   palette 增量覆盖 ExecutionLogsFrame 的颜色/字号规则）。
-   选择器沿用共享 log_frame.qss 的 objectName（#logContainer / #logEdit /
-   #levelChip / #smallActionBtn 等），层叠后置生效。
-   ============================================================ */
-#ModuleTestSubPage QFrame#logContainer {
-    background-color: #161B22;
-    border-color: #212934;
-}
-#ModuleTestSubPage QFrame#logContainer QLabel#sectionTitle { color: #E6EDF5; }
-#ModuleTestSubPage QFrame#logContainer QLabel#fieldLabel { color: #9AA7B6; }
-#ModuleTestSubPage QFrame#logContainer QLabel#statusLabel,
-#ModuleTestSubPage QFrame#logContainer QLabel#autoScrollLabel { color: #6B7683; }
-/* 日志正文区：底 #0C1015 + 等宽 12px + 次文本色（级别色由模块 _LEVEL_COLORS 输出，
-   其 INFO/WARN/ERROR/OK 语义与本页 palette 一致） */
-#ModuleTestSubPage QFrame#logContainer QTextEdit#logEdit {
-    background-color: #0C1015;
-    border-top-color: #212934;
-    color: #9AA7B6;
-    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
-    font-size: 12px;
-    selection-background-color: #253650;
-}
-#ModuleTestSubPage QFrame#logContainer QProgressBar { background-color: #232B36; }
-#ModuleTestSubPage QFrame#logContainer QProgressBar::chunk { background-color: #5896FF; }
-#ModuleTestSubPage QFrame#logContainer QLineEdit#searchInput {
-    background-color: #1C232C;
-    border-color: #2A323D;
-    color: #E6EDF5;
-}
-#ModuleTestSubPage QFrame#logContainer QLineEdit#searchInput:focus { border-color: #5896FF; }
-#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn,
-#ModuleTestSubPage QFrame#logContainer QPushButton#iconOnlyBtn {
-    background-color: #1C232C;
-    border-color: #2A323D;
-    color: #C9D4E0;
-}
-#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn:hover,
-#ModuleTestSubPage QFrame#logContainer QPushButton#iconOnlyBtn:hover {
-    background-color: #232B36;
-}
-#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn:checked,
-#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip:checked {
-    background-color: #253650;
-    border-color: #5896FF;
-    color: #E6EDF5;
-}
-#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip {
-    background-color: #1C232C;
-    border-color: #2A323D;
-    color: #6B7683;
-}
-#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip:hover { background-color: #232B36; }
 
 /* ============================================================
    左栏滚动区（LeftRail 的 QScrollArea 容器）：透底无边框融入页面，
