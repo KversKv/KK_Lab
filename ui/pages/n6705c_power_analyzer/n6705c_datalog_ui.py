@@ -383,10 +383,6 @@ class _ScanWorker(QObject):
     finished = Signal()
     error = Signal(str)
 
-    def __init__(self, rm=None):
-        super().__init__()
-        self._rm = rm
-
     def run(self):
         try:
             from core.n6705c.search_worker import discover_n6705c_details
@@ -402,10 +398,6 @@ class _ScanWorker(QObject):
             self.error.emit(str(e))
         finally:
             self.finished.emit()
-
-    @property
-    def rm(self):
-        return self._rm
 
 
 class _ConnectWorker(QObject):
@@ -1139,12 +1131,16 @@ class N6705CDatalogUI(QWidget):
         self._top = n6705c_top
         self._instrument_manager = instrument_manager
         self._ui_action_registry = ui_action_registry
-        self.rm = None
         self.n6705c_a = None
         self.n6705c_b = None
         self.is_connected_a = False
         self.is_connected_b = False
         self.is_recording = False
+        # 连接进行中槽位（slot_label -> visa_resource），防止同槽并发连接竞态
+        self._pending_connects = {}
+        # 槽位同步去重签名：(A连接态, A序列号, B连接态, B序列号)，无变化跳过重建
+        self._last_slot_sync_sig = None
+        self._last_conn_status_emitted = None
 
         self._record_thread = None
         self._record_worker = None
@@ -1215,14 +1211,6 @@ class N6705CDatalogUI(QWidget):
         self.mode_group.addButton(self.mode_4ch, 0)
         self.mode_group.addButton(self.mode_8ch, 1)
 
-        self.search_timer_a = QTimer(self)
-        self.search_timer_a.timeout.connect(lambda: self._search_devices("a"))
-        self.search_timer_a.setSingleShot(True)
-
-        self.search_timer_b = QTimer(self)
-        self.search_timer_b.timeout.connect(lambda: self._search_devices("b"))
-        self.search_timer_b.setSingleShot(True)
-
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
@@ -1243,6 +1231,8 @@ class N6705CDatalogUI(QWidget):
 
         if self._instrument_manager:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
+            self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+            self._instrument_manager.disconnect_failed.connect(self._on_manager_disconnect_failed)
 
         if not (self.is_connected_a or self.is_connected_b):
             self.instrument_toggle_btn.setChecked(True)
@@ -1308,12 +1298,10 @@ class N6705CDatalogUI(QWidget):
 
         connected=True 时登记实例、分配槽位并确保设备卡片存在；
         connected=False 时仅在当前已连接的情况下清空槽位。
+        面板折叠不在此做：仅用户本页点击 Connect 成功时折叠（见
+        _on_connect_success / _on_manager_sessions_changed 的 pending 分支）。
         """
         if connected:
-            was_connected = (
-                (label == "A" and self.is_connected_a)
-                or (label == "B" and self.is_connected_b)
-            )
             if label == "A":
                 self.n6705c_a = instance
                 self.is_connected_a = True
@@ -1322,8 +1310,6 @@ class N6705CDatalogUI(QWidget):
                 self.is_connected_b = True
             self._assign_slot(label, serial, "N6705C", visa_resource)
             self._ensure_device_card_exists(serial, "N6705C", visa_resource)
-            if not was_connected and self.instrument_panel.isVisible():
-                self._collapse_instrument_panel()
         else:
             if label == "A" and self.is_connected_a:
                 self.n6705c_a = None
@@ -1335,8 +1321,24 @@ class N6705CDatalogUI(QWidget):
                 self._clear_slot(label)
 
     def _after_slot_states_synced(self):
-        """槽位同步完成后的统一收尾（两个同步入口共用）。"""
-        self.connection_status_changed.emit(self.is_connected_a)
+        """槽位同步完成后的统一收尾（两个同步入口共用）。
+
+        按槽位签名去重：top 与 manager 双路同步、以及 manager 无关 session
+        事件（其它仪器 / busy 标记）都会走到这里，签名不变时直接跳过，
+        避免重复全量重建通道配置区；connection_status_changed 也仅在值变化时发出。
+        """
+        sig = (
+            self.is_connected_a,
+            self.slot_frames["A"].property("assigned_serial") or "",
+            self.is_connected_b,
+            self.slot_frames["B"].property("assigned_serial") or "",
+        )
+        if sig == self._last_slot_sync_sig:
+            return
+        self._last_slot_sync_sig = sig
+        if self.is_connected_a != self._last_conn_status_emitted:
+            self._last_conn_status_emitted = self.is_connected_a
+            self.connection_status_changed.emit(self.is_connected_a)
         self._refresh_channel_config(force=True)
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
@@ -1346,11 +1348,23 @@ class N6705CDatalogUI(QWidget):
         if not self._instrument_manager:
             return
         sessions = self._instrument_manager.sessions(instrument_type="n6705c")
+        seen_labels = set()
         for snap in sessions:
             label = snap.slot.upper() if snap.slot in ("A", "B", "a", "b") else None
             if label is None:
                 continue
+            seen_labels.add(label)
+            if snap.disconnecting:
+                # 异步断连过渡态：快照仍 connected=True，但本地已先行清理，
+                # 跳过避免被重新套用而误判为新连接（会误折叠仪器面板）；
+                # 断连失败时下一次 sessions_changed 会以 connected 快照回弹状态
+                continue
             if snap.connected:
+                if self._pending_connects.get(label) == snap.resource:
+                    # 本页发起的连接成功：清除 pending 并折叠仪器面板
+                    self._pending_connects.pop(label, None)
+                    if self.instrument_panel.isVisible():
+                        self._collapse_instrument_panel()
                 instance = self._instrument_manager.get_instance(snap.session_id)
                 display_serial = snap.serial if snap.serial else snap.resource
                 self._apply_slot_state(
@@ -1359,7 +1373,39 @@ class N6705CDatalogUI(QWidget):
                 )
             else:
                 self._apply_slot_state(label, False)
+        # 对账：manager 中已不存在（如被他页 remove_session）而本地仍连接的槽位，清掉
+        for label in ("A", "B"):
+            locally_connected = self.is_connected_a if label == "A" else self.is_connected_b
+            if locally_connected and label not in seen_labels:
+                self._apply_slot_state(label, False)
         self._after_slot_states_synced()
+
+    @staticmethod
+    def _slot_label_from_session_id(session_id):
+        """从 'n6705c:A' 形式的 session_id 解析槽位字母，非本页槽位返回 None。"""
+        if not isinstance(session_id, str) or ":" not in session_id:
+            return None
+        instr_type, _, slot = session_id.partition(":")
+        if instr_type != "n6705c":
+            return None
+        label = slot.upper()
+        return label if label in ("A", "B") else None
+
+    def _on_manager_connection_failed(self, session_id, error):
+        """manager 连接失败（含同槽并发被拒）：清除 pending、恢复卡片按钮并提示。"""
+        label = self._slot_label_from_session_id(session_id)
+        if label is None:
+            return
+        self._pending_connects.pop(label, None)
+        self._sync_device_card_states()
+        QMessageBox.warning(self, "连接失败", f"仪器连接失败：{error}")
+
+    def _on_manager_disconnect_failed(self, session_id, error):
+        """manager 异步断连失败：状态由 sessions_changed 自动回弹，这里提示用户。"""
+        label = self._slot_label_from_session_id(session_id)
+        if label is None:
+            return
+        QMessageBox.warning(self, "断开失败", f"仪器断开失败：{error}")
 
     def _sync_from_top(self):
         if not self._top:
@@ -2319,10 +2365,25 @@ class N6705CDatalogUI(QWidget):
         return card
 
     def _on_refresh_search(self):
+        # 已连接或连接进行中的卡片保留：hislip 占用时扫描可能发现不了
+        # 已连接设备，无条件删卡会让其永久失去卡片入口
+        kept_serials = set()
+        kept_resources = set(self._pending_connects.values())
+        for label_char in ["A", "B"]:
+            slot = self.slot_frames[label_char]
+            s = slot.property("assigned_serial")
+            if s:
+                kept_serials.add(s.strip())
+                kept_resources.add(slot.property("assigned_resource"))
+        kept_cards = []
         for card in self.device_cards:
+            if (card.property("serial") or "").strip() in kept_serials \
+                    or card.property("visa_resource") in kept_resources:
+                kept_cards.append(card)
+                continue
             self.device_list_layout.removeWidget(card)
             card.deleteLater()
-        self.device_cards.clear()
+        self.device_cards[:] = kept_cards
 
         if DEBUG_MOCK:
             self._add_default_debug_device()
@@ -2333,7 +2394,7 @@ class N6705CDatalogUI(QWidget):
         self.refresh_search_btn.start_spinning()
 
         self._scan_thread = QThread()
-        self._scan_worker = _ScanWorker(self.rm)
+        self._scan_worker = _ScanWorker()
         self._scan_worker.moveToThread(self._scan_thread)
 
         self._scan_worker.device_found.connect(self._on_scan_device_found)
@@ -2358,10 +2419,15 @@ class N6705CDatalogUI(QWidget):
         self.device_cards.append(card)
 
     def _on_scan_finished(self):
-        if hasattr(self, '_scan_worker') and self._scan_worker:
-            self.rm = self._scan_worker.rm
         self.refresh_search_btn.stop_spinning()
         self.refresh_search_btn.setEnabled(True)
+        # 自愈补卡：已连接设备因 hislip 占用未被扫描发现时，按槽位信息补回卡片
+        for label_char in ["A", "B"]:
+            slot = self.slot_frames[label_char]
+            serial = slot.property("assigned_serial")
+            resource = slot.property("assigned_resource")
+            if serial and resource:
+                self._ensure_device_card_exists(serial, "N6705C", resource)
         self._sync_device_card_states()
         self._maybe_show_scope_hint()
 
@@ -2390,11 +2456,20 @@ class N6705CDatalogUI(QWidget):
             if s:
                 connected_serials.add(s.strip())
 
+        pending_resources = set(self._pending_connects.values())
         for card in self.device_cards:
             card_serial = (card.property("serial") or "").strip()
             connect_btn = card.property("connect_btn")
             disconnect_btn = card.property("disconnect_btn")
-            if card_serial in connected_serials:
+            if card.property("visa_resource") in pending_resources:
+                # 连接进行中：保持禁用态，避免任何同步路径把按钮重新启用
+                if connect_btn:
+                    connect_btn.setEnabled(False)
+                    connect_btn.setText("Connecting...")
+                    connect_btn.show()
+                if disconnect_btn:
+                    disconnect_btn.hide()
+            elif card_serial in connected_serials:
                 if connect_btn:
                     connect_btn.hide()
                 if disconnect_btn:
@@ -2409,6 +2484,8 @@ class N6705CDatalogUI(QWidget):
 
     def _find_next_free_slot(self):
         for label_char in ["A", "B"]:
+            if label_char in self._pending_connects:
+                continue
             slot = self.slot_frames[label_char]
             if not slot.property("assigned_serial"):
                 return label_char
@@ -2416,8 +2493,21 @@ class N6705CDatalogUI(QWidget):
 
     def _on_device_connect(self, visa_resource, serial):
         logger.debug("Datalog UI _on_device_connect: resource=%s, serial=%s", visa_resource, serial)
+        # 重复连接守卫：同一 VISA 资源已占用某个槽位
+        for label_char in ["A", "B"]:
+            slot = self.slot_frames[label_char]
+            if slot.property("assigned_serial") and \
+                    slot.property("assigned_resource") == visa_resource:
+                QMessageBox.information(self, "重复连接", "该仪器已连接。")
+                return
+        # 同一资源正在连接中：按钮已是禁用态，静默忽略重复触发
+        if visa_resource in self._pending_connects.values():
+            return
         slot_label = self._find_next_free_slot()
         if slot_label is None:
+            QMessageBox.information(
+                self, "无可用槽位", "两个仪器槽位均已占用，请先断开一台仪器。"
+            )
             return
 
         for card in self.device_cards:
@@ -2428,15 +2518,23 @@ class N6705CDatalogUI(QWidget):
                     btn.setText("Connecting...")
                 break
 
+        self._pending_connects[slot_label] = visa_resource
+
         if self._instrument_manager:
             from core.instruments import InstrumentSpec
-            self._instrument_manager.connect_async(InstrumentSpec(
-                instrument_type="n6705c",
-                role="power_analyzer",
-                connection_kind="visa",
-                slot=slot_label,
-                resource=visa_resource,
-            ))
+            try:
+                self._instrument_manager.connect_async(InstrumentSpec(
+                    instrument_type="n6705c",
+                    role="power_analyzer",
+                    connection_kind="visa",
+                    slot=slot_label,
+                    resource=visa_resource,
+                ))
+            except Exception as e:
+                # 同步抛错（如 profile 未注册）时恢复 pending 与按钮态
+                self._pending_connects.pop(slot_label, None)
+                self._sync_device_card_states()
+                QMessageBox.warning(self, "连接失败", f"仪器连接失败：{e}")
             return
 
         self._connect_thread = QThread()
@@ -2447,7 +2545,7 @@ class N6705CDatalogUI(QWidget):
             lambda n6705c, s, r: self._on_connect_success(n6705c, s, r, slot_label)
         )
         self._connect_worker.error.connect(
-            lambda e: self._on_connect_error(serial, e)
+            lambda e: self._on_connect_error(serial, slot_label, e)
         )
         self._connect_worker.finished.connect(self._connect_thread.quit)
         self._connect_worker.finished.connect(self._connect_worker.deleteLater)
@@ -2459,48 +2557,30 @@ class N6705CDatalogUI(QWidget):
 
     def _on_connect_success(self, n6705c, serial, visa_resource, slot_label):
         logger.debug("Datalog UI connect success: slot=%s, serial=%s", slot_label, serial)
+        self._pending_connects.pop(slot_label, None)
         if slot_label == "A":
             self.n6705c_a = n6705c
             self.is_connected_a = True
             if self._top:
                 self._top.connect_a(visa_resource, n6705c_instance=n6705c, serial=serial)
-            elif self._instrument_manager:
-                from core.instruments import InstrumentSpec
-                self._instrument_manager.attach_external(
-                    InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="A"),
-                    instance=n6705c, serial=serial, model="N6705C",
-                )
         elif slot_label == "B":
             self.n6705c_b = n6705c
             self.is_connected_b = True
             if self._top:
                 self._top.connect_b(visa_resource, n6705c_instance=n6705c, serial=serial)
-            elif self._instrument_manager:
-                from core.instruments import InstrumentSpec
-                self._instrument_manager.attach_external(
-                    InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="B"),
-                    instance=n6705c, serial=serial, model="N6705C",
-                )
 
         self._assign_slot(slot_label, serial, "N6705C", visa_resource)
-
-        self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config(force=True)
-        self._sync_device_card_states()
-        self._update_time_offset_btn_visibility()
+        self._ensure_device_card_exists(serial, "N6705C", visa_resource)
+        self._after_slot_states_synced()
 
         if self.instrument_panel.isVisible():
             self._collapse_instrument_panel()
 
-    def _on_connect_error(self, serial, error_msg=None):
+    def _on_connect_error(self, serial, slot_label, error_msg=None):
         logger.error("Datalog UI connect failed: serial=%s, error=%s", serial, error_msg)
-        for card in self.device_cards:
-            if card.property("serial") == serial:
-                btn = card.property("connect_btn")
-                if btn:
-                    btn.setEnabled(True)
-                    update_connect_button_state(btn, connected=False)
-                break
+        self._pending_connects.pop(slot_label, None)
+        self._sync_device_card_states()
+        QMessageBox.warning(self, "连接失败", f"仪器连接失败：{error_msg}")
 
     def _on_connect_thread_done(self):
         self._connect_thread = None
@@ -2522,7 +2602,7 @@ class N6705CDatalogUI(QWidget):
         logger.debug("Datalog UI _on_device_disconnect: serial=%s", serial)
         n6705c_to_close = None
         should_close_locally = True
-        for label_char in ["A", "B", "C", "D"]:
+        for label_char in ["A", "B"]:
             slot = self.slot_frames[label_char]
             if slot.property("assigned_serial") == serial:
                 self._clear_slot(label_char)
@@ -2549,10 +2629,7 @@ class N6705CDatalogUI(QWidget):
                         should_close_locally = False
                 break
 
-        self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config(force=True)
-        self._sync_device_card_states()
-        self._update_time_offset_btn_visibility()
+        self._after_slot_states_synced()
 
         if n6705c_to_close and should_close_locally:
             threading.Thread(
@@ -2569,6 +2646,7 @@ class N6705CDatalogUI(QWidget):
     def _assign_slot(self, label_char, serial, model, visa_resource):
         slot = self.slot_frames[label_char]
         slot.setProperty("assigned_serial", serial)
+        slot.setProperty("assigned_resource", visa_resource)
         slot.setProperty("connected", True)
         slot.setStyleSheet(dss.SLOT_ASSIGNED_STYLE)
         name_label = slot.property("name_label")
@@ -2581,6 +2659,7 @@ class N6705CDatalogUI(QWidget):
     def _clear_slot(self, label_char):
         slot = self.slot_frames[label_char]
         slot.setProperty("assigned_serial", "")
+        slot.setProperty("assigned_resource", "")
         slot.setProperty("connected", False)
         slot.setStyleSheet("")
         name_label = slot.property("name_label")
@@ -4212,6 +4291,26 @@ class N6705CDatalogUI(QWidget):
             self._save_window_geometry()
         except Exception:
             logger.debug("Save window geometry on close failed", exc_info=True)
+        # 停止进行中的录制 / 搜索 / 连接线程，避免关闭时 QThread 仍在运行
+        if self._record_thread and self._record_thread.isRunning():
+            if self._record_worker:
+                self._record_worker.stop()
+            self._record_thread.quit()
+            self._record_thread.wait(3000)
+        for attr in ("_scan_thread", "_connect_thread"):
+            thread = getattr(self, attr, None)
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        # 独立运行（无 top/manager 托管生命周期）时，关闭前断开本地持有的仪器
+        if self._top is None and self._instrument_manager is None:
+            for inst in (self.n6705c_a, self.n6705c_b):
+                if inst is not None:
+                    self._close_instrument(inst)
+            self.n6705c_a = None
+            self.n6705c_b = None
+            self.is_connected_a = False
+            self.is_connected_b = False
         super().closeEvent(event)
 
     def _load_default_devices(self):
@@ -4248,9 +4347,14 @@ class N6705CDatalogUI(QWidget):
 
     def _add_default_saved_devices(self):
         existing_serials = {c.property("serial") for c in self.device_cards}
+        existing_resources = {c.property("visa_resource") for c in self.device_cards}
         for d in self._load_default_devices():
             serial = d.get("serial") or d.get("visa_resource")
-            if serial in existing_serials:
+            # 序列号 + VISA 资源双重去重：连接成功后卡片 serial 已被替换为
+            # 真实序列号，仅按 serial 去重会把 serial 回退为资源串的默认
+            # 设备重复建卡（已连接设备旁多出一张 Connect 态重复卡）
+            if serial in existing_serials \
+                    or d["visa_resource"] in existing_resources:
                 continue
             card = self._create_device_card(
                 serial, d.get("model", "N6705C"),
@@ -4261,6 +4365,7 @@ class N6705CDatalogUI(QWidget):
             )
             self.device_cards.append(card)
             existing_serials.add(serial)
+            existing_resources.add(d["visa_resource"])
 
     def _setup_plot(self):
         self.plot_widget.setBackground("#071127")
@@ -4762,9 +4867,6 @@ class N6705CDatalogUI(QWidget):
         self.time_offset_btn.setVisible(multi)
         if not multi and self._b_time_offset != 0.0:
             self._apply_b_time_offset(0.0)
-
-    def _update_connect_btn(self, btn, connected):
-        update_connect_button_state(btn, connected)
 
     def _update_recording_button_state(self, recording):
         self.is_recording = recording
