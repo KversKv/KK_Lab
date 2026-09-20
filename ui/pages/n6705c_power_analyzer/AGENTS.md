@@ -30,6 +30,7 @@
 
 ## 局部坑点
 
+- **Datalog 连接管理三律**：① 连接/断连/刷新收尾统一走 `_after_slot_states_synced`（槽位签名去重，禁止绕过重发 `connection_status_changed` 或直调 `_refresh_channel_config`）；② 并发连接用 `_pending_connects`（slot→resource）守卫，`_find_next_free_slot` 必须跳过 pending 槽；③ manager 的 `connection_failed` **不发** `sessions_changed`，必须单独监听恢复卡片按钮态，否则按钮卡死 "Connecting..."；session 被他页 `remove_session` 移除时靠 `_on_manager_sessions_changed` 对账清理。
 - **§25 Tab 盒模型坑**：见上"局部约定"第一条，是本页踩过的真实坑。
 - **窗口几何恢复禁按 margin 压尺寸**：`_clamped_window_geometry` 只允许"超出可用区域才截断"（`min(saved, available)`）；若按 `可用宽-40` 预留 margin，Windows 吸附 1/2 屏（宽=整屏）后重开会被压小，150% DPI 下右侧出现 60 物理 px 空白。`_WINDOW_MARGIN` 仅用于默认窗口尺寸。
 - Datalog 导出是二进制+CSV 混合，**不要重复造解析轮子**，用 instruments 层 datalog_process。
