@@ -7135,14 +7135,6 @@ class N6705CDatalogUI(QWidget):
         self.meas_table.setColumnCount(num_cols)
         self.meas_table.setHorizontalHeaderLabels(headers)
 
-        hi = self.meas_table.horizontalHeaderItem(1)
-        if hi:
-            f = hi.font()
-            f.setBold(True)
-            hi.setFont(f)
-            hi.setForeground(QColor(_MEAS_AVG_FG))
-            hi.setBackground(QColor(_MEAS_AVG_BG))
-
         ROW_BG = ["#080f22", "#0c1838"]
 
         for ch_idx, (label, ch_data) in enumerate(ch_list):
@@ -7161,7 +7153,7 @@ class N6705CDatalogUI(QWidget):
                 seg_avg = 0.0
 
             self._set_meas_cell(ch_idx, 0, _display_label(label), color_hex, bg=row_bg)
-            self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), color_hex, bg=_MEAS_AVG_BG, bold=True)
+            self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), color_hex, bg=row_bg)
 
         row_h = 28
         total_h = (num_rows + 1) * row_h + 4
