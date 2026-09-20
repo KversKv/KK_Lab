@@ -140,8 +140,11 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.left_scroll.setMinimumWidth(self.left_rail.minimumWidth())
-        self.left_scroll.setMaximumWidth(self.left_rail.maximumWidth())
+        # 宽度须额外 +竖滚动条宽：滚动条出现时视口被占去 ~7px，rail 又有 minWidth
+        # 保底，widgetResizable 无法压缩它 → 右缘卡片边框/控件被静默裁掉
+        vbar_w = self.left_scroll.verticalScrollBar().sizeHint().width()
+        self.left_scroll.setMinimumWidth(self.left_rail.minimumWidth() + vbar_w)
+        self.left_scroll.setMaximumWidth(self.left_rail.maximumWidth() + vbar_w)
         self.left_scroll.setWidget(self.left_rail)
         body.addWidget(self.left_scroll)
         center = QVBoxLayout()
