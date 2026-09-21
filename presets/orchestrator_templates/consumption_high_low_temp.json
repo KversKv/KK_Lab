@@ -1,0 +1,206 @@
+{
+  "version": 2,
+  "sequence": [
+    {
+      "node_type": "Group",
+      "uid": "0aea0dfb-bd6e-4890-a67b-2ed0e6fe2712",
+      "params": {
+        "label": "温度循环：每点记录VBAT电流+CH2/CH3电压"
+      },
+      "children": [
+        {
+          "node_type": "LoopList",
+          "uid": "3606f029-a8a6-4528-a708-c09e6b44b44b",
+          "params": {
+            "var_name": "temp",
+            "values": "-30, -20, -10, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100",
+            "export_var": true
+          },
+          "children": [
+            {
+              "node_type": "ChamberSetTemp",
+              "uid": "b48f1a3a-153a-4836-947b-63b52da19f3a",
+              "params": {
+                "temperature": "${temp}",
+                "wait_stable": true,
+                "stable_time": 60.0,
+                "tolerance": 1.0
+              }
+            },
+            {
+              "node_type": "N6705CMeasure",
+              "uid": "86080693-7164-4c00-a20e-fb48fed05466",
+              "params": {
+                "channel": 1,
+                "measure_type": "current",
+                "result_var": "vbat_current",
+                "export_var": true
+              }
+            },
+            {
+              "node_type": "N6705CMeasure",
+              "uid": "389ee1a2-4ad5-4a27-a197-ea7e6afff107",
+              "params": {
+                "channel": 2,
+                "measure_type": "voltage",
+                "result_var": "ch2_voltage",
+                "export_var": true
+              }
+            },
+            {
+              "node_type": "N6705CMeasure",
+              "uid": "8b0b2c36-a97f-49b7-84e6-5a6d8352a298",
+              "params": {
+                "channel": 3,
+                "measure_type": "voltage",
+                "result_var": "ch3_voltage",
+                "export_var": true
+              }
+            },
+            {
+              "node_type": "RecordDataPoint",
+              "uid": "38e1f6d2-228a-4dd9-82b7-7da047700f21",
+              "params": {
+                "fields": "auto",
+                "skip_no_export": true
+              }
+            }
+          ]
+        },
+        {
+          "node_type": "Group",
+          "uid": "2e59b9cb-96e2-43cf-90ed-ec6c1d3e132b",
+          "params": {
+            "label": "外供+20mV测流（基于最后实测电压，限流100mA）"
+          },
+          "children": [
+            {
+              "node_type": "MathExpression",
+              "uid": "e5ecc646-ddee-4a53-aeec-9197359764ea",
+              "params": {
+                "expression": "${ch2_voltage} + 0.02",
+                "result_var": "ch2_ext_volt"
+              }
+            },
+            {
+              "node_type": "MathExpression",
+              "uid": "ccbba4cf-196d-4973-86d7-335d9fd551b0",
+              "params": {
+                "expression": "${ch3_voltage} + 0.02",
+                "result_var": "ch3_ext_volt"
+              }
+            },
+            {
+              "node_type": "N6705CSetVoltage",
+              "uid": "c0907a54-12fa-4b40-b798-19db721cd280",
+              "params": {
+                "channel": 2,
+                "voltage": "${ch2_ext_volt}",
+                "current_limit": 0.1,
+                "output_on": true
+              }
+            },
+            {
+              "node_type": "Delay",
+              "uid": "46f97525-27f5-4da3-b4c3-1b9784ade901",
+              "params": {
+                "seconds": 1.0
+              }
+            },
+            {
+              "node_type": "N6705CMeasure",
+              "uid": "09bf8e4d-26d6-4020-bb95-ed06ce1912c1",
+              "params": {
+                "channel": 2,
+                "measure_type": "current",
+                "result_var": "ch2_ext_current",
+                "export_var": true
+              }
+            },
+            {
+              "node_type": "N6705CSetVoltage",
+              "uid": "b020f1c9-96a3-44eb-a6ce-7bb1d0e2e4f9",
+              "params": {
+                "channel": 3,
+                "voltage": "${ch3_ext_volt}",
+                "current_limit": 0.1,
+                "output_on": true
+              }
+            },
+            {
+              "node_type": "Delay",
+              "uid": "b0ce0253-fdb7-4c9b-a807-5d4be54c95c8",
+              "params": {
+                "seconds": 1.0
+              }
+            },
+            {
+              "node_type": "N6705CMeasure",
+              "uid": "77f1ff42-b78b-4959-a16b-68cbc8deaaf1",
+              "params": {
+                "channel": 3,
+                "measure_type": "current",
+                "result_var": "ch3_ext_current",
+                "export_var": true
+              }
+            },
+            {
+              "node_type": "RecordDataPoint",
+              "uid": "f7f0eb52-1eb8-4baf-bc28-154b6fbb5c6b",
+              "params": {
+                "fields": "auto",
+                "skip_no_export": true
+              }
+            },
+            {
+              "node_type": "Group",
+              "uid": "c01f470c-b01b-4434-9ddd-470323e59118",
+              "params": {
+                "label": "收尾：关闭CH1~CH3全部输出"
+              },
+              "children": [
+                {
+                  "node_type": "N6705CChannelOff",
+                  "uid": "4d164cdf-4f82-43b7-a0a9-8631d19cee5c",
+                  "params": {
+                    "channel": 1
+                  }
+                },
+                {
+                  "node_type": "N6705CChannelOff",
+                  "uid": "978b3aa4-dc28-4cc6-8aaf-fc9501250da5",
+                  "params": {
+                    "channel": 2
+                  }
+                },
+                {
+                  "node_type": "N6705CChannelOff",
+                  "uid": "588d6ad9-cdad-414e-99ae-237f74310165",
+                  "params": {
+                    "channel": 3
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "instruments": {
+    "n6705c": {
+      "visa": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    },
+    "chamber": {
+      "type": "vt6002",
+      "port": ""
+    }
+  },
+  "metadata": {
+    "required_capabilities": [
+      "chamber.temperature",
+      "power_analyzer.measure",
+      "power_analyzer.set_voltage"
+    ]
+  }
+}

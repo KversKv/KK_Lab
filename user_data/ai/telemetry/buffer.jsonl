@@ -27,3 +27,4 @@
 {"event_type": "error", "page_key": "orchestrator", "payload": {"error_type": "chat_failed", "masked_message": "流式响应为空（可能 max_tokens 过小被推理耗尽）"}, "ts": 1789969835.5984724, "client_id": "2ab8108fcc17435daaa21ffd5ba38fbf"}
 {"event_type": "error", "page_key": "orchestrator", "payload": {"error_type": "chat_failed", "masked_message": "流式响应为空（可能 max_tokens 过小被推理耗尽）"}, "ts": 1789969950.436383, "client_id": "2ab8108fcc17435daaa21ffd5ba38fbf"}
 {"event_type": "error", "page_key": "orchestrator", "payload": {"error_type": "chat_failed", "masked_message": "流式响应为空（可能 max_tokens 过小被推理耗尽）"}, "ts": 1789970388.1388817, "client_id": "2ab8108fcc17435daaa21ffd5ba38fbf"}
+{"event_type": "error", "page_key": "orchestrator", "payload": {"error_type": "chat_failed", "masked_message": "流式响应为空（可能 max_tokens 过小被推理耗尽）"}, "ts": 1789972134.01473, "client_id": "2ab8108fcc17435daaa21ffd5ba38fbf"}
