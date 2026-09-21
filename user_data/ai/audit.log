@@ -2763,3 +2763,19 @@
 {"ts": "2026-09-09 17:20:27", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 0 个仪器会话，暂无已连接会话。"}
 {"ts": "2026-09-09 17:20:34", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起新一轮扫描；上次扫描到 2 个候选。完成后会自动回灌最新结果。"}
 {"ts": "2026-09-09 17:20:41", "action": "get_task_result", "status": "executed", "risk_level": "low", "arguments": {"task_id": "T-0002"}, "message": "任务 T-0002 当前状态：pending。"}
+{"ts": "2026-09-21 13:41:55", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 0 个仪器会话，暂无已连接会话。"}
+{"ts": "2026-09-21 13:42:12", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话，其中 1 个已连接。已连接会话可直接用其 session_id 操作（测量/查询/设置），无需重新扫描或连接。"}
+{"ts": "2026-09-21 13:42:28", "action": "query_instrument", "status": "executed", "risk_level": "low", "arguments": {"command": "OUTP? (@1)", "session_id": "n6705c:A"}, "message": "查询完成。"}
+{"ts": "2026-09-21 13:42:28", "action": "query_instrument", "status": "executed", "risk_level": "low", "arguments": {"command": "OUTP? (@2)", "session_id": "n6705c:A"}, "message": "查询完成。"}
+{"ts": "2026-09-21 13:42:28", "action": "query_instrument", "status": "executed", "risk_level": "low", "arguments": {"command": "OUTP? (@3)", "session_id": "n6705c:A"}, "message": "查询完成。"}
+{"ts": "2026-09-21 13:42:28", "action": "query_instrument", "status": "executed", "risk_level": "low", "arguments": {"command": "OUTP? (@4)", "session_id": "n6705c:A"}, "message": "查询完成。"}
+{"ts": "2026-09-21 13:42:35", "action": "measure_voltage", "status": "executed", "risk_level": "low", "arguments": {"channel": 1, "session_id": "n6705c:A"}, "message": "通道 1 电压测量完成。"}
+{"ts": "2026-09-21 13:42:36", "action": "measure_current", "status": "executed", "risk_level": "low", "arguments": {"channel": 1, "session_id": "n6705c:A"}, "message": "通道 1 电流测量完成。"}
+{"ts": "2026-09-21 13:43:03", "action": "measure_voltage", "status": "executed", "risk_level": "low", "arguments": {"channel": 2, "session_id": "n6705c:A"}, "message": "通道 2 电压测量完成。"}
+{"ts": "2026-09-21 13:43:03", "action": "measure_current", "status": "executed", "risk_level": "low", "arguments": {"channel": 2, "session_id": "n6705c:A"}, "message": "通道 2 电流测量完成。"}
+{"ts": "2026-09-21 13:43:04", "action": "measure_voltage", "status": "executed", "risk_level": "low", "arguments": {"channel": 3, "session_id": "n6705c:A"}, "message": "通道 3 电压测量完成。"}
+{"ts": "2026-09-21 13:43:04", "action": "measure_current", "status": "executed", "risk_level": "low", "arguments": {"channel": 3, "session_id": "n6705c:A"}, "message": "通道 3 电流测量完成。"}
+{"ts": "2026-09-21 13:43:04", "action": "measure_voltage", "status": "executed", "risk_level": "low", "arguments": {"channel": 4, "session_id": "n6705c:A"}, "message": "通道 4 电压测量完成。"}
+{"ts": "2026-09-21 13:43:04", "action": "measure_current", "status": "executed", "risk_level": "low", "arguments": {"channel": 4, "session_id": "n6705c:A"}, "message": "通道 4 电流测量完成。"}
+{"ts": "2026-09-21 13:46:23", "action": "search_kk_lab_memory", "status": "executed", "risk_level": "low", "arguments": {"keyword": "VBAT"}, "message": "搜索到 0 条匹配条目。"}
+{"ts": "2026-09-21 13:46:23", "action": "search_kk_lab_memory", "status": "executed", "risk_level": "low", "arguments": {"keyword": "外供"}, "message": "搜索到 0 条匹配条目。"}
