@@ -5,7 +5,8 @@
 ⚠️ 阶段 1 落地约束（AIAssist_Architecture.md §5/§6）：
   - 当前网关仅暴露真实模型 glm-5.1-fp8（默认）与 deepseekv4flash，无功能别名路由；
     因此各 Profile 的 model 一律先映射到实际可用模型，功能差异靠 system_prompt/temperature 体现；
-  - glm-5.1-fp8 为推理模型，reasoning 先消耗 token，max_tokens 必须 ≥ 1024，否则 content 可能为空。
+  - glm 推理模型 reasoning 先消耗 token，各页统一 max_tokens=131072（128K），
+    避免长任务（如序列草案生成）推理阶段耗尽 output 预算导致 content 为空。
 """
 from __future__ import annotations
 
@@ -63,7 +64,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "串口日志助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 KK_Lab 串口日志分析，聚焦异常、超时、复位、协议错误。"
             "分析时引用具体日志行，禁止臆造日志内容。"
@@ -73,7 +74,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "仪器助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 N6705C 电源分析仪的使用与测量解读。\n"
             "通过 query_instrument 发送只读 SCPI 查询时，必须遵守 N6705C 语法：\n"
@@ -101,7 +102,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "仪器助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 8192,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 N6705C Datalog 数据记录的配置与数据解读。\n"
             "本页 AI 能力边界：波形/数据解读是本页核心能力，属于纯文本作答任务——"
@@ -136,21 +137,21 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "仪器助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": "你专注于示波器（DSOX4034A / MSO64B）波形测量与触发设置。",
     },
     "thermal_chamber": {
         "label": "仪器助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": "你专注于 VT6002 温箱的温度控制与稳定性判断。",
     },
     "pmu_test": {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 PMU 测试（DCDC 效率/输出电压/IS Gain/OSCP/GPADC 等）的配置与结果分析。\n"
             "本页 AI 能力边界：PMU 测试以 Tab 子页形式呈现，能力随当前子页而定。"
@@ -164,7 +165,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "DCDC 效率测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 PMU DCDC 效率测试的配置与结果分析（扫描电流/电压范围、计算效率曲线）。\n"
             "本页 AI 能力边界（已声明）：读 DCDC 效率测试配置、应用配置草案到控件、"
@@ -186,7 +187,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "输出电压线性度测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 PMU 输出电压线性度测试的配置与结果分析（扫描 DAC 代码范围、"
             "测量电压线性度与步进）。\n"
@@ -203,7 +204,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "IS Gain 测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 PMU IS Gain 测试的配置与结果分析（扫描负载电流、测量纹波与压降）。\n"
             "本页 AI 能力边界（已声明）：读 IS Gain 测试配置、应用配置草案到控件、"
@@ -219,7 +220,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "OSCP 保护点测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 PMU OSCP/OVP/UVP/SCP 保护点测试的配置与结果分析（扫描电流/电压、"
             "检测保护触发与寄存器位变化）。\n"
@@ -236,7 +237,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "GPADC 测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 GPADC 测试的配置与结果分析（1000CNT/Force Voltage/High-Low Temp/"
             "Temp Consistency 四种测试项，计算线性度/ENOB/DNL/INL/增益误差/失调误差）。\n"
@@ -254,7 +255,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于充电测试（配置遍历/状态寄存器/Iterm/调压等）的配置与结果分析。\n"
             "本页 AI 能力边界：Charger 测试以 Tab 子页形式呈现，能力随当前子页而定。"
@@ -268,7 +269,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "配置遍历测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Charger 配置遍历测试的配置与结果分析（扫描 DAC 代码范围、"
             "测量电压/电流线性度）。\n"
@@ -288,7 +289,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "状态寄存器测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Charger 状态寄存器测试的配置与结果分析（电压/电流/温度/寄存器扫描，"
             "检测状态位翻转）。\n"
@@ -312,7 +313,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "Iterm 测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Charger Iterm 测试的配置与结果分析（单次/遍历 Iterm 测试，"
             "测量终止电流与调压值）。\n"
@@ -332,7 +333,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "调压测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Charger 调压（Regulation Voltage）测试的配置与结果分析（扫描 DAC 代码、"
             "测量调压线性度与 PASS/FAIL）。\n"
@@ -352,7 +353,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于功耗测试（Consumption Test）的配置与电流功耗数据解读。\n"
             "本页 AI 能力边界（已声明）：读测试配置、应用配置草案到控件、启动/停止本页测试、读结果摘要。"
@@ -381,7 +382,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Module 模块测试（LDO / DCDC 完整可测测试项）的配置与结果分析。\n"
             "本页 AI 能力边界：Module Test 以 Tab 子页形式呈现，能力随当前子页而定。"
@@ -395,7 +396,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "LDO 模块测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 LDO 模块测试的配置与结果分析（输出电压扫描/负载调整率/线性调整率/"
             "静态电流/纹波/PSRR/负载瞬态响应）。\n"
@@ -416,7 +417,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "DCDC 模块测试助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 DCDC 模块测试的配置与结果分析（输出电压扫描/效率/负载调整率/线性调整率/"
             "静态电流/BUCK 纹波/PSRR/负载瞬态响应/电感电流）。\n"
@@ -437,7 +438,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "脚本助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.0,
-        "max_tokens": 4096,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 Orchestrator 测试序列。只能生成符合 core/orchestrator 节点 schema 的序列草案，"
             "草案必须经预览与本地校验通过后才能应用，禁止直接运行高风险序列。\n"
@@ -459,7 +460,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": (
             "你专注于 VminHunter 最低工作电压搜索的配置与结果解读。\n"
             "本页 AI 能力边界：暂未接入 AIControllablePage 契约，无法由 AI 直接启动/停止/配置本页搜索。"
@@ -471,14 +472,14 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "通用助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": "你是 KK_Lab 的通用智能助手。",
     },
     "_default": {
         "label": "通用助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
-        "max_tokens": 2048,
+        "max_tokens": 131072,
         "system_prompt": "你是 KK_Lab 测试工具的智能助手。",
     },
 }

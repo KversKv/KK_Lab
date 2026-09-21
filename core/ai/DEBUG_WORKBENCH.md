@@ -223,7 +223,7 @@ python -m core.ai.eval_runner
   "mode": "chat_stream",            // chat / chat_stream / agent / analysis / config_draft / script_draft
   "model": "glm-5.1-fp8",
   "temperature": 0.3,
-  "max_tokens": 2048,
+  "max_tokens": 131072,
   "system_prompt_hash": "ab12cd34ef56",  // 系统段哈希，不存全文
   "messages_in": [ /* 喂给模型的完整 messages，已脱敏 */ ],
   "raw_output": "...",              // 已脱敏，超 2 万字截断

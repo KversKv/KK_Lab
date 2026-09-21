@@ -368,7 +368,7 @@ class AIService(QObject):
         self._agent_rounds = 0
         self._agent_model = ""
         self._agent_temperature = 0.2
-        self._agent_max_tokens = 2048
+        self._agent_max_tokens = 131072
         self._agent_forced_retry = False
         self._page_capabilities_getter = None  # UI 注入：返回当前页 AI 能力集（set[str]）
         self._last_had_waveform = False  # 本轮 send 是否注入了波形上下文（空回复兜底用）
@@ -810,7 +810,7 @@ class AIService(QObject):
         profile = get_profile(self._page_key)
         model = self._resolve_model(profile.get("model", self._settings.effective_model))
         temperature = profile.get("temperature", 0.2)
-        max_tokens = profile.get("max_tokens", 2048)
+        max_tokens = profile.get("max_tokens", 131072)
 
         messages = self._prompt_manager.build_messages(
             page_key=self._page_key,
@@ -1368,7 +1368,7 @@ class AIService(QObject):
             )
             self._agent_model = model
             self._agent_temperature = profile.get("temperature", 0.2)
-            self._agent_max_tokens = profile.get("max_tokens", 2048)
+            self._agent_max_tokens = profile.get("max_tokens", 131072)
             self._agent_messages = self._prompt_manager.build_messages(
                 page_key=self._page_key,
                 history=self._history,
@@ -1564,7 +1564,7 @@ class AIService(QObject):
             messages=messages,
             model=analysis_model,
             temperature=profile.get("temperature", 0.1),
-            max_tokens=profile.get("max_tokens", 2048),
+            max_tokens=profile.get("max_tokens", 131072),
         )
 
     def generate_draft(self, kind: str, user_text: str) -> None:
@@ -1609,7 +1609,7 @@ class AIService(QObject):
             messages=messages,
             model=draft_model,
             temperature=profile.get("temperature", 0.0),
-            max_tokens=max(profile.get("max_tokens", 2048), 4096),
+            max_tokens=max(profile.get("max_tokens", 131072), 4096),
         )
 
     def _draft_instruction(self, kind: str) -> str:

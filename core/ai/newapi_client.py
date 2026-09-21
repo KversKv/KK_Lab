@@ -4,7 +4,7 @@
   - localhost / 内网 IP 走直连，httpx.Client(trust_env=False) 绕过系统代理；
   - 鉴权 Authorization: Bearer <key>；
   - 推理模型 glm-5.1-fp8：正文取 choices[0].message.content，
-    推理过程在 message.reasoning（独立字段，不当正文）；max_tokens 必须 ≥ 1024。
+    推理过程在 message.reasoning / reasoning_content（独立字段，不当正文）；max_tokens 必须 ≥ 1024。
   - 本类不含 Qt 依赖，可在 QThread worker 中安全使用。
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ class NewAPIClient:
         messages: list[dict[str, str]],
         *,
         temperature: float = 0.2,
-        max_tokens: int = 2048,
+        max_tokens: int = 131072,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: Any | None = None,
         cancel_check=None,
@@ -137,7 +137,7 @@ class NewAPIClient:
         messages: list[dict[str, str]],
         *,
         temperature: float = 0.2,
-        max_tokens: int = 2048,
+        max_tokens: int = 131072,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: Any | None = None,
         on_delta: Callable[[str], None] | None = None,
@@ -232,7 +232,10 @@ class NewAPIClient:
         content = "".join(content_parts)
         tool_calls = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
         if not content and not reasoning_parts and not tool_calls:
-            raise AIClientError("流式响应为空（可能 max_tokens 过小被推理耗尽）")
+            raise AIClientError(
+                "流式响应为空（finish_reason=%s，max_tokens=%d，可能 max_tokens 过小被推理耗尽）"
+                % (finish_reason or "unknown", effective_max_tokens)
+            )
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return ChatResult(
             content=content,
@@ -287,7 +290,8 @@ class NewAPIClient:
         first = choices[0] or {}
         delta = first.get("delta") or {}
         content = delta.get("content") or ""
-        reasoning = delta.get("reasoning") or ""
+        # 智谱 GLM 系流式推理字段为 reasoning_content，OpenAI 兼容实现多为 reasoning，两者兼容
+        reasoning = delta.get("reasoning") or delta.get("reasoning_content") or ""
         finish_reason = first.get("finish_reason") or ""
         return str(content), str(reasoning), str(finish_reason), str(chunk.get("model", ""))
 
@@ -299,12 +303,15 @@ class NewAPIClient:
         first = choices[0] or {}
         message = first.get("message") or {}
         content = message.get("content")
-        reasoning = message.get("reasoning") or ""
+        reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
         tool_calls = message.get("tool_calls") or []
         if not isinstance(tool_calls, list):
             tool_calls = []
         if content is None and not tool_calls:
-            raise AIClientError("响应 content 为空（可能 max_tokens 过小被推理耗尽）")
+            raise AIClientError(
+                "响应 content 为空（finish_reason=%s，可能 max_tokens 过小被推理耗尽）"
+                % (str(first.get("finish_reason") or "unknown"))
+            )
         return ChatResult(
             content=str(content) if content is not None else "",
             reasoning=str(reasoning),

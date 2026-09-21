@@ -232,7 +232,7 @@ def run_case(case: EvalCase, *, mock: bool = False) -> EvalResult:
             model=model,
             messages=messages,
             temperature=profile.get("temperature", 0.1),
-            max_tokens=profile.get("max_tokens", 2048),
+            max_tokens=profile.get("max_tokens", 131072),
             tools=tools,
         )
     except AIClientError as exc:

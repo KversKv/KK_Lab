@@ -36,10 +36,10 @@ _DEFAULTS: dict[str, Any] = {
     "model_mode": "fixed",
     "available_models": ["deepseekv4flash", "glm-5.1-fp8"],
     "stream": True,
-    "timeout_seconds": 60,
+    "timeout_seconds": 300,
     "model_timeouts": {
-        "glm-5.1-fp8": 180,
-        "glm-5.2-fp8": 180,
+        "glm-5.1-fp8": 300,
+        "glm-5.2-fp8": 300,
     },
     "max_recent_log_lines": 300,
     "enable_log_masking": True,
@@ -87,11 +87,11 @@ class AISettings:
         default_factory=lambda: ["deepseekv4flash", "glm-5.1-fp8"]
     )
     stream: bool = True
-    timeout_seconds: int = 60
+    timeout_seconds: int = 300
     model_timeouts: dict[str, int] = field(
         default_factory=lambda: {
-            "glm-5.1-fp8": 180,
-            "glm-5.2-fp8": 180,
+            "glm-5.1-fp8": 300,
+            "glm-5.2-fp8": 300,
         }
     )
     max_recent_log_lines: int = 300
