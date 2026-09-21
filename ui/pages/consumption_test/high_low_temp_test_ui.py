@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QGridLayout, QFrame, QScrollArea,
     QSizePolicy, QSpinBox, QDoubleSpinBox,
-    QFileDialog
+    QFileDialog, QLineEdit
 )
 from PySide6.QtCore import (
     Qt, Signal, QThread, QObject, QRectF, QSize,
@@ -37,6 +37,7 @@ _PAGE_SVGS_DIR = os.path.join(
 )
 
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from ui.widgets.dark_combobox import DarkComboBox
 
 
 class _ToggleSwitch(QWidget):
@@ -163,6 +164,8 @@ class _HighLowTempTestWorker(QObject):
         test_time = self.config.get("test_time", 5)
         sample_period = self.config.get("sample_period", 0.02)
         channels = self.config.get("channels", [1])
+        ext_power = self.config.get("ext_power", {})
+        ext_rails = ext_power.get("rails", []) if ext_power.get("enabled") else []
 
         temps = self._float_range(temp_start, temp_end, temp_step)
         if not temps:
@@ -188,11 +191,28 @@ class _HighLowTempTestWorker(QObject):
                 for ch in channels:
                     avg_current = base_current + noise + ch * 0.5
                     ch_results[ch] = avg_current
-                all_results.append({"temp": t, "currents": ch_results})
-                self.progress.emit({"temp": t, "currents": ch_results})
+                rail_results = {}
+                rail_vouts = {}
+                for rail in ext_rails:
+                    rail_results[rail["name"]] = (
+                        rail["current_limit"] * 1000.0 * 0.4
+                        + (t - 25.0) * 0.01
+                        + math.sin(t / 8.0) * 0.05
+                    )
+                    rail_vouts[rail["name"]] = (
+                        rail["voltage"] * 0.98 + math.sin(t / 6.0) * 0.005
+                    )
+                all_results.append({"temp": t, "currents": ch_results, "rails": rail_results,
+                                    "rail_vouts": rail_vouts})
+                self.progress.emit({"temp": t, "currents": ch_results, "rails": rail_results,
+                                    "rail_vouts": rail_vouts})
                 self.progress_int.emit(int((idx + 1) * 100 / total_temps))
                 ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.6f}mA" for ch in channels])
-                self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  {ch_str}")
+                rail_str = "  ".join([f"{name}={rail_results[name]:.6f}mA" for name in rail_results])
+                vout_str = "  ".join([f"{name}_Vout={rail_vouts[name]:.6f}V" for name in rail_vouts])
+                self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  {ch_str}"
+                              + (f"  |  {rail_str}" if rail_str else "")
+                              + (f"  |  {vout_str}" if vout_str else ""))
                 time.sleep(0.05)
             return {"data": all_results, "channels": channels}
 
@@ -260,12 +280,57 @@ class _HighLowTempTestWorker(QObject):
                 self.log.emit("[WARN] Test stopped")
                 break
 
+            rail_results = {}
+            rail_vouts = {}
+            for rail in ext_rails:
+                if self._stop_flag:
+                    self.log.emit("[WARN] Test stopped")
+                    break
+                rail_ch = rail["channel"]
+                rail_name = rail["name"]
+                try:
+                    n6705c.set_voltagemode(rail_ch)
+                    rail_vouts[rail_name] = n6705c.measure_voltage(rail_ch)
+                    self.log.emit(
+                        f"[DATA] Temp={t:>7.1f} °C  |  Rail {rail_name} "
+                        f"(CH{rail_ch}) DUT Vout = {rail_vouts[rail_name]:.6f}V"
+                    )
+                except Exception as e:
+                    self.log.emit(f"[ERROR] Rail {rail_name} (CH{rail_ch}) DUT Vout measure failed: {e}")
+                try:
+                    n6705c.set_mode(rail_ch, "PS2Q")
+                    n6705c.set_voltage(rail_ch, rail["voltage"])
+                    n6705c.set_current_limit(rail_ch, rail["current_limit"])
+                    n6705c.channel_on(rail_ch)
+                    try:
+                        self._interruptible_sleep(0.2)
+                        rail_results[rail_name] = n6705c.measure_current(rail_ch) * 1000.0
+                    finally:
+                        n6705c.channel_off(rail_ch)
+                    self.log.emit(
+                        f"[DATA] Temp={t:>7.1f} °C  |  Rail {rail_name} "
+                        f"(CH{rail_ch}, {rail['voltage']:.3f}V, lim {rail['current_limit']:.3f}A) "
+                        f"= {rail_results[rail_name]:.6f}mA"
+                    )
+                except Exception as e:
+                    self.log.emit(f"[ERROR] Rail {rail_name} (CH{rail_ch}) measure failed: {e}")
+
+            if self._stop_flag:
+                self.log.emit("[WARN] Test stopped")
+                break
+
             actual_temp = chamber.get_current_temp()
-            all_results.append({"temp": actual_temp, "currents": ch_results})
-            self.progress.emit({"temp": actual_temp, "currents": ch_results})
+            all_results.append({"temp": actual_temp, "currents": ch_results, "rails": rail_results,
+                                "rail_vouts": rail_vouts})
+            self.progress.emit({"temp": actual_temp, "currents": ch_results, "rails": rail_results,
+                                "rail_vouts": rail_vouts})
             self.progress_int.emit(int((idx + 1) * 100 / total_temps))
             ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.6f}mA" for ch in channels])
-            self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  {ch_str}")
+            rail_str = "  ".join([f"{name}={rail_results[name]:.6f}mA" for name in rail_results])
+            vout_str = "  ".join([f"{name}_Vout={rail_vouts[name]:.6f}V" for name in rail_vouts])
+            self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  {ch_str}"
+                          + (f"  |  {rail_str}" if rail_str else "")
+                          + (f"  |  {vout_str}" if vout_str else ""))
 
         chamber.set_temperature(25.0)
         self.log.emit("[INFO] Chamber restored to 25.0 °C")
@@ -278,12 +343,18 @@ class _HighLowTempTestWorker(QObject):
             header = f"  {'#':>3}  {'Temp (°C)':>10}"
             for ch in channels:
                 header += f"  {'CH' + str(ch) + ' (mA)':>14}"
+            for rail in ext_rails:
+                header += f"  {rail['name'][:9] + ' (mA)':>14}"
+                header += f"  {rail['name'][:9] + ' Vout(V)':>14}"
             self.log.emit(f"[SUMMARY] {header}")
             self.log.emit("[SUMMARY] " + "-" * 70)
             for i, r in enumerate(all_results):
                 row = f"  {i + 1:>3}  {r['temp']:>10.2f}"
                 for ch in channels:
                     row += f"  {r['currents'].get(ch, 0.0):>14.6f}"
+                for rail in ext_rails:
+                    row += f"  {r.get('rails', {}).get(rail['name'], 0.0):>14.6f}"
+                    row += f"  {r.get('rail_vouts', {}).get(rail['name'], 0.0):>14.6f}"
                 self.log.emit(f"[SUMMARY] {row}")
             self.log.emit("[SUMMARY] " + "=" * 70)
 
@@ -392,6 +463,40 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
                 background-color: transparent;
                 border: none;
             }
+
+            QLineEdit {
+                background-color: #0a1733;
+                border: 1.5px solid #1e3060;
+                border-radius: 6px;
+                padding: 3px 6px;
+                color: #c8d8f8;
+                font-size: 12px;
+            }
+
+            QPushButton#extRailAddBtn {
+                background-color: #162544;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 0px 10px;
+                min-height: 22px;
+                max-height: 22px;
+            }
+            QPushButton#extRailAddBtn:hover { background-color: #1c315b; }
+            QPushButton#extRailAddBtn:disabled { color: #4a5a80; background-color: #101c38; }
+
+            QPushButton#extRailDelBtn {
+                background-color: transparent;
+                border: none;
+                border-radius: 6px;
+                padding: 2px;
+                min-height: 20px;
+                max-height: 20px;
+                min-width: 20px;
+                max-width: 20px;
+            }
+            QPushButton#extRailDelBtn:hover { background-color: #2a1630; }
         """ + START_BTN_STYLE + SCROLL_AREA_STYLE)
 
     def _create_layout(self):
@@ -622,6 +727,57 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
 
         left_col.addWidget(params_panel)
 
+        ext_power_panel = QFrame()
+        ext_power_panel.setObjectName("panel")
+        ext_power_layout = QVBoxLayout(ext_power_panel)
+        ext_power_layout.setContentsMargins(12, 12, 12, 12)
+        ext_power_layout.setSpacing(8)
+
+        ext_power_title_row = QHBoxLayout()
+        ext_power_title_row.setSpacing(6)
+        ext_power_title = QLabel("External Power Supply")
+        ext_power_title.setObjectName("section_title")
+        ext_power_title_row.addWidget(ext_power_title)
+        ext_power_title_row.addStretch()
+        self.ext_power_enabled = _ToggleSwitch(checked=False)
+        ext_power_title_row.addWidget(self.ext_power_enabled)
+        ext_power_layout.addLayout(ext_power_title_row)
+
+        self.ext_power_content = QFrame()
+        self.ext_power_content.setObjectName("left_scroll_content")
+        ext_power_content_layout = QVBoxLayout(self.ext_power_content)
+        ext_power_content_layout.setContentsMargins(0, 0, 0, 0)
+        ext_power_content_layout.setSpacing(6)
+
+        rails_frame = QFrame()
+        rails_frame.setObjectName("config_inner_panel")
+        self._ext_rail_grid = QGridLayout(rails_frame)
+        self._ext_rail_grid.setContentsMargins(10, 10, 10, 10)
+        self._ext_rail_grid.setHorizontalSpacing(4)
+        self._ext_rail_grid.setVerticalSpacing(6)
+
+        header_style = "color: #8faad8; font-size: 10px; font-weight: 600; border: none;"
+        for col, text in enumerate(("Name", "CH", "Volt (V)", "Lim (A)", "")):
+            header_label = QLabel(text)
+            header_label.setStyleSheet(header_style)
+            self._ext_rail_grid.addWidget(header_label, 0, col)
+        self._ext_rail_grid.setColumnStretch(0, 1)
+
+        ext_power_content_layout.addWidget(rails_frame)
+
+        self._ext_rail_rows = []
+        self._ext_rail_next_row = 1
+
+        self.ext_rail_add_btn = QPushButton("+ Add Rail")
+        self.ext_rail_add_btn.setObjectName("extRailAddBtn")
+        ext_power_content_layout.addWidget(self.ext_rail_add_btn, 0, Qt.AlignLeft)
+
+        ext_power_layout.addWidget(self.ext_power_content)
+        left_col.addWidget(ext_power_panel)
+
+        self._add_ext_rail_row(name="Vcore", channel=4, voltage=0.82, current_limit=0.05)
+        self.ext_power_content.setEnabled(False)
+
         left_col.addStretch()
 
         self.left_scroll.setWidget(left_content)
@@ -690,11 +846,86 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self._update_n6705c_connect_button_state(False)
         self._plot_curves = {}
 
+    def _add_ext_rail_row(self, name="", channel=4, voltage=0.8, current_limit=0.05):
+        row_idx = self._ext_rail_next_row
+        self._ext_rail_next_row += 1
+
+        name_edit = QLineEdit(name)
+        name_edit.setPlaceholderText("Rail name")
+
+        ch_combo = DarkComboBox(bg="#0a1733", border="#1e3060",
+                                arrow_color="#8faad8", hover_color="#2f6fed")
+        ch_combo.addItems([f"CH{i}" for i in range(1, 5)])
+        ch = min(max(int(channel), 1), 4)
+        ch_combo.setCurrentIndex(ch - 1)
+
+        volt_spin = QDoubleSpinBox()
+        volt_spin.setRange(0.0, 20.0)
+        volt_spin.setDecimals(3)
+        volt_spin.setSingleStep(0.05)
+        volt_spin.setValue(voltage)
+
+        limit_spin = QDoubleSpinBox()
+        limit_spin.setRange(0.001, 5.0)
+        limit_spin.setDecimals(3)
+        limit_spin.setSingleStep(0.01)
+        limit_spin.setValue(current_limit)
+
+        del_btn = QPushButton()
+        del_btn.setObjectName("extRailDelBtn")
+        del_btn.setToolTip("Remove rail")
+        del_svg = os.path.join(_PAGE_SVGS_DIR, "x-circle.svg")
+        if os.path.isfile(del_svg):
+            del_btn.setIcon(_tinted_svg_icon(del_svg, "#ff5e7a", 14))
+            del_btn.setIconSize(QSize(14, 14))
+        else:
+            del_btn.setText("x")
+
+        self._ext_rail_grid.addWidget(name_edit, row_idx, 0)
+        self._ext_rail_grid.addWidget(ch_combo, row_idx, 1)
+        self._ext_rail_grid.addWidget(volt_spin, row_idx, 2)
+        self._ext_rail_grid.addWidget(limit_spin, row_idx, 3)
+        self._ext_rail_grid.addWidget(del_btn, row_idx, 4)
+
+        row = {
+            "name_edit": name_edit,
+            "ch_combo": ch_combo,
+            "volt_spin": volt_spin,
+            "limit_spin": limit_spin,
+            "del_btn": del_btn,
+        }
+        self._ext_rail_rows.append(row)
+        del_btn.clicked.connect(lambda checked=False, r=row: self._remove_ext_rail_row(r))
+
+    def _remove_ext_rail_row(self, row):
+        if row not in self._ext_rail_rows:
+            return
+        self._ext_rail_rows.remove(row)
+        for widget in row.values():
+            self._ext_rail_grid.removeWidget(widget)
+            widget.deleteLater()
+
+    def _collect_ext_rails(self):
+        rails = []
+        for row in self._ext_rail_rows:
+            name = row["name_edit"].text().strip()
+            if not name:
+                name = f"Rail CH{row['ch_combo'].currentIndex() + 1}"
+            rails.append({
+                "name": name,
+                "channel": row["ch_combo"].currentIndex() + 1,
+                "voltage": row["volt_spin"].value(),
+                "current_limit": row["limit_spin"].value(),
+            })
+        return rails
+
     def _bind_signals(self):
         self.bind_n6705c_signals()
         self.bind_chamber_signals()
         self.start_btn.clicked.connect(self._on_start_clicked)
         self.export_csv_btn.clicked.connect(self._on_export_csv)
+        self.ext_power_enabled.toggled.connect(self.ext_power_content.setEnabled)
+        self.ext_rail_add_btn.clicked.connect(lambda: self._add_ext_rail_row())
 
     def _on_start_clicked(self):
         if self._test_thread and self._test_thread.isRunning():
@@ -716,6 +947,18 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         if not channels:
             self.append_log("[ERROR] At least one channel must be enabled")
             return
+
+        ext_power_enabled = self.ext_power_enabled.isChecked()
+        ext_rails = self._collect_ext_rails() if ext_power_enabled else []
+        if ext_power_enabled:
+            if not ext_rails:
+                self.append_log("[ERROR] External power enabled but no rail configured")
+                return
+            names = [r["name"] for r in ext_rails]
+            if len(names) != len(set(names)):
+                self.append_log("[ERROR] Duplicate rail names in external power list")
+                return
+
         config = {
             "temp_start": self.temp_start.value(),
             "temp_end": self.temp_end.value(),
@@ -725,6 +968,10 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
             "test_time": self.test_time.value(),
             "sample_period": self.sample_period.value() / 1_000_000.0,
             "channels": channels,
+            "ext_power": {
+                "enabled": ext_power_enabled,
+                "rails": ext_rails,
+            },
         }
 
         if config["temp_step"] <= 0:
@@ -766,6 +1013,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
     def _on_progress(self, data):
         temp = data["temp"]
         currents = data["currents"]
+        rails = data.get("rails", {})
         self.result_data.append(data)
 
         channels = list(currents.keys())
@@ -783,6 +1031,26 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
             temps = [r["temp"] for r in self.result_data]
             vals = [r["currents"].get(ch, 0.0) for r in self.result_data]
             self._plot_curves[ch].setData(temps, vals)
+
+        rail_names = list(rails.keys())
+        for rail_idx, name in enumerate(rail_names):
+            curve_key = ("rail", name)
+            if curve_key not in self._plot_curves:
+                color_idx = (4 + rail_idx) % len(self.CHANNEL_COLORS)
+                pen = pg.mkPen(color=self.CHANNEL_COLORS[color_idx], width=2)
+                self._plot_curves[curve_key] = self.plot_widget.plot(
+                    [], [], pen=pen, name=name,
+                    symbol='t', symbolSize=7, connect='finite',
+                    symbolBrush=self.CHANNEL_COLORS[color_idx]
+                )
+
+        for name in rail_names:
+            temps = [r["temp"] for r in self.result_data]
+            vals = [
+                r.get("rails", {}).get(name, float("nan"))
+                for r in self.result_data
+            ]
+            self._plot_curves[("rail", name)].setData(temps, vals)
 
     def _on_progress_int(self, val):
         self.execution_logs.set_progress(val)
@@ -817,13 +1085,24 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
             return
 
         channels = list(self.result_data[0]["currents"].keys()) if self.result_data else []
+        rail_names = []
+        for r in self.result_data:
+            for name in r.get("rails", {}):
+                if name not in rail_names:
+                    rail_names.append(name)
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                header = ["Temperature (°C)"] + [f"CH{ch} (mA)" for ch in channels]
+                header = (["Temperature (°C)"]
+                          + [f"CH{ch} (mA)" for ch in channels]
+                          + [f"{name} (mA)" for name in rail_names]
+                          + [f"{name} DUT Vout (V)" for name in rail_names])
                 writer.writerow(header)
                 for r in self.result_data:
-                    row = [f"{r['temp']:.2f}"] + [f"{r['currents'].get(ch, 0.0):.6f}" for ch in channels]
+                    row = ([f"{r['temp']:.2f}"]
+                           + [f"{r['currents'].get(ch, 0.0):.6f}" for ch in channels]
+                           + [f"{r.get('rails', {}).get(name, 0.0):.6f}" for name in rail_names]
+                           + [f"{r.get('rail_vouts', {}).get(name, 0.0):.6f}" for name in rail_names])
                     writer.writerow(row)
             self.append_log(f"[INFO] Data exported to: {path}")
         except Exception as e:
