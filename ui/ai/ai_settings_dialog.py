@@ -217,7 +217,11 @@ class AISettingsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        # Fusion 下 viewport 默认用 palette Base（白）填充，卡片间隙会透白；
+        # 显式透明化滚动区与容器，透出对话框深色底。
+        scroll.setStyleSheet("QScrollArea{background:transparent;}")
         container = QWidget()
+        container.setStyleSheet("background:transparent;")
         self._models_list_layout = QVBoxLayout(container)
         self._models_list_layout.setContentsMargins(0, 0, 0, 0)
         self._models_list_layout.setSpacing(8)
