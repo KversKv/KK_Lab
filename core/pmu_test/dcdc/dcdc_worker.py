@@ -200,7 +200,7 @@ def _run_efficiency_curve(n, cfg, debug, stop_flag_fn,
         if progress_fn is not None:
             progress_fn(int((progress_offset + idx + 1) * 100 / total_count))
 
-    n.set_current(iload_ch, 0)
+    n.set_current(iload_ch, -0.001)
     n.channel_off(iload_ch)
 
     return output, max_eff, max_eff_iout, sum_eff, sum_vin, sum_vout
@@ -293,7 +293,7 @@ class DCDCEfficiencyTestThread(QThread):
             self.log_message.emit(f"[ERROR] Test failed: {e}")
         finally:
             try:
-                n.set_current(iload_ch, 0)
+                n.set_current(iload_ch, -0.001)
                 n.channel_off(iload_ch)
             except Exception:
                 pass
@@ -424,7 +424,7 @@ class DCDCVinSweepTestThread(QThread):
             self.log_message.emit(f"[ERROR] VIN Sweep failed: {e}")
         finally:
             try:
-                n.set_current(iload_ch, 0)
+                n.set_current(iload_ch, -0.001)
                 n.channel_off(iload_ch)
             except Exception:
                 pass
@@ -652,7 +652,7 @@ class DCDCTempSweepTestThread(QThread):
             self.log_message.emit(f"[ERROR] Temp Sweep failed: {e}")
         finally:
             try:
-                n.set_current(iload_ch, 0)
+                n.set_current(iload_ch, -0.001)
                 n.channel_off(iload_ch)
             except Exception:
                 pass

@@ -142,6 +142,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._search_worker = None
         self._export_data = None
         self._chart_image_bytes = None
+        self.current_test_item = self.TEST_1000CNT
 
         # 最近测试记录（本会话内，用于历史曲线对比与载入）
         self._recent_test_records: list[dict] = []
@@ -1068,6 +1069,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         chart_title = QLabel("ADC Transfer Curve")
         chart_title.setObjectName("section_title")
         chart_title.setStyleSheet("border: none;")
+        self.chart_title = chart_title
 
         self.export_result_btn = QPushButton("Export Result")
         self.export_result_btn.setObjectName("tool_btn")
@@ -1330,9 +1332,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.n6705c_card.setVisible("n6705c" in required)
         self.chamber_card.setVisible("chamber" in required)
 
-        # 1000CNT 用不到 ADC Transfer Curve，隐藏图表面板，改显详细统计卡组
+        # 1000CNT 不再隐藏图表面板：改用于展示原始数据相对 AVG 的分布图，指标区改显详细统计卡组
         is_cnt_test = test_item == self.TEST_1000CNT
-        self.chart_panel.setVisible(not is_cnt_test)
+        self.chart_title.setText("Raw Data Distribution" if is_cnt_test else "ADC Transfer Curve")
         for card in self._cnt_cards:
             card.setVisible(is_cnt_test)
         for card in self._fv_cards:
@@ -1556,7 +1558,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             stop_check=stop_check,
             progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
-        return ('1000cnt', compute_detailed_stats(raw_data))
+        stats = compute_detailed_stats(raw_data)
+        stats['raw'] = raw_data
+        return ('1000cnt', stats)
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
                                 voltage_step, voltage_channel, sample_cnt=1000, iic_weight=10,
@@ -1719,6 +1723,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 f"MAX={result.get('max', 0):.3f}, STD={result.get('std', 0):.3f}, "
                 f"P-P={result.get('pp', 0):.0f} code, N={result.get('count', 0)}"
             )
+            self._plot_cnt_distribution(result)
 
         elif kind == 'force_voltage':
             if result is not None:
@@ -2633,6 +2638,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             )
             if self.current_test_item == self.TEST_1000CNT:
                 self.update_test_result(params)
+                # 载入记录时同步恢复分布图（旧记录无 raw 字段时跳过）
+                if params.get('raw'):
+                    self._loaded_record = record
+                    self._plot_cnt_distribution(params)
             else:
                 self._append_log("[INFO] 切换到 1000CNT TEST 测试项可在指标卡查看该记录统计")
             return
@@ -3680,9 +3689,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         legend_row = QHBoxLayout()
         legend_row.addStretch()
 
-        actual_legend = QLabel("↔ Actual Code")
+        is_cnt_test = self.current_test_item == self.TEST_1000CNT
+
+        actual_legend = QLabel("● Deviation from AVG" if is_cnt_test else "↔ Actual Code")
         actual_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
-        ideal_legend = QLabel("↔ Ideal Code")
+        ideal_legend = QLabel("─ AVG Level" if is_cnt_test else "↔ Ideal Code")
         ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
 
         legend_row.addWidget(actual_legend)
@@ -3704,7 +3715,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         """)
         layout.addWidget(plot_area, 1)
 
-        x_label = QLabel("Input Voltage (V)")
+        x_label = QLabel("Sample Index" if is_cnt_test else "Input Voltage (V)")
         x_label.setAlignment(Qt.AlignCenter)
         x_label.setObjectName("muted_label")
         layout.addWidget(x_label)
@@ -3939,6 +3950,106 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         except Exception as e:
             self._append_log(f"[ERROR] Error plotting voltage-ADC curve: {e}")
             logger.error("Error plotting voltage-ADC curve: %s", e, exc_info=True)
+
+    def _plot_cnt_distribution(self, result):
+        """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。"""
+        try:
+            import pyqtgraph as pg
+            import numpy as np
+
+            raw = result.get("raw") or []
+            if not raw:
+                return
+            avg = float(result.get("avg", 0.0))
+            std = float(result.get("std", 0.0))
+
+            self._clear_chart_placeholder()
+            layout = self.chart_placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.chart_placeholder)
+            layout.setContentsMargins(14, 14, 14, 10)
+            layout.setSpacing(8)
+
+            # 当前记录专属色（有载入记录时用其色，否则默认绿）
+            curve_color = "#00d39a"
+            record_name = ""
+            if self._loaded_record is not None:
+                curve_color = self._record_color(self._loaded_record['id'])
+                record_name = f" #{self._loaded_record['id']} {self._record_display_name(self._loaded_record)} · "
+
+            legend_row = QHBoxLayout()
+            legend_row.addStretch()
+            dev_legend = QLabel(f"● {record_name}Deviation from AVG (code)")
+            dev_legend.setStyleSheet(f"color: {curve_color}; font-size: 12px;")
+            avg_legend = QLabel("─ AVG Level")
+            avg_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
+            std_legend = QLabel("- - ±1 STD")
+            std_legend.setStyleSheet("color: #f0a040; font-size: 12px;")
+            legend_row.addWidget(dev_legend)
+            legend_row.addSpacing(16)
+            legend_row.addWidget(avg_legend)
+            legend_row.addSpacing(16)
+            legend_row.addWidget(std_legend)
+            legend_row.addStretch()
+            layout.addLayout(legend_row)
+
+            pw = pg.PlotWidget()
+            pw.setBackground("#0a1735")
+            pw.showGrid(x=True, y=True, alpha=0.15)
+            pw.setLabel("left", "Deviation from AVG (code)", color="#a0b4d8")
+            pw.setLabel("bottom", "Sample Index", color="#a0b4d8")
+            for axis_name in ("left", "bottom"):
+                axis = pw.getAxis(axis_name)
+                axis.setTextPen(pg.mkPen("#a0b4d8"))
+                axis.setPen(pg.mkPen("#3a4f7a"))
+
+            x = np.arange(1, len(raw) + 1)
+            dev = np.array(raw, dtype=float) - avg
+
+            # AVG 零基准线 + ±1 STD 虚线
+            pw.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1))
+            if std > 0:
+                pw.addLine(y=std, pen=pg.mkPen(color="#f0a040", width=1,
+                           style=pg.QtCore.Qt.DashLine))
+                pw.addLine(y=-std, pen=pg.mkPen(color="#f0a040", width=1,
+                           style=pg.QtCore.Qt.DashLine))
+
+            pw.plot(x, dev, pen=pg.mkPen(color=curve_color, width=2),
+                    symbol="o", symbolSize=4,
+                    symbolBrush=curve_color, symbolPen=None)
+
+            layout.addWidget(pw, 1)
+
+            x_label = QLabel("Sample Index")
+            x_label.setAlignment(Qt.AlignCenter)
+            x_label.setObjectName("muted_label")
+            layout.addWidget(x_label)
+
+            try:
+                import io
+                from pyqtgraph.exporters import ImageExporter
+                from PySide6.QtCore import QBuffer, QIODevice
+                from PySide6.QtGui import QImage
+
+                # 仅指定宽度（同时指定 height 会按 cover 缩放导致宽度不精确）
+                exporter = ImageExporter(pw.plotItem)
+                exporter.parameters()['width'] = 1200
+                snap = exporter.export(toBytes=True)
+                if not isinstance(snap, QImage):
+                    snap = QImage.fromData(bytes(snap))
+                qbuf = QBuffer()
+                qbuf.open(QIODevice.WriteOnly)
+                snap.save(qbuf, "PNG")
+                raw_png = bytes(qbuf.data())
+                qbuf.close()
+                self._chart_image_bytes = io.BytesIO(raw_png)
+            except Exception as ex:
+                self._append_log(f"[WARN] Chart snapshot failed: {ex}")
+                self._chart_image_bytes = None
+
+        except Exception as e:
+            self._append_log(f"[ERROR] Error plotting 1000CNT distribution: {e}")
+            logger.error("Error plotting 1000CNT distribution: %s", e, exc_info=True)
 
     def _plot_temp_consistency_curves(self, result):
         try:
