@@ -21,8 +21,8 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QListWidget, QListWidgetItem, QAbstractItemView,
     QSplitter, QMenu, QInputDialog, QTabWidget, QFileDialog, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal, QThread, QTimer
-from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, QEvent
+from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter, QCursor
 import datetime
 import math
 import queue
@@ -73,6 +73,9 @@ logger = get_logger(__name__)
 # 被 AI 修改的控件临时高亮边框色 + 持续时长。
 _AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
 _AI_HIGHLIGHT_MS = 1500
+
+# Force Voltage 曲线悬浮命中半径（x/y 归一化到各自轴量程后的欧氏距离阈值）
+_FV_HOVER_RADIUS = 0.015
 
 
 class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
@@ -139,6 +142,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._last_algo_effect = None
         # 最近一次采样应用算法前的原始数据（未启用算法为 None），供 1000CNT 日志输出
         self._last_raw_before_algo = None
+        # Force Voltage 曲线悬浮预览数据（x/y 为显示坐标，raw_samples=处理后，raw_before=算法前）
+        self._fv_hover_data = None
+        self._fv_hover_last_idx = -1
+        # 悬浮预览窗（自定义 QLabel + ToolTip 窗口标志；QToolTip 会随鼠标移动自动隐藏，不可用）
+        self._fv_preview_label = None
+        self._fv_hover_text_cache = ""
 
         self.is_test_running = False
         self._start_btn_text = "▶ START TEST"
@@ -1431,6 +1440,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._algorithm_snapshot = self._collect_algorithm_config()
         if self._algorithm_snapshot is not None:
             self._append_log(f"[INFO] 启用采样算法: {describe_algorithm(self._algorithm_snapshot)}")
+            _algo_spec = ALGORITHM_REGISTRY.get(self._algorithm_snapshot['id']) or {}
+            if _algo_spec.get('principle'):
+                self._append_log(f"[INFO] {_algo_spec['principle']}")
         if self._acq_mode_snapshot == 'UART':
             if not DEBUG_MOCK and not self._serial_connected:
                 self._append_log("[ERROR] DUT 串口未连接，无法通过 UART Log 采集")
@@ -1761,7 +1773,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 )
             else:
                 self._log_data_series("RAW (原始数据)", result.get('raw'))
-            self._plot_cnt_distribution(result)
+            self._plot_cnt_distribution(result, self._algorithm_snapshot)
 
         elif kind == 'force_voltage':
             if result is not None:
@@ -1770,6 +1782,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 result_after_calibration = self._calibration_data(result)
                 voltage_data, mean_cali, adc_min_cali, adc_max_cali = result_after_calibration
                 params = self._calculate_gpadc_parameters(result)
+                # 逐点悬浮预览数据（RAW=算法前，PROC=处理后）
+                self._fv_hover_data = {
+                    'mode': 'fv',
+                    'x': list(voltage_data),
+                    'y': list(mean_cali),
+                    'raw_samples': result.get('raw_samples') or [],
+                    'raw_before': result.get('raw_before_samples') or [],
+                    'algorithm': self._algorithm_snapshot,
+                }
                 self._plot_voltage_adc_curve(voltage_data, mean_cali, adc_min_cali, adc_max_cali)
                 self.update_test_result(params)
                 self._export_data = {
@@ -2679,7 +2700,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 # 载入记录时同步恢复分布图（旧记录无 raw 字段时跳过）
                 if params.get('raw'):
                     self._loaded_record = record
-                    self._plot_cnt_distribution(params)
+                    self._plot_cnt_distribution(params, record.get('algorithm'))
             else:
                 self._append_log("[INFO] 切换到 1000CNT TEST 测试项可在指标卡查看该记录统计")
             return
@@ -2693,6 +2714,19 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._loaded_record = record
         if kind in ('force_voltage', 'high_low_temp'):
             calib = record.get('calibration') or {}
+            if kind == 'force_voltage':
+                # 恢复该记录的逐点悬浮预览数据（旧记录无 raw_samples 时悬浮提示无数据）
+                raw = record.get('raw') or {}
+                self._fv_hover_data = {
+                    'mode': 'fv',
+                    'x': list(calib.get('voltage') or []),
+                    'y': list(calib.get('mean_cali') or []),
+                    'raw_samples': raw.get('raw_samples') or [],
+                    'raw_before': raw.get('raw_before_samples') or [],
+                    'algorithm': record.get('algorithm'),
+                }
+            else:
+                self._fv_hover_data = None
             self._plot_voltage_adc_curve(
                 calib.get('voltage'), calib.get('mean_cali'),
                 calib.get('min_cali'), calib.get('max_cali'),
@@ -3056,6 +3090,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         adc_mean = []
         adc_min = []
         adc_max = []
+        # 逐点样本（曲线悬浮预览用）：raw_samples=处理后，raw_before_samples=算法前（未启用算法为 None 占位）
+        raw_samples = []
+        raw_before_samples = []
 
         vol_source.set_voltage(voltage_channel, voltage_min)
         time.sleep(settle_time)
@@ -3071,19 +3108,23 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             vol_source.set_voltage(voltage_channel, current_voltage)
             time.sleep(step_time)
 
-            avg, max_val, min_val = self._gpadc_read_by_cnts(
+            avg, max_val, min_val, point_raw = self._gpadc_read_by_cnts(
                 device_addr,
                 reg_addr,
                 iic_weight,
                 get_reg_cnt=sample_cnt,
-                return_raw=False,
+                return_raw=True,
                 stop_check=stop_check,
             )
+            # _apply_algo_tracked 刚更新过该点的算法前原始样本（未启用算法为 None）
+            point_before = self._last_raw_before_algo
 
             voltage_data.append(current_voltage)
             adc_mean.append(avg)
             adc_min.append(min_val)
             adc_max.append(max_val)
+            raw_samples.append(list(point_raw))
+            raw_before_samples.append(list(point_before) if point_before is not None else None)
 
             # 响应保护：前 N 点 Raw 均值接近或方向异常 → 判定 DUT 无响应，中止测试
             if len(adc_mean) == self._SWEEP_GUARD_POINTS:
@@ -3106,6 +3147,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             "mean": adc_mean,
             "min": adc_min,
             "max": adc_max,
+            "raw_samples": raw_samples,
+            "raw_before_samples": raw_before_samples,
         }
         return result
 
@@ -3794,9 +3837,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._export_data = None
         self._chart_image_bytes = None
         self._loaded_record = None
+        self._fv_hover_data = None
+        self._fv_hover_last_idx = -1
         self._build_default_chart_placeholder()
 
     def _clear_chart_placeholder(self):
+        # 重绘/清空图表前隐藏悬浮预览，避免旧预览残留
+        self._fv_preview_hide()
         existing = self.chart_placeholder.layout()
         if existing is not None:
             while existing.count():
@@ -3812,6 +3859,151 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                             sub_widget = sub_item.widget()
                             if sub_widget is not None:
                                 sub_widget.deleteLater()
+
+    # ------------------------------------------------------------------
+    # Force Voltage 曲线逐点悬浮预览（原始数据 / 算法处理后数据）
+    # ------------------------------------------------------------------
+    def _attach_fv_hover(self, pw):
+        """给主图挂悬浮预览：鼠标接近曲线点时显示该点逐样本数据预览。"""
+        self._fv_hover_last_idx = -1
+        pw.scene().sigMouseMoved.connect(lambda pos, _pw=pw: self._on_fv_mouse_moved(_pw, pos))
+        # sigMouseMoved 只在图表面口内触发，离开需 Leave 事件兜底隐藏
+        pw.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """光标离开图表视口时隐藏悬浮预览。"""
+        if event.type() == QEvent.Leave:
+            self._fv_preview_hide()
+        return super().eventFilter(obj, event)
+
+    def _fv_preview_show(self, global_pos):
+        """显示/移动悬浮预览窗（自定义 QLabel，生命周期完全自控，不随鼠标移动消失）。"""
+        if self._fv_preview_label is None:
+            self._fv_preview_label = QLabel(None, Qt.ToolTip)
+            self._fv_preview_label.setStyleSheet(
+                "background-color: #0d1b3e; color: #dce6f8; border: 1px solid #24365e;"
+                "padding: 6px 8px; font-size: 11px;"
+            )
+        label = self._fv_preview_label
+        if label.text() != self._fv_hover_text_cache:
+            label.setText(self._fv_hover_text_cache)
+            label.adjustSize()
+        x = global_pos.x() + 14
+        y = global_pos.y() + 16
+        screen = QApplication.screenAt(global_pos)
+        if screen is not None:
+            area = screen.availableGeometry()
+            if x + label.width() > area.right():
+                x = global_pos.x() - label.width() - 14
+            if y + label.height() > area.bottom():
+                y = global_pos.y() - label.height() - 16
+        label.move(x, y)
+        if not label.isVisible():
+            label.show()
+
+    def _fv_preview_hide(self):
+        if self._fv_preview_label is not None:
+            self._fv_preview_label.hide()
+        self._fv_hover_last_idx = -1
+
+    def _on_fv_mouse_moved(self, pw, pos):
+        """悬浮命中检测：x/y 归一化后取最近点，命中显示预览（跟随光标），未命中/离开隐藏。"""
+        data = self._fv_hover_data
+        if not data:
+            return
+        try:
+            vb = pw.plotItem.vb
+            inside = vb.sceneBoundingRect().contains(pos)
+            view_pos = vb.mapSceneToView(pos) if inside else None
+        except RuntimeError:
+            return
+        if not inside:
+            self._fv_preview_hide()
+            return
+        xs = data.get('x') or []
+        ys = data.get('y') or []
+        if not xs or not ys:
+            return
+        vx, vy = view_pos.x(), view_pos.y()
+        x_span = (max(xs) - min(xs)) or 1.0
+        y_span = (max(ys) - min(ys)) or 1.0
+        best_idx = -1
+        best_d = _FV_HOVER_RADIUS
+        for i in range(len(xs)):
+            dx = (xs[i] - vx) / x_span
+            dy = (ys[i] - vy) / y_span
+            d = math.hypot(dx, dy)
+            if d < best_d:
+                best_d = d
+                best_idx = i
+        if best_idx < 0:
+            self._fv_preview_hide()
+            return
+        if best_idx != self._fv_hover_last_idx:
+            self._fv_hover_last_idx = best_idx
+            self._fv_hover_text_cache = self._fv_hover_text(best_idx)
+        self._fv_preview_show(QCursor.pos())
+
+    def _fv_hover_text(self, idx):
+        """悬浮预览文本：按模式分发（Force Voltage 逐点 / 1000CNT 逐样本）。"""
+        data = self._fv_hover_data or {}
+        if data.get('mode') == 'cnt':
+            return self._cnt_hover_text(idx)
+        xs = data.get('x') or []
+        if idx >= len(xs):
+            return ""
+        lines = [f"<b>V = {xs[idx]:.4f} V</b>（点 {idx + 1}/{len(xs)}）"]
+        raw_samples = data.get('raw_samples') or []
+        raw_before = data.get('raw_before') or []
+        before = raw_before[idx] if idx < len(raw_before) else None
+        proc = raw_samples[idx] if idx < len(raw_samples) else None
+        if before:
+            lines.append(self._fv_series_line("RAW", before))
+        if proc:
+            tag = f"PROC ({describe_algorithm(data.get('algorithm'))})" if before else "RAW"
+            lines.append(self._fv_series_line(tag, proc))
+        if not before and not proc:
+            lines.append("（该记录无逐点样本数据）")
+        return "<br>".join(lines)
+
+    def _fv_series_line(self, tag, samples):
+        """单组样本的预览：AVG/STD/P-P/N 统计 + 前 10 个样本值。"""
+        s = compute_detailed_stats(samples)
+        head = ", ".join(self._fmt_data_value(v) for v in samples[:10])
+        if len(samples) > 10:
+            head += ", ..."
+        return (f"{tag} AVG={s['avg']:.2f} STD={s['std']:.3f} P-P={s['pp']:.0f} N={s['count']}"
+                f"<br><span style='color:#8fa8d0'>{head}</span>")
+
+    def _cnt_hover_text(self, idx):
+        """1000CNT 分布图悬浮文本：样本序号 + RAW（算法前）/ PROC（处理后）单值。
+
+        算法为缩短长度类（如 debounce）时前后样本序号不对应，RAW 降级为统计提示。
+        """
+        data = self._fv_hover_data or {}
+        raw = data.get('raw_samples') or []
+        if idx >= len(raw):
+            return ""
+        n = len(raw)
+        lines = [f"<b>样本 #{idx + 1}</b>（共 {n} 个）"]
+        before = data.get('raw_before') or []
+        before_avg = data.get('before_avg')
+        aligned = len(before) == n
+        if before and before_avg is not None:
+            if aligned:
+                v = before[idx]
+                lines.append(f"RAW = {self._fmt_data_value(v)}（偏差 {v - before_avg:+.3f}）")
+            else:
+                lines.append(f"RAW 经算法重采样 {len(before)}→{n} 点，逐样本不对应"
+                             f"（RAW AVG={before_avg:.2f}）")
+        ys = data.get('y') or []
+        dev = ys[idx] if idx < len(ys) else None
+        tag = f"PROC ({describe_algorithm(data.get('algorithm'))})" if before else "RAW"
+        text = f"{tag} = {self._fmt_data_value(raw[idx])}"
+        if dev is not None:
+            text += f"（偏差 {dev:+.3f}）"
+        lines.append(text)
+        return "<br>".join(lines)
 
     def _plot_voltage_adc_curve(self, voltage_data, mean_cali, adc_min_cali=None, adc_max_cali=None, is_temp_mode=False):
         try:
@@ -3882,6 +4074,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 axis = pw.getAxis(axis_name)
                 axis.setTextPen(pg.mkPen("#a0b4d8"))
                 axis.setPen(pg.mkPen("#3a4f7a"))
+
+            # Force Voltage 逐点悬浮预览（仅电压模式且有悬浮数据时挂载）
+            if not is_temp_mode and self._fv_hover_data:
+                self._attach_fv_hover(pw)
 
             x = np.array(voltage_data, dtype=float)
             y = np.array(mean_cali,    dtype=float)
@@ -4019,8 +4215,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._append_log(f"[ERROR] Error plotting voltage-ADC curve: {e}")
             logger.error("Error plotting voltage-ADC curve: %s", e, exc_info=True)
 
-    def _plot_cnt_distribution(self, result):
-        """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。"""
+    def _plot_cnt_distribution(self, result, algorithm=None):
+        """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。
+
+        algorithm 为该次测试的算法配置快照（载入记录时传 record['algorithm']），
+        供逐样本悬浮预览标注 PROC 段算法名。
+        """
         try:
             import pyqtgraph as pg
             import numpy as np
@@ -4085,6 +4285,20 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             pw.plot(x, dev, pen=pg.mkPen(color=curve_color, width=2),
                     symbol="o", symbolSize=4,
                     symbolBrush=curve_color, symbolPen=None)
+
+            # 逐样本悬浮预览（RAW=算法前，PROC=处理后；长度不一致时降级为统计提示）
+            raw_before = result.get("raw_before_algo") or []
+            before_avg = (compute_detailed_stats(raw_before)['avg'] if raw_before else None)
+            self._fv_hover_data = {
+                'mode': 'cnt',
+                'x': [int(v) for v in x],
+                'y': [float(v) for v in dev],
+                'raw_samples': list(raw),
+                'raw_before': list(raw_before),
+                'before_avg': before_avg,
+                'algorithm': algorithm,
+            }
+            self._attach_fv_hover(pw)
 
             layout.addWidget(pw, 1)
 

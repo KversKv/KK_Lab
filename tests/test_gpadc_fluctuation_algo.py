@@ -114,3 +114,9 @@ def test_new_algorithms_registered():
     # 经注册表 apply 通路生效
     out = apply_algorithm([1, 2, 3, 100, 4], {'id': 'trimmed_mean', 'params': {'count': 5}})
     assert out == [3.0]
+
+
+def test_all_algorithms_have_principle():
+    """注册表每项都必须带 principle（算法思路），供启用时输出日志。"""
+    for algo_id, spec in ALGORITHM_REGISTRY.items():
+        assert spec.get('principle'), f"{algo_id} 缺少 principle 字段"

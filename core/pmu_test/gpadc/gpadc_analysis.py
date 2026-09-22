@@ -208,6 +208,7 @@ ALGORITHM_REGISTRY = {
     'moving_average': {
         'name': 'Moving Average (滑动平均)',
         'desc': '滑动平均滤波，抑制随机噪声（保持样本长度）',
+        'principle': '思路: 逐点取居中 window 窗口内样本的均值作为输出，随机噪声在平均中相互抵消（长度不变）',
         'func': algo_moving_average,
         'params': {
             'window': {'label': 'Window', 'default': 8, 'min': 2, 'max': 1024,
@@ -217,6 +218,7 @@ ALGORITHM_REGISTRY = {
     'median_filter': {
         'name': 'Median Filter (中值滤波)',
         'desc': '中值滤波，剔除脉冲型毛刺（保持样本长度）',
+        'principle': '思路: 逐点取居中 window 窗口内样本的中值作为输出，脉冲型毛刺被中值天然剔除（长度不变）',
         'func': algo_median_filter,
         'params': {
             'window': {'label': 'Window', 'default': 3, 'min': 3, 'max': 21,
@@ -226,6 +228,7 @@ ALGORITHM_REGISTRY = {
     'debounce': {
         'name': 'Debounce (去抖)',
         'desc': '剔除相对前一稳定样本跳变超阈值的抖动样本',
+        'principle': '思路: 顺序扫描，相对上一保留样本跳变超过 threshold 的点视为抖动丢弃，保留样本原值输出（长度可能缩短）',
         'func': algo_debounce,
         'params': {
             'threshold': {'label': 'Threshold (code)', 'default': 4, 'min': 0,
@@ -235,6 +238,7 @@ ALGORITHM_REGISTRY = {
     'offset_compensation': {
         'name': 'Offset Comp (偏移补偿)',
         'desc': '整体减去固定偏移（code）',
+        'principle': '思路: 全体样本统一减去 offset，修正系统固定零偏（长度不变）',
         'func': algo_offset_compensation,
         'params': {
             'offset': {'label': 'Offset (code)', 'default': 0.0, 'min': -4096.0,
@@ -244,6 +248,7 @@ ALGORITHM_REGISTRY = {
     'gain_compensation': {
         'name': 'Gain Comp (增益补偿)',
         'desc': '整体乘以增益系数',
+        'principle': '思路: 全体样本统一乘以 gain，修正系统增益误差（长度不变）',
         'func': algo_gain_compensation,
         'params': {
             'gain': {'label': 'Gain', 'default': 1.0, 'min': 0.001, 'max': 100.0,
@@ -253,6 +258,7 @@ ALGORITHM_REGISTRY = {
     'trimmed_mean': {
         'name': 'Trimmed Mean (去极值平均)',
         'desc': '每 N 个连续样本去掉最大/最小值后取平均（每组输出 1 个值，长度缩短为 1/N）',
+        'principle': '思路: 每 count 个连续样本为一组，排序后去掉最大值与最小值，剩余取平均作为该组输出（每组 1 值，长度缩为 1/count）',
         'func': algo_trimmed_mean,
         'params': {
             'count': {'label': 'Sample Count', 'default': 10, 'min': 3, 'max': 10000,
@@ -262,6 +268,7 @@ ALGORITHM_REGISTRY = {
     'deviation_trim_mean': {
         'name': 'Deviation Trim (偏差剔除平均)',
         'desc': '每 N 个连续样本先求均值，剔除偏差超过 Tolerance% 的样本后取平均（每组输出 1 个值）',
+        'principle': '思路: 每 count 个连续样本为一组，先求组内均值，剔除与均值偏差超过 tolerance_pct% 的样本，剩余取平均作为该组输出（每组 1 值，长度缩为 1/count）',
         'func': algo_deviation_trim_mean,
         'params': {
             'count': {'label': 'Sample Count', 'default': 10, 'min': 2, 'max': 10000,
