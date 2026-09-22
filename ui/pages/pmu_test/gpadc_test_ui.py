@@ -51,6 +51,8 @@ from core.pmu_test.gpadc import (
     ALGORITHM_REGISTRY,
     apply_algorithm,
     describe_algorithm,
+    assess_fluctuation,
+    compare_algorithm_effect,
     parse_hw_int,
     run_multi_ch_temp_test,
 )
@@ -133,6 +135,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._calib_points_snapshot = None
         # 本次测试启用的采样算法配置（None = 不处理，原始流程）
         self._algorithm_snapshot = None
+        # 最近一次采样的算法前后统计对比（compare_algorithm_effect 结果，未启用算法为 None）
+        self._last_algo_effect = None
 
         self.is_test_running = False
         self._start_btn_text = "▶ START TEST"
@@ -1265,7 +1269,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             raw_data = [max(0, int(rng.gauss(2844, 2.0))) for _ in range(get_reg_cnt)]
             if progress_callback:
                 progress_callback(100)
-            raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
+            raw_data = self._apply_algo_tracked(raw_data)
             return compute_reg_stats(raw_data, return_raw=return_raw)
 
         raw_data = []
@@ -1292,7 +1296,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         if not raw_data:
             raise RuntimeError("未从 UART 日志提取到任何 GPADC 样本，请确认 DUT 日志输出与 Search Keyword 匹配")
-        raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
+        raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
     def _gpadc_read_by_cnts(
@@ -1560,6 +1564,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         )
         stats = compute_detailed_stats(raw_data)
         stats['raw'] = raw_data
+        # 算法前后对比（未启用算法为 None），供完成日志输出算法带来的波动改善
+        stats['algo_effect'] = self._last_algo_effect
         return ('1000cnt', stats)
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
@@ -1723,6 +1729,24 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 f"MAX={result.get('max', 0):.3f}, STD={result.get('std', 0):.3f}, "
                 f"P-P={result.get('pp', 0):.0f} code, N={result.get('count', 0)}"
             )
+            # 原始数据波动评估（STD 分级，阈值为 gpadc_analysis 的 FLUCT_STD_* 常量）
+            self._append_log(
+                f"[RESULT] 波动评估: "
+                f"{assess_fluctuation(result.get('std', 0), result.get('pp', 0))}"
+            )
+            # 算法带来的波动改善（启用算法时输出前后对比）
+            effect = result.get('algo_effect')
+            if effect:
+                std_pct = ('n/a' if effect['std_improve_pct'] is None
+                           else f"{effect['std_improve_pct']:+.1f}%")
+                pp_pct = ('n/a' if effect['pp_improve_pct'] is None
+                          else f"{effect['pp_improve_pct']:+.1f}%")
+                self._append_log(
+                    f"[ALGO] {describe_algorithm(self._algorithm_snapshot)} 波动改善: "
+                    f"STD {effect['std_before']:.3f}→{effect['std_after']:.3f} code ({std_pct}), "
+                    f"P-P {effect['pp_before']:.0f}→{effect['pp_after']:.0f} code ({pp_pct}), "
+                    f"N {effect['count_before']}→{effect['count_after']}"
+                )
             self._plot_cnt_distribution(result)
 
         elif kind == 'force_voltage':
@@ -2940,7 +2964,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             if progress_callback:
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
-        raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
+        raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
     def _check_sweep_response(self, voltage_data, adc_mean):
@@ -3125,6 +3149,20 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             val = spin.value()
             params[key] = int(round(val)) if spin.decimals() == 0 else float(val)
         return {'id': algo_id, 'params': params}
+
+    def _apply_algo_tracked(self, raw_data):
+        """应用采样算法并记录前后统计对比到 _last_algo_effect（worker 线程内调用）。
+
+        未启用算法时原样返回并清空对比记录；对比结果供 1000CNT 完成日志
+        输出算法带来的波动改善。
+        """
+        if not self._algorithm_snapshot:
+            self._last_algo_effect = None
+            return raw_data
+        before = list(raw_data)
+        processed = apply_algorithm(raw_data, self._algorithm_snapshot)
+        self._last_algo_effect = compare_algorithm_effect(before, processed)
+        return processed
 
     def _calibration_data(self, result):
         adc_raw_data = result["voltage"]

@@ -241,3 +241,55 @@ def describe_algorithm(algo_config):
         param_text = ", ".join(f"{k}={v}" for k, v in params.items())
         return f"{spec['name']} ({param_text})"
     return spec['name']
+
+
+# ---------------------------------------------------------------------------
+# 1000CNT 波动评估与算法效果对比（纯算法）
+# ---------------------------------------------------------------------------
+
+# 波动分级阈值（STD，单位 code；12-bit GPADC 经验值，可按芯片实测调整）
+FLUCT_STD_EXCELLENT = 1.0
+FLUCT_STD_GOOD = 2.0
+FLUCT_STD_FAIR = 4.0
+
+
+def assess_fluctuation(std, pp):
+    """1000CNT 样本波动评估：按 STD（code）分级，返回中文描述文本。"""
+    if std <= FLUCT_STD_EXCELLENT:
+        level = "优秀"
+    elif std <= FLUCT_STD_GOOD:
+        level = "良好"
+    elif std <= FLUCT_STD_FAIR:
+        level = "一般"
+    else:
+        level = "明显波动"
+    return f"噪声等级={level} (STD={std:.3f} code, P-P={pp:.0f} code)"
+
+
+def _improve_pct(before, after):
+    """改善百分比：正值=降低/改善，负值=放大；before 为 0 时返回 None。"""
+    if before == 0:
+        return None
+    return (before - after) / before * 100.0
+
+
+def compare_algorithm_effect(raw_before, raw_after):
+    """对比算法应用前后的样本统计（纯算法）。
+
+    返回 dict：前后 std/pp/count 及 std/pp 改善百分比（before 为 0 时
+    百分比为 None）；任一侧样本为空时返回 None。
+    """
+    if not raw_before or not raw_after:
+        return None
+    sb = compute_detailed_stats(raw_before)
+    sa = compute_detailed_stats(raw_after)
+    return {
+        'std_before': sb['std'],
+        'std_after': sa['std'],
+        'pp_before': sb['pp'],
+        'pp_after': sa['pp'],
+        'count_before': sb['count'],
+        'count_after': sa['count'],
+        'std_improve_pct': _improve_pct(sb['std'], sa['std']),
+        'pp_improve_pct': _improve_pct(sb['pp'], sa['pp']),
+    }

@@ -9,6 +9,8 @@ from .gpadc_analysis import (
     ALGORITHM_REGISTRY,
     apply_algorithm,
     describe_algorithm,
+    assess_fluctuation,
+    compare_algorithm_effect,
 )
 from .gpadc_worker import TestWorker
 from .gpadc_multi_temp import (
@@ -26,6 +28,8 @@ __all__ = [
     "ALGORITHM_REGISTRY",
     "apply_algorithm",
     "describe_algorithm",
+    "assess_fluctuation",
+    "compare_algorithm_effect",
     "TestWorker",
     "parse_hw_int",
     "parse_iic_command_text",
