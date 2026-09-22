@@ -165,6 +165,45 @@ def algo_gain_compensation(samples, gain=1.0):
     return [v * gain for v in samples]
 
 
+def algo_trimmed_mean(samples, count=10):
+    """去极值平均（长度缩短为 1/count）：每 count 个连续样本为一组，
+    去掉最大值与最小值后取平均作为该组结果；不足 3 点的尾组退化为直接平均。
+    """
+    n = len(samples)
+    if n == 0:
+        return []
+    count = max(3, int(count))
+    result = []
+    for i in range(0, n, count):
+        block = samples[i:i + count]
+        if len(block) >= 3:
+            ordered = sorted(block)
+            seg = ordered[1:-1]
+            result.append(sum(seg) / len(seg))
+        else:
+            result.append(sum(block) / len(block))
+    return result
+
+
+def algo_deviation_trim_mean(samples, count=10, tolerance_pct=5.0):
+    """偏差剔除平均（长度缩短为 1/count）：每 count 个连续样本为一组，
+    先求均值，剔除与均值偏差超过 tolerance_pct% 的样本，剩余取平均作为该组结果；
+    单趟剔除（不重算均值），全部被剔除时退化为原均值。
+    """
+    n = len(samples)
+    if n == 0:
+        return []
+    count = max(1, int(count))
+    result = []
+    for i in range(0, n, count):
+        block = samples[i:i + count]
+        avg = sum(block) / len(block)
+        limit = abs(avg) * tolerance_pct / 100.0
+        kept = [v for v in block if abs(v - avg) <= limit]
+        result.append(sum(kept) / len(kept) if kept else avg)
+    return result
+
+
 ALGORITHM_REGISTRY = {
     'moving_average': {
         'name': 'Moving Average (滑动平均)',
@@ -209,6 +248,26 @@ ALGORITHM_REGISTRY = {
         'params': {
             'gain': {'label': 'Gain', 'default': 1.0, 'min': 0.001, 'max': 100.0,
                      'step': 0.01, 'decimals': 4},
+        },
+    },
+    'trimmed_mean': {
+        'name': 'Trimmed Mean (去极值平均)',
+        'desc': '每 N 个连续样本去掉最大/最小值后取平均（每组输出 1 个值，长度缩短为 1/N）',
+        'func': algo_trimmed_mean,
+        'params': {
+            'count': {'label': 'Sample Count', 'default': 10, 'min': 3, 'max': 10000,
+                      'step': 1, 'decimals': 0},
+        },
+    },
+    'deviation_trim_mean': {
+        'name': 'Deviation Trim (偏差剔除平均)',
+        'desc': '每 N 个连续样本先求均值，剔除偏差超过 Tolerance% 的样本后取平均（每组输出 1 个值）',
+        'func': algo_deviation_trim_mean,
+        'params': {
+            'count': {'label': 'Sample Count', 'default': 10, 'min': 2, 'max': 10000,
+                      'step': 1, 'decimals': 0},
+            'tolerance_pct': {'label': 'Tolerance (%)', 'default': 5.0, 'min': 0.1,
+                              'max': 100.0, 'step': 0.5, 'decimals': 1},
         },
     },
 }
