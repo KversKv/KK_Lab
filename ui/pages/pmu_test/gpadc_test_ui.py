@@ -137,6 +137,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._algorithm_snapshot = None
         # 最近一次采样的算法前后统计对比（compare_algorithm_effect 结果，未启用算法为 None）
         self._last_algo_effect = None
+        # 最近一次采样应用算法前的原始数据（未启用算法为 None），供 1000CNT 日志输出
+        self._last_raw_before_algo = None
 
         self.is_test_running = False
         self._start_btn_text = "▶ START TEST"
@@ -1566,6 +1568,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         stats['raw'] = raw_data
         # 算法前后对比（未启用算法为 None），供完成日志输出算法带来的波动改善
         stats['algo_effect'] = self._last_algo_effect
+        # 算法前的原始数据（未启用算法为 None），供完成日志输出原始/处理后数据
+        stats['raw_before_algo'] = self._last_raw_before_algo
         return ('1000cnt', stats)
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
@@ -1747,6 +1751,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     f"P-P {effect['pp_before']:.0f}→{effect['pp_after']:.0f} code ({pp_pct}), "
                     f"N {effect['count_before']}→{effect['count_after']}"
                 )
+            # 输出原始数据与处理后数据（未启用算法时二者一致，仅输出 RAW 一次）
+            raw_before = result.get('raw_before_algo')
+            if raw_before is not None:
+                self._log_data_series("RAW (原始数据)", raw_before)
+                self._log_data_series(
+                    f"PROC (处理后, {describe_algorithm(self._algorithm_snapshot)})",
+                    result.get('raw'),
+                )
+            else:
+                self._log_data_series("RAW (原始数据)", result.get('raw'))
             self._plot_cnt_distribution(result)
 
         elif kind == 'force_voltage':
@@ -2898,6 +2912,20 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     def append_log(self, message):
         self.execution_logs.append_log(message)
 
+    @staticmethod
+    def _fmt_data_value(v):
+        """数据日志格式化：整数原样输出，浮点保留 3 位小数。"""
+        return str(int(v)) if float(v).is_integer() else f"{float(v):.3f}"
+
+    def _log_data_series(self, tag, data):
+        """把一串样本数据按 20 个/行分块输出到日志（首行带 [DATA] 标签与样本数）。"""
+        if not data:
+            return
+        self._append_log(f"[DATA] {tag} (N={len(data)}):")
+        chunk = 20
+        for i in range(0, len(data), chunk):
+            self._append_log(",".join(self._fmt_data_value(v) for v in data[i:i + chunk]))
+
     def set_progress(self, value: int):
         self.execution_logs.set_progress(value)
 
@@ -3158,10 +3186,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         """
         if not self._algorithm_snapshot:
             self._last_algo_effect = None
+            self._last_raw_before_algo = None
             return raw_data
         before = list(raw_data)
         processed = apply_algorithm(raw_data, self._algorithm_snapshot)
         self._last_algo_effect = compare_algorithm_effect(before, processed)
+        self._last_raw_before_algo = before
         return processed
 
     def _calibration_data(self, result):
