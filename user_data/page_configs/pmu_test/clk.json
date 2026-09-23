@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "config": {
+    "test_item": "Ctrim vs Frequency",
+    "clk_source": "MSO64B",
+    "freq_instrument": "MSO64B",
+    "mso64b_channel": "CH2",
+    "iic_device_addr": "0x1A",
+    "iic_reg_addr": "0xD3",
+    "iic_width_flag": "BIT_10 (10-bit addr, 16-bit data)",
+    "iic_msb": 8,
+    "iic_lsb": 0,
+    "reg_min": 0,
+    "reg_max": 511,
+    "reg_step": 1,
+    "temp_start": -40.0,
+    "temp_end": 85.0,
+    "temp_step": 5.0,
+    "temp_soak_time": 180,
+    "temp_stable_tolerance": 0.5,
+    "clk_sample_rate": 100.0,
+    "clk_duration": 10.0,
+    "clk_chart_type": "Frequency vs Time",
+    "clk_n_cycle": 100,
+    "clk_abs_window": 1000.0,
+    "clk_ble_min_time": 5.0
+  }
+}

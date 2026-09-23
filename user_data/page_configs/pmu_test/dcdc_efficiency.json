@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "config": {
+    "test_item": "Efficiency Curve",
+    "vin_channel": "CH 1",
+    "vout_channel": "CH 2",
+    "cc_load_channel": "CH 3",
+    "sweep_mode": "Linear",
+    "start_current_a": 0.001,
+    "end_current_a": 0.2,
+    "step_current_a": 0.001,
+    "points_per_dec": 10,
+    "average_cnt": 9,
+    "settle_time_ms": 3,
+    "sampling_method": "Instant MEAS",
+    "dlog_duration_s": 1.0,
+    "vin_start": 3.3,
+    "vin_end": 5.0,
+    "vin_step": 0.1,
+    "temp_start": -40.0,
+    "temp_end": 85.0,
+    "temp_step": 25.0
+  }
+}

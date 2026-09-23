@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "config": {
+    "setting_voltage_set": "3.3",
+    "setting_current_limit": "0.5",
+    "consumption_test_time_s": "30",
+    "consumption_sample_period_us": "20",
+    "batch_a_ch1_voltage": "3.8000",
+    "batch_a_ch2_voltage": "1.5",
+    "batch_a_ch3_voltage": "1.2000",
+    "batch_a_ch4_voltage": "1.8000",
+    "batch_a_ch1_current": "0.2000",
+    "batch_a_ch2_current": "0.0200",
+    "batch_a_ch3_current": "0.0200",
+    "batch_a_ch4_current": "0.0200",
+    "consumption_a_ch1_enable": false,
+    "consumption_a_ch2_enable": true,
+    "consumption_a_ch3_enable": false,
+    "consumption_a_ch4_enable": false
+  }
+}

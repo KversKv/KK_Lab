@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "config": {
+    "combo": "B",
+    "spin": 42,
+    "dspin": 3.14,
+    "edit": "hello",
+    "chk": true,
+    "tab": 1
+  }
+}

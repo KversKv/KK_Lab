@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "config": {
+    "output_channel": "OUT1",
+    "set_voltage": 3.3,
+    "load_current_min": 0.0,
+    "load_current_max": 500.0,
+    "current_step": 50.0,
+    "measure_count": 5,
+    "stabilize_time": 500,
+    "sample_interval": 100,
+    "enable_ovp": true,
+    "ovp_value": 4.0,
+    "vmeter_channel": "CH 2",
+    "device_addr": "0x27",
+    "reg_addr": "0x0135",
+    "msb": 7,
+    "lsb": 0,
+    "width_flag": 1,
+    "min_code": "0x0",
+    "max_code": "0xFF"
+  }
+}

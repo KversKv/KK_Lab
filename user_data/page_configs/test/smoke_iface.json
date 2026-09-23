@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "config": {
+    "a": 7,
+    "b": "x"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "config": {
+    "n6705c_connected": false,
+    "chamber_connected": false,
+    "test_item": "1000CNT TEST",
+    "data_acquisition_mode": "IIC",
+    "iic_device_address": "0x27",
+    "iic_data_address": "0x57",
+    "iic_width": 10,
+    "dut_port": "",
+    "uart_keyword": "raw/volt",
+    "voltage_channel": 4,
+    "voltage_min": 4.0,
+    "voltage_max": 4.2,
+    "voltage_step": 0.05,
+    "temp_min": -40.0,
+    "temp_max": 125.0,
+    "temp_step": 5.0,
+    "soak_time": 180,
+    "sample_count": 1000,
+    "calib_low": "",
+    "calib_high": "",
+    "ft_calib_v1": "1.0",
+    "ft_calib_c1": "3277",
+    "ft_calib_v2": "3.0",
+    "ft_calib_c2": "9830",
+    "ft_raw_tol": 10.0,
+    "ft_err_limit": 10.0,
+    "algorithm": null,
+    "multi_channels": [
+      {
+        "enabled": true,
+        "name": "Temp",
+        "sweep_enabled": false,
+        "switch_writes_text": "WRITE 0x10 0x00  // select Temp ch (占位)",
+        "read_dev": "",
+        "read_reg": "",
+        "read_width": 0,
+        "voltage_channel": 1,
+        "v_min": 0.1,
+        "v_max": 1.8,
+        "v_step": 0.05
+      },
+      {
+        "enabled": true,
+        "name": "Vbat",
+        "sweep_enabled": true,
+        "switch_writes_text": "WRITE 0x10 0x01  // select Vbat ch (占位)",
+        "read_dev": "",
+        "read_reg": "",
+        "read_width": 0,
+        "voltage_channel": 4,
+        "v_min": 3.0,
+        "v_max": 4.2,
+        "v_step": 0.1
+      },
+      {
+        "enabled": true,
+        "name": "EXT",
+        "sweep_enabled": true,
+        "switch_writes_text": "WRITE 0x10 0x02  // select EXT ch (占位)",
+        "read_dev": "",
+        "read_reg": "",
+        "read_width": 0,
+        "voltage_channel": 1,
+        "v_min": 0.1,
+        "v_max": 1.8,
+        "v_step": 0.05
+      }
+    ],
+    "pre_config": {
+      "restore_after": true,
+      "writes": []
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "config": {
+    "test_type": "OVP",
+    "method": "Reg",
+    "test_channel": "2",
+    "delay_time_ms": 100.0,
+    "device_address": "0x17",
+    "register_address": "0x033b",
+    "iic_width": 1,
+    "voltage_start": 0.0,
+    "voltage_end": 0.0,
+    "voltage_step": 0.001
+  }
+}

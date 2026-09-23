@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "config": {
+    "visa_resource": "TCPIP0::10.31.30.181::inst0::INSTR",
+    "meas_type": "PK2PK",
+    "meas_source": "CH1",
+    "trigger_source": "CH1",
+    "trigger_slope": "POS",
+    "trigger_level_v": "1.77825",
+    "quick_channel": "CH1"
+  }
+}
