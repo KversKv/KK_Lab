@@ -18,6 +18,7 @@
   <li><b>UART Log 方式</b> — DUT 内部已带校准计算，逐点从日志 <code>raw/volt=&lt;raw&gt;/&lt;volt&gt;</code> 同时提取 raw 与 volt（volt 单位 mV）：校验 volt 与施加电压的误差；同时用用户两点 K/B 反推电压 <code>(raw − B)/K</code>，校验其与 DUT volt 的一致性（K,B Consistency）。</li>
 </ol>
 <p><b>判定与输出</b>：Max/Avg/RMS 误差统计；任一项超出 <b>Error Limit ±mV</b>（IIC 含校准点确认）即判 <b>FAIL</b>。指标卡含 P1/P2 偏差（仅 IIC）、MAX/RMS ERR、CONS MAX（仅 UART）与 RESULT；曲线为误差 vs 施加电压（带 ±Limit 判定线，UART 叠加一致性曲线）；导出 Excel 含 Summary（K/B、校准点确认、误差统计、判定）+ Sweep Data 两个 sheet。</p>
+<p><b>分压比（Divider Ratio，默认 1）</b>：外部有分压电路时设置为 DUT 引脚电压 / 源设定电压（如半分压填 0.5）。扫压 Start/End/Step 为源设定电压，误差评估、曲线 X 轴与导出按 <code>设定 × 比值</code> 的实际 DUT 电压；校准点电压填写 DUT 引脚电压（FT 标称值），IIC 确认时源输出自动按 <code>点电压 / 比值</code> 折算。</p>
 <p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本测试项不应用 Algorithm 采样算法（保持 raw 与 volt 配对一致），切到该测试项时 Algorithm 区自动隐藏。</p>
 
 <h3>Multi-Ch Temp Test（多通道高低温联合测试）</h3>

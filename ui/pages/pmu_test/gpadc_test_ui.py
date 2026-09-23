@@ -1001,6 +1001,19 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         ft_layout.addWidget(self.ft_raw_tol, 5, 0)
         ft_layout.addWidget(self.ft_err_limit, 5, 1)
 
+        ft_layout.addWidget(QLabel("Divider Ratio (×)"), 6, 0)
+        self.ft_divider_ratio = QDoubleSpinBox()
+        self.ft_divider_ratio.setRange(0.0001, 1000.0)
+        self.ft_divider_ratio.setValue(1.0)
+        self.ft_divider_ratio.setSingleStep(0.01)
+        self.ft_divider_ratio.setDecimals(4)
+        self.ft_divider_ratio.setToolTip(
+            "外部分压比 = DUT 引脚电压 / 源设定电压，默认 1（无分压）。\n"
+            "扫压 Start/End/Step 为源设定电压，误差评估按 设定 × 比值 的实际电压；\n"
+            "校准点电压为 DUT 引脚电压，IIC 确认时源输出 = 点电压 / 比值。"
+        )
+        ft_layout.addWidget(self.ft_divider_ratio, 7, 0)
+
         params_layout.addWidget(self.ft_params_frame)
         self.ft_params_frame.hide()
 
@@ -1903,7 +1916,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     def _run_ft_calib_check(self, device_addr, reg_addr, iic_weight,
                             voltage_min, voltage_max, voltage_step, voltage_channel,
                             calib_p1, calib_p2, raw_tol_lsb, err_limit_mv,
-                            sample_cnt=1000, stop_check=None):
+                            divider_ratio=1.0, sample_cnt=1000, stop_check=None):
         """FT Calibration Check：流程纯函数在 core/pmu_test/gpadc/gpadc_ft_check.py。
 
         本方法仅做仪器/回调装配：N6705C 扫压 + IIC 实时采样 / UART raw/volt 解析。
@@ -1931,6 +1944,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         try:
             def _set_voltage(v):
                 vol_source.set_voltage(voltage_channel, v)
+                if DEBUG_MOCK:
+                    # 模拟外部分压：MockN6705C 默认把 DUT 输入设为源输出，
+                    # 实际分压场景 DUT 引脚电压 = 源输出 × 分压比
+                    self._mock_i2c.set_mock_voltage(v * divider_ratio)
 
             def _sample_iic(cnt, stop):
                 return self.gpadc_reg_read_by_cnts(
@@ -1951,6 +1968,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 calib_p2=calib_p2,
                 raw_tol_lsb=raw_tol_lsb,
                 err_limit_mv=err_limit_mv,
+                divider_ratio=divider_ratio,
                 voltage_min=voltage_min,
                 voltage_max=voltage_max,
                 voltage_step=voltage_step,
@@ -2450,6 +2468,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             ("Calib Raw 2 (LSB)", c2),
             ("Raw Tol (±LSB)", result.get('raw_tol_lsb')),
             ("Error Limit (±mV)", result.get('err_limit_mv')),
+            ("Divider Ratio (×)", result.get('divider_ratio')),
         ]
         for name, value in summary_items:
             _sub(ws, row, 1, name)
@@ -2460,18 +2479,20 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         if point_checks:
             row += 1
             _hdr(ws, row, 1, "Calib Point Check (IIC)")
-            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
             row += 1
             for col, name in enumerate(
-                    ("Voltage (V)", "Calib Code (LSB)", "Measured (LSB)", "Dev (LSB)", "Result"), 1):
+                    ("Voltage (V)", "Set Voltage (V)", "Calib Code (LSB)",
+                     "Measured (LSB)", "Dev (LSB)", "Result"), 1):
                 _sub(ws, row, col, name)
             row += 1
             for pc in point_checks:
                 _val(ws, row, 1, pc.get('voltage'))
-                _val(ws, row, 2, pc.get('calib_code'))
-                _val(ws, row, 3, pc.get('measured'))
-                _val(ws, row, 4, pc.get('dev_lsb'))
-                _val(ws, row, 5, "PASS" if pc.get('passed') else "FAIL")
+                _val(ws, row, 2, pc.get('set_voltage'))
+                _val(ws, row, 3, pc.get('calib_code'))
+                _val(ws, row, 4, pc.get('measured'))
+                _val(ws, row, 5, pc.get('dev_lsb'))
+                _val(ws, row, 6, "PASS" if pc.get('passed') else "FAIL")
                 row += 1
 
         row += 1
@@ -2498,13 +2519,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         ws2 = wb.create_sheet("Sweep Data")
         is_uart = mode == 'UART'
-        headers = ["Input Voltage (V)", "Raw Mean (LSB)", "Calib Voltage (V)", "Error (mV)"]
+        headers = ["Set Voltage (V)", "Actual Voltage (V)", "Raw Mean (LSB)",
+                   "Calib Voltage (V)", "Error (mV)"]
         if is_uart:
             headers += ["DUT Volt (mV)", "Consistency (mV)"]
         for col, name in enumerate(headers, 1):
             _sub(ws2, row=1, col=col, text=name)
             ws2.column_dimensions[get_column_letter(col)].width = 20
         voltage = result.get('voltage') or []
+        actual_voltage = result.get('actual_voltage') or voltage
         raw_mean = result.get('raw_mean') or []
         cal_volt = result.get('cal_volt') or []
         err_mv = result.get('err_mv') or []
@@ -2513,12 +2536,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         for i in range(len(voltage)):
             r = i + 2
             _val(ws2, r, 1, float(voltage[i]))
-            _val(ws2, r, 2, float(raw_mean[i]))
-            _val(ws2, r, 3, float(cal_volt[i]))
-            _val(ws2, r, 4, float(err_mv[i]))
+            _val(ws2, r, 2, float(actual_voltage[i]))
+            _val(ws2, r, 3, float(raw_mean[i]))
+            _val(ws2, r, 4, float(cal_volt[i]))
+            _val(ws2, r, 5, float(err_mv[i]))
             if is_uart:
-                _val(ws2, r, 5, float(dut_volt[i]))
-                _val(ws2, r, 6, float(cons_mv[i]))
+                _val(ws2, r, 6, float(dut_volt[i]))
+                _val(ws2, r, 7, float(cons_mv[i]))
 
         wb.save(filename)
         self._append_log(f"[INFO] FT Calibration Check 结果已导出: {filename}")
@@ -2704,6 +2728,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.ft_calib_v1, self.ft_calib_c1,
             self.ft_calib_v2, self.ft_calib_c2,
             self.ft_raw_tol, self.ft_err_limit,
+            self.ft_divider_ratio,
             self.algorithm_combo,
             self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
@@ -2794,6 +2819,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'ft_calib_c2': self.ft_calib_c2.text(),
             'ft_raw_tol': self.ft_raw_tol.value(),
             'ft_err_limit': self.ft_err_limit.value(),
+            'ft_divider_ratio': self.ft_divider_ratio.value(),
             'algorithm': self._collect_algorithm_config(),
             'multi_channels': self.multi_ch_panel.get_channels(),
             'pre_config': self.multi_ch_panel.get_pre_config(),
@@ -3619,6 +3645,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'calib_p2': (v2, c2),
             'raw_tol_lsb': self.ft_raw_tol.value(),
             'err_limit_mv': self.ft_err_limit.value(),
+            'divider_ratio': self.ft_divider_ratio.value(),
         }
 
     def _parse_calib_points(self):
@@ -4719,10 +4746,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             import pyqtgraph as pg
             import numpy as np
 
-            voltage = result.get('voltage') or []
+            voltage = result.get('actual_voltage') or result.get('voltage') or []
             err_mv = result.get('err_mv') or []
             cons_mv = result.get('cons_mv') or None
             limit = result.get('err_limit_mv', 0.0)
+            ratio = result.get('divider_ratio', 1.0)
+            x_title = "Input Voltage (V)" if ratio == 1.0 else "Actual DUT Voltage (V)"
             if not voltage or not err_mv:
                 return
 
@@ -4754,7 +4783,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             pw.setBackground("#0a1735")
             pw.showGrid(x=True, y=True, alpha=0.15)
             pw.setLabel("left", "Error (mV)", color="#a0b4d8")
-            pw.setLabel("bottom", "Input Voltage (V)", color="#a0b4d8")
+            pw.setLabel("bottom", x_title, color="#a0b4d8")
             self._attach_curve_context_menu(pw)
             for axis_name in ("left", "bottom"):
                 axis = pw.getAxis(axis_name)
@@ -4780,7 +4809,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
             layout.addWidget(pw, 1)
 
-            x_label = QLabel("Input Voltage (V)")
+            x_label = QLabel(x_title)
             x_label.setAlignment(Qt.AlignCenter)
             x_label.setObjectName("muted_label")
             layout.addWidget(x_label)
@@ -5459,6 +5488,7 @@ Temperature (°C) | ADC Value
         _set_text(self.ft_calib_c2, "ft_calib_c2")
         _set_spin(self.ft_raw_tol, "ft_raw_tol")
         _set_spin(self.ft_err_limit, "ft_err_limit")
+        _set_spin(self.ft_divider_ratio, "ft_divider_ratio")
 
         # 采样算法（id + params，按注册表回填）
         algo_cfg = cfg.get("algorithm")

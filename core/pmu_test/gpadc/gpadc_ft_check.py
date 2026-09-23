@@ -23,6 +23,7 @@ def run_ft_calib_check(
     calib_p2,
     raw_tol_lsb=10.0,
     err_limit_mv=10.0,
+    divider_ratio=1.0,
     voltage_min=0.1,
     voltage_max=1.8,
     voltage_step=0.05,
@@ -40,8 +41,11 @@ def run_ft_calib_check(
     """执行 FT Calibration Check，返回结果 dict；用户提前停止且无数据时返回 None。
 
     mode: 'IIC' | 'UART'
-    calib_p1/calib_p2: (电压 V, 校准码 LSB)，两点电压不可相同。
-    set_voltage_fn(v): N6705C 施加电压（V）。
+    calib_p1/calib_p2: (电压 V, 校准码 LSB)，两点电压不可相同；电压为 DUT 引脚
+        电压（FT 标称值），IIC 确认时源输出自动按分压比折算（源 = 点 / 比值）。
+    divider_ratio: 外部分压比 = DUT 引脚电压 / 源设定电压，默认 1（无分压）。
+        扫压 Start/End/Step 为源设定电压，误差评估按 设定 × 比值 的实际电压。
+    set_voltage_fn(v): N6705C 施加电压（V，源设定值）。
     sample_iic_fn(cnt, stop_check) -> (avg, max, min): IIC 实时采样 GPADC raw。
     sample_uart_fn(cnt, stop_check) -> (raw_avg, volt_avg): UART 日志解析
         raw/volt 对的截尾均值（volt 单位 mV）。
@@ -55,6 +59,8 @@ def run_ft_calib_check(
         raise ValueError(f"未知 FT 检查方式: {mode}")
     if set_voltage_fn is None:
         raise ValueError("缺少 set_voltage_fn（FT 检查需要 N6705C 扫压）")
+    if divider_ratio <= 0:
+        raise ValueError("分压比必须为正数")
 
     (v1, c1), (v2, c2) = sorted((tuple(calib_p1), tuple(calib_p2)), key=lambda p: p[0])
     k, b = solve_ft_kb(v1, c1, v2, c2)
@@ -63,7 +69,10 @@ def run_ft_calib_check(
     log(f"[INFO] 校准点: P1=({v1:.3f} V, {c1:.1f} LSB), P2=({v2:.3f} V, {c2:.1f} LSB)")
     log(f"[INFO] 由用户两点解得 K={k:.4f} LSB/V, B={b:.2f} LSB")
     log(f"[INFO] 误差限 ±{err_limit_mv:.1f} mV, 校准码容差 ±{raw_tol_lsb:.1f} LSB, "
-        f"每点采样 {sample_cnt} 次")
+        f"每点采样 {sample_cnt} 次, 分压比={divider_ratio:g}")
+    if divider_ratio != 1.0:
+        log("[INFO] 外部分压生效：DUT 实际电压 = 源设定 × 分压比；"
+            "校准点确认时源输出 = 点电压 / 分压比")
 
     # 扫描点清单（与 Force Voltage 同语义：含端点，末点容差半步）
     sweep_voltages = []
@@ -99,7 +108,9 @@ def run_ft_calib_check(
             if stopped():
                 log("[INFO] FT Calibration Check 已被用户停止")
                 return None
-            set_voltage_fn(v_pt)
+            # 校准点电压为 DUT 引脚电压（FT 标称值），源输出按分压比折算
+            v_set = v_pt / divider_ratio
+            set_voltage_fn(v_set)
             time.sleep(settle_s if first else step_s)
             first = False
             avg, _, _ = sample_iic_fn(sample_cnt, stop_check)
@@ -107,12 +118,14 @@ def run_ft_calib_check(
             ok = abs(dev) <= raw_tol_lsb
             point_checks.append({
                 'voltage': v_pt,
+                'set_voltage': v_set,
                 'calib_code': c_pt,
                 'measured': avg,
                 'dev_lsb': dev,
                 'passed': ok,
             })
-            log(f"[CHECK] V={v_pt:.3f} 校准码={c_pt:.1f} 实测={avg:.2f} "
+            src_note = f"（源={v_set:.3f} V）" if divider_ratio != 1.0 else ""
+            log(f"[CHECK] V={v_pt:.3f}{src_note} 校准码={c_pt:.1f} 实测={avg:.2f} "
                 f"偏差={dev:+.2f} LSB → {'PASS' if ok else 'FAIL'}")
             _tick()
 
@@ -125,6 +138,7 @@ def run_ft_calib_check(
     log("[INFO] 第二步：输入电压遍历校准评估")
     status("FT Check: 电压遍历评估中...")
     voltage_data = []
+    actual_voltage = []
     raw_mean = []
     cal_volt = []
     err_mv = []
@@ -140,22 +154,26 @@ def run_ft_calib_check(
         time.sleep(settle_s if first else step_s)
         first = False
 
+        # DUT 引脚实际电压 = 源设定 × 分压比，误差按实际电压评估
+        actual_v = v_pt * divider_ratio
         if mode == 'IIC':
             avg, _, _ = sample_iic_fn(sample_cnt, stop_check)
             cal_v = (avg - b) / k
-            err = (cal_v - v_pt) * 1000.0
-            log(f"[MEAS] V={v_pt:.3f} raw={avg:.2f} cal={cal_v:.4f} V err={err:+.2f} mV")
+            err = (cal_v - actual_v) * 1000.0
+            log(f"[MEAS] V={v_pt:.3f}（实际={actual_v:.3f}） raw={avg:.2f} "
+                f"cal={cal_v:.4f} V err={err:+.2f} mV")
         else:
             raw_avg, volt_avg = sample_uart_fn(sample_cnt, stop_check)
             cal_v = volt_avg / 1000.0
-            err = volt_avg - v_pt * 1000.0
+            err = volt_avg - actual_v * 1000.0
             cons = (raw_avg - b) / k * 1000.0 - volt_avg
             dut_volt_mv.append(volt_avg)
             cons_mv.append(cons)
-            log(f"[MEAS] V={v_pt:.3f} raw={raw_avg:.2f} volt={volt_avg:.1f} mV "
-                f"err={err:+.2f} mV cons={cons:+.2f} mV")
+            log(f"[MEAS] V={v_pt:.3f}（实际={actual_v:.3f}） raw={raw_avg:.2f} "
+                f"volt={volt_avg:.1f} mV err={err:+.2f} mV cons={cons:+.2f} mV")
 
         voltage_data.append(v_pt)
+        actual_voltage.append(actual_v)
         raw_mean.append(avg if mode == 'IIC' else raw_avg)
         cal_volt.append(cal_v)
         err_mv.append(err)
@@ -188,7 +206,9 @@ def run_ft_calib_check(
         'calib_points': [(v1, c1), (v2, c2)],
         'point_checks': point_checks,
         'points_passed': points_passed,
+        'divider_ratio': divider_ratio,
         'voltage': voltage_data,
+        'actual_voltage': actual_voltage,
         'raw_mean': raw_mean,
         'cal_volt': cal_volt,
         'err_mv': err_mv,
