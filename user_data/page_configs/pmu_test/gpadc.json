@@ -22,12 +22,12 @@
     "calib_low": "",
     "calib_high": "",
     "ft_calib_v1": "3.2",
-    "ft_calib_c1": "1776",
+    "ft_calib_c1": "1761",
     "ft_calib_v2": "4.2",
-    "ft_calib_c2": "2319",
+    "ft_calib_c2": "2303",
     "ft_raw_tol": 10.0,
     "ft_err_limit": 10.0,
-    "ft_divider_ratio": 4.0,
+    "ft_divider_ratio": 1.0,
     "algorithm": null,
     "multi_channels": [
       {

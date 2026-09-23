@@ -124,6 +124,34 @@ def compute_detailed_stats(raw_data):
 # FT Calibration Check（两点 FT 校准检查，纯函数）
 # ---------------------------------------------------------------------------
 
+# 校准码 base±offset 表达式，操作数为十进制（可小数）或 0x 十六进制整数
+_RAW_LSB_EXPR_RE = re.compile(
+    r"^\s*(0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\s*([+-])\s*"
+    r"(0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\s*$"
+)
+
+
+def _raw_lsb_operand(token):
+    if token.lower().startswith("0x"):
+        return float(int(token, 16))
+    return float(token)
+
+
+def parse_raw_lsb_value(text):
+    """解析 FT 校准码（LSB）输入：十进制 / 0x 十六进制，支持 base±offset 自动求值。
+
+    例：``'319'`` / ``'0x13F'`` → 319.0；``'0x13F+2000'`` / ``'319+2000'`` → 2319.0。
+    非法输入抛 ValueError。
+    """
+    s = str(text).strip()
+    m = _RAW_LSB_EXPR_RE.match(s)
+    if m:
+        value = _raw_lsb_operand(m.group(1))
+        offset = _raw_lsb_operand(m.group(3))
+        return value + offset if m.group(2) == "+" else value - offset
+    return _raw_lsb_operand(s)
+
+
 def solve_ft_kb(v1, c1, v2, c2):
     """由两个 FT 校准点解出线性转换 K/B：``code = k * voltage + b``。
 

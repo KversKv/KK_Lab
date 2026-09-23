@@ -50,6 +50,7 @@ from core.pmu_test.gpadc import (
     compute_detailed_stats,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
+    parse_raw_lsb_value,
     run_ft_calib_check,
     ALGORITHM_REGISTRY,
     apply_algorithm,
@@ -976,6 +977,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         ft_layout.addWidget(QLabel("Calib Raw 1 (LSB)"), 0, 1)
         self.ft_calib_v1 = WheelLineEdit("1.0")
         self.ft_calib_c1 = WheelLineEdit("3277", wheel_step=1)
+        _raw_tip = ("支持十进制 / 0x 十六进制（如 0x13F），"
+                    "及 base+offset 自动求值（如 0x13F+2000 → 2319）")
+        self.ft_calib_c1.setToolTip(_raw_tip)
         ft_layout.addWidget(self.ft_calib_v1, 1, 0)
         ft_layout.addWidget(self.ft_calib_c1, 1, 1)
 
@@ -983,6 +987,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         ft_layout.addWidget(QLabel("Calib Raw 2 (LSB)"), 2, 1)
         self.ft_calib_v2 = WheelLineEdit("3.0")
         self.ft_calib_c2 = WheelLineEdit("9830", wheel_step=1)
+        self.ft_calib_c2.setToolTip(_raw_tip)
         ft_layout.addWidget(self.ft_calib_v2, 3, 0)
         ft_layout.addWidget(self.ft_calib_c2, 3, 1)
 
@@ -1008,9 +1013,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.ft_divider_ratio.setSingleStep(0.01)
         self.ft_divider_ratio.setDecimals(4)
         self.ft_divider_ratio.setToolTip(
-            "外部分压比 = DUT 引脚电压 / 源设定电压，默认 1（无分压）。\n"
-            "扫压 Start/End/Step 为源设定电压，误差评估按 设定 × 比值 的实际电压；\n"
-            "校准点电压为 DUT 引脚电压，IIC 确认时源输出 = 点电压 / 比值。"
+            "外部分压比 = 源设定电压 / DUT 引脚电压（如外部四分压填 4），默认 1（无分压）。\n"
+            "扫压 Start/End/Step 为源设定电压（不缩放输出）；\n"
+            "DUT 侧得出的校准电压按 × 比值还原到源域后与设定值比对评估；\n"
+            "校准点电压为 DUT 引脚电压（FT 标称值），IIC 确认时源输出 = 点电压 × 比值。"
         )
         ft_layout.addWidget(self.ft_divider_ratio, 7, 0)
 
@@ -1485,7 +1491,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         if is_cnt_test:
             self.chart_title.setText("Raw Data Distribution")
         elif is_ft_test:
-            self.chart_title.setText("Calibration Error Curve")
+            self.chart_title.setText("FT Calibration Curve")
         else:
             self.chart_title.setText("ADC Transfer Curve")
         for card in self._cnt_cards:
@@ -1946,8 +1952,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 vol_source.set_voltage(voltage_channel, v)
                 if DEBUG_MOCK:
                     # 模拟外部分压：MockN6705C 默认把 DUT 输入设为源输出，
-                    # 实际分压场景 DUT 引脚电压 = 源输出 × 分压比
-                    self._mock_i2c.set_mock_voltage(v * divider_ratio)
+                    # 实际分压场景 DUT 引脚电压 = 源输出 / 分压比
+                    self._mock_i2c.set_mock_voltage(v / divider_ratio)
 
             def _sample_iic(cnt, stop):
                 return self.gpadc_reg_read_by_cnts(
@@ -2519,7 +2525,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         ws2 = wb.create_sheet("Sweep Data")
         is_uart = mode == 'UART'
-        headers = ["Set Voltage (V)", "Actual Voltage (V)", "Raw Mean (LSB)",
+        headers = ["Set Voltage (V)", "DUT Voltage (V)", "Raw Mean (LSB)",
                    "Calib Voltage (V)", "Error (mV)"]
         if is_uart:
             headers += ["DUT Volt (mV)", "Consistency (mV)"]
@@ -3625,17 +3631,22 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         """解析 FT Calibration Check 的两点四值与判定阈值；无效时记录日志并返回 None。"""
         try:
             v1 = float(self.ft_calib_v1.text().strip())
-            c1 = float(self.ft_calib_c1.text().strip())
+            c1 = parse_raw_lsb_value(self.ft_calib_c1.text())
             v2 = float(self.ft_calib_v2.text().strip())
-            c2 = float(self.ft_calib_c2.text().strip())
+            c2 = parse_raw_lsb_value(self.ft_calib_c2.text())
         except ValueError:
-            self._append_log("[ERROR] FT 校准点格式无效（需填写数值：电压 V 与校准码 LSB）")
+            self._append_log("[ERROR] FT 校准点格式无效（电压填数值 V；校准码支持十进制/0x 十六进制及 base+offset，如 0x13F+2000）")
             self.set_system_status("错误: FT 校准点格式无效", is_error=True)
             return None
         if not all(math.isfinite(x) for x in (v1, c1, v2, c2)):
             self._append_log("[ERROR] FT 校准点需为有限数值")
             self.set_system_status("错误: FT 校准点格式无效", is_error=True)
             return None
+        # 校准码表达式求值后回填归一化十进制文本（如 0x13F+2000 → 2319）
+        for edit, value in ((self.ft_calib_c1, c1), (self.ft_calib_c2, c2)):
+            normalized = str(int(value)) if float(value).is_integer() else str(value)
+            if edit.text().strip() != normalized:
+                edit.setText(normalized)
         if v1 == v2 or c1 == c2:
             self._append_log("[ERROR] FT 两校准点的电压或校准码相同，K/B 不可解")
             self.set_system_status("错误: FT 校准点退化", is_error=True)
@@ -4738,20 +4749,21 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.ft_result_value.setStyleSheet(f"color: {color}; font-weight: 700;")
 
     def _plot_ft_check_curve(self, result):
-        """FT Calibration Check 误差曲线：校准误差 (mV) vs 施加电压，带 ±Limit 判定线。
+        """FT Calibration Check 曲线：主图 = 理想曲线(y=x) + 校准电压传输曲线，
+        下方子图 = 校准误差 (mV) vs 施加电压，带 ±Limit 判定线（X 轴联动，3:1）。
 
-        UART 方式叠加一致性误差曲线（用户两点 K,B 反推电压 vs DUT volt）。
+        UART 方式误差子图叠加一致性误差曲线（用户两点 K,B 反推电压 vs DUT volt）。
         """
         try:
             import pyqtgraph as pg
             import numpy as np
 
-            voltage = result.get('actual_voltage') or result.get('voltage') or []
+            voltage = result.get('voltage') or []
+            cal_volt = result.get('cal_volt') or []
             err_mv = result.get('err_mv') or []
             cons_mv = result.get('cons_mv') or None
             limit = result.get('err_limit_mv', 0.0)
-            ratio = result.get('divider_ratio', 1.0)
-            x_title = "Input Voltage (V)" if ratio == 1.0 else "Actual DUT Voltage (V)"
+            x_title = "Input Voltage (V)"
             if not voltage or not err_mv:
                 return
 
@@ -4764,6 +4776,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
             legend_row = QHBoxLayout()
             legend_row.addStretch()
+            cal_legend = QLabel("● Calibrated Voltage (V)")
+            cal_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
+            legend_row.addWidget(cal_legend)
+            legend_row.addSpacing(16)
+            ideal_legend = QLabel("● Ideal (y = x)")
+            ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
+            legend_row.addWidget(ideal_legend)
+            legend_row.addSpacing(16)
             err_legend = QLabel("● Calib Error (mV)")
             err_legend.setStyleSheet("color: #e05c5c; font-size: 12px;")
             legend_row.addWidget(err_legend)
@@ -4779,35 +4799,57 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             legend_row.addStretch()
             layout.addLayout(legend_row)
 
+            def _style_axes(plot):
+                for axis_name in ("left", "bottom"):
+                    axis = plot.getAxis(axis_name)
+                    axis.setTextPen(pg.mkPen("#a0b4d8"))
+                    axis.setPen(pg.mkPen("#3a4f7a"))
+
+            x = np.array(voltage, dtype=float)
+
+            # 主图：理想曲线(y=x) + 校准电压传输曲线
             pw = pg.PlotWidget()
             pw.setBackground("#0a1735")
             pw.showGrid(x=True, y=True, alpha=0.15)
-            pw.setLabel("left", "Error (mV)", color="#a0b4d8")
+            pw.setLabel("left", "Calibrated Voltage (V)", color="#a0b4d8")
             pw.setLabel("bottom", x_title, color="#a0b4d8")
             self._attach_curve_context_menu(pw)
-            for axis_name in ("left", "bottom"):
-                axis = pw.getAxis(axis_name)
-                axis.setTextPen(pg.mkPen("#a0b4d8"))
-                axis.setPen(pg.mkPen("#3a4f7a"))
+            _style_axes(pw)
+            pw.plot(x, x, pen=pg.mkPen(color="#7e96bf", width=1,
+                    style=pg.QtCore.Qt.DashLine))
+            if cal_volt:
+                n = min(len(x), len(cal_volt))
+                pw.plot(x[:n], np.array(cal_volt, dtype=float)[:n],
+                        pen=pg.mkPen(color="#00d39a", width=2),
+                        symbol="o", symbolSize=5, symbolBrush="#00d39a", symbolPen=None)
 
-            x = np.array(voltage, dtype=float)
-            pw.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1,
-                        style=pg.QtCore.Qt.DashLine))
+            # 误差子图：Calib Error + ±Limit 判定线（UART 叠加一致性曲线），X 轴联动
+            pw_err = pg.PlotWidget()
+            pw_err.setBackground("#0a1735")
+            pw_err.showGrid(x=True, y=True, alpha=0.15)
+            pw_err.setLabel("left", "Error (mV)", color="#a0b4d8")
+            pw_err.setLabel("bottom", x_title, color="#a0b4d8")
+            pw_err.plotItem.setXLink(pw.plotItem)
+            self._attach_curve_context_menu(pw_err)
+            _style_axes(pw_err)
+            pw_err.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1,
+                           style=pg.QtCore.Qt.DashLine))
             if limit > 0:
-                pw.addLine(y=limit, pen=pg.mkPen("#e05c5c", width=1,
-                            style=pg.QtCore.Qt.DashLine))
-                pw.addLine(y=-limit, pen=pg.mkPen("#e05c5c", width=1,
-                            style=pg.QtCore.Qt.DashLine))
-            pw.plot(x, np.array(err_mv, dtype=float),
-                    pen=pg.mkPen(color="#e05c5c", width=2),
-                    symbol="o", symbolSize=5, symbolBrush="#e05c5c", symbolPen=None)
+                pw_err.addLine(y=limit, pen=pg.mkPen("#e05c5c", width=1,
+                               style=pg.QtCore.Qt.DashLine))
+                pw_err.addLine(y=-limit, pen=pg.mkPen("#e05c5c", width=1,
+                               style=pg.QtCore.Qt.DashLine))
+            pw_err.plot(x, np.array(err_mv, dtype=float),
+                        pen=pg.mkPen(color="#e05c5c", width=2),
+                        symbol="o", symbolSize=5, symbolBrush="#e05c5c", symbolPen=None)
             if cons_mv:
                 n = min(len(x), len(cons_mv))
-                pw.plot(x[:n], np.array(cons_mv, dtype=float)[:n],
-                        pen=pg.mkPen(color="#f0a040", width=2),
-                        symbol="t", symbolSize=5, symbolBrush="#f0a040", symbolPen=None)
+                pw_err.plot(x[:n], np.array(cons_mv, dtype=float)[:n],
+                            pen=pg.mkPen(color="#f0a040", width=2),
+                            symbol="t", symbolSize=5, symbolBrush="#f0a040", symbolPen=None)
 
-            layout.addWidget(pw, 1)
+            layout.addWidget(pw, 3)
+            layout.addWidget(pw_err, 1)
 
             x_label = QLabel(x_title)
             x_label.setAlignment(Qt.AlignCenter)
@@ -4818,17 +4860,32 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 import io
                 from pyqtgraph.exporters import ImageExporter
                 from PySide6.QtCore import QBuffer, QIODevice
-                from PySide6.QtGui import QImage
+                from PySide6.QtGui import QImage, QPainter
 
-                # 仅指定宽度（同时指定 height 会按 cover 缩放导致宽度不精确）
-                exporter = ImageExporter(pw.plotItem)
-                exporter.parameters()['width'] = 1200
-                snap = exporter.export(toBytes=True)
-                if not isinstance(snap, QImage):
-                    snap = QImage.fromData(bytes(snap))
+                def _snapshot(item, width=1200):
+                    # 仅指定宽度（同时指定 height 会按 cover 缩放导致宽度不精确）
+                    exporter = ImageExporter(item)
+                    exporter.parameters()['width'] = width
+                    snap = exporter.export(toBytes=True)
+                    if not isinstance(snap, QImage):
+                        snap = QImage.fromData(bytes(snap))
+                    return snap
+
+                # 主图 + 误差子图纵向合成为一张快照（背景与图表底色一致）
+                img_main = _snapshot(pw.plotItem)
+                img_err = _snapshot(pw_err.plotItem)
+                combined = QImage(img_main.width(),
+                                  img_main.height() + img_err.height(),
+                                  QImage.Format_ARGB32)
+                combined.fill(QColor(10, 23, 53))
+                painter = QPainter(combined)
+                painter.drawImage(0, 0, img_main)
+                painter.drawImage(0, img_main.height(), img_err)
+                painter.end()
+
                 qbuf = QBuffer()
                 qbuf.open(QIODevice.WriteOnly)
-                snap.save(qbuf, "PNG")
+                combined.save(qbuf, "PNG")
                 self._chart_image_bytes = io.BytesIO(bytes(qbuf.data()))
                 qbuf.close()
             except Exception as ex:
@@ -4836,8 +4893,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self._chart_image_bytes = None
 
         except Exception as e:
-            self._append_log(f"[ERROR] Error plotting FT calibration error curve: {e}")
-            logger.error("Error plotting FT calibration error curve: %s", e, exc_info=True)
+            self._append_log(f"[ERROR] Error plotting FT calibration curve: {e}")
+            logger.error("Error plotting FT calibration curve: %s", e, exc_info=True)
 
     def _plot_cnt_distribution(self, result, algorithm=None):
         """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。

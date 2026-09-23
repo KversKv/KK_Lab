@@ -42,9 +42,10 @@ def run_ft_calib_check(
 
     mode: 'IIC' | 'UART'
     calib_p1/calib_p2: (电压 V, 校准码 LSB)，两点电压不可相同；电压为 DUT 引脚
-        电压（FT 标称值），IIC 确认时源输出自动按分压比折算（源 = 点 / 比值）。
-    divider_ratio: 外部分压比 = DUT 引脚电压 / 源设定电压，默认 1（无分压）。
-        扫压 Start/End/Step 为源设定电压，误差评估按 设定 × 比值 的实际电压。
+        电压（FT 标称值），IIC 确认时源输出 = 点电压 × 分压比。
+    divider_ratio: 外部分压比 = 源设定电压 / DUT 引脚电压（如外部四分压填 4），
+        默认 1（无分压）。扫压 Start/End/Step 为源设定电压（不缩放输出）；
+        DUT 侧得出的校准电压按 × 分压比还原到源域后与设定值比对。
     set_voltage_fn(v): N6705C 施加电压（V，源设定值）。
     sample_iic_fn(cnt, stop_check) -> (avg, max, min): IIC 实时采样 GPADC raw。
     sample_uart_fn(cnt, stop_check) -> (raw_avg, volt_avg): UART 日志解析
@@ -71,8 +72,9 @@ def run_ft_calib_check(
     log(f"[INFO] 误差限 ±{err_limit_mv:.1f} mV, 校准码容差 ±{raw_tol_lsb:.1f} LSB, "
         f"每点采样 {sample_cnt} 次, 分压比={divider_ratio:g}")
     if divider_ratio != 1.0:
-        log("[INFO] 外部分压生效：DUT 实际电压 = 源设定 × 分压比；"
-            "校准点确认时源输出 = 点电压 / 分压比")
+        log("[INFO] 外部分压生效：DUT 实际电压 = 源设定 / 分压比；"
+            "DUT 侧校准电压按 × 分压比还原后评估；"
+            "校准点确认时源输出 = 点电压 × 分压比")
 
     # 扫描点清单（与 Force Voltage 同语义：含端点，末点容差半步）
     sweep_voltages = []
@@ -108,8 +110,8 @@ def run_ft_calib_check(
             if stopped():
                 log("[INFO] FT Calibration Check 已被用户停止")
                 return None
-            # 校准点电压为 DUT 引脚电压（FT 标称值），源输出按分压比折算
-            v_set = v_pt / divider_ratio
+            # 校准点电压为 DUT 引脚电压（FT 标称值），源输出按分压比放大折算
+            v_set = v_pt * divider_ratio
             set_voltage_fn(v_set)
             time.sleep(settle_s if first else step_s)
             first = False
@@ -154,22 +156,24 @@ def run_ft_calib_check(
         time.sleep(settle_s if first else step_s)
         first = False
 
-        # DUT 引脚实际电压 = 源设定 × 分压比，误差按实际电压评估
-        actual_v = v_pt * divider_ratio
+        # DUT 引脚实际电压 = 源设定 / 分压比；DUT 侧校准电压 × 分压比还原到源域，
+        # 误差 = 还原后电压 - 源设定值（源域评估）
+        actual_v = v_pt / divider_ratio
         if mode == 'IIC':
             avg, _, _ = sample_iic_fn(sample_cnt, stop_check)
-            cal_v = (avg - b) / k
-            err = (cal_v - actual_v) * 1000.0
-            log(f"[MEAS] V={v_pt:.3f}（实际={actual_v:.3f}） raw={avg:.2f} "
+            cal_dut_v = (avg - b) / k
+            cal_v = cal_dut_v * divider_ratio
+            err = (cal_v - v_pt) * 1000.0
+            log(f"[MEAS] V={v_pt:.3f}（DUT={actual_v:.3f}） raw={avg:.2f} "
                 f"cal={cal_v:.4f} V err={err:+.2f} mV")
         else:
             raw_avg, volt_avg = sample_uart_fn(sample_cnt, stop_check)
-            cal_v = volt_avg / 1000.0
-            err = volt_avg - actual_v * 1000.0
+            cal_v = volt_avg / 1000.0 * divider_ratio
+            err = volt_avg * divider_ratio - v_pt * 1000.0
             cons = (raw_avg - b) / k * 1000.0 - volt_avg
             dut_volt_mv.append(volt_avg)
             cons_mv.append(cons)
-            log(f"[MEAS] V={v_pt:.3f}（实际={actual_v:.3f}） raw={raw_avg:.2f} "
+            log(f"[MEAS] V={v_pt:.3f}（DUT={actual_v:.3f}） raw={raw_avg:.2f} "
                 f"volt={volt_avg:.1f} mV err={err:+.2f} mV cons={cons:+.2f} mV")
 
         voltage_data.append(v_pt)

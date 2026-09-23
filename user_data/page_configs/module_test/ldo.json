@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "config": {
+    "selected_items": [],
+    "chip_name": "",
+    "module_name": "",
+    "test_condition": "",
+    "operator": "",
+    "temp_test_enabled": false,
+    "temperature": "",
+    "temp_soak_s": 300,
+    "temp_tolerance_c": 2,
+    "temp_wait_s": 1800,
+    "vbat_channel": "CH 1",
+    "vin_channel": "CH 2",
+    "vout_channel": "CH 2",
+    "iload_channel": "CH 3",
+    "force_channel": "CH 2",
+    "volt_method": "n6705c",
+    "vout_nominal_mv": 1800,
+    "max_iload_ma": 400,
+    "device_addr": "0x00",
+    "width_flag": 1,
+    "scope_vout_channel": 1,
+    "item_overrides": {},
+    "module_config_enabled": false,
+    "module_config_yaml": "",
+    "judge_criteria": {}
+  }
+}

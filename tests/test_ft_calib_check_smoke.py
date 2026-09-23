@@ -81,27 +81,29 @@ assert res2['cons_stats']['max_abs_mv'] < 1e-6
 assert res2['point_checks'] == []
 print("run_ft_calib_check UART OK: passed=%s" % res2['passed'])
 
-# 6) 分压比（IIC，ratio=0.5）：校准点源=点/比值，扫压实际=源×比值，误差按实际电压
+# 6) 分压比（IIC，ratio=4 外部四分压）：校准点源=点×比值，DUT=源/比值，
+#    DUT 侧校准电压 × 比值还原到源域后与设定值比对（不放大设定电压）
 sets = []
 res3 = run_ft_calib_check(
     mode='IIC',
     calib_p1=(1.0, 3277.0),
-    calib_p2=(3.0, 9830.0),
+    calib_p2=(2.0, 6554.0),
     raw_tol_lsb=10.0,
     err_limit_mv=10.0,
-    divider_ratio=0.5,
-    voltage_min=2.0, voltage_max=6.0, voltage_step=2.0,
+    divider_ratio=4.0,
+    voltage_min=4.0, voltage_max=8.0, voltage_step=2.0,
     sample_cnt=10,
     set_voltage_fn=sets.append,
-    sample_iic_fn=lambda cnt, stop: (3276.8 * (sets[-1] * 0.5), 0, 0),
+    sample_iic_fn=lambda cnt, stop: (3276.8 * (sets[-1] / 4.0), 0, 0),
     settle_s=0, step_s=0,
     log_fn=logs.append,
 )
-assert sets[:2] == [2.0, 6.0], sets            # 校准点确认源 = 1.0/0.5, 3.0/0.5
-assert sets[2:] == [2.0, 4.0, 6.0], sets       # 扫压按源设定值
-assert res3['voltage'] == [2.0, 4.0, 6.0]
-assert res3['actual_voltage'] == [1.0, 2.0, 3.0]
-assert res3['divider_ratio'] == 0.5
+assert sets[:2] == [4.0, 8.0], sets                  # 校准点确认源 = 1.0×4, 2.0×4
+assert sets[2:] == [4.0, 6.0, 8.0], sets             # 扫压按源设定值（不缩放）
+assert res3['voltage'] == [4.0, 6.0, 8.0]
+assert res3['actual_voltage'] == [1.0, 1.5, 2.0]     # DUT 引脚电压 = 源 / 4
+assert abs(res3['cal_volt'][0] - 4.0) < 0.01         # 校准电压已 ×4 还原到源域
+assert res3['divider_ratio'] == 4.0
 assert res3['points_passed'] and res3['passed'], res3['stats']
 print("run_ft_calib_check IIC+divider OK: passed=%s" % res3['passed'])
 
