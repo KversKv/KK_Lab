@@ -6,6 +6,9 @@ from .gpadc_analysis import (
     compute_calibration,
     compute_detailed_stats,
     parse_uart_gpadc_raw,
+    parse_uart_gpadc_raw_volt,
+    solve_ft_kb,
+    assess_ft_errors,
     ALGORITHM_REGISTRY,
     apply_algorithm,
     describe_algorithm,
@@ -13,6 +16,7 @@ from .gpadc_analysis import (
     compare_algorithm_effect,
 )
 from .gpadc_worker import TestWorker
+from .gpadc_ft_check import run_ft_calib_check
 from .gpadc_multi_temp import (
     parse_hw_int,
     parse_iic_command_text,
@@ -25,12 +29,16 @@ __all__ = [
     "compute_calibration",
     "compute_detailed_stats",
     "parse_uart_gpadc_raw",
+    "parse_uart_gpadc_raw_volt",
+    "solve_ft_kb",
+    "assess_ft_errors",
     "ALGORITHM_REGISTRY",
     "apply_algorithm",
     "describe_algorithm",
     "assess_fluctuation",
     "compare_algorithm_effect",
     "TestWorker",
+    "run_ft_calib_check",
     "parse_hw_int",
     "parse_iic_command_text",
     "run_multi_ch_temp_test",

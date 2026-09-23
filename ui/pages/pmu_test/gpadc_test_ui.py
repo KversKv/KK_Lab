@@ -48,6 +48,8 @@ from core.pmu_test.gpadc import (
     compute_calibration,
     compute_detailed_stats,
     parse_uart_gpadc_raw,
+    parse_uart_gpadc_raw_volt,
+    run_ft_calib_check,
     ALGORITHM_REGISTRY,
     apply_algorithm,
     describe_algorithm,
@@ -93,6 +95,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     TEST_HIGH_LOW_TEMP = "High-Low Temp Test"
     TEST_TEMP_CONSISTENCY = "Temp Consistency Test"
     TEST_MULTI_CH_TEMP = "Multi-Ch Temp Test"
+    TEST_FT_CALIB_CHECK = "FT Calibration Check"
 
     # 最近测试记录上限（超出丢弃最旧）
     RECENT_TEST_LIMIT = 10
@@ -114,6 +117,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         TEST_HIGH_LOW_TEMP: ["chamber"],
         TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
         TEST_MULTI_CH_TEMP: ["n6705c", "chamber"],
+        TEST_FT_CALIB_CHECK: ["n6705c"],
     }
 
     def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
@@ -703,6 +707,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.test_item_combo.addItem(self.TEST_HIGH_LOW_TEMP, self.TEST_HIGH_LOW_TEMP)
         self.test_item_combo.addItem(self.TEST_TEMP_CONSISTENCY, self.TEST_TEMP_CONSISTENCY)
         self.test_item_combo.addItem(self.TEST_MULTI_CH_TEMP, self.TEST_MULTI_CH_TEMP)
+        self.test_item_combo.addItem(self.TEST_FT_CALIB_CHECK, self.TEST_FT_CALIB_CHECK)
         test_item_layout.addWidget(self.test_item_combo)
         left_col.addWidget(test_item_panel)
 
@@ -948,6 +953,47 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         params_layout.addWidget(self.calib_params_frame)
 
+        # FT Calibration Check 参数：两个 FT 校准点（电压 + 校准码）与判定阈值
+        # 仅 TEST_FT_CALIB_CHECK 测试项可见
+        self.ft_params_frame = QFrame()
+        self.ft_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        ft_layout = QGridLayout(self.ft_params_frame)
+        ft_layout.setContentsMargins(0, 0, 0, 0)
+        ft_layout.setHorizontalSpacing(6)
+        ft_layout.setVerticalSpacing(6)
+
+        ft_layout.addWidget(QLabel("Calib Point 1 (V)"), 0, 0)
+        ft_layout.addWidget(QLabel("Calib Raw 1 (LSB)"), 0, 1)
+        self.ft_calib_v1 = WheelLineEdit("1.0")
+        self.ft_calib_c1 = WheelLineEdit("3277", wheel_step=1)
+        ft_layout.addWidget(self.ft_calib_v1, 1, 0)
+        ft_layout.addWidget(self.ft_calib_c1, 1, 1)
+
+        ft_layout.addWidget(QLabel("Calib Point 2 (V)"), 2, 0)
+        ft_layout.addWidget(QLabel("Calib Raw 2 (LSB)"), 2, 1)
+        self.ft_calib_v2 = WheelLineEdit("3.0")
+        self.ft_calib_c2 = WheelLineEdit("9830", wheel_step=1)
+        ft_layout.addWidget(self.ft_calib_v2, 3, 0)
+        ft_layout.addWidget(self.ft_calib_c2, 3, 1)
+
+        ft_layout.addWidget(QLabel("Raw Tol (±LSB)"), 4, 0)
+        ft_layout.addWidget(QLabel("Error Limit (±mV)"), 4, 1)
+        self.ft_raw_tol = QDoubleSpinBox()
+        self.ft_raw_tol.setRange(0.0, 1000.0)
+        self.ft_raw_tol.setValue(10.0)
+        self.ft_raw_tol.setSingleStep(1.0)
+        self.ft_raw_tol.setDecimals(1)
+        self.ft_err_limit = QDoubleSpinBox()
+        self.ft_err_limit.setRange(0.0, 10000.0)
+        self.ft_err_limit.setValue(10.0)
+        self.ft_err_limit.setSingleStep(1.0)
+        self.ft_err_limit.setDecimals(1)
+        ft_layout.addWidget(self.ft_raw_tol, 5, 0)
+        ft_layout.addWidget(self.ft_err_limit, 5, 1)
+
+        params_layout.addWidget(self.ft_params_frame)
+        self.ft_params_frame.hide()
+
         self.sample_count_label = QLabel("Sample Count")
         self.sample_count_label.setObjectName("muted_label")
         params_layout.addWidget(self.sample_count_label)
@@ -969,9 +1015,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         params_layout.addWidget(self.voltage_channel)
 
         # 采样算法：默认 None（原始数据，与既有流程一致）；参数控件按注册表动态生成
-        algo_title = QLabel("Algorithm")
-        algo_title.setObjectName("muted_label")
-        params_layout.addWidget(algo_title)
+        self.algo_title = QLabel("Algorithm")
+        self.algo_title.setObjectName("muted_label")
+        params_layout.addWidget(self.algo_title)
 
         self.algorithm_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.algorithm_combo.addItem("None (原始数据)", "")
@@ -1054,6 +1100,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._cnt_cards = [avg_card, min_card, max_card, std_card, pp_card, samples_card]
         self._fv_cards = [inl_card, dnl_card, enob_card, offset_card, gain_card]
 
+        # FT Calibration Check 指标卡组（P1/P2 偏差仅 IIC 方式有值，CONS 仅 UART 方式有值）
+        ft_p1_card, self.ft_p1_value = self._create_metric_card("P1 DEV (LSB)", "---", "metric_value_green")
+        ft_p2_card, self.ft_p2_value = self._create_metric_card("P2 DEV (LSB)", "---", "metric_value_green")
+        ft_max_card, self.ft_max_err_value = self._create_metric_card("MAX ERR (mV)", "---", "metric_value_yellow")
+        ft_rms_card, self.ft_rms_err_value = self._create_metric_card("RMS ERR (mV)", "---", "metric_value_blue")
+        ft_cons_card, self.ft_cons_value = self._create_metric_card("CONS MAX (mV)", "---", "metric_value_yellow")
+        ft_result_card, self.ft_result_value = self._create_metric_card("RESULT", "---", "metric_value_blue")
+        self._ft_cards = [ft_p1_card, ft_p2_card, ft_max_card, ft_rms_card, ft_cons_card, ft_result_card]
+
         self.linearity_value = QLabel("---")
         self.linearity_value.hide()
 
@@ -1068,6 +1123,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         metrics_layout.addWidget(std_card)
         metrics_layout.addWidget(pp_card)
         metrics_layout.addWidget(samples_card)
+        for ft_card in self._ft_cards:
+            metrics_layout.addWidget(ft_card)
 
         right_col.addWidget(metrics_row)
 
@@ -1310,6 +1367,58 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
+    def gpadc_uart_read_raw_volt_by_cnts(
+        self,
+        get_reg_cnt=1000,
+        keyword="",
+        timeout_s=120.0,
+        stop_check=None,
+        progress_callback=None,
+    ):
+        """从 UART 日志逐行解析 raw/volt 对（FT Calibration Check UART 方式用）。
+
+        返回 (raw_avg, volt_avg)：raw 截尾均值（LSB）与 volt 截尾均值（mV，DUT
+        已校准电压）。不应用采样算法——保持 raw 与 volt 的逐点配对一致性。
+        """
+        if DEBUG_MOCK:
+            rng = random.Random()
+            mock_v = self._mock_i2c._voltage if hasattr(self, "_mock_i2c") else 1.0
+            raw_data = [max(0, int(mock_v * 3276.8 + rng.gauss(0, 2.0))) for _ in range(get_reg_cnt)]
+            volt_data = [mock_v * 1000.0 + rng.gauss(0, 1.0) for _ in range(get_reg_cnt)]
+            if progress_callback:
+                progress_callback(100)
+            raw_avg, _, _ = compute_reg_stats(raw_data)
+            volt_avg, _, _ = compute_reg_stats(volt_data)
+            return raw_avg, volt_avg
+
+        pairs = []
+        partial = b""
+        deadline = time.monotonic() + timeout_s
+        while len(pairs) < get_reg_cnt:
+            if stop_check and stop_check():
+                break
+            if time.monotonic() >= deadline:
+                self._test_worker.log.emit(
+                    f"[WARN] UART 采集超时（{timeout_s:.0f}s），仅获取 {len(pairs)}/{get_reg_cnt} 个样本，"
+                    "请检查串口连接与 Search Keyword 是否匹配日志"
+                )
+                break
+            partial, line = self._next_uart_log_line(partial, deadline, stop_check=stop_check)
+            if line is None:
+                continue
+            pair = parse_uart_gpadc_raw_volt(line, keyword)
+            if pair is None:
+                continue
+            pairs.append(pair)
+            if progress_callback:
+                progress_callback(int(len(pairs) * 100 / get_reg_cnt))
+
+        if not pairs:
+            raise RuntimeError("未从 UART 日志提取到任何 GPADC raw/volt 样本，请确认 DUT 日志输出与 Search Keyword 匹配")
+        raw_avg, _, _ = compute_reg_stats([p[0] for p in pairs])
+        volt_avg, _, _ = compute_reg_stats([p[1] for p in pairs])
+        return raw_avg, volt_avg
+
     def _gpadc_read_by_cnts(
         self,
         device_addr=0x17,
@@ -1349,11 +1458,19 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         # 1000CNT 不再隐藏图表面板：改用于展示原始数据相对 AVG 的分布图，指标区改显详细统计卡组
         is_cnt_test = test_item == self.TEST_1000CNT
-        self.chart_title.setText("Raw Data Distribution" if is_cnt_test else "ADC Transfer Curve")
+        is_ft_test = test_item == self.TEST_FT_CALIB_CHECK
+        if is_cnt_test:
+            self.chart_title.setText("Raw Data Distribution")
+        elif is_ft_test:
+            self.chart_title.setText("Calibration Error Curve")
+        else:
+            self.chart_title.setText("ADC Transfer Curve")
         for card in self._cnt_cards:
             card.setVisible(is_cnt_test)
         for card in self._fv_cards:
-            card.setVisible(not is_cnt_test)
+            card.setVisible(not is_cnt_test and not is_ft_test)
+        for card in self._ft_cards:
+            card.setVisible(is_ft_test)
 
         if test_item == self.TEST_1000CNT:
             self.params_mode_label.setText("1000 COUNT TEST")
@@ -1365,6 +1482,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._start_btn_text = "▶ START TEST"
         elif test_item == self.TEST_FORCE_VOLTAGE:
             self.params_mode_label.setText("VOLTAGE SWEEP")
+            self.voltage_params_frame.show()
+            self.temp_params_frame.hide()
+            self.voltage_channel_label.show()
+            self.voltage_channel.show()
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
+        elif test_item == self.TEST_FT_CALIB_CHECK:
+            self.params_mode_label.setText("FT CALIBRATION CHECK")
             self.voltage_params_frame.show()
             self.temp_params_frame.hide()
             self.voltage_channel_label.show()
@@ -1398,7 +1523,20 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._start_btn_text = "▶ START TEST"
 
         # 校准点仅在线性度类测试项生效；温度扫描时 x 轴为温度，单位随动
-        self.calib_params_frame.setVisible(not is_cnt_test)
+        # FT Calibration Check 用独立 ft_params_frame（两点四值必填 + 判定阈值）
+        self.calib_params_frame.setVisible(not is_cnt_test and not is_ft_test)
+        self.ft_params_frame.setVisible(is_ft_test)
+
+        # FT Calibration Check 不应用采样算法：Algorithm 区整体隐藏
+        # （其余测试项按注册表恢复参数区可见性，不重建控件以保留已调参数值）
+        self.algo_title.setVisible(not is_ft_test)
+        self.algorithm_combo.setVisible(not is_ft_test)
+        if is_ft_test:
+            self.algo_params_frame.hide()
+        else:
+            self.algo_params_frame.setVisible(
+                ALGORITHM_REGISTRY.get(self.algorithm_combo.currentData()) is not None
+            )
         calib_unit = "°C" if test_item == self.TEST_HIGH_LOW_TEMP else "V"
         self.calib_low_label.setText(f"Calib Low ({calib_unit})")
         self.calib_high_label.setText(f"Calib High ({calib_unit})")
@@ -1538,6 +1676,25 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 sample_cnt=sample_cnt,
                 channels=channels,
                 pre_config=self.multi_ch_panel.get_pre_config(),
+            )
+        elif test_item == self.TEST_FT_CALIB_CHECK:
+            ft_cfg = self._parse_ft_calib_inputs()
+            if ft_cfg is None:
+                self.is_test_running = False
+                self._update_test_button_state(False)
+                self._set_ui_enabled(True)
+                return
+            fn = self._run_ft_calib_check
+            kwargs = dict(
+                device_addr=iic_device_addr,
+                reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
+                voltage_min=self.voltage_min.value(),
+                voltage_max=self.voltage_max.value(),
+                voltage_step=self.voltage_step.value(),
+                voltage_channel=self.voltage_channel.currentData(),
+                sample_cnt=sample_cnt,
+                **ft_cfg,
             )
         else:
             self._stop_test()
@@ -1733,6 +1890,77 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         )
         return ('multi_ch_temp', result)
 
+    def _run_ft_calib_check(self, device_addr, reg_addr, iic_weight,
+                            voltage_min, voltage_max, voltage_step, voltage_channel,
+                            calib_p1, calib_p2, raw_tol_lsb, err_limit_mv,
+                            sample_cnt=1000, stop_check=None):
+        """FT Calibration Check：流程纯函数在 core/pmu_test/gpadc/gpadc_ft_check.py。
+
+        本方法仅做仪器/回调装配：N6705C 扫压 + IIC 实时采样 / UART raw/volt 解析。
+        """
+        mode = self._acq_mode_snapshot
+        self._test_worker.log.emit(f"[INFO] RUN FT CALIBRATION CHECK ({mode})")
+
+        if DEBUG_MOCK:
+            if not hasattr(self, "_mock_i2c"):
+                self._mock_i2c = MockI2C()
+            vol_source = MockN6705C()
+            vol_source._mock_i2c = self._mock_i2c
+        else:
+            vol_source = self.n6705c
+            if vol_source is None or not self.is_connected:
+                self._test_worker.log.emit("[ERROR] N6705C not connected")
+                self.set_system_status("错误: N6705C未连接", is_error=True)
+                return None
+
+        # FT 校准检查不应用采样算法（保持 raw 与 volt 的配对一致性）
+        if self._algorithm_snapshot is not None:
+            self._test_worker.log.emit("[INFO] FT Calibration Check 不应用采样算法，已忽略 Algorithm 配置")
+        saved_algo = self._algorithm_snapshot
+        self._algorithm_snapshot = None
+        try:
+            def _set_voltage(v):
+                vol_source.set_voltage(voltage_channel, v)
+
+            def _sample_iic(cnt, stop):
+                return self.gpadc_reg_read_by_cnts(
+                    device_addr, reg_addr, iic_weight,
+                    get_reg_cnt=cnt, return_raw=False, stop_check=stop,
+                )
+
+            def _sample_uart(cnt, stop):
+                return self.gpadc_uart_read_raw_volt_by_cnts(
+                    get_reg_cnt=cnt,
+                    keyword=self._uart_keyword_snapshot,
+                    stop_check=stop,
+                )
+
+            result = run_ft_calib_check(
+                mode=mode,
+                calib_p1=calib_p1,
+                calib_p2=calib_p2,
+                raw_tol_lsb=raw_tol_lsb,
+                err_limit_mv=err_limit_mv,
+                voltage_min=voltage_min,
+                voltage_max=voltage_max,
+                voltage_step=voltage_step,
+                sample_cnt=sample_cnt,
+                set_voltage_fn=_set_voltage,
+                sample_iic_fn=_sample_iic,
+                sample_uart_fn=_sample_uart,
+                settle_s=0.0 if DEBUG_MOCK else 0.5,
+                step_s=0.0 if DEBUG_MOCK else 0.2,
+                log_fn=self._test_worker.log.emit,
+                status_fn=lambda msg, is_err=False: self.set_system_status(msg, is_err),
+                stop_check=stop_check,
+                progress_callback=lambda v: self._test_worker.progress.emit(v),
+            )
+        finally:
+            self._algorithm_snapshot = saved_algo
+        if result is None:
+            return None
+        return ('ft_calib_check', result)
+
     def _on_test_done(self, payload):
         if payload is None:
             return
@@ -1843,6 +2071,29 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self._append_log("[RESULT] Multi-Ch Temp Test completed")
                 self.set_system_status("GPADC多通道温度测试完成")
 
+        elif kind == 'ft_calib_check':
+            if result is not None:
+                stats = result.get('stats') or {}
+                passed = result.get('passed', False)
+                self._update_ft_result_cards(result)
+                self._plot_ft_check_curve(result)
+                self._append_log(
+                    f"[RESULT] FT Calibration Check 判定: {'PASS' if passed else 'FAIL'} "
+                    f"(MaxErr={stats.get('max_abs_mv', 0):.2f} mV, "
+                    f"限 ±{result.get('err_limit_mv', 0):.1f} mV)"
+                )
+                self._export_data = {
+                    'params': {
+                        'max_err_mv': stats.get('max_abs_mv'),
+                        'avg_err_mv': stats.get('avg_mv'),
+                        'rms_err_mv': stats.get('rms_mv'),
+                        'passed': passed,
+                    },
+                    'ft_calib': result,
+                }
+                self.set_system_status(
+                    f"FT校准检查{'通过' if passed else '未通过'}", is_error=not passed)
+
         # 记入最近测试列表，供后续对比/载入
         self._record_recent_test(kind, result)
         # 曲线类测试完成后，当前图上显示的就是这条记录（右键切换 Curve View 时据此重绘）
@@ -1919,6 +2170,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         # 多通道高低温测试：每通道一个 sheet 的专用导出
         if 'multi_ch_temp' in self._export_data:
             self._export_multi_ch_temp(self._export_data['multi_ch_temp'])
+            return
+
+        # FT Calibration Check：校准汇总 + 逐点数据的专用导出
+        if 'ft_calib' in self._export_data:
+            self._export_ft_calib(self._export_data['ft_calib'])
             return
 
         params   = self._export_data['params']
@@ -2110,6 +2366,153 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         chart.series[2].graphicalProperties.line.solidFill = "F0A040"
         ws.add_chart(chart, f"{chart_anchor_col}{chart_data_start_row}")
 
+    def _export_ft_calib(self, result):
+        """FT Calibration Check 导出：Summary（K/B + 校准点确认 + 误差统计 + 判定）+ Sweep Data。"""
+        import openpyxl
+        from openpyxl.styles import (Font, PatternFill, Alignment,
+                                     Border, Side)
+        from openpyxl.utils import get_column_letter
+        from pathlib import Path
+        import datetime
+
+        results_dir = Path(__file__).parent.parent.parent.parent / "Results"
+        results_dir.mkdir(exist_ok=True)
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = results_dir / f"GPADC_FT_CalibCheck_{ts}.xlsx"
+
+        hdr_fill = PatternFill("solid", fgColor="0A1735")
+        hdr_font = Font(bold=True, color="00D39A", size=11)
+        val_font = Font(color="000000", size=10)
+        sub_fill = PatternFill("solid", fgColor="0D1F40")
+        sub_font = Font(bold=True, color="7E96BF", size=10)
+        thin_side = Side(style="thin", color="1B2847")
+        thin_border = Border(left=thin_side, right=thin_side,
+                             top=thin_side, bottom=thin_side)
+
+        def _hdr(ws, row, col, text):
+            c = ws.cell(row=row, column=col, value=text)
+            c.fill = hdr_fill
+            c.font = hdr_font
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+            return c
+
+        def _val(ws, row, col, value):
+            c = ws.cell(row=row, column=col, value=value)
+            c.font = val_font
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+            if isinstance(value, float):
+                c.number_format = "0.000000"
+            return c
+
+        def _sub(ws, row, col, text):
+            c = ws.cell(row=row, column=col, value=text)
+            c.fill = sub_fill
+            c.font = sub_font
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            c.border = thin_border
+            return c
+
+        mode = result.get('mode', '')
+        stats = result.get('stats') or {}
+        cons_stats = result.get('cons_stats')
+        (v1, c1), (v2, c2) = result.get('calib_points') or [(0.0, 0.0), (0.0, 0.0)]
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Summary"
+        ws.column_dimensions["A"].width = 26
+        ws.column_dimensions["B"].width = 20
+
+        row = 1
+        _hdr(ws, row, 1, "FT Calibration Check Summary")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        row += 1
+        summary_items = [
+            ("Mode", mode),
+            ("K (LSB/V)", result.get('k')),
+            ("B (LSB)", result.get('b')),
+            ("Calib Point 1 (V)", v1),
+            ("Calib Raw 1 (LSB)", c1),
+            ("Calib Point 2 (V)", v2),
+            ("Calib Raw 2 (LSB)", c2),
+            ("Raw Tol (±LSB)", result.get('raw_tol_lsb')),
+            ("Error Limit (±mV)", result.get('err_limit_mv')),
+        ]
+        for name, value in summary_items:
+            _sub(ws, row, 1, name)
+            _val(ws, row, 2, value)
+            row += 1
+
+        point_checks = result.get('point_checks') or []
+        if point_checks:
+            row += 1
+            _hdr(ws, row, 1, "Calib Point Check (IIC)")
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+            row += 1
+            for col, name in enumerate(
+                    ("Voltage (V)", "Calib Code (LSB)", "Measured (LSB)", "Dev (LSB)", "Result"), 1):
+                _sub(ws, row, col, name)
+            row += 1
+            for pc in point_checks:
+                _val(ws, row, 1, pc.get('voltage'))
+                _val(ws, row, 2, pc.get('calib_code'))
+                _val(ws, row, 3, pc.get('measured'))
+                _val(ws, row, 4, pc.get('dev_lsb'))
+                _val(ws, row, 5, "PASS" if pc.get('passed') else "FAIL")
+                row += 1
+
+        row += 1
+        _hdr(ws, row, 1, "Error Statistics")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        row += 1
+        stat_items = [
+            ("Max Abs Error (mV)", stats.get('max_abs_mv')),
+            ("Avg Error (mV)", stats.get('avg_mv')),
+            ("RMS Error (mV)", stats.get('rms_mv')),
+            ("Sweep Points", stats.get('count')),
+        ]
+        if cons_stats is not None:
+            stat_items.extend([
+                ("Cons Max Abs (mV)", cons_stats.get('max_abs_mv')),
+                ("Cons Avg (mV)", cons_stats.get('avg_mv')),
+                ("Cons RMS (mV)", cons_stats.get('rms_mv')),
+            ])
+        stat_items.append(("Verdict", "PASS" if result.get('passed') else "FAIL"))
+        for name, value in stat_items:
+            _sub(ws, row, 1, name)
+            _val(ws, row, 2, value)
+            row += 1
+
+        ws2 = wb.create_sheet("Sweep Data")
+        is_uart = mode == 'UART'
+        headers = ["Input Voltage (V)", "Raw Mean (LSB)", "Calib Voltage (V)", "Error (mV)"]
+        if is_uart:
+            headers += ["DUT Volt (mV)", "Consistency (mV)"]
+        for col, name in enumerate(headers, 1):
+            _sub(ws2, row=1, col=col, text=name)
+            ws2.column_dimensions[get_column_letter(col)].width = 20
+        voltage = result.get('voltage') or []
+        raw_mean = result.get('raw_mean') or []
+        cal_volt = result.get('cal_volt') or []
+        err_mv = result.get('err_mv') or []
+        dut_volt = result.get('dut_volt_mv') or []
+        cons_mv = result.get('cons_mv') or []
+        for i in range(len(voltage)):
+            r = i + 2
+            _val(ws2, r, 1, float(voltage[i]))
+            _val(ws2, r, 2, float(raw_mean[i]))
+            _val(ws2, r, 3, float(cal_volt[i]))
+            _val(ws2, r, 4, float(err_mv[i]))
+            if is_uart:
+                _val(ws2, r, 5, float(dut_volt[i]))
+                _val(ws2, r, 6, float(cons_mv[i]))
+
+        wb.save(filename)
+        self._append_log(f"[INFO] FT Calibration Check 结果已导出: {filename}")
+
     def _export_multi_ch_temp(self, result):
         """多通道高低温测试导出：Summary 汇总 + 每通道一个 sheet（原始 + 标定数据）。"""
         import openpyxl
@@ -2288,6 +2691,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_min, self.temp_max, self.temp_step,
             self.soak_time, self.sample_count,
             self.calib_low, self.calib_high,
+            self.ft_calib_v1, self.ft_calib_c1,
+            self.ft_calib_v2, self.ft_calib_c2,
+            self.ft_raw_tol, self.ft_err_limit,
             self.algorithm_combo,
             self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
@@ -2372,6 +2778,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'sample_count': self.sample_count.value(),
             'calib_low': self.calib_low.text(),
             'calib_high': self.calib_high.text(),
+            'ft_calib_v1': self.ft_calib_v1.text(),
+            'ft_calib_c1': self.ft_calib_c1.text(),
+            'ft_calib_v2': self.ft_calib_v2.text(),
+            'ft_calib_c2': self.ft_calib_c2.text(),
+            'ft_raw_tol': self.ft_raw_tol.value(),
+            'ft_err_limit': self.ft_err_limit.value(),
             'algorithm': self._collect_algorithm_config(),
             'multi_channels': self.multi_ch_panel.get_channels(),
             'pre_config': self.multi_ch_panel.get_pre_config(),
@@ -2419,6 +2831,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.std_value.setText("---")
         self.pp_value.setText("---")
         self.samples_value.setText("---")
+        # 清除 FT Calibration Check 的结果
+        self.ft_p1_value.setText("---")
+        self.ft_p2_value.setText("---")
+        self.ft_max_err_value.setText("---")
+        self.ft_rms_err_value.setText("---")
+        self.ft_cons_value.setText("---")
+        self.ft_result_value.setText("---")
+        self.ft_result_value.setStyleSheet("")
 
     # ------------------------------------------------------------------
     # 最近测试管理：记录 / 对比 / 载入 / 清空
@@ -2503,6 +2923,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             temps = result.get('temp') or []
             chs = result.get('channels') or []
             record['summary'] = f"{len(chs)} CH x {len(temps)} T"
+        elif kind == 'ft_calib_check':
+            record['params'] = (self._export_data or {}).get('params')
+            record['raw'] = result
+            stats = result.get('stats') or {}
+            record['summary'] = (
+                f"MaxErr={stats.get('max_abs_mv', 0):.2f}mV "
+                f"{'PASS' if result.get('passed') else 'FAIL'}"
+            )
         else:  # temp_consistency
             record['raw'] = result
             temps = result.get('temp') or []
@@ -2744,6 +3172,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             raw = record.get('raw') or {}
             self._plot_multi_ch_temp_curves(raw)
             self._export_data = {'multi_ch_temp': raw}
+        elif kind == 'ft_calib_check':
+            raw = record.get('raw') or {}
+            self._update_ft_result_cards(raw)
+            self._plot_ft_check_curve(raw)
+            self._export_data = {'params': record.get('params'), 'ft_calib': raw}
         else:  # temp_consistency
             raw = record.get('raw') or {}
             self._plot_temp_consistency_curves(raw)
@@ -3151,6 +3584,32 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             "raw_before_samples": raw_before_samples,
         }
         return result
+
+    def _parse_ft_calib_inputs(self):
+        """解析 FT Calibration Check 的两点四值与判定阈值；无效时记录日志并返回 None。"""
+        try:
+            v1 = float(self.ft_calib_v1.text().strip())
+            c1 = float(self.ft_calib_c1.text().strip())
+            v2 = float(self.ft_calib_v2.text().strip())
+            c2 = float(self.ft_calib_c2.text().strip())
+        except ValueError:
+            self._append_log("[ERROR] FT 校准点格式无效（需填写数值：电压 V 与校准码 LSB）")
+            self.set_system_status("错误: FT 校准点格式无效", is_error=True)
+            return None
+        if not all(math.isfinite(x) for x in (v1, c1, v2, c2)):
+            self._append_log("[ERROR] FT 校准点需为有限数值")
+            self.set_system_status("错误: FT 校准点格式无效", is_error=True)
+            return None
+        if v1 == v2 or c1 == c2:
+            self._append_log("[ERROR] FT 两校准点的电压或校准码相同，K/B 不可解")
+            self.set_system_status("错误: FT 校准点退化", is_error=True)
+            return None
+        return {
+            'calib_p1': (v1, c1),
+            'calib_p2': (v2, c2),
+            'raw_tol_lsb': self.ft_raw_tol.value(),
+            'err_limit_mv': self.ft_err_limit.value(),
+        }
 
     def _parse_calib_points(self):
         """解析用户填写的两个校准点；均留空返回 None 表示自动选取。"""
@@ -3801,10 +4260,17 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         legend_row.addStretch()
 
         is_cnt_test = self.current_test_item == self.TEST_1000CNT
+        is_ft_test = self.current_test_item == self.TEST_FT_CALIB_CHECK
 
-        actual_legend = QLabel("● Deviation from AVG" if is_cnt_test else "↔ Actual Code")
+        if is_cnt_test:
+            actual_text, ideal_text = "● Deviation from AVG", "─ AVG Level"
+        elif is_ft_test:
+            actual_text, ideal_text = "● Calib Error (mV)", "┄ Limit Lines"
+        else:
+            actual_text, ideal_text = "↔ Actual Code", "↔ Ideal Code"
+        actual_legend = QLabel(actual_text)
         actual_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
-        ideal_legend = QLabel("─ AVG Level" if is_cnt_test else "↔ Ideal Code")
+        ideal_legend = QLabel(ideal_text)
         ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
 
         legend_row.addWidget(actual_legend)
@@ -4214,6 +4680,125 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         except Exception as e:
             self._append_log(f"[ERROR] Error plotting voltage-ADC curve: {e}")
             logger.error("Error plotting voltage-ADC curve: %s", e, exc_info=True)
+
+    def _update_ft_result_cards(self, result):
+        """FT Calibration Check 指标卡刷新（P1/P2 偏差仅 IIC 方式，CONS 仅 UART 方式）。"""
+        pcs = result.get('point_checks') or []
+        if len(pcs) >= 2:
+            self.ft_p1_value.setText(f"{pcs[0]['dev_lsb']:+.2f}")
+            self.ft_p2_value.setText(f"{pcs[1]['dev_lsb']:+.2f}")
+        else:
+            self.ft_p1_value.setText("---")
+            self.ft_p2_value.setText("---")
+        stats = result.get('stats') or {}
+        self.ft_max_err_value.setText(f"{stats['max_abs_mv']:.2f}" if stats else "---")
+        self.ft_rms_err_value.setText(f"{stats['rms_mv']:.2f}" if stats else "---")
+        cons = result.get('cons_stats')
+        self.ft_cons_value.setText(f"{cons['max_abs_mv']:.2f}" if cons else "---")
+        passed = result.get('passed', False)
+        self.ft_result_value.setText("PASS" if passed else "FAIL")
+        color = "#00d39a" if passed else "#ff5a7a"
+        self.ft_result_value.setStyleSheet(f"color: {color}; font-weight: 700;")
+
+    def _plot_ft_check_curve(self, result):
+        """FT Calibration Check 误差曲线：校准误差 (mV) vs 施加电压，带 ±Limit 判定线。
+
+        UART 方式叠加一致性误差曲线（用户两点 K,B 反推电压 vs DUT volt）。
+        """
+        try:
+            import pyqtgraph as pg
+            import numpy as np
+
+            voltage = result.get('voltage') or []
+            err_mv = result.get('err_mv') or []
+            cons_mv = result.get('cons_mv') or None
+            limit = result.get('err_limit_mv', 0.0)
+            if not voltage or not err_mv:
+                return
+
+            self._clear_chart_placeholder()
+            layout = self.chart_placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.chart_placeholder)
+            layout.setContentsMargins(14, 14, 14, 10)
+            layout.setSpacing(8)
+
+            legend_row = QHBoxLayout()
+            legend_row.addStretch()
+            err_legend = QLabel("● Calib Error (mV)")
+            err_legend.setStyleSheet("color: #e05c5c; font-size: 12px;")
+            legend_row.addWidget(err_legend)
+            if cons_mv:
+                legend_row.addSpacing(16)
+                cons_legend = QLabel("● K,B Consistency (mV)")
+                cons_legend.setStyleSheet("color: #f0a040; font-size: 12px;")
+                legend_row.addWidget(cons_legend)
+            legend_row.addSpacing(16)
+            limit_legend = QLabel(f"┄ Limit ±{limit:.1f} mV")
+            limit_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
+            legend_row.addWidget(limit_legend)
+            legend_row.addStretch()
+            layout.addLayout(legend_row)
+
+            pw = pg.PlotWidget()
+            pw.setBackground("#0a1735")
+            pw.showGrid(x=True, y=True, alpha=0.15)
+            pw.setLabel("left", "Error (mV)", color="#a0b4d8")
+            pw.setLabel("bottom", "Input Voltage (V)", color="#a0b4d8")
+            self._attach_curve_context_menu(pw)
+            for axis_name in ("left", "bottom"):
+                axis = pw.getAxis(axis_name)
+                axis.setTextPen(pg.mkPen("#a0b4d8"))
+                axis.setPen(pg.mkPen("#3a4f7a"))
+
+            x = np.array(voltage, dtype=float)
+            pw.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1,
+                        style=pg.QtCore.Qt.DashLine))
+            if limit > 0:
+                pw.addLine(y=limit, pen=pg.mkPen("#e05c5c", width=1,
+                            style=pg.QtCore.Qt.DashLine))
+                pw.addLine(y=-limit, pen=pg.mkPen("#e05c5c", width=1,
+                            style=pg.QtCore.Qt.DashLine))
+            pw.plot(x, np.array(err_mv, dtype=float),
+                    pen=pg.mkPen(color="#e05c5c", width=2),
+                    symbol="o", symbolSize=5, symbolBrush="#e05c5c", symbolPen=None)
+            if cons_mv:
+                n = min(len(x), len(cons_mv))
+                pw.plot(x[:n], np.array(cons_mv, dtype=float)[:n],
+                        pen=pg.mkPen(color="#f0a040", width=2),
+                        symbol="t", symbolSize=5, symbolBrush="#f0a040", symbolPen=None)
+
+            layout.addWidget(pw, 1)
+
+            x_label = QLabel("Input Voltage (V)")
+            x_label.setAlignment(Qt.AlignCenter)
+            x_label.setObjectName("muted_label")
+            layout.addWidget(x_label)
+
+            try:
+                import io
+                from pyqtgraph.exporters import ImageExporter
+                from PySide6.QtCore import QBuffer, QIODevice
+                from PySide6.QtGui import QImage
+
+                # 仅指定宽度（同时指定 height 会按 cover 缩放导致宽度不精确）
+                exporter = ImageExporter(pw.plotItem)
+                exporter.parameters()['width'] = 1200
+                snap = exporter.export(toBytes=True)
+                if not isinstance(snap, QImage):
+                    snap = QImage.fromData(bytes(snap))
+                qbuf = QBuffer()
+                qbuf.open(QIODevice.WriteOnly)
+                snap.save(qbuf, "PNG")
+                self._chart_image_bytes = io.BytesIO(bytes(qbuf.data()))
+                qbuf.close()
+            except Exception as ex:
+                self._append_log(f"[WARN] Chart snapshot failed: {ex}")
+                self._chart_image_bytes = None
+
+        except Exception as e:
+            self._append_log(f"[ERROR] Error plotting FT calibration error curve: {e}")
+            logger.error("Error plotting FT calibration error curve: %s", e, exc_info=True)
 
     def _plot_cnt_distribution(self, result, algorithm=None):
         """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。
@@ -4855,6 +5440,14 @@ Temperature (°C) | ADC Value
         # 校准点（留空 = 自动选取）
         _set_text(self.calib_low, "calib_low")
         _set_text(self.calib_high, "calib_high")
+
+        # FT Calibration Check 两点四值与判定阈值
+        _set_text(self.ft_calib_v1, "ft_calib_v1")
+        _set_text(self.ft_calib_c1, "ft_calib_c1")
+        _set_text(self.ft_calib_v2, "ft_calib_v2")
+        _set_text(self.ft_calib_c2, "ft_calib_c2")
+        _set_spin(self.ft_raw_tol, "ft_raw_tol")
+        _set_spin(self.ft_err_limit, "ft_err_limit")
 
         # 采样算法（id + params，按注册表回填）
         algo_cfg = cfg.get("algorithm")

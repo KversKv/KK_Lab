@@ -8,7 +8,17 @@
   <li><b>线性度测试</b> — 验证 ADC 在全量程范围内的线性度</li>
   <li><b>多模式测试</b> — 支持不同 GPADC 工作模式的切换测试</li>
   <li><b>Multi-Ch Temp Test（多通道高低温联合测试）</b> — 一轮温循内完成所有通道的高低温测试，大幅减少温箱升降温总耗时</li>
+  <li><b>FT Calibration Check（两点 FT 校准检查）</b> — 校验 DUT 的 FT 两点校准数据，并评估校准后全量程误差</li>
 </ul>
+
+<h3>FT Calibration Check（两点 FT 校准检查）</h3>
+<p>用户提供两个 FT 校准电压点及对应校准码（ADC raw code），系统按 Data Acquisition 选择分两种方式检查：</p>
+<ol>
+  <li><b>IIC 方式（两步）</b> — 第一步「校准点确认」：N6705C 依次施加两个校准电压，IIC 实时采样 GPADC raw，与用户校准码比对（容差 <b>Raw Tol ±LSB</b>）；第二步用用户两点解出 K/B（<code>code = K·V + B</code>），对 Start/End/Step 遍历范围逐点采样并换算校准电压，评估其与实际施加电压的误差。</li>
+  <li><b>UART Log 方式</b> — DUT 内部已带校准计算，逐点从日志 <code>raw/volt=&lt;raw&gt;/&lt;volt&gt;</code> 同时提取 raw 与 volt（volt 单位 mV）：校验 volt 与施加电压的误差；同时用用户两点 K/B 反推电压 <code>(raw − B)/K</code>，校验其与 DUT volt 的一致性（K,B Consistency）。</li>
+</ol>
+<p><b>判定与输出</b>：Max/Avg/RMS 误差统计；任一项超出 <b>Error Limit ±mV</b>（IIC 含校准点确认）即判 <b>FAIL</b>。指标卡含 P1/P2 偏差（仅 IIC）、MAX/RMS ERR、CONS MAX（仅 UART）与 RESULT；曲线为误差 vs 施加电压（带 ±Limit 判定线，UART 叠加一致性曲线）；导出 Excel 含 Summary（K/B、校准点确认、误差统计、判定）+ Sweep Data 两个 sheet。</p>
+<p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本测试项不应用 Algorithm 采样算法（保持 raw 与 volt 配对一致），切到该测试项时 Algorithm 区自动隐藏。</p>
 
 <h3>Multi-Ch Temp Test（多通道高低温联合测试）</h3>
 <p>该测试项在一轮温度循环内，每个温度点依次分发测试多个 GPADC 通道（默认 Temp / Vbat / EXT，可增删），避免每个通道单独跑一轮温循导致的重复升降温耗时。</p>

@@ -27,6 +27,20 @@ def parse_uart_gpadc_raw(line, keyword=""):
     return int(m.group(1))
 
 
+def parse_uart_gpadc_raw_volt(line, keyword=""):
+    """从一行 UART 日志同时提取 GPADC raw 与 volt（DUT 已校准电压，mV）。
+
+    keyword 非空时，行内必须先包含该关键字；命中后按 ``raw/volt=<raw>/<volt>``
+    提取并返回 ``(raw, volt)`` 整数元组，未命中或格式不匹配返回 None。
+    """
+    if keyword and keyword not in line:
+        return None
+    m = _GPADC_RAW_VOLT_RE.search(line)
+    if m is None:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
 def compute_reg_stats(raw_data, return_raw=False):
     sorted_data = sorted(raw_data)
 
@@ -103,6 +117,46 @@ def compute_detailed_stats(raw_data):
         'std': std,
         'pp': reg_max - reg_min,
         'count': n,
+    }
+
+
+# ---------------------------------------------------------------------------
+# FT Calibration Check（两点 FT 校准检查，纯函数）
+# ---------------------------------------------------------------------------
+
+def solve_ft_kb(v1, c1, v2, c2):
+    """由两个 FT 校准点解出线性转换 K/B：``code = k * voltage + b``。
+
+    返回 ``(k, b)``；两点电压相同或校准码相同（斜率不可解/为零）时抛 ValueError。
+    """
+    if v1 == v2:
+        raise ValueError("两个 FT 校准点的电压相同，无法解算 K/B")
+    if c1 == c2:
+        raise ValueError("两个 FT 校准点的校准码相同，K 为 0 无法校准")
+    k = (c2 - c1) / (v2 - v1)
+    b = c1 - k * v1
+    return k, b
+
+
+def assess_ft_errors(err_list_mv, limit_mv):
+    """FT 校准误差统计（纯算法，无 Qt）。
+
+    err_list_mv 为逐点误差序列（mV），limit_mv 为可配误差限（±mV）。
+    判定规则：max(|err|) <= limit_mv 即 PASS。空序列抛 ValueError。
+    """
+    if not err_list_mv:
+        raise ValueError("err_list_mv 为空，无法统计")
+    n = len(err_list_mv)
+    abs_max = max(abs(e) for e in err_list_mv)
+    avg = sum(err_list_mv) / n
+    rms = math.sqrt(sum(e * e for e in err_list_mv) / n)
+    return {
+        'max_abs_mv': abs_max,
+        'avg_mv': avg,
+        'rms_mv': rms,
+        'count': n,
+        'limit_mv': limit_mv,
+        'passed': abs_max <= limit_mv,
     }
 
 
