@@ -323,7 +323,8 @@ ui/
 │   ├── scrollbar.py             # 暗色滚动条样式 (SCROLLBAR_STYLE / SCROLL_AREA_STYLE)
 │   ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
 │   ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
-│   └── progress_button.py       # 带进度条的按钮组件
+│   ├── progress_button.py       # 带进度条的按钮组件
+│   └── config_memory.py         # 页面配置自动记忆 (ConfigMemory: bind/bind_interface/watch/restore, user_data/page_configs/)
 │
 ├── modules/                 # 可复用 UI Mixin (连接区 / 日志区等区域模块)
 │   ├── AGENTS.md                     # ui/modules 局部 AI 协作指引（就近加载）

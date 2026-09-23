@@ -17,6 +17,7 @@ from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
+from ui.widgets.config_memory import ConfigMemory
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixin
@@ -59,6 +60,35 @@ class CLKTestUI(OscilloscopeConnectionMixin, ChamberConnectionMixin, Keysight532
         self._create_layout()
         self._init_ui_elements()
         self.sync_oscilloscope_from_top()
+
+        # 上次配置自动记忆（仅回填控件值，不触发仪器连接）
+        # 注意顺序：iic_msb/lsb 须在 reg_min/max/step 前恢复——_update_reg_range
+        # 会按位宽重设 reg 范围与越界值，后恢复 reg 三件套保证最终值正确。
+        self._config_memory = ConfigMemory("pmu_test/clk", self)
+        self._config_memory.bind("test_item", self.test_item_combo)
+        self._config_memory.bind("clk_source", self.clk_source_combo)
+        self._config_memory.bind("freq_instrument", self.freq_instr_type_combo)
+        self._config_memory.bind("mso64b_channel", self.mso64b_channel_combo)
+        self._config_memory.bind("iic_device_addr", self.iic_device_addr)
+        self._config_memory.bind("iic_reg_addr", self.iic_reg_addr)
+        self._config_memory.bind("iic_width_flag", self.iic_width_flag_combo)
+        self._config_memory.bind("iic_msb", self.iic_msb)
+        self._config_memory.bind("iic_lsb", self.iic_lsb)
+        self._config_memory.bind("reg_min", self.reg_min)
+        self._config_memory.bind("reg_max", self.reg_max)
+        self._config_memory.bind("reg_step", self.reg_step)
+        self._config_memory.bind("temp_start", self.temp_start)
+        self._config_memory.bind("temp_end", self.temp_end)
+        self._config_memory.bind("temp_step", self.temp_step)
+        self._config_memory.bind("temp_soak_time", self.temp_soak_time)
+        self._config_memory.bind("temp_stable_tolerance", self.temp_stable_tolerance)
+        self._config_memory.bind("clk_sample_rate", self.clk_sample_rate)
+        self._config_memory.bind("clk_duration", self.clk_duration)
+        self._config_memory.bind("clk_chart_type", self.clk_chart_type_combo)
+        self._config_memory.bind("clk_n_cycle", self.clk_n_cycle_spin)
+        self._config_memory.bind("clk_abs_window", self.clk_abs_window_spin)
+        self._config_memory.bind("clk_ble_min_time", self.clk_ble_min_time)
+        self._config_memory.restore()
 
     # -------------------------------------------------------
     # Styles

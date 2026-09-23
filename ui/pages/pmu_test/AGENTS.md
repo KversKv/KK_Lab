@@ -23,6 +23,7 @@
 ## 局部约定
 
 - 子页统一模式：`apply_config_to_controls` 单一写入口（线程边界校验 + `_AI_HIGHLIGHT_QSS` 临时高亮）。
+- **上次配置自动记忆**（2026-09，6 子页全铺）：`__init__` 尾部接 `ConfigMemory("pmu_test/<ns>")`（ui/widgets/config_memory.py），有 get/apply 接口页走 `bind_interface` + `apply(..., silent=True)`（silent 跳过高亮与 AI 日志，默认 False 行为不变）+ `watch(self)`；clk 页无接口走逐控件 `bind`。坑：oscp 的 `get_test_config` 把 device/register 地址存成解析后 int，接口恢复丢十六进制文本格式，已用 `bind` 覆盖该两键（bind 值采集时覆盖接口 dict、恢复时在 apply 后执行）；clk 页 `iic_msb/lsb` 必须先于 `reg_min/max/step` 恢复（`_update_reg_range` 会按位宽重设 reg 范围）。容器 `PMUTestUI` 另接 `ConfigMemory("pmu_test/container")` + `bind("current_tab", self.tab_widget)` 记上次子页。
 - 通道在配置为 int、combo 文本为 "CH n"，apply 经 normalize 归一化匹配。
 - **Output Voltage 有效区间判据**（`pmu_output_voltage.py` `_compute_valid_range`，2026-09）：以相邻压差**中位数**为参考步进（抗毛刺/饱和段污染），连续 2 点跌破参考的 85%（`_VALID_STEP_RATIO`/`_VALID_STEP_CONSEC` 常量）判死区/饱和，双向剔除；软饱和缓变与平坦段同覆盖（替代旧 1mV 平坦检测）。MSB 位加权不匹配的单点跳变（如 0x80 处约 2 倍步进）是固有现象，靠"连续 N 点"保留勿当异常剔除。
 - **Output Voltage 前置校验失败 / 尾部饱和均改为用户确认弹窗**（2026-09）：不再直接中止，Worker 经统一 `confirm_request(title, message)` 信号 → UI 弹中文 QMessageBox（按钮"继续/中止"，默认+Esc=中止，`_on_confirm_request`）；Worker 用 `threading.Event` 阻塞等应答（`_wait_user_confirm`）且期间可响应 Stop。前置校验：仅问一次（`precheck_asked`），选继续时 `voltages/codes.clear()` 剔除已测异常前缀（性能指标自动排除，图表/日志保留原始数据）并重印表头+复述已测点（弹窗日志不打断 MEAS 表格，保证连续可解析），死区仍由 `_compute_valid_range` 兜底剔除；尾部饱和：选继续置 `_saturation_continue=True` 本次不再触发（保留平坦点，有效区间算法剔除），选中止则截断平台后 break。`_precheck_first_points` 原因文本为中文（嵌入弹窗）。

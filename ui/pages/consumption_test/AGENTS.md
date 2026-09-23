@@ -29,6 +29,7 @@
 - **MCU 共享会话**：本页 CH9114F / YD-RP2040 连接经 `self._instrument_manager`（MainWindow 注入）共享会话（`ch9114f:default` / `mcu_io:default`，`_mcu_target_session_id()` 解析）；`_bind_mcu_manager_signals()` 绑五信号 + `disconnect_failed`，manager 为 None 时回退本地 `_ConnectMcuWorker` 路径。跨页与 Collection / vmin_hunter / orchestrator 共享同一实例。
 - YAML 配置加载（`yaml` 可选导入，缺失降级）。
 - 结果落 `Results/` 带时间戳。
+- **ConfigMemory 自动记忆**：主页面混用（`consumption_test/main`，接口 + bind `serial_port`/`mcu_port`），高低温页绑定（`consumption_test/high_low_temp`，含 `rail_<i>_*` 序号键）。`apply_config_to_controls(cfg, silent=True)` 为恢复专用路径：chip/test_mode/control_method/mcu_type/通道卡让信号触发纯 UI 联动槽（已确认不写仪器、无模态弹窗），并在控制方式变更后补 `_update_available_channels()` 重建 PwrON/Reset 选项；silent=False（AI 路径）保持全 blockSignals 不变。
 - **高低温页外供电区**：`high_low_temp_test_ui.py` 的 External Power Supply 面板（`_add_ext_rail_row`），条目 = name/channel/voltage(V)/current_limit(A)，config 经 `ext_power={enabled, rails}` 传入 Worker；总开关 OFF 即跳过。Worker 每个温度点在 datalog 测完监测通道后逐条：先 `set_voltagemode→measure_voltage` 记 DUT 自输出电压（存 `rail_vouts` 键，独立 try），再 `set_mode(ch,"PS2Q")` 恢复供电后 `set_voltage→set_current_limit→channel_on→0.2s→measure_current→channel_off`（channel_off 在 finally），单条失败仅记日志继续；电流存 `rails` 键（曲线/summary/CSV 同步携带，Vout 仅 log/summary/CSV 不上曲线）。
 
 ## 局部坑点

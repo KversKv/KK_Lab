@@ -22,6 +22,7 @@
 ## 局部约定
 
 - 子页统一模式：`apply_config_to_controls` 单写入口 + AI 高亮。
+- **上次配置自动记忆**（2026-09，4 子页+容器）：子页 `__init__` 尾部接 `ConfigMemory("charger_test/<ns>")`（ui/widgets/config_memory.py），接口模式 `bind_interface` + `apply(..., silent=True)`（silent 跳过高亮与 AI 日志，默认 False 行为不变）+ `watch(self)`；容器 `charger_test/container` 用 `bind("current_tab", self.tab_widget)` 记 Tab。被恢复控件的槽（`_update_code_range` / `_on_test_item_changed`）均为纯 UI，无仪器写入；apply 内 msb/lsb 先于 min/max_code 恢复（`_update_code_range` 会按位宽重设 code 范围）。
 - I2C 地址为 16 进制，回填用 `_to_hex` 统一。
 - 结果落 `Results/` 带时间戳；新增子测试注册进 `TEST_TAB_MAP`。
 

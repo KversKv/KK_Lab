@@ -8,6 +8,7 @@ from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
 
 from ui.widgets.button import update_connect_button_state
+from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from ui.modules.n6705c_module_frame import build_n6705c_inline_row
 from PySide6.QtWidgets import (
@@ -99,6 +100,49 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         # §5b：登记本页无专用接口的按钮为具名 UI 动作（白名单制，handler 复用原槽）
         self._register_ai_ui_actions()
+
+        # 上次配置自动记忆（仅回填控件值，不触发仪器连接）；
+        # Batch 矩阵 / Consumption 通道卡随单双机模式动态重建，
+        # 其绑定键登记在 _dynamic_cfg_keys，重建后由 _rebind_dynamic_config_memory 重绑回填。
+        self._config_memory = ConfigMemory("n6705c/analyser", self)
+        self._dynamic_cfg_keys = []
+        self._bind_config_memory()
+        self._config_memory.restore()
+
+    def _bind_config_memory(self):
+        """绑定静态区（Setting 视图、Consumption 参数）并首次绑定动态区。"""
+        cm = self._config_memory
+        cm.bind("setting_voltage_set", self.voltage_set_input)
+        cm.bind("setting_current_limit", self.limit_current_value)
+        cm.bind("consumption_test_time_s", self.ct_test_time_input)
+        cm.bind("consumption_sample_period_us", self.ct_sample_period_input)
+        self._bind_dynamic_config_memory()
+
+    def _bind_dynamic_config_memory(self):
+        """绑定 Batch 电压/电流矩阵与 Consumption 通道勾选（控件由重建产生）。"""
+        for dev_label, inputs in self.batch_voltage_inputs.items():
+            for idx, inp in enumerate(inputs, start=1):
+                self._bind_dynamic(f"batch_{dev_label.lower()}_ch{idx}_voltage", inp)
+        for dev_label, inputs in self.batch_current_inputs.items():
+            for idx, inp in enumerate(inputs, start=1):
+                self._bind_dynamic(f"batch_{dev_label.lower()}_ch{idx}_current", inp)
+        for (dev_label, ch), card in self.ct_channel_cards.items():
+            self._bind_dynamic(f"consumption_{dev_label.lower()}_ch{ch}_enable", card["checkbox"])
+
+    def _bind_dynamic(self, key, widget):
+        self._config_memory.bind(key, widget)
+        self._dynamic_cfg_keys.append(key)
+
+    def _rebind_dynamic_config_memory(self):
+        """动态控件重建后调用：剔除指向旧控件的绑定，重新 bind 并回填上次值。"""
+        cm = getattr(self, "_config_memory", None)
+        if cm is None:
+            return
+        stale = set(self._dynamic_cfg_keys)
+        cm._bindings = [b for b in cm._bindings if b[0] not in stale]
+        self._dynamic_cfg_keys = []
+        self._bind_dynamic_config_memory()
+        cm.restore()
 
     def _register_ai_ui_actions(self):
         """§5b.5：登记本页无专用接口的按钮（Auto Set 系列）为 AI 可触发的具名 UI 动作。
@@ -224,6 +268,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._build_channel_tab_buttons()
         self._build_batch_columns()
         self._build_ct_cards()
+        # Batch/Consumption 控件已重建，配置记忆需重绑新控件并回填
+        self._rebind_dynamic_config_memory()
         self._apply_channel_theme(self.current_device, self.current_channel)
 
     def _sync_from_top(self):

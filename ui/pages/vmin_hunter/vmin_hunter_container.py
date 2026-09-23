@@ -15,6 +15,8 @@ Tab 切换由侧边栏 VminHunter 悬停子菜单驱动（同 pmu_test / charger
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtGui import QFont
 
+from ui.widgets.config_memory import ConfigMemory
+
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
 from ui.pages.vmin_hunter.vmin_single_test_ui import VminSingleTestUI
 
@@ -32,6 +34,10 @@ class VminHunterContainerUI(QWidget):
         self._instrument_manager = instrument_manager
         self.setFont(QFont("Segoe UI", 9))
         self._create_layout()
+
+        self._config_memory = ConfigMemory("vmin_hunter/container", self)
+        self._config_memory.bind("current_tab", self.tab_widget)
+        self._config_memory.restore()
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)

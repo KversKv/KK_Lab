@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTabWidget
 )
 from PySide6.QtGui import QFont
+from ui.widgets.config_memory import ConfigMemory
 from ui.pages.charger_test.config_traverse_test import ConfigTraverseTestUI
 from ui.pages.charger_test.status_register_test import StatusRegisterTestUI
 from ui.pages.charger_test.iterm_test import ItermTestUI
@@ -29,6 +30,10 @@ class ChargerTestUI(QWidget):
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
+
+        self._config_memory = ConfigMemory("charger_test/container", self)
+        self._config_memory.bind("current_tab", self.tab_widget)
+        self._config_memory.restore()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)

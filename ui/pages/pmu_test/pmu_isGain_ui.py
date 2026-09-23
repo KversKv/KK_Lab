@@ -27,6 +27,7 @@ from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
+from ui.widgets.config_memory import ConfigMemory
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
@@ -130,6 +131,15 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
         self.sync_oscilloscope_from_top()
+
+        # 上次配置自动记忆（仅回填控件值，不触发仪器连接）
+        self._config_memory = ConfigMemory("pmu_test/is_gain", self)
+        self._config_memory.bind_interface(
+            self.get_test_config,
+            lambda cfg: self.apply_config_to_controls(cfg, silent=True),
+        )
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     @staticmethod
     def _get_checkmark_path(accent_color):
@@ -1476,7 +1486,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
     # get_test_config() 输出对齐。
     # ------------------------------------------------------------------
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+    def apply_config_to_controls(self, cfg: dict, silent: bool = False) -> tuple[bool, str]:
+        """silent=True 时跳过 AI 高亮与日志（供 ConfigMemory 恢复上次配置用）。"""
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
 
@@ -1554,9 +1565,10 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
-        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
-        self._highlight_widgets(touched)
-        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        if not silent:
+            # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+            self._highlight_widgets(touched)
+            self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
 
     def _highlight_widgets(self, widgets: list) -> None:

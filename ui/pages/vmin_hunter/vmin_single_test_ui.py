@@ -27,6 +27,9 @@ logger = get_logger(__name__)
 class VminSingleTestUI(VminHunterUI):
     """单次 Vmin 测试页面：在指定 Vmin 电压点执行一次完整测试序列。"""
 
+    # ConfigMemory 命名空间独立于主探底页（键集合不同，各存一份）
+    _CONFIG_MEMORY_NS = "vmin_hunter/single"
+
     def __init__(self, n6705c_top=None, instrument_manager=None, parent=None):
         super().__init__(n6705c_top=n6705c_top,
                          instrument_manager=instrument_manager, parent=parent)
@@ -238,7 +241,8 @@ class VminSingleTestUI(VminHunterUI):
         }
         return params
 
-    def _apply_config(self, data):
+    def _apply_config(self, data, silent=False):
+        """silent=True 时不弹部分回填失败警告（供 ConfigMemory 静默恢复用）。"""
         try:
             self.test_cnt_input.setText(str(data.get("test_cnt", 1)))
             mode = data.get("test_mode", "internal")
@@ -288,4 +292,5 @@ class VminSingleTestUI(VminHunterUI):
             self._apply_channel_and_link_config(data)
         except (TypeError, ValueError):
             logger.error("Failed to apply Single Vmin Test config", exc_info=True)
-            QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")
+            if not silent:
+                QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")

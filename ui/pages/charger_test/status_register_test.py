@@ -41,6 +41,7 @@ from core.ai.page_contract import (
     CAP_STOP_TEST,
 )
 from log_config import get_logger
+from ui.widgets.config_memory import ConfigMemory
 
 _logger = get_logger(__name__)
 
@@ -449,6 +450,14 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         self._init_ui_elements()
         self._bind_signals()
         self.sync_n6705c_from_top()
+
+        self._config_memory = ConfigMemory("charger_test/status_register", self)
+        self._config_memory.bind_interface(
+            self.get_test_config,
+            lambda cfg: self.apply_config_to_controls(cfg, silent=True),
+        )
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -1121,7 +1130,8 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
     # ------------------------------------------------------------------
     # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
     # ------------------------------------------------------------------
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+    def apply_config_to_controls(self, cfg: dict, silent: bool = False) -> tuple[bool, str]:
+        """silent=True 时跳过 AI 高亮与日志（供 ConfigMemory 恢复上次配置用）。"""
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
         if threading.current_thread() is not threading.main_thread():
@@ -1229,8 +1239,9 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
-        self._highlight_widgets(touched)
-        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        if not silent:
+            self._highlight_widgets(touched)
+            self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
 
     def _highlight_widgets(self, widgets: list) -> None:

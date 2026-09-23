@@ -34,6 +34,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     SerialComMixin, MODE_FULL,
 )
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
@@ -78,6 +79,9 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
     mcu_io_connection_status_changed = Signal(bool)
 
+    # ConfigMemory 命名空间（子类覆盖以独立存一份上次配置）
+    _CONFIG_MEMORY_NS = "vmin_hunter/main"
+
     def __init__(self, n6705c_top=None, instrument_manager=None, parent=None):
         QWidget.__init__(self, parent)
         self.init_n6705c_connection(
@@ -101,6 +105,15 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self._bind_signals()
 
         self.sync_n6705c_from_top()
+
+        # 上次配置自动记忆：UI 构建完成后静默回填（仅控件值，不触发连接）
+        self._config_memory = ConfigMemory(self._CONFIG_MEMORY_NS, self)
+        self._config_memory.bind_interface(
+            self._collect_config,
+            lambda cfg: self._apply_config(cfg, silent=True),
+        )
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     # ------------------------------------------------------------------
     # 样式
@@ -1543,6 +1556,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             "normal_lsb": group["normal_lsb"].text().strip(),
         }
 
+    def _collect_config(self):
+        """ConfigMemory 采集入口：输入暂无效（编辑中途）时返回空 dict 跳过本次保存。"""
+        try:
+            return self._read_params()
+        except ValueError:
+            return {}
+
     def _export_config(self):
         try:
             params = self._read_params()
@@ -1579,7 +1599,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self._apply_config(data)
         self.execution_logs.append_log(f"[INFO] Config imported: {path}")
 
-    def _apply_config(self, data):
+    def _apply_config(self, data, silent=False):
+        """silent=True 时不弹部分回填失败警告（供 ConfigMemory 静默恢复用）。"""
         try:
             self.test_cnt_input.setText(str(data.get("test_cnt", 1)))
             mode = data.get("test_mode", "external")
@@ -1643,7 +1664,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             self._apply_channel_and_link_config(data)
         except (TypeError, ValueError):
             logger.error("Failed to apply VminHunter config", exc_info=True)
-            QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")
+            if not silent:
+                QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")
 
     def _apply_channel_and_link_config(self, data):
         ch_cfg = data.get("channel_config", {})

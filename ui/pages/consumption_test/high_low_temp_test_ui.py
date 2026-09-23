@@ -38,6 +38,7 @@ _PAGE_SVGS_DIR = os.path.join(
 
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.config_memory import ConfigMemory
 
 
 class _ToggleSwitch(QWidget):
@@ -386,6 +387,22 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self._init_ui_elements()
         self._bind_signals()
         self.sync_n6705c_from_top()
+
+        # 上次配置自动记忆（绑定模式，仅恢复控件值，不触发仪器连接）
+        self._config_memory = ConfigMemory("consumption_test/high_low_temp", self)
+        self._config_memory.bind("temp_start", self.temp_start)
+        self._config_memory.bind("temp_end", self.temp_end)
+        self._config_memory.bind("temp_step", self.temp_step)
+        self._config_memory.bind("soak_time", self.soak_time)
+        self._config_memory.bind("stable_tolerance", self.stable_tolerance)
+        self._config_memory.bind("test_time", self.test_time)
+        self._config_memory.bind("sample_period", self.sample_period)
+        for i, row in enumerate(self._ext_rail_rows):
+            self._config_memory.bind(f"rail_{i}_name", row["name_edit"])
+            self._config_memory.bind(f"rail_{i}_channel", row["ch_combo"])
+            self._config_memory.bind(f"rail_{i}_voltage", row["volt_spin"])
+            self._config_memory.bind(f"rail_{i}_limit", row["limit_spin"])
+        self._config_memory.restore()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)

@@ -54,6 +54,7 @@ a = Analysis(
         'ui',
         'ui.widgets',
         'ui.widgets.button',
+        'ui.widgets.config_memory',
         'ui.widgets.dark_combobox',
         'ui.styles',
         'ui.modules',

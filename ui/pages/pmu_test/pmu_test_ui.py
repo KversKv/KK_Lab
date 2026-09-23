@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from ui.widgets.config_memory import ConfigMemory
 from ui.pages.pmu_test.pmu_dcdc_efficiency import PMUDCDCEfficiencyUI
 from ui.pages.pmu_test.pmu_output_voltage import PMUOutputVoltageUI
 from log_config import get_logger
@@ -44,6 +45,10 @@ class PMUTestUI(QWidget):
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
+
+        self._config_memory = ConfigMemory("pmu_test/container", self)
+        self._config_memory.bind("current_tab", self.tab_widget)
+        self._config_memory.restore()
 
     def _setup_style(self):
         """设置界面样式"""

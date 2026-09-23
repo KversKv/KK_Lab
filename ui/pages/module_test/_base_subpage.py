@@ -39,6 +39,7 @@ from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
 from ui.pages.module_test.dialogs.saved_results_dialog import SavedResultsDialog
 from ui.theme import apply_qss
 from ui.widgets.banner import InfoBanner
+from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.run_control_bar import RunControlBar, RunState
 from ui.widgets.toast import Toast
 
@@ -104,6 +105,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.test_plan.set_scope_connected(bool(self.scope_connected))
         self._register_ai_ui_actions()
         self._apply_run_state(RunState.IDLE)
+        # 上次配置自动记忆：静默回填（不动命名配置路径 / 首次引导横幅）；
+        # 用户之后显式选择命名配置会覆盖本次恢复（命名配置胜出）
+        self._config_memory = ConfigMemory(f"module_test/{self.MODULE_TYPE}", self)
+        self._config_memory.bind_interface(self.get_test_config, self._store.restore)
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     # ================================================================== UI 装配
     def _build_ui(self) -> None:

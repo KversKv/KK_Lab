@@ -65,6 +65,7 @@ from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
 from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
+from ui.widgets.config_memory import ConfigMemory
 
 logger = get_logger(__name__)
 
@@ -1252,6 +1253,9 @@ class N6705CDatalogUI(QWidget):
         self.crosshair_dots = []
 
         self.type_current = QRadioButton()
+        # 独立隐藏状态位：须关闭 autoExclusive，否则 QRadioButton 的
+        # setChecked(False) 无效，配置记忆无法还原 False（电压类型）。
+        self.type_current.setAutoExclusive(False)
         self.type_current.setChecked(True)
         self.type_current.hide()
 
@@ -1290,6 +1294,23 @@ class N6705CDatalogUI(QWidget):
             self._toggle_instrument_panel(True)
         # §5b：登记本页无专用接口的按钮（Auto Fit / 导出 / 导入）为具名 UI 动作
         self._register_ai_ui_actions()
+
+        # 上次测试配置自动记忆（仅回填控件值，不触发仪器连接）；
+        # 4ch/8ch 为互斥组且默认 4ch，只 bind mode_8ch 即可双向还原；
+        # Select All 勾选为派生状态，不单独持久化。
+        self._config_memory = ConfigMemory("n6705c/datalog", self)
+        self._config_memory.bind("mode_8ch", self.mode_8ch)
+        self._config_memory.bind("type_current", self.type_current)
+        self._config_memory.bind("min_period", self.min_period_cb)
+        self._config_memory.bind("meas_minimum", self.meas_minimum_cb)
+        self._config_memory.bind("meas_average", self.meas_average_cb)
+        self._config_memory.bind("meas_maximum", self.meas_maximum_cb)
+        self._config_memory.bind("meas_peak2peak", self.meas_peak2peak_cb)
+        self._config_memory.bind("meas_charge_ah", self.meas_charge_ah_cb)
+        self._config_memory.bind("meas_charge_c", self.meas_charge_c_cb)
+        self._config_memory.bind("label_time", self.label_time_edit)
+        self._config_memory.bind("label_text", self.label_text_edit)
+        self._config_memory.restore()
 
     def _register_ai_ui_actions(self):
         """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。

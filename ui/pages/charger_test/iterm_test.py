@@ -42,6 +42,7 @@ from core.ai.page_contract import (
     CAP_STOP_TEST,
 )
 from core.ai.ui_action_registry import UIActionSpec
+from ui.widgets.config_memory import ConfigMemory
 
 logger = get_logger(__name__)
 
@@ -603,6 +604,14 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         self._bind_signals()
         self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
+
+        self._config_memory = ConfigMemory("charger_test/iterm", self)
+        self._config_memory.bind_interface(
+            self.get_test_config,
+            lambda cfg: self.apply_config_to_controls(cfg, silent=True),
+        )
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     def _register_ai_ui_actions(self):
         """§5b.5：登记本页导出按钮为 AI 可触发的具名 UI 动作（handler 复用原槽）。"""
@@ -1634,7 +1643,8 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
     # ------------------------------------------------------------------
     # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
     # ------------------------------------------------------------------
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+    def apply_config_to_controls(self, cfg: dict, silent: bool = False) -> tuple[bool, str]:
+        """silent=True 时跳过 AI 高亮与日志（供 ConfigMemory 恢复上次配置用）。"""
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
         if threading.current_thread() is not threading.main_thread():
@@ -1723,8 +1733,9 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
-        self._highlight_widgets(touched)
-        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        if not silent:
+            self._highlight_widgets(touched)
+            self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
 
     def _highlight_widgets(self, widgets: list) -> None:

@@ -44,6 +44,7 @@ from core.ai.page_contract import (
     CAP_STOP_TEST,
 )
 from core.ai.ui_action_registry import UIActionSpec
+from ui.widgets.config_memory import ConfigMemory
 from log_config import get_logger
 
 _logger = get_logger(__name__)
@@ -302,6 +303,14 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self._bind_signals()
         self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
+
+        self._config_memory = ConfigMemory("pmu_test/dcdc_efficiency", self)
+        self._config_memory.bind_interface(
+            self.get_test_config,
+            lambda cfg: self.apply_config_to_controls(cfg, silent=True),
+        )
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -1810,7 +1819,8 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
     # get_test_config() 输出对齐；电流字段兼容 *_ma（毫安）别名。
     # ------------------------------------------------------------------
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+    def apply_config_to_controls(self, cfg: dict, silent: bool = False) -> tuple[bool, str]:
+        """silent=True 时跳过 AI 高亮与日志（供 ConfigMemory 恢复上次配置用）。"""
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
 
@@ -1960,9 +1970,10 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
-        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
-        self._highlight_widgets(touched)
-        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        if not silent:
+            # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+            self._highlight_widgets(touched)
+            self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
 
     def _highlight_widgets(self, widgets: list) -> None:

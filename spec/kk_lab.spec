@@ -153,6 +153,7 @@ a = Analysis(
         'ui.widgets.button',
         'ui.widgets.progress_button',
         'ui.widgets.start_sequence',
+        'ui.widgets.config_memory',
         'ui.dialogs',
         'ui.styles',
         'ui.modules',

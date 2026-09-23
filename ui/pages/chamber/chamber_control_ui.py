@@ -19,6 +19,7 @@ from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.wheel_line_edit import WheelLineEdit
 from ui.widgets.button import update_connect_button_state
 from ui.widgets.instrument_state_poller import InstrumentStatePoller
@@ -214,6 +215,20 @@ class ChamberControlUI(QWidget):
         # 允许窗口缩到比内容更小：超出部分由外层滚动区接管，
         # 打断内层 content_widget 最小尺寸向顶层窗口的传导。
         self.setMinimumSize(520, 420)
+
+        # 上次配置自动记忆（仅回填控件值，不触发仪器连接）；
+        # chamber_type 必须先于 port 绑定：恢复型号会触发端口重扫清空 port_combo，
+        # 后恢复的 port 才能把上次端口文本补回。
+        self._config_memory = ConfigMemory("chamber/control", self)
+        self._config_memory.bind("chamber_type", self.chamber_type_combo)
+        self._config_memory.bind("port", self.port_combo)
+        self._config_memory.bind("target_temp_c", self.temp_input)
+        self._config_memory.bind("loop_sequence", self.loop_sequence_input)
+        self._config_memory.bind("loop_forever", self.loop_forever_check)
+        self._config_memory.bind("loop_dwell_min", self.loop_dwell_input)
+        self._config_memory.bind("loop_tolerance_c", self.loop_tolerance_input)
+        self._config_memory.bind("loop_cycles", self.loop_cycles_input)
+        self._config_memory.restore()
 
     LARGE_BREAKPOINT = 1200
     SMALL_BREAKPOINT = 900

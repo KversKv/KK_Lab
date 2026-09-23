@@ -15,6 +15,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon, QPalette
 from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.wheel_line_edit import WheelLineEdit, UnitWheelLineEdit
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
@@ -221,6 +222,16 @@ class OscilloscopeBaseUI(QWidget):
             self._instrument_manager.session_disconnected.connect(self._on_manager_session_disconnected)
             self._instrument_manager.disconnect_failed.connect(self._on_manager_disconnect_failed)
             self._on_manager_sessions_changed()
+
+        self._config_memory = ConfigMemory("oscilloscope/base", self)
+        self._config_memory.bind("visa_resource", self.visa_resource_combo)
+        self._config_memory.bind("meas_type", self.meas_type_combo)
+        self._config_memory.bind("meas_source", self.meas_source_combo)
+        self._config_memory.bind("trigger_source", self.trigger_source_combo)
+        self._config_memory.bind("trigger_slope", self.trigger_slope_combo)
+        self._config_memory.bind("trigger_level_v", self.trigger_level_edit)
+        self._config_memory.bind("quick_channel", self.quick_channel_combo)
+        self._config_memory.restore()
 
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)

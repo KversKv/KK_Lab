@@ -29,6 +29,7 @@ from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import svg_pixmap
 
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.widgets.config_memory import ConfigMemory
 from ui.pages.pmu.pmu_1811.constants import (
     COL_CANVAS_BG, COL_PANEL_BG, COL_CARD_BG, COL_BORDER, COL_BORDER_HOVER, COL_EMERALD,
     COL_EMERALD_SOFT, COL_TEXT, COL_TEXT_MUTED, FONT_MONO,
@@ -174,6 +175,44 @@ class Pmu1811UI(QWidget):
 
         # Check 失败时的"禁止使用"遮罩 (覆盖画布+属性面板, 阻止交互)
         self._blocked_overlay = None
+
+        # 上次配置自动记忆：恢复各模块期望状态 (enabled/mode/voltage)，
+        # 纯本地覆盖默认模型, 绝不触发 I2C 写入；首次 Check 重读硬件会再覆盖
+        self._config_memory = ConfigMemory("pmu/1811", self)
+        self._config_memory.bind_interface(
+            self._collect_module_states, self._apply_module_states)
+        self._config_memory.restore()
+
+    # ---- 模块期望状态的记忆 (ConfigMemory) ----
+    def _collect_module_states(self) -> dict:
+        """采集各模块期望状态 (enabled/mode/voltage) 供落盘。"""
+        return {
+            mod_id: {
+                "enabled": bool(mod.enabled),
+                "mode": mod.mode,
+                "voltage": mod.voltage,
+            }
+            for mod_id, mod in self._modules.items()
+        }
+
+    def _apply_module_states(self, cfg: dict):
+        """静默回填各模块期望状态：仅写本地模型并刷新卡片, 不触碰硬件。"""
+        for mod_id, state in cfg.items():
+            mod = self._modules.get(mod_id)
+            if mod is None or not isinstance(state, dict):
+                continue
+            if "enabled" in state:
+                mod.enabled = bool(state["enabled"])
+            mode = state.get("mode")
+            if mode in mod.modes:
+                mod.mode = mode
+            voltage = state.get("voltage")
+            if voltage is not None:
+                try:
+                    mod.voltage = float(voltage)
+                except (TypeError, ValueError):
+                    pass
+            self.canvas.refresh_card(mod_id)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -436,6 +475,7 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel.load(mod)
+        self._config_memory.save_now()
 
     # ---- 选择 ----
     def _on_select(self, mod_id: str):
@@ -458,6 +498,7 @@ class Pmu1811UI(QWidget):
         if mod_id == self._selected_id:
             self.panel.load(self._modules[mod_id])
         self._start_write(mod_id, "voltage", v)
+        self._config_memory.save_now()
 
     def _on_card_enable(self, mod_id: str):
         """SW 卡片内开关拨动: 同步属性面板并写入 DUT (闭合/开路)。"""
@@ -465,20 +506,24 @@ class Pmu1811UI(QWidget):
         if mod_id == self._selected_id:
             self.panel.load(mod)
         self._start_enable_write(mod_id, mod.enabled)
+        self._config_memory.save_now()
 
     def _on_panel_enable(self, mod_id: str, enabled: bool):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel._refresh_i2c()
         self._start_enable_write(mod_id, enabled)
+        self._config_memory.save_now()
 
     def _on_panel_mode(self, mod_id: str, mode: str):
         self.canvas.refresh_card(mod_id)
         self._start_write(mod_id, "mode", mode)
+        self._config_memory.save_now()
 
     def _on_panel_voltage(self, mod_id: str, v: float):
         self.canvas.refresh_card(mod_id)
         self._start_write(mod_id, "voltage", v)
+        self._config_memory.save_now()
 
     def _on_panel_voltage_dsleep(self, mod_id: str, v: float):
         # dsleep / rc 电压不影响卡片显示 (卡片只显示 normal), 仅写入 DUT
@@ -494,6 +539,7 @@ class Pmu1811UI(QWidget):
         if mod_id == self._selected_id:
             self.panel.load(mod)
         self._start_enable_write(mod_id, mod.enabled)
+        self._config_memory.save_now()
 
     def _on_menu_mode(self, mod_id: str, mode: str):
         mod = self._modules[mod_id]
@@ -502,6 +548,7 @@ class Pmu1811UI(QWidget):
         if mod_id == self._selected_id:
             self.panel.load(mod)
         self._start_write(mod_id, "mode", mode)
+        self._config_memory.save_now()
 
 
 # ---------------------------------------------------------------------------

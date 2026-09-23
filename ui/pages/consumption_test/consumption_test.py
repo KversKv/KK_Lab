@@ -44,6 +44,7 @@ from lib.download_tools.download_script import download_bin, DownloadMode, Downl
 from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS, get_chip_config
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
+from ui.widgets.config_memory import ConfigMemory
 from log_config import get_logger
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY, FONT_MONO
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
@@ -357,6 +358,18 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
         # §5b：登记本页无专用接口的按钮为具名 UI 动作（白名单制，handler 复用原槽）
         self._register_ai_ui_actions()
+
+        # 上次配置自动记忆：接口模式（get/apply 单一写入口）+ bind 补充接口
+        # 未覆盖的页面级配置（DUT 串口 / MCU 端口下拉，仅恢复显示，绝不触发连接）
+        self._config_memory = ConfigMemory("consumption_test/main", self)
+        self._config_memory.bind_interface(
+            self.get_test_config,
+            lambda cfg: self.apply_config_to_controls(cfg, silent=True),
+        )
+        self._config_memory.bind("serial_port", self.serial_combo)
+        self._config_memory.bind("mcu_port", self.mcu_port_combo)
+        self._config_memory.watch(self)
+        self._config_memory.restore()
 
     def _register_ai_ui_actions(self):
         """§5b.5：登记本页按钮为 AI 可触发的具名 UI 动作（白名单制）。
@@ -3396,7 +3409,10 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
     # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
     # get_test_config() 输出对齐。
     # ------------------------------------------------------------------
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+    def apply_config_to_controls(self, cfg: dict, silent: bool = False) -> tuple[bool, str]:
+        """silent=True 供 ConfigMemory 恢复上次配置：依赖联动的控件让信号正常
+        触发（芯片联动加载 rail YAML、测试模式/控制方式/MCU 类型纯 UI 刷新，
+        均已确认不写仪器、不弹模态对话框）；silent=False（AI 路径）行为不变。"""
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
 
@@ -3436,20 +3452,22 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 combo.blockSignals(False)
                 applied.append(key)
 
-        def _set_combo_data(combo, key):
+        def _set_combo_data(combo, key, live=False):
             val = cfg.get(key)
             if val is None or combo is None:
                 return
             for i in range(combo.count()):
                 if combo.itemData(i) == val:
                     if combo.currentIndex() != i:
-                        combo.blockSignals(True)
+                        if not live:
+                            combo.blockSignals(True)
                         combo.setCurrentIndex(i)
-                        combo.blockSignals(False)
+                        if not live:
+                            combo.blockSignals(False)
                         applied.append(key)
                     return
 
-        def _set_toggle(toggle, key):
+        def _set_toggle(toggle, key, live=False):
             val = cfg.get(key)
             if val is None or toggle is None:
                 return
@@ -3458,19 +3476,41 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             except Exception:  # noqa: BLE001
                 return
             if cur != val:
-                toggle.blockSignals(True)
+                if not live:
+                    toggle.blockSignals(True)
                 toggle.setValue(val)
-                toggle.blockSignals(False)
+                if not live:
+                    toggle.blockSignals(False)
                 applied.append(key)
 
-        # 1. chip_name → chip_combo（触发 _on_chip_selected 自动加载 rail YAML）
-        _set_combo_text(getattr(self, "chip_combo", None), "chip_name")
+        # 1. chip_name → chip_combo
+        # silent（ConfigMemory 恢复）时不屏蔽信号，让 _on_chip_selected 联动
+        # 加载 rail YAML 并同步 selected_chip_config（纯文件读 + 页面日志，
+        # 无模态对话框）；AI 路径保持屏蔽，行为不变
+        chip_combo = getattr(self, "chip_combo", None)
+        chip_name = cfg.get("chip_name")
+        if chip_name is not None and chip_combo is not None:
+            chip_idx = chip_combo.findText(str(chip_name))
+            if chip_idx >= 0 and chip_combo.currentIndex() != chip_idx:
+                if not silent:
+                    chip_combo.blockSignals(True)
+                chip_combo.setCurrentIndex(chip_idx)
+                if not silent:
+                    chip_combo.blockSignals(False)
+                applied.append("chip_name")
 
         # 2. 测试模式 / 控制方式 / 下载模式 / MCU 类型
-        _set_toggle(getattr(self, "test_mode_toggle", None), "test_mode")
-        _set_toggle(getattr(self, "control_method_toggle", None), "control_method")
+        # silent 时 test_mode / control_method / mcu_type 让信号正常触发：
+        # 其槽均为纯 UI 刷新（_test_mode 同步、通道选项重建、MCU 行显隐），
+        # 是恢复后页面状态自洽的前提；download_mode 无槽，保持屏蔽
+        _set_toggle(getattr(self, "test_mode_toggle", None), "test_mode", live=silent)
+        _set_toggle(getattr(self, "control_method_toggle", None), "control_method", live=silent)
         _set_toggle(getattr(self, "download_mode_toggle", None), "download_mode")
-        _set_combo_data(getattr(self, "mcu_type_combo", None), "mcu_type")
+        _set_combo_data(getattr(self, "mcu_type_combo", None), "mcu_type", live=silent)
+        if silent:
+            # 控制方式为 N6705C 时联动槽不会重建 PwrON/Reset 通道选项，
+            # 统一重建一次（内部自带 blockSignals），保证第 4 步 findText 命中
+            self._update_available_channels()
 
         # 3. 数值输入
         _set_line_edit(getattr(self, "test_time_input", None), "test_time_s", cast_fn=float)
@@ -3512,25 +3552,35 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                     if name_combo is not None:
                         i = name_combo.findText(str(name))
                         if i >= 0 and name_combo.currentIndex() != i:
-                            name_combo.blockSignals(True)
+                            # silent 时让 _on_config_name_changed 触发（纯 UI 同步：
+                            # 字典回写 + Vbat 简化布局 + 结果卡刷新）
+                            if not silent:
+                                name_combo.blockSignals(True)
                             name_combo.setCurrentIndex(i)
-                            name_combo.blockSignals(False)
+                            if not silent:
+                                name_combo.blockSignals(False)
                 channel = src.get("channel")
                 if channel is not None:
                     ch_combo = wdata.get("channel_combo")
                     if ch_combo is not None:
                         i = ch_combo.findText(str(channel))
                         if i >= 0 and ch_combo.currentIndex() != i:
-                            ch_combo.blockSignals(True)
+                            if not silent:
+                                ch_combo.blockSignals(True)
                             ch_combo.setCurrentIndex(i)
-                            ch_combo.blockSignals(False)
+                            if not silent:
+                                ch_combo.blockSignals(False)
                 enabled = src.get("enabled")
                 if enabled is not None:
                     enable_cb = wdata.get("enable_cb")
                     if enable_cb is not None and enable_cb.isChecked() != bool(enabled):
-                        enable_cb.blockSignals(True)
+                        # silent 时让 _on_config_enable_changed 触发（纯 UI 同步：
+                        # 卡片禁用态 + 结果卡刷新）
+                        if not silent:
+                            enable_cb.blockSignals(True)
                         enable_cb.setChecked(bool(enabled))
-                        enable_cb.blockSignals(False)
+                        if not silent:
+                            enable_cb.blockSignals(False)
                 # 同步 dst dict（与 _on_config_*_changed 槽保持一致的字段集）
                 if name is not None:
                     dst["name"] = str(name)
