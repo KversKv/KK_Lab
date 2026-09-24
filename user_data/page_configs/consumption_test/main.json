@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "config": {
+    "n6705c_a_connected": true,
+    "n6705c_b_connected": false,
+    "mcu_connected": true,
+    "serial_port": "COM4 - USB Serial Port (COM4)",
+    "selected_chip_config": null,
+    "is_testing": false,
+    "chip_name": "",
+    "test_mode": "high_voltage",
+    "test_time_s": 5.0,
+    "stable_delay_s": 4.0,
+    "download_baudrate": 921600,
+    "download_mode": "flash",
+    "control_method": "MCU",
+    "mcu_type": "ch9114f",
+    "poweron_channel": "GPIO0",
+    "poweron_polarity": "rising",
+    "reset_enabled": false,
+    "reset_channel": "",
+    "reset_polarity": "rising",
+    "firmware_paths": [
+      "D:/BINs/1310/BringUp/GBB/best1310_ibrt_blethroughput_test.bin"
+    ],
+    "channel_configs": [
+      {
+        "name": "Vbat",
+        "channel": "A-CH1",
+        "enabled": true,
+        "force_mode": "auto",
+        "force_value": "",
+        "boost_mode": "constant",
+        "boost_value": "0.02"
+      },
+      {
+        "name": "Vcore",
+        "channel": "A-CH2",
+        "enabled": true,
+        "force_mode": "auto",
+        "force_value": "",
+        "boost_mode": "constant",
+        "boost_value": "0.02"
+      },
+      {
+        "name": "VANA",
+        "channel": "A-CH3",
+        "enabled": true,
+        "force_mode": "auto",
+        "force_value": "",
+        "boost_mode": "constant",
+        "boost_value": "0.02"
+      },
+      {
+        "name": "VHPPA",
+        "channel": "A-CH4",
+        "enabled": true,
+        "force_mode": "auto",
+        "force_value": "",
+        "boost_mode": "constant",
+        "boost_value": "0.02"
+      }
+    ],
+    "firmware_path": "D:/BINs/1310/BringUp/GBB/best1310_ibrt_blethroughput_test.bin",
+    "config_content": "",
+    "selected_chip": null,
+    "channel_configs_legacy": [
+      "A-CH1",
+      "A-CH2",
+      "A-CH3",
+      "A-CH4"
+    ],
+    "mcu_port": "COM42"
+  }
+}

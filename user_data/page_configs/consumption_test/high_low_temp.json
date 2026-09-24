@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "config": {
+    "temp_start": -40.0,
+    "temp_end": 85.0,
+    "temp_step": 5.0,
+    "soak_time": 180,
+    "stable_tolerance": 0.5,
+    "test_time": 5.0,
+    "sample_period": 20.0,
+    "rail_0_name": "Vcore",
+    "rail_0_channel": "CH4",
+    "rail_0_voltage": 0.82,
+    "rail_0_limit": 0.05
+  }
+}
