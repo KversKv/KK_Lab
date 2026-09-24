@@ -497,6 +497,7 @@ lib/
 │   └── readme.txt           # 下载工具使用说明
 │
 └── i2c/                     # I2C 通信相关模块
+    ├── AGENTS.md                # lib/i2c 局部 AI 协作指引（就近加载）
     ├── Bes_I2CIO_Interface.py   # BES I2C IO 接口封装 (支持 CH341/USBIO 适配器,
     │                            # 含速度模式/位宽/状态码枚举定义)
     ├── i2c_interface_x64.py     # I2C 接口高层封装，提供简洁的读写 API
@@ -509,7 +510,8 @@ lib/
         ├── BES_USBIO_I2C_X64.dll   # BES USB-IO I2C 通信 DLL (64位)
         ├── CH341DLLA64.dll          # CH341 USB 桥接芯片 DLL (64位)
         └── EFUSE_SCRIPTS/           # EFuse 烧录脚本目录
-            └── efuse_1503p.py       # 1503P 芯片 eFuse 烧录脚本
+            └── efuse_<chip>.py      # 各芯片 eFuse 烧录脚本
+                                     # (1307ph / 1310A / 1503p / 1505A / 1701)
 
 ================================================================================
   resources/ - 静态资源
