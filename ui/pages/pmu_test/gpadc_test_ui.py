@@ -3684,11 +3684,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._append_log("[ERROR] FT 校准点需为有限数值")
             self.set_system_status("错误: FT 校准点格式无效", is_error=True)
             return None
-        # 校准码表达式求值后回填归一化十进制文本（如 0x13F+2000 → 2319）
-        for edit, value in ((self.ft_calib_c1, c1), (self.ft_calib_c2, c2)):
-            normalized = str(int(value)) if float(value).is_integer() else str(value)
-            if edit.text().strip() != normalized:
-                edit.setText(normalized)
         if v1 == v2 or c1 == c2:
             self._append_log("[ERROR] FT 两校准点的电压或校准码相同，K/B 不可解")
             self.set_system_status("错误: FT 校准点退化", is_error=True)
