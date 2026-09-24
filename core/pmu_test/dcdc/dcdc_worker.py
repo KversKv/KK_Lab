@@ -256,7 +256,7 @@ class DCDCEfficiencyTestThread(QThread):
             n.set_mode(iload_ch, "CCLoad")
             self.log_message.emit(f"[TEST] CH{vin_ch}=PS2Q, CH{vout_ch}=VMETer, CH{iload_ch}=CCLoad")
 
-            n.set_current_limit(vin_ch, 0.5)
+            n.set_current_limit(vin_ch, float(cfg.get("vin_current_limit_a", 0.5)))
             for ch in (vin_ch, vout_ch, iload_ch):
                 n.set_channel_range(ch)
 
@@ -358,7 +358,7 @@ class DCDCVinSweepTestThread(QThread):
             n.set_mode(vout_ch, "VMETer")
             n.set_mode(iload_ch, "CCLoad")
 
-            n.set_current_limit(vin_ch, 0.5)
+            n.set_current_limit(vin_ch, float(cfg.get("vin_current_limit_a", 0.5)))
             for ch in (vin_ch, vout_ch, iload_ch):
                 n.set_channel_range(ch)
 
@@ -507,7 +507,7 @@ class DCDCTempSweepTestThread(QThread):
             n.set_mode(vout_ch, "VMETer")
             n.set_mode(iload_ch, "CCLoad")
 
-            n.set_current_limit(vin_ch, 0.5)
+            n.set_current_limit(vin_ch, float(cfg.get("vin_current_limit_a", 0.5)))
             for ch in (vin_ch, vout_ch, iload_ch):
                 n.set_channel_range(ch)
 

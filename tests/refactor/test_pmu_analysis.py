@@ -85,6 +85,65 @@ def test_dcdc_generate_current_points_log():
     assert pts[-1] <= 0.1
 
 
+def test_dcdc_generate_current_points_log_includes_end():
+    cfg = {
+        "start_current_a": 0.001,
+        "end_current_a": 3.0,
+        "sweep_mode": "Log",
+        "points_per_dec": 5,
+    }
+    pts = da.generate_current_points(cfg)
+    assert pts[-1] == 3.0
+    assert len([p for p in pts if abs(p - 3.0) < 1e-9]) == 1
+
+
+def test_dcdc_generate_current_points_log_end_on_grid_not_duplicated():
+    cfg = {
+        "start_current_a": 0.001,
+        "end_current_a": 0.1,
+        "sweep_mode": "Log",
+        "points_per_dec": 3,
+    }
+    pts = da.generate_current_points(cfg)
+    assert abs(pts[-1] - 0.1) < 1e-12
+    assert len([p for p in pts if abs(p - 0.1) < 1e-9]) == 1
+
+
+def test_dcdc_generate_current_points_linear_includes_end():
+    cfg = {
+        "start_current_a": 0.001,
+        "end_current_a": 3.0,
+        "sweep_mode": "Linear",
+        "step_current_a": 0.5,
+    }
+    pts = da.generate_current_points(cfg)
+    assert pts[-1] == 3.0
+    assert pts == sorted(pts)
+    assert len([p for p in pts if abs(p - 3.0) < 1e-9]) == 1
+
+
+def test_dcdc_generate_current_points_custom():
+    cfg = {
+        "start_current_a": 0.001,
+        "end_current_a": 3.0,
+        "sweep_mode": "Custom",
+        "custom_points": [0.5, 0.1, 0.5, 0.0, -1.0],
+    }
+    pts = da.generate_current_points(cfg)
+    assert pts == [0.1, 0.5, 1.0]
+
+
+def test_dcdc_generate_current_points_custom_empty_fallback():
+    cfg = {
+        "start_current_a": 0.001,
+        "end_current_a": 0.2,
+        "sweep_mode": "Custom",
+        "custom_points": [],
+    }
+    pts = da.generate_current_points(cfg)
+    assert pts == [0.001, 0.2]
+
+
 def test_dcdc_trimmed_mean():
     assert da.trimmed_mean([1.0, 2, 3, 4, 5, 6, 7, 8, 9.0]) == 5.0
 

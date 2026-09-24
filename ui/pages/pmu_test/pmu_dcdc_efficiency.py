@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QLabel, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
     QSizePolicy, QButtonGroup, QFileDialog, QProgressBar,
     QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsSimpleTextItem,
-    QScrollArea
+    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
@@ -26,7 +26,7 @@ from PySide6.QtGui import QFont, QCursor
 import time
 
 from instruments.power.keysight.n6705c import N6705C
-from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state, get_table_qss
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
@@ -800,15 +800,18 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
         self.linear_mode_btn = SegmentedButton("Linear")
         self.log_mode_btn = SegmentedButton("Log")
+        self.custom_mode_btn = SegmentedButton("Custom")
         self.linear_mode_btn.setChecked(True)
 
         self.sweep_mode_group = QButtonGroup(self)
         self.sweep_mode_group.setExclusive(True)
         self.sweep_mode_group.addButton(self.linear_mode_btn)
         self.sweep_mode_group.addButton(self.log_mode_btn)
+        self.sweep_mode_group.addButton(self.custom_mode_btn)
 
         seg_layout.addWidget(self.linear_mode_btn)
         seg_layout.addWidget(self.log_mode_btn)
+        seg_layout.addWidget(self.custom_mode_btn)
 
         self.test_config_card.title_row.addWidget(self.seg_container)
 
@@ -873,6 +876,40 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         grid.addWidget(self.average_cnt_spin, 5, 0, 1, 2)
 
         layout.addLayout(grid)
+
+        # Custom 模式的自定义测试点编辑区（表格 QSS 挂容器，避免 AI 高亮
+        # 清空表格本地 stylesheet 时把表格样式一并抹掉）
+        self.custom_points_container = QFrame()
+        self.custom_points_container.setStyleSheet(get_table_qss())
+        custom_layout = QVBoxLayout(self.custom_points_container)
+        custom_layout.setContentsMargins(0, 0, 0, 0)
+        custom_layout.setSpacing(6)
+
+        self.lbl_custom_points = QLabel("Custom Points (mA)")
+        self.lbl_custom_points.setObjectName("fieldLabel")
+        custom_layout.addWidget(self.lbl_custom_points)
+
+        self.custom_points_table = QTableWidget(0, 1)
+        self.custom_points_table.setHorizontalHeaderLabels(["Current (mA)"])
+        self.custom_points_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.custom_points_table.verticalHeader().setVisible(False)
+        self.custom_points_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.custom_points_table.setMaximumHeight(170)
+        custom_layout.addWidget(self.custom_points_table)
+
+        custom_btn_row = QHBoxLayout()
+        custom_btn_row.setSpacing(6)
+        self.custom_point_add_btn = QPushButton("Add")
+        self.custom_point_add_btn.setObjectName("smallActionBtn")
+        self.custom_point_remove_btn = QPushButton("Remove")
+        self.custom_point_remove_btn.setObjectName("smallActionBtn")
+        custom_btn_row.addWidget(self.custom_point_add_btn)
+        custom_btn_row.addWidget(self.custom_point_remove_btn)
+        custom_layout.addLayout(custom_btn_row)
+
+        self._set_custom_points_ma([10, 100, 1000])
+
+        layout.addWidget(self.custom_points_container)
 
         self._on_sweep_mode_changed()
 
@@ -1041,6 +1078,17 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self.cc_load_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
         self.cc_load_channel_combo.setCurrentIndex(2)
 
+        self.vin_current_limit_label = QLabel("VIN Current Limit (A)")
+        self.vin_current_limit_label.setObjectName("fieldLabel")
+        self.vin_current_limit_spin = QDoubleSpinBox()
+        self.vin_current_limit_spin.setRange(0.001, 10.0)
+        self.vin_current_limit_spin.setDecimals(3)
+        self.vin_current_limit_spin.setSingleStep(0.1)
+        self.vin_current_limit_spin.setValue(0.5)
+        self.vin_current_limit_spin.setToolTip(
+            "Current limit of the VIN source channel (PS2Q mode)."
+        )
+
         grid.addWidget(self.vin_channel_label, 0, 0)
         grid.addWidget(self.vin_channel_combo, 0, 1)
 
@@ -1050,19 +1098,68 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         grid.addWidget(self.cc_load_channel_label, 2, 0)
         grid.addWidget(self.cc_load_channel_combo, 2, 1)
 
+        grid.addWidget(self.vin_current_limit_label, 3, 0)
+        grid.addWidget(self.vin_current_limit_spin, 3, 1)
+
         layout.addLayout(grid)
 
     def _on_sweep_mode_changed(self):
         is_log = self.log_mode_btn.isChecked()
+        is_custom = self.custom_mode_btn.isChecked()
 
-        self.lbl_step.setVisible(not is_log)
-        self.step_current_spin.setVisible(not is_log)
+        self.lbl_start.setVisible(not is_custom)
+        self.load_current_start_spin.setVisible(not is_custom)
+        self.lbl_end.setVisible(not is_custom)
+        self.load_current_end_spin.setVisible(not is_custom)
+
+        self.lbl_step.setVisible(not (is_log or is_custom))
+        self.step_current_spin.setVisible(not (is_log or is_custom))
 
         self.lbl_points.setVisible(is_log)
         self.points_per_dec_spin.setVisible(is_log)
 
+        self.custom_points_container.setVisible(is_custom)
+
         if HAS_QTCHARTS and hasattr(self, 'series'):
-            self._rebuild_chart_x_axis(is_log)
+            self._rebuild_chart_x_axis(is_log or is_custom)
+
+    def _custom_points_ma(self) -> list[float]:
+        points = []
+        for row in range(self.custom_points_table.rowCount()):
+            item = self.custom_points_table.item(row, 0)
+            if item is None:
+                continue
+            try:
+                val = abs(float(item.text().strip()))
+            except (TypeError, ValueError):
+                continue
+            if val > 0:
+                points.append(val)
+        return points
+
+    def _set_custom_points_ma(self, points_ma) -> None:
+        self.custom_points_table.setRowCount(0)
+        for val in points_ma:
+            row = self.custom_points_table.rowCount()
+            self.custom_points_table.insertRow(row)
+            self.custom_points_table.setItem(row, 0, QTableWidgetItem(f"{val:g}"))
+
+    def _on_add_custom_point(self):
+        row_count = self.custom_points_table.rowCount()
+        last_item = (self.custom_points_table.item(row_count - 1, 0)
+                     if row_count else None)
+        default_text = last_item.text() if last_item is not None else "100"
+        self.custom_points_table.insertRow(row_count)
+        self.custom_points_table.setItem(row_count, 0, QTableWidgetItem(default_text))
+        self.custom_points_table.editItem(self.custom_points_table.item(row_count, 0))
+
+    def _on_remove_custom_point(self):
+        rows = sorted({idx.row() for idx in
+                       self.custom_points_table.selectedIndexes()}, reverse=True)
+        if not rows and self.custom_points_table.rowCount() > 0:
+            rows = [self.custom_points_table.rowCount() - 1]
+        for row in rows:
+            self.custom_points_table.removeRow(row)
 
     def _create_chart_widget(self):
         if HAS_QTCHARTS:
@@ -1100,7 +1197,8 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             self.smooth_series.attachAxis(self.axis_y)
 
             self.axis_x = None
-            is_log = self.log_mode_btn.isChecked()
+            is_log = (self.log_mode_btn.isChecked()
+                      or self.custom_mode_btn.isChecked())
             self._rebuild_chart_x_axis(is_log)
 
             self.chart_view = InteractiveChartView(self.chart)
@@ -1201,6 +1299,9 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         self.linear_mode_btn.clicked.connect(self._on_sweep_mode_changed)
         self.log_mode_btn.clicked.connect(self._on_sweep_mode_changed)
+        self.custom_mode_btn.clicked.connect(self._on_sweep_mode_changed)
+        self.custom_point_add_btn.clicked.connect(self._on_add_custom_point)
+        self.custom_point_remove_btn.clicked.connect(self._on_remove_custom_point)
         self.chart_zoom_in_btn.clicked.connect(self._on_chart_zoom_in)
         self.chart_zoom_out_btn.clicked.connect(self._on_chart_zoom_out)
         self.chart_auto_btn.clicked.connect(self._on_chart_auto_fit)
@@ -1615,11 +1716,14 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             "vin_channel": self.vin_channel_combo.currentText(),
             "vout_channel": self.vout_channel_combo.currentText(),
             "cc_load_channel": self.cc_load_channel_combo.currentText(),
-            "sweep_mode": "Log" if self.log_mode_btn.isChecked() else "Linear",
+            "vin_current_limit_a": self.vin_current_limit_spin.value(),
+            "sweep_mode": ("Custom" if self.custom_mode_btn.isChecked()
+                           else "Log" if self.log_mode_btn.isChecked() else "Linear"),
             "start_current_a": self.load_current_start_spin.value(),
             "end_current_a": self.load_current_end_spin.value(),
             "step_current_a": self.step_current_spin.value(),
             "points_per_dec": self.points_per_dec_spin.value(),
+            "custom_points": [round(v * 0.001, 9) for v in self._custom_points_ma()],
             "average_cnt": self.average_cnt_spin.value(),
             "settle_time_ms": self.settle_time_spin.value(),
             "sampling_method": self.sampling_method_combo.currentText(),
@@ -1647,12 +1751,17 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             self.vin_channel_combo,
             self.vout_channel_combo,
             self.cc_load_channel_combo,
+            self.vin_current_limit_spin,
             self.linear_mode_btn,
             self.log_mode_btn,
+            self.custom_mode_btn,
             self.load_current_start_spin,
             self.load_current_end_spin,
             self.step_current_spin,
             self.points_per_dec_spin,
+            self.custom_points_table,
+            self.custom_point_add_btn,
+            self.custom_point_remove_btn,
             self.average_cnt_spin,
             self.visa_resource_combo,
             self.search_btn,
@@ -1914,15 +2023,19 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
                 applied.append("test_item")
                 touched.append(self.test_item_combo)
 
-        # 扫描模式（Linear / Log）
+        # 扫描模式（Linear / Log / Custom）
         _, sweep_mode = _pick("sweep_mode")
         if sweep_mode is not None:
-            is_log = str(sweep_mode).lower().startswith("log")
+            mode_text = str(sweep_mode).strip().lower()
+            is_log = mode_text.startswith("log")
+            is_custom = mode_text.startswith("custom")
             self.log_mode_btn.setChecked(is_log)
-            self.linear_mode_btn.setChecked(not is_log)
+            self.custom_mode_btn.setChecked(is_custom)
+            self.linear_mode_btn.setChecked(not (is_log or is_custom))
             self._on_sweep_mode_changed()
             applied.append("sweep_mode")
-            touched.extend([self.log_mode_btn, self.linear_mode_btn])
+            touched.extend([self.log_mode_btn, self.linear_mode_btn,
+                            self.custom_mode_btn])
 
         # 采样方式
         _set_combo(self.sampling_method_combo, "sampling_method")
@@ -1934,6 +2047,11 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
                    "vout_ch", "output_channel", normalize=_normalize_channel)
         _set_combo(self.cc_load_channel_combo, "cc_load_channel",
                    "load_channel", "cc_load_ch", normalize=_normalize_channel)
+
+        # VIN 通道限流（A，兼容 _ma 毫安别名）
+        _set_spin(self.vin_current_limit_spin, "vin_current_limit_a",
+                  "vin_current_limit", "vin_ilimit", "vin_current_limit_ma",
+                  "vin_ilimit_ma", picker=_pick_current)
 
         # 电流扫描范围（A，兼容 _ma 毫安别名）
         _set_spin(self.load_current_start_spin, "start_current_a",
@@ -1949,6 +2067,30 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         # 其它数值参数
         _set_spin(self.points_per_dec_spin, "points_per_dec",
                   "points_per_decade", picker=_pick_int)
+
+        # 自定义电流点（A 列表，兼容 *_ma 毫安列表别名；逗号分隔字符串亦可）
+        k_pts, pts_val = _pick("custom_points", "custom_points_a",
+                               "custom_loads", "custom_points_ma",
+                               "custom_loads_ma")
+        if pts_val is not None:
+            if isinstance(pts_val, str):
+                pts_val = [p for p in pts_val.replace(",", " ").split() if p]
+            elif isinstance(pts_val, (int, float)):
+                pts_val = [pts_val]
+            factor = 1.0 if k_pts.endswith("_ma") else 1000.0
+            points_ma = []
+            if isinstance(pts_val, (list, tuple)):
+                for p in pts_val:
+                    try:
+                        val = abs(float(p)) * factor
+                    except (TypeError, ValueError):
+                        continue
+                    if val > 0:
+                        points_ma.append(val)
+            if points_ma:
+                self._set_custom_points_ma(points_ma)
+                applied.append("custom_points")
+                touched.append(self.custom_points_table)
         _set_spin(self.average_cnt_spin, "average_cnt",
                   "avg_cnt", "average_count", picker=_pick_int)
         _set_spin(self.settle_time_spin, "settle_time_ms",

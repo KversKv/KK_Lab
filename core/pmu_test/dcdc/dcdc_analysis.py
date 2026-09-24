@@ -63,7 +63,20 @@ def generate_current_points(cfg):
     end_a = abs(cfg["end_current_a"])
     sweep_mode = cfg["sweep_mode"]
 
-    if sweep_mode == "Log":
+    if sweep_mode == "Custom":
+        # 自定义点：取绝对值、剔除 0（CCLoad 开启状态禁设 0mA）、去重升序
+        custom = set()
+        for v in cfg.get("custom_points") or []:
+            try:
+                val = abs(float(v))
+            except (TypeError, ValueError):
+                continue
+            if val > 0:
+                custom.add(val)
+        current_points = sorted(custom)
+        if not current_points:
+            current_points = [start_a, end_a]
+    elif sweep_mode == "Log":
         points_per_dec = cfg["points_per_dec"]
         log_start = math.log10(start_a)
         log_end = math.log10(end_a)
@@ -75,15 +88,20 @@ def generate_current_points(cfg):
                 val = 10 ** (d + k / points_per_dec)
                 if start_a <= val <= end_a:
                     current_points.append(val)
-        val_end = 10 ** dec_end
-        if start_a <= val_end <= end_a and (not current_points or abs(current_points[-1] - val_end) > 1e-12):
-            current_points.append(val_end)
         if not current_points:
             current_points = [start_a, end_a]
+        elif (end_a - current_points[-1]) > max(end_a * 1e-9, 1e-12):
+            # 网格末点未覆盖用户终点时补测终点，保证测到最大要求电流
+            current_points.append(end_a)
     else:
         step_a = abs(cfg["step_current_a"])
         total_points = max(2, int(round(abs(end_a - start_a) / step_a)) + 1)
         current_points = [start_a + i * step_a for i in range(total_points) if start_a + i * step_a <= end_a + step_a * 0.001]
+        if not current_points:
+            current_points = [start_a, end_a]
+        elif (end_a - current_points[-1]) > max(end_a * 1e-9, 1e-12):
+            # 步进不能整除时补测终点，保证测到最大要求电流
+            current_points.append(end_a)
 
     return current_points
 
