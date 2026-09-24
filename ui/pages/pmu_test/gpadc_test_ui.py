@@ -1729,6 +1729,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._stop_test()
             return
 
+        # 测试用到的 N6705C 通道在结束后恢复测试前电压设定（快照/恢复在 worker 线程内执行）
+        restore_channels = self._voltage_channels_for_test(test_item, kwargs)
+        if restore_channels:
+            fn = self._wrap_restore_channel_voltage(fn, restore_channels)
+
         worker = _TestWorker(fn, kwargs)
         thread = QThread()
         worker.moveToThread(thread)
@@ -1747,6 +1752,43 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._test_worker = worker
         self.test_thread = thread
         thread.start()
+
+    def _voltage_channels_for_test(self, test_item, kwargs):
+        """返回本次测试会改动电压设定的 N6705C 通道列表（去重，保持顺序）。"""
+        if test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_TEMP_CONSISTENCY,
+                         self.TEST_FT_CALIB_CHECK):
+            return [kwargs['voltage_channel']]
+        if test_item == self.TEST_MULTI_CH_TEMP:
+            channels = []
+            for ch_cfg in kwargs['channels']:
+                if ch_cfg.get('enabled', True) and ch_cfg.get('sweep_enabled'):
+                    vch = int(ch_cfg.get('voltage_channel') or 1)
+                    if vch not in channels:
+                        channels.append(vch)
+            return channels
+        return []
+
+    def _wrap_restore_channel_voltage(self, fn, channels):
+        """包装测试函数：worker 线程内先 measure_voltage 快照各通道电压，测试结束（含中止/异常）后恢复。"""
+        def _runner(stop_check=None, **fn_kwargs):
+            saved = {}
+            if not DEBUG_MOCK and self.n6705c is not None:
+                for ch in channels:
+                    try:
+                        saved[ch] = self.n6705c.measure_voltage(ch)
+                    except Exception:
+                        logger.warning("GPADC 读取 CH%s 测试前电压失败", ch, exc_info=True)
+            try:
+                return fn(stop_check=stop_check, **fn_kwargs)
+            finally:
+                for ch, voltage in saved.items():
+                    try:
+                        self.n6705c.set_voltage(ch, voltage)
+                        self._test_worker.log.emit(f"[INFO] CH{ch} 电压已恢复测试前设定: {voltage:.3f} V")
+                    except Exception:
+                        logger.warning("GPADC 恢复 CH%s 电压失败", ch, exc_info=True)
+                        self._test_worker.log.emit(f"[WARN] CH{ch} 电压恢复失败，请手动确认通道输出")
+        return _runner
 
     def _run_1000cnt_test(self, device_addr, reg_addr, sample_cnt=1000, iic_weight=10, stop_check=None):
         if self._acq_mode_snapshot == 'UART':
