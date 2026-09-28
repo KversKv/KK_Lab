@@ -539,3 +539,19 @@ app.installEventFilter(_WinFilter())
 - 页面若对 ViewBox 挂了 `eventFilter` 抢左键（如通道拖拽/marker 拖拽），须先 hit-test 自定义 item 并放行，否则两套拖拽逻辑打架。
 
 **参考**：[n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) `PairAnnotationItem`。
+
+## 38. 无边框主窗最大化→还原后标题栏顶部白条（WM_NCCALCSIZE 时序坑）
+
+**现象**：`Qt.Window` + `WM_NCCALCSIZE` 返 0 的自绘标题栏方案下，最大化再点还原后，标题栏顶部出现一条白色横条，持续到下次 resize 才消失。
+
+**根因**：`WM_NCCALCSIZE` 在窗口状态切换途中**先于** Qt 处理 `WM_WINDOWPOSCHANGED`（Qt 此刻才更新 windowState），故处理器里 `self.isMaximized()` 读到的是迁移前旧值：还原时仍为 `True`，把最大化专用的客户区内缩误套到还原后的普通窗口上 → 顶部多出非客户区，被系统按类背景刷成白色。该错误内缩随窗口保留，直到下一次 NCCALCSIZE。
+
+**修复**：`changeEvent(WindowStateChange)` 里补 `SetWindowPos(..., SWP_FRAMECHANGED | NOMOVE | NOSIZE | NOZORDER | NOACTIVATE)`（封装 `_refresh_nc_frame()`）：状态落定后重发 `WM_NCCALCSIZE`，同一处理器用已定案的 `isMaximized()` 重算，错误内缩立即撤销。最大化方向同理（先漏加内缩，刷新后补上），终态与原逻辑一致。
+
+**规则**：
+
+- **禁在 `nativeEvent` 的 `WM_NCCALCSIZE` 处理器里调 `self.winId()`**：该消息在窗口创建期即到达，`winId()` 会强制原生创建、与进行中的创建流程重入 → access violation 启动即崩（faulthandler 抓到 `Windows fatal exception: access violation`）。
+- **慎在创建期消息上下文里用 ctypes 调 Win32 查询函数**：本次在 NCCALCSIZE 里调 `user32.IsZoomed` 同样引发启动崩溃/处理异常（异常逃出 nativeEvent 后该消息走默认处理 → 系统标题栏整个出现，看似"被改成系统标题栏"）。状态判定等逻辑尽量留在 Qt 事件侧（changeEvent），nativeEvent 里只用消息自带数据。
+- 重发 NCCALCSIZE 用 `SWP_FRAMECHANGED`，须在 Qt 事件上下文（如 changeEvent）里调，而非 nativeEvent 内。
+
+**参考**：[main_window.py](../../../ui/main_window.py) `nativeEvent` / `_refresh_nc_frame`。

@@ -51,6 +51,12 @@ if sys.platform == "win32":
 
     _MONITOR_DEFAULTTONEAREST = 0x00000002
 
+    _SWP_NOSIZE = 0x0001
+    _SWP_NOMOVE = 0x0002
+    _SWP_NOZORDER = 0x0004
+    _SWP_NOACTIVATE = 0x0010
+    _SWP_FRAMECHANGED = 0x0020
+
     class _RECT(ctypes.Structure):
         _fields_ = [
             ("left", ctypes.c_long),
@@ -2149,6 +2155,22 @@ class MainWindow(CleanupMixin, QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.WindowStateChange and getattr(self, "top_bar", None) is not None:
             self.top_bar.sync_max_icon()
+            self._refresh_nc_frame()
+
+    def _refresh_nc_frame(self):
+        """窗口状态落定后强制重算非客户区（重发 WM_NCCALCSIZE），
+        防止状态切换途中基于过期状态算出的客户区内缩残留（还原后顶部白条）。"""
+        if sys.platform != "win32":
+            return
+        try:
+            # 窗口状态变化只在已创建窗口上触发，winId() 此处安全
+            ctypes.windll.user32.SetWindowPos(
+                int(self.winId()), 0, 0, 0, 0, 0,
+                _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER
+                | _SWP_NOACTIVATE | _SWP_FRAMECHANGED,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("非客户区重算失败", exc_info=True)
 
     def show_system_menu(self, global_pos):
         if sys.platform != "win32":
