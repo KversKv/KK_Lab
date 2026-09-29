@@ -6,6 +6,7 @@
 
 import os
 import sys
+import time
 from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
@@ -330,6 +331,15 @@ class MainWindow(CleanupMixin, QMainWindow):
 
     def __init__(self, with_ai: bool = True):
         super().__init__()
+        _init_t0 = time.perf_counter()
+        _init_last = [_init_t0]
+
+        def _init_tick(label):
+            now = time.perf_counter()
+            logger.info("[STARTUP]   MainWindow: %-28s +%7.3f s (ctor %6.3f s)",
+                        label, now - _init_last[0], now - _init_t0)
+            _init_last[0] = now
+
         self.with_ai = with_ai
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         if sys.platform == "win32":
@@ -344,20 +354,25 @@ class MainWindow(CleanupMixin, QMainWindow):
         resize_and_center_window(self)
         self.setMinimumSize(*_MIN_WINDOW_SIZE)
 
+        _init_tick("窗口标志/几何初始化")
+
         self.test_manager = TestManager()
         self.visa_instrument = VisaInstrument()
         self.chamber = None
 
         self.instrument_manager = InstrumentManager(parent=self)
+        _init_tick("TestManager/VisaInstrument/InstrumentManager")
 
         self.n6705c_top = N6705CTop(self)
         self.mso64b_top = MSO64BTop(self)
+        _init_tick("N6705CTop/MSO64BTop")
         self.connection_hub = ConnectionHub(
             self.instrument_manager,
             self.n6705c_top,
             self.mso64b_top,
             parent=self,
         )
+        _init_tick("ConnectionHub")
 
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
@@ -368,6 +383,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.n6705c_top.connect_a("MOCK::N6705C::A", mock_a, "MOCK-A")
             self.n6705c_top.connect_b("MOCK::N6705C::B", mock_b, "MOCK-B")
             self.mso64b_top.connect_instrument("MOCK::MSO64B", mock_scope, "MSO64B")
+            _init_tick("DEBUG_MOCK 自动连接")
 
         self.n6705c_analyser_ui = None
         self.n6705c_datalog_ui = None
@@ -394,6 +410,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.nav = NavController(self)
         self.status_panel = InstrumentStatusPanel(self)
+        _init_tick("NavController/InstrumentStatusPanel")
 
         if self.with_ai:
             self.ai_settings = AISettings.load()
@@ -407,10 +424,12 @@ class MainWindow(CleanupMixin, QMainWindow):
         else:
             self.ai_settings = None
             self.ai_service = None
+        _init_tick("AISettings/AIService")
         self.ai_panel = None
         self.outer_splitter = None
 
         self._setup_style()
+        _init_tick("_setup_style")
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
@@ -418,8 +437,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.main_layout.setSpacing(0)
 
         self._create_main_content()
+        _init_tick("_create_main_content")
         self.nav.create_submenus()
+        _init_tick("nav.create_submenus")
         self._connect_signals()
+        _init_tick("_connect_signals")
 
     def _setup_style(self):
         palette = QPalette()
@@ -556,10 +578,20 @@ class MainWindow(CleanupMixin, QMainWindow):
         """ + SCROLLBAR_STYLE)
 
     def _create_main_content(self):
+        _cmc_t0 = time.perf_counter()
+        _cmc_last = [_cmc_t0]
+
+        def _cmc_tick(label):
+            now = time.perf_counter()
+            logger.info("[STARTUP]     _create_main_content: %-24s +%7.3f s (total %6.3f s)",
+                        label, now - _cmc_last[0], now - _cmc_t0)
+            _cmc_last[0] = now
+
         main_splitter = QSplitter(Qt.Horizontal)
 
         left_nav, left_nav_layout = self.nav.create_left_nav()
         bottom_widget = self.status_panel.create_bottom_widget()
+        _cmc_tick("create_left_nav/bottom_widget")
         left_nav_layout.addWidget(bottom_widget)
         self.left_nav = left_nav
 
@@ -575,6 +607,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.instrument_ui_container_layout.setContentsMargins(0, 0, 0, 0)
 
         self._create_power_analyser_ui()
+        _cmc_tick("_create_power_analyser_ui (N6705C首页)")
         self.right_content_layout.addWidget(self.instrument_ui_container)
 
         main_splitter.addWidget(self.right_content)
@@ -588,6 +621,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.main_splitter = main_splitter
 
         self.top_bar = AppTopBar(self)
+        _cmc_tick("AppTopBar")
         self.top_bar.compact_view_button.toggled.connect(self._on_compact_view_toggled)
         self.top_bar.capture_chart_button.clicked.connect(self._on_capture_chart)
         self.main_layout.addWidget(self.top_bar)
@@ -596,6 +630,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._sync_compact_view_button()
 
         self._setup_ai_panel(main_splitter)
+        _cmc_tick("_setup_ai_panel")
 
     def _setup_ai_panel(self, main_splitter):
         if not self.with_ai:

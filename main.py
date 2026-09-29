@@ -7,8 +7,33 @@ KK LAB工具主入口
 import sys
 import os
 import logging
+import time
 import warnings
 import faulthandler
+
+_STARTUP_T0 = time.perf_counter()
+_STARTUP_TICKS = []
+_STARTUP_PRINTED = 0
+
+
+def _startup_tick(label):
+    """启动耗时打点；logging 未就绪时先缓存，就绪后补打。"""
+    _STARTUP_TICKS.append((label, time.perf_counter()))
+    _flush_startup_ticks()
+
+
+def _flush_startup_ticks():
+    global _STARTUP_PRINTED
+    if not logging.getLogger().handlers:
+        return
+    log = logging.getLogger("startup")
+    prev = _STARTUP_TICKS[_STARTUP_PRINTED - 1][1] if _STARTUP_PRINTED else _STARTUP_T0
+    while _STARTUP_PRINTED < len(_STARTUP_TICKS):
+        label, t = _STARTUP_TICKS[_STARTUP_PRINTED]
+        log.info("[STARTUP] %-40s +%7.3f s (total %6.3f s)", label, t - prev, t - _STARTUP_T0)
+        prev = t
+        _STARTUP_PRINTED += 1
+
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -17,14 +42,17 @@ if sys.stderr is None:
 
 faulthandler.enable()
 import pyvisa
+_startup_tick("import pyvisa")
 from PySide6.QtWidgets import QApplication, QProxyStyle
-from PySide6.QtCore import qInstallMessageHandler, QtMsgType, Qt
+from PySide6.QtCore import qInstallMessageHandler, QtMsgType, Qt, QTimer
 from PySide6.QtGui import QIcon
+_startup_tick("import PySide6")
 from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from version import version_string
 from ui.main_window import MainWindow
 from ui.theme import configure_high_dpi
+_startup_tick("import ui.main_window 等项目模块")
 
 WITH_AI_ASSISTANT = os.environ.get("KK_LAB_WITH_AI", "1").strip().lower() not in (
     "0",
@@ -38,6 +66,7 @@ if WITH_AI_ASSISTANT:
     from core.ai.log_ring import install_log_ring
 
     install_log_ring()
+_startup_tick("setup_logging / install_log_ring")
 
 
 logger = get_logger(__name__)
@@ -94,7 +123,9 @@ def main():
 
     # 高 DPI 取整策略（须在 QApplication 创建前设置；Qt6 默认即 PassThrough，显式声明）
     configure_high_dpi()
+    _startup_tick("main() 进入 / configure_high_dpi")
     app = QApplication(sys.argv)
+    _startup_tick("QApplication 创建")
     app.setStyle(HoverFixStyle("Fusion"))
     # QToolTip 是顶级窗口，不继承 MainWindow 的 palette；Fusion 下会回落系统默认
     # （Windows 深色模式为黑底），需显式 QSS 保证深底浅字可读。
@@ -112,13 +143,18 @@ def main():
     if os.path.exists(_icon_path):
         app.setWindowIcon(QIcon(_icon_path))
         logger.debug("Application icon loaded: %s", _icon_path)
-    
+    _startup_tick("setStyle / StyleSheet / 图标")
+
     logger.debug("DEBUG_MOCK=%s", DEBUG_MOCK)
     logger.info("WITH_AI_ASSISTANT=%s", WITH_AI_ASSISTANT)
     main_window = MainWindow(with_ai=WITH_AI_ASSISTANT)
+    _startup_tick("MainWindow 构造")
     main_window.show()
+    _startup_tick("main_window.show()")
     logger.debug("MainWindow shown, entering event loop")
-    
+    # 事件循环首轮迭代 ≈ 窗口完成首帧绘制
+    QTimer.singleShot(0, lambda: _startup_tick("事件循环首轮迭代（首帧）"))
+
     sys.exit(app.exec())
 
 

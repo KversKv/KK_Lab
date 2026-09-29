@@ -6,7 +6,7 @@
     "consumption_test_time_s": "30",
     "consumption_sample_period_us": "20",
     "batch_a_ch1_voltage": "3.8000",
-    "batch_a_ch2_voltage": "1.5",
+    "batch_a_ch2_voltage": "0.8",
     "batch_a_ch3_voltage": "1.2000",
     "batch_a_ch4_voltage": "1.8000",
     "batch_a_ch1_current": "0.2000",
