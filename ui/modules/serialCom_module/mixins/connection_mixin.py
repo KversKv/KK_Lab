@@ -33,6 +33,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     _CLR_CONNECT_TEXT,
     _CLR_DISCONNECT_TEXT,
     _CLR_TEXT_INFO,
+    _CLR_WARNING,
     _SERIAL_BTN_HEIGHT,
     _SERIAL_BTN_ICON_SIZE,
     _SERIAL_BTN_RADIUS,
@@ -1034,13 +1035,30 @@ class ConnectionMixin:
 
         prev_devices = {self._sc_port_name_of(t) for t in prev_texts} - {""}
         new_devices = {self._sc_port_name_of(t) for t in ports} - {""}
-        for dev in sorted(new_devices - prev_devices):
-            self._sc_append_system(f"[INFO] Serial port added: {dev}", force_primary=True)
         for dev in sorted(prev_devices - new_devices):
-            self._sc_append_system(f"[WARN] Serial port removed: {dev}", force_primary=True)
-            if dev == getattr(self, "_serial_port", None):
-                self._sc_append_system(
-                    f"[WARN] Connected port {dev} removed, connection may be broken",
-                    force_primary=True,
-                )
+            self._sc_auto_disconnect_removed_port(dev)
+
+    def _sc_auto_disconnect_removed_port(self, dev):
+        """已连接端口被系统移除时自动断开对应设备（主面板 / 额外内嵌面板 / 独立浮窗）。"""
+        if dev == getattr(self, "_serial_port", None) and getattr(self, "_serial_connected", False):
+            self._sc_append_system(
+                f"[WARN] Connected port {dev} removed, auto disconnected",
+                force_primary=True,
+            )
+            self._sc_do_disconnect()
+        for panel in list(getattr(self, "_sc_extra_log_panels", []) or []):
+            if panel.get("config", {}).get("port") != dev:
+                continue
+            if not self._sc_extra_panel_is_connected(panel):
+                continue
+            self._sc_extra_panel_append_log(
+                panel, f"[WARN] Port {dev} removed, auto disconnected", _CLR_WARNING
+            )
+            self._sc_extra_panel_do_disconnect(panel)
+        for win in list(getattr(self, "_sc_independent_windows", []) or []):
+            try:
+                win.disconnect_on_port_removed(dev)
+            except RuntimeError:
+                # 浮窗已销毁但尚未从列表移除
+                pass
 

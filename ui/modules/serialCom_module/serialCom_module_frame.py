@@ -1653,6 +1653,14 @@ class _IndependentSerialWindow(QWidget):
         self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
         self._panel.append_log("[INFO] Disconnected")
 
+    def disconnect_on_port_removed(self, port: str) -> bool:
+        """热插拔移除当前连接端口时自动断开；返回是否真正触发了断开。"""
+        if self._config.get("port") != port or not self.is_connected():
+            return False
+        self._panel.append_log(f"[WARN] Port {port} removed, auto disconnected")
+        self._do_disconnect()
+        return True
+
     def _on_send(self):
         text = self._send_input.text()
         if not text:
