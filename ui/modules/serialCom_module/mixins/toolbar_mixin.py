@@ -605,6 +605,8 @@ class ToolbarMixin:
         if _baud_line_edit is not None:
             _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
 
+        # 连接态下切换 Port 走完整断开/重连；须先于写回连接，保证取到旧端口
+        self._sc_port_combo.activated.connect(self._sc_on_port_switch_requested)
         # Serial Config 控件变更即时写回当前聚焦目标（侧栏跟随聚焦面板）
         for _c in (
             self._sc_port_combo, self._sc_databit_combo, self._sc_flow_combo,
@@ -646,7 +648,7 @@ class ToolbarMixin:
             "port": self._sc_port_combo.currentText().strip(),
             "baudrate": baud,
             "auto_detect": self._sc_auto_detect_cb.isChecked(),
-            "databit": self._sc_databit_combo.currentText(),
+            "databit": int(self._sc_databit_combo.currentText()),
             "flow": self._sc_flow_combo.currentText(),
             "stopbit": self._sc_stopbit_combo.currentText(),
             "parity": self._sc_parity_combo.currentText(),
@@ -663,8 +665,48 @@ class ToolbarMixin:
         else:
             panel["config"].update(cfg)
 
+    def _sc_on_port_switch_requested(self, _idx):
+        """连接态下直接切换 Port：完整断开旧连接 + 按新端口重建连接。
+
+        未连接 / 端口未变 / 选中无效项时不动作（写回由后续 store 连接完成）。
+        断开/重连复用既有流程，自动覆盖 Pause/Stop 复位、自动波特率、
+        日志自动保存、临时日志、会话与信号通知等关联事件。
+        """
+        new_port = self._sc_port_name_of(self._sc_port_combo.currentText())
+        if not new_port:
+            return
+        panel = self._sc_sidebar_bound_panel()
+        if panel is None:
+            old_port = getattr(self, "_serial_port", None)
+            if not getattr(self, "_serial_connected", False) or new_port == old_port:
+                return
+            self._sc_append_system(
+                f"[INFO] Switching port: {old_port} -> {new_port}", force_primary=True
+            )
+            self._sc_do_disconnect()
+            self._sc_do_connect()
+            if getattr(self, "_serial_connected", False):
+                self._sc_last_port = self._serial_port
+            return
+        old_port = self._sc_port_name_of(panel.get("config", {}).get("port", ""))
+        if not self._sc_extra_panel_is_connected(panel) or not old_port or new_port == old_port:
+            return
+        self._sc_sidebar_store_serial()
+        self._sc_extra_panel_append_log(
+            panel, f"[INFO] Switching port: {old_port} -> {new_port}", _CLR_TEXT_INFO
+        )
+        self._sc_extra_panel_do_disconnect(panel)
+        self._sc_extra_panel_connect(panel)
+
     def _sc_sidebar_load_focus(self, force_primary=False):
         """从绑定目标读配置 → 侧栏控件（blockSignals，不触发写回）。"""
+        # 焦点切换前先把当前控件值冲回旧绑定目标，防止真值过期（如主面板 Port 被置空）；
+        # 旧绑定面板已被移除时（bound_index 由移除流程置 None）跳过
+        old_bound = getattr(self, "_sc_sidebar_bound_index", None)
+        new_index = 0 if force_primary else self._sc_active_log_panel_index
+        if old_bound is not None and old_bound != new_index:
+            if old_bound <= 0 or self._sc_sidebar_bound_panel() is not None:
+                self._sc_sidebar_store_serial()
         panel = None if force_primary else self._sc_active_extra_panel()
         widgets = [
             self._sc_port_combo, self._sc_baud_combo, self._sc_auto_detect_cb,
@@ -684,7 +726,6 @@ class ToolbarMixin:
                 line_ending = getattr(self, "_sc_line_ending", "\r\n")
                 show_send = bool(getattr(self, "_sc_show_send", True))
                 line_by_line = bool(getattr(self, "_sc_line_by_line", False))
-                connected = bool(getattr(self, "_serial_connected", False))
                 auto_detect = bool(cfg.get("auto_detect", True))
                 self._sc_auto_detect_cb.setEnabled(True)
                 self._sc_rx_auto_flush_cb.setEnabled(True)
@@ -699,7 +740,6 @@ class ToolbarMixin:
                 line_ending = cfg.get("line_ending", "\r\n")
                 show_send = bool(cfg.get("show_send", True))
                 line_by_line = bool(cfg.get("line_by_line", False))
-                connected = self._sc_extra_panel_is_connected(panel)
                 auto_detect = False
                 # Auto-Detect / Auto Flush / System Log 为主面板专属功能
                 self._sc_auto_detect_cb.setChecked(False)
@@ -732,7 +772,7 @@ class ToolbarMixin:
             self._sc_stopbit_combo.setCurrentText(str(cfg.get("stopbit", "1")))
             self._sc_parity_combo.setCurrentText(str(cfg.get("parity", "None")))
 
-            self._sc_port_combo.setEnabled(not connected)
+            # Port 下拉连接态保持可选：切换端口由 _sc_on_port_switch_requested 走断开/重连
             self._sc_baud_combo.setEditable(not auto_detect)
             self._sc_baud_combo.setEnabled(not auto_detect)
 
@@ -756,14 +796,7 @@ class ToolbarMixin:
         if bound is None or not hasattr(self, "_sc_port_combo"):
             return
         if bound == self._sc_active_log_panel_index:
-            # 焦点未变但连接态可能已变（同面板 Connect/Disconnect）：
-            # 仅刷新连接相关的 Port 使能，不做全量重载以免打断可编辑 baud 输入
-            panel = self._sc_active_extra_panel()
-            if panel is None:
-                connected = bool(getattr(self, "_serial_connected", False))
-            else:
-                connected = self._sc_extra_panel_is_connected(panel)
-            self._sc_port_combo.setEnabled(not connected)
+            # 焦点未变不做全量重载，以免打断可编辑 baud 输入
             return
         self._sc_sidebar_load_focus()
 

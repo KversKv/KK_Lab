@@ -184,6 +184,7 @@ class ConnectionMixin:
         self.serial_search_btn.clicked.connect(self._on_serial_search)
         if self._serial_mode == MODE_FULL and hasattr(self, 'serial_connect_btn'):
             self.serial_connect_btn.clicked.connect(self._on_serial_toggle)
+            self.serial_combo.activated.connect(self._on_serial_port_switch_requested)
         if hasattr(self, 'serial_settings_btn'):
             self.serial_settings_btn.clicked.connect(self._on_serial_settings)
 
@@ -272,6 +273,18 @@ class ConnectionMixin:
             self._on_serial_disconnect()
         else:
             self._on_serial_connect()
+
+    def _on_serial_port_switch_requested(self, _idx):
+        """连接态下直接切换端口：完整断开旧连接 + 按新选中端口重建连接。"""
+        if self._serial_mode != MODE_FULL or not self._serial_connected:
+            return
+        port = self.get_selected_serial_port()
+        if not port or port == self._serial_port:
+            return
+        if hasattr(self, 'append_log'):
+            self.append_log(f"[{self._serial_prefix}] Switching port: {self._serial_port} -> {port}")
+        self._on_serial_disconnect()
+        self._on_serial_connect()
 
     def get_selected_serial_port(self):
         text = self.serial_combo.currentText()
@@ -458,7 +471,7 @@ class ConnectionMixin:
             icon_size=self._serial_btn_icon_size,
         )
         self.serial_search_btn.setEnabled(not connected)
-        self.serial_combo.setEnabled(not connected)
+        # serial_combo 连接态保持可选：切换端口由 _on_serial_port_switch_requested 走断开/重连
         if hasattr(self, 'serial_settings_btn'):
             self.serial_settings_btn.setEnabled(not connected)
 
@@ -723,7 +736,7 @@ class ConnectionMixin:
             self._sc_status_port_label.setStyleSheet(status_label_style("error", include_font=True))
             self._sc_status_baud_label.setText("Baud rate (bps): -")
 
-        self._sc_port_combo.setEnabled(not connected)
+        # Port 下拉连接态保持可选：切换端口由 _sc_on_port_switch_requested 走断开/重连
         auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
         self._sc_baud_combo.setEditable(not auto_detect_on)
         self._sc_baud_combo.setEnabled(not auto_detect_on)
