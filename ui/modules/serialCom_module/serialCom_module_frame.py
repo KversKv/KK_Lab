@@ -814,6 +814,9 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     if idx >= 0:
                         self._sc_flow_combo.setCurrentIndex(idx)
 
+                # 恢复后把控件值回写主面板 Serial 真值，避免焦点切回时 Port 被空真值清空
+                self._sc_primary_serial_cfg = self._sc_sidebar_serial_cfg_from_controls()
+
                 ad_cfg = serial_cfg.get("auto_detect_config", {})
                 if isinstance(ad_cfg, dict) and hasattr(self, "_sc_auto_baud_monitor"):
                     m = self._sc_auto_baud_monitor
@@ -1634,7 +1637,7 @@ class _IndependentSerialWindow(QWidget):
             return
 
         try:
-            databit = self._config.get("databit", 8)
+            databit = int(self._config.get("databit", 8))
             stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
             stopbits = stopbit_map.get(str(self._config.get("stopbit", "1")), serial.STOPBITS_ONE)
             parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD}

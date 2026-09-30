@@ -362,14 +362,7 @@ class LogPanelMixin:
     def _sc_on_remove_log_panel(self):
         if not self._sc_extra_log_panels:
             return
-        panel = self._sc_extra_log_panels.pop()
-        self._sc_extra_panel_stop_save(panel)
-        self._sc_extra_panel_disconnect(panel)
-        panel["frame"].setParent(None)
-        panel["frame"].deleteLater()
-        self._sc_relayout_log_panels()
-        self._sc_remove_log_btn.setEnabled(len(self._sc_extra_log_panels) > 0)
-        self._sc_append_system("[INFO] LOG panel removed", force_primary=True)
+        self._sc_remove_specific_panel(self._sc_extra_log_panels[-1])
 
     def _sc_relayout_log_panels(self):
         while self._sc_log_grid.count():
@@ -645,6 +638,13 @@ class LogPanelMixin:
             return
         idx = self._sc_extra_log_panels.index(panel)
         self._sc_extra_log_panels.remove(panel)
+        # 侧栏绑定索引跟随移除：绑定面板被移除则置 None（真值随面板销毁，禁回写），其后索引前移
+        bound = getattr(self, "_sc_sidebar_bound_index", None)
+        if bound is not None:
+            if bound == idx + 1:
+                self._sc_sidebar_bound_index = None
+            elif bound > idx + 1:
+                self._sc_sidebar_bound_index = bound - 1
         self._sc_extra_panel_stop_save(panel)
         self._sc_extra_panel_disconnect(panel)
         panel["frame"].setParent(None)
@@ -656,6 +656,8 @@ class LogPanelMixin:
             self._sc_active_session_id = "primary"
             self._sc_session_manager.set_active_session("primary")
             self._sc_update_panel_focus_style()
+            # 焦点回退主面板：强制按主面板真值重载侧栏（bound 为 None 时同步早退，须显式重载）
+            self._sc_sidebar_load_focus(force_primary=True)
         elif self._sc_active_log_panel_index > idx + 1:
             self._sc_active_log_panel_index -= 1
         self._sc_append_system("[INFO] LOG panel removed", force_primary=True)
@@ -681,7 +683,7 @@ class LogPanelMixin:
             )
         session.configure(
             port=port, baudrate=baudrate,
-            bytesize=config.get("databit", 8),
+            bytesize=int(config.get("databit", 8)),
             stopbits={"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}.get(
                 config.get("stopbit", "1"), serial.STOPBITS_ONE
             ),
@@ -703,7 +705,7 @@ class LogPanelMixin:
             return
 
         try:
-            databit = config.get("databit", 8)
+            databit = int(config.get("databit", 8))
             stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
             stopbits = stopbit_map.get(config.get("stopbit", "1"), serial.STOPBITS_ONE)
             parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
