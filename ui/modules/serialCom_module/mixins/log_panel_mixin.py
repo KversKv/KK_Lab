@@ -810,7 +810,9 @@ class LogPanelMixin:
 
         dlg.port_combo.clear()
         for i in range(self._sc_port_combo.count()):
-            dlg.port_combo.addItem(self._sc_port_combo.itemText(i))
+            dlg.port_combo.addItem(
+                self._sc_port_combo.itemText(i), self._sc_port_combo.itemData(i)
+            )
         dlg.port_combo.setCurrentIndex(self._sc_port_combo.currentIndex())
 
         dlg.baud_combo.setCurrentText(self._sc_baud_combo.currentText())

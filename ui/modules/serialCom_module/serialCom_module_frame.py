@@ -157,6 +157,20 @@ MODE_SEARCH_SELECT = "search_and_select"
 MODE_FULL = "full"
 MODE_INLINE = "inline"
 
+_PORT_FULL_TEXT_RE = re.compile(r"^(COM\d+)\s+-\s+.+$", re.IGNORECASE)
+
+
+def add_serial_port_item(combo, full_text):
+    """串口下拉项：DisplayRole 只存端口号（收起态显示），完整 '设备 - 描述' 存 UserRole/ToolTipRole 供下拉渲染与弹层取宽。"""
+    text = (full_text or "").strip()
+    m = _PORT_FULL_TEXT_RE.match(text)
+    if m:
+        idx = combo.count()
+        combo.addItem(m.group(1).upper(), text)
+        combo.setItemData(idx, text, Qt.ToolTipRole)
+    else:
+        combo.addItem(text)
+
 # 右键高亮多色调色板：(背景色, 前景色)
 _SC_HIGHLIGHT_PALETTE = [
     ("#FFD60A", "#1d1d1f"),  # yellow
@@ -1252,7 +1266,7 @@ class _AddLogPanelDialog(_FramelessChromeDialog):
         try:
             ports = serial.tools.list_ports.comports()
             for p in ports:
-                self._port_combo.addItem(f"{p.device} - {p.description}")
+                add_serial_port_item(self._port_combo, f"{p.device} - {p.description}")
         except Exception:
             pass
         if self._port_combo.count() == 0:
@@ -1395,7 +1409,7 @@ class _PanelSettingsDialog(_FramelessChromeDialog):
         try:
             ports = serial.tools.list_ports.comports()
             for p in ports:
-                self._port_combo.addItem(f"{p.device} - {p.description}")
+                add_serial_port_item(self._port_combo, f"{p.device} - {p.description}")
         except Exception:
             pass
         if self._port_combo.count() == 0:

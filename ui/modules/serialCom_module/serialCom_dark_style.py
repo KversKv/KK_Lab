@@ -1717,6 +1717,13 @@ class _SerialComboItemDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._padding_v = padding_v
 
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # 串口项 UserRole 存完整 '设备 - 描述'，下拉展示完整文本（收起态仍只显示端口号）
+        full = index.data(Qt.UserRole)
+        if isinstance(full, str) and full:
+            option.text = full
+
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
         min_h = option.fontMetrics.height() + self._padding_v * 2
@@ -1864,10 +1871,12 @@ class SerialDarkComboBox(QComboBox):
         fm = self.fontMetrics()
         max_w = self.width()
         for i in range(self.count()):
-            w = fm.horizontalAdvance(self.itemText(i)) + 40
+            # 串口项 UserRole 存完整 '设备 - 描述'，弹层宽度按完整文本取（上限 720）
+            text = self.itemData(i) or self.itemText(i)
+            w = fm.horizontalAdvance(text) + 40
             if w > max_w:
                 max_w = w
-        view.setMinimumWidth(max_w)
+        view.setMinimumWidth(min(max_w, 720))
         visible = min(self.count(), self.maxVisibleItems())
         if visible > 0:
             row_h = view.sizeHintForRow(0)

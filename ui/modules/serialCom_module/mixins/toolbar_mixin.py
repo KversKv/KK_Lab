@@ -53,6 +53,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
+    add_serial_port_item,
     _LINK_ICON_PATH,
     _SEARCH_ICON_PATH,
     _SERIAL_BTN_HEIGHT,
@@ -708,10 +709,18 @@ class ToolbarMixin:
                 self._sc_show_system_cb.setEnabled(False)
 
             port_text = str(cfg.get("port", "") or "")
-            if port_text and self._sc_port_combo.findText(port_text) < 0:
-                self._sc_port_combo.addItem(port_text)
             if port_text:
-                self._sc_port_combo.setCurrentText(port_text)
+                # 兼容旧持久化格式（'COM3 - 描述'）：按端口号匹配，缺失时按新格式补充项
+                device = port_text.split(" - ")[0].split()[0]
+                idx = self._sc_port_combo.findText(port_text)
+                if idx < 0:
+                    idx = self._sc_port_combo.findText(device)
+                if idx < 0:
+                    add_serial_port_item(self._sc_port_combo, port_text)
+                    idx = self._sc_port_combo.findText(device)
+                if idx < 0:
+                    idx = self._sc_port_combo.count() - 1
+                self._sc_port_combo.setCurrentIndex(idx)
             else:
                 self._sc_port_combo.setCurrentIndex(-1)
             baud_text = str(cfg.get("baudrate", "115200"))

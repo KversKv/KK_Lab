@@ -39,6 +39,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     _SERIAL_BTN_RADIUS,
     _SVG_SERIAL_DIR,
     SerialDarkComboBox,
+    add_serial_port_item,
     extra_log_error_color,
     inline_serial_label_style,
     inline_serial_search_button_extra_style,
@@ -967,7 +968,7 @@ class ConnectionMixin:
             ports = serial.tools.list_ports.comports()
             if ports:
                 for p in ports:
-                    self._sc_port_combo.addItem(f"{p.device} - {p.description}")
+                    add_serial_port_item(self._sc_port_combo, f"{p.device} - {p.description}")
                 self._sc_append_system(f"[INFO] Found {len(ports)} serial port(s)", force_primary=True)
             else:
                 self._sc_port_combo.addItem("No serial ports found")
@@ -1012,13 +1013,14 @@ class ConnectionMixin:
         if combo is None:
             return
         ports = list(ports)
-        prev_texts = [combo.itemText(i) for i in range(combo.count())]
+        prev_texts = [combo.itemData(i) or combo.itemText(i) for i in range(combo.count())]
         if prev_texts == ports:
             return
         current_port = self._sc_port_name_of(combo.currentText())
         combo.clear()
         if ports:
-            combo.addItems(ports)
+            for text in ports:
+                add_serial_port_item(combo, text)
         else:
             combo.addItem("No serial ports found")
 
