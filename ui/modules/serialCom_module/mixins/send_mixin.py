@@ -544,9 +544,25 @@ class SendMixin:
         self._sc_hist_nav_reset()
         self._sc_send_input.clear()
 
+    def _sc_primary_send(self, data) -> bool:
+        """主面板专属发送：只走 primary 会话/主连接，不随 manager 活跃会话漂移到额外面板。"""
+        session = self._sc_session_manager.get_session("primary")
+        if session is not None and session.connected:
+            return session.send(data)
+        if self._serial_conn is None or not self._serial_conn.is_open:
+            return False
+        try:
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            self._serial_conn.write(data)
+            return True
+        except Exception as e:
+            self._sc_append_system(f"[ERROR] Send error: {e}", force_primary=True)
+            return False
+
     def _sc_send_to_focused_panel(self, data, show_send=True, tx_hex=False) -> bool:
         if self._sc_active_log_panel_index == 0:
-            return self.serial_send(data)
+            return self._sc_primary_send(data)
 
         panel_idx = self._sc_active_log_panel_index - 1
         if panel_idx < 0 or panel_idx >= len(self._sc_extra_log_panels):

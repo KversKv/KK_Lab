@@ -441,6 +441,7 @@ class LogPanelMixin:
             "tx_label": comp.status_tx_label,
             "title_label": comp.title_label,
             "config": config,
+            "uid": _uuid.uuid4().hex[:8],
             "conn": None,
             "read_thread": None,
             "read_worker": None,
@@ -467,7 +468,9 @@ class LogPanelMixin:
         if self._sc_active_log_panel_index != 0:
             self._sc_active_log_panel_index = 0
             self._sc_active_session_id = "primary"
-            self._sc_session_manager.set_active_session("primary")
+            # primary session 不存在时清空 manager 活跃会话，防止残留指向额外面板导致错板发送
+            if not self._sc_session_manager.set_active_session("primary"):
+                self._sc_session_manager.clear_active_session()
             self._sc_update_panel_focus_style()
 
     def _sc_primary_panel_menu_extra(self, menu):
@@ -668,14 +671,25 @@ class LogPanelMixin:
         baudrate = config.get("baudrate", 115200)
 
         if not port:
+            self._sc_extra_panel_append_log(panel, "[ERROR] No valid port selected", extra_log_error_color())
+            return
+        try:
+            baudrate = int(baudrate)
+        except (TypeError, ValueError):
+            self._sc_extra_panel_append_log(panel, f"[ERROR] Invalid baud rate: {baudrate}", extra_log_error_color())
             return
 
-        panel_idx = self._sc_extra_log_panels.index(panel) if panel in self._sc_extra_log_panels else 0
-        session_id = f"extra_{panel_idx}_{port}"
+        # 先清掉旧 session（上次连接失败/端口变更可能残留），session_id 用面板稳定 uid 防索引撞车
+        old_sid = panel.get("session_id")
+        if old_sid:
+            self._sc_session_manager.remove_session(old_sid)
+            panel["session_id"] = None
+        session_id = f"extra_{panel.get('uid', 'x')}"
         panel["session_id"] = session_id
 
         session = self._sc_session_manager.get_session(session_id)
         if session is None:
+            panel_idx = self._sc_extra_log_panels.index(panel) if panel in self._sc_extra_log_panels else 0
             session = self._sc_session_manager.create_session(
                 session_id=session_id,
                 display_name=config.get("title", f"LOG-{panel_idx + 2}"),

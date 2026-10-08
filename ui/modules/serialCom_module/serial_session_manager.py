@@ -92,6 +92,13 @@ class SerialSessionManager(QObject):
         self.active_session_changed.emit(session_id)
         return True
 
+    def clear_active_session(self):
+        """清空活跃会话（如聚焦主面板但 primary session 不存在时，防止残留指向他人会话）。"""
+        if self._active_session_id is None:
+            return
+        self._active_session_id = None
+        self.active_session_changed.emit("")
+
     def send_to_session(self, session_id: str, data) -> bool:
         session = self._sessions.get(session_id)
         if session is None:

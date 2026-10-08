@@ -1019,8 +1019,9 @@ class ScriptMixin:
                 line_ending = getattr(self, "_sc_line_ending", "\r\n")
             data = (cmd + line_ending).encode("utf-8")
 
-        ok = self._sc_send_to_focused_panel(data)
-        if ok and self._sc_active_log_panel_index == 0:
+        # 脚本固定服务主面板（wait_keyword 只监听主面板 RX），发送不随焦点面板漂移
+        ok = self._sc_primary_send(data)
+        if ok:
             self._sc_log_panel.add_tx_bytes(len(data))
             if self._sc_show_send:
                 display = data.hex(' ') if send_hex else cmd
