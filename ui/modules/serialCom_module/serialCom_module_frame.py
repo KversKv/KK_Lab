@@ -1,5 +1,5 @@
 #
-# python -m ui.modules.serialCom_module_frame
+# python -m ui.modules.serialCom_module.serialCom_module_frame
 #
 
 import os as _os
@@ -934,6 +934,29 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             self._sc_rx_toggle.set_value("HEX" if getattr(self, "_sc_rx_display_hex", False) else "ASCII")
         if hasattr(self, "_sc_tx_toggle"):
             self._sc_tx_toggle.set_value("HEX" if getattr(self, "_sc_tx_display_hex", False) else "ASCII")
+
+        # 回放侧栏勾选/选中态（属性已恢复，控件默认态需对齐）：Show Time / Show Send / Line by Line / Line Ending
+        if hasattr(self, "_sc_rx_show_time_cb"):
+            self._sc_rx_show_time_cb.setChecked(bool(getattr(self, "_sc_show_timestamp", True)))
+        if hasattr(self, "_sc_show_send_cb"):
+            self._sc_show_send_cb.setChecked(bool(getattr(self, "_sc_show_send", True)))
+        if hasattr(self, "_sc_line_by_line_cb"):
+            self._sc_line_by_line_cb.setChecked(bool(getattr(self, "_sc_line_by_line", False)))
+        if hasattr(self, "_sc_ending_combo"):
+            _le = getattr(self, "_sc_line_ending", "\r\n")
+            for _i in range(self._sc_ending_combo.count()):
+                if (self._sc_ending_combo.itemData(_i) or "") == _le:
+                    self._sc_ending_combo.setCurrentIndex(_i)
+                    break
+        # 主面板组件时间戳开关与真值对齐（组件 append_log 用自身 show_timestamp）
+        if getattr(self, "_sc_log_panel", None) is not None:
+            self._sc_log_panel.show_timestamp = bool(getattr(self, "_sc_show_timestamp", True))
+
+        # 回放 Sidebar 显隐（按钮为 clicked 绑定，setChecked 不触发，须显式驱动）
+        if hasattr(self, "_sc_sidebar_toggle_btn"):
+            _sb_visible = bool(getattr(self, "_sc_sidebar_visible", True))
+            self._sc_sidebar_toggle_btn.setChecked(_sb_visible)
+            self._sc_on_sidebar_toggle(_sb_visible)
 
         # 回放 Footer 显隐（toggled 绑定，setChecked 即驱动 _sc_on_footer_toggle）
         if hasattr(self, "_sc_footer_toggle_btn"):
@@ -2180,6 +2203,9 @@ class _QuickCmdButton(QPushButton):
             drag.setPixmap(pixmap)
             drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
         drag.exec(Qt.MoveAction)
+        # 拖拽的 release 派发给 drop 目标，源按钮收不到 mouseReleaseEvent，此处复位拖拽态
+        self._dragging = False
+        self._press_pos = None
 
 
 class _ProjectTabBar(QTabBar):
@@ -2981,7 +3007,10 @@ class _SerialScriptEditorDialog(QDialog):
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        self._table.setCellWidget(row, 0, self._make_index_cell(row))
+        index_cell = self._make_index_cell(row)
+        # 原步骤字典随行携带：编辑器无对应列的扩展键（send_type/line_ending）在收集时带回
+        index_cell.setProperty("_orig_step", dict(step))
+        self._table.setCellWidget(row, 0, index_cell)
         self._table.setCellWidget(row, 1, self._make_cmd_cell(step.get("cmd", "")))
 
         wait_spin = QSpinBox()
@@ -3075,13 +3104,20 @@ class _SerialScriptEditorDialog(QDialog):
             kw_edit = getattr(kw_holder, "_kw_edit", None) if kw_holder else None
             wait = self._inner_widget(row, 2)
             to = self._inner_widget(row, 4)
-            steps.append({
+            step_dict = {
                 "cmd": cmd_edit.text() if isinstance(cmd_edit, QLineEdit) else "",
                 "priority": row + 1,
                 "wait_ms": wait.value() if isinstance(wait, QSpinBox) else 0,
                 "wait_keyword": kw_edit.text() if isinstance(kw_edit, QLineEdit) else "",
                 "wait_timeout_ms": to.value() if isinstance(to, QSpinBox) else 0,
-            })
+            }
+            index_holder = self._table.cellWidget(row, 0)
+            orig = index_holder.property("_orig_step") if index_holder else None
+            if isinstance(orig, dict):
+                for k in ("send_type", "line_ending"):
+                    if k in orig:
+                        step_dict[k] = orig[k]
+            steps.append(step_dict)
         return steps
 
     def _on_accept(self):
@@ -3924,7 +3960,7 @@ class _SerialSettingsDialog(_FramelessChromeDialog):
 
 
 if __name__ == "__main__":
-    #python -m ui.modules.serialCom_module_frame
+    #python -m ui.modules.serialCom_module.serialCom_module_frame
     import sys
     from PySide6.QtWidgets import (
         QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy
