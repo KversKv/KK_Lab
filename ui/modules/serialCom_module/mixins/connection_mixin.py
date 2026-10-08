@@ -242,6 +242,7 @@ class ConnectionMixin:
 
     def _on_serial_search_done(self, ports):
         self.serial_combo.clear()
+        self.serial_combo.setEnabled(True)
         if ports:
             for port in ports:
                 self.serial_combo.addItem(port)
@@ -746,8 +747,7 @@ class ConnectionMixin:
 
         # Port 下拉连接态保持可选：切换端口由 _sc_on_port_switch_requested 走断开/重连
         auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
-        self._sc_baud_combo.setEditable(not auto_detect_on)
-        self._sc_baud_combo.setEnabled(not auto_detect_on)
+        self._sc_set_baud_editable(not auto_detect_on)
         self._sc_sync_top_control_state()
 
     def _sc_sync_top_control_state(self):
@@ -782,6 +782,8 @@ class ConnectionMixin:
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()
+        if not baud_text or baud_text.lower() == "custom":
+            return  # 占位项/空输入：等用户输入具体值后再生效
         panel = self._sc_sidebar_bound_panel()
         if panel is not None:
             # 侧栏跟随聚焦面板：额外面板 baud 写 config，已连接则即时应用
@@ -834,8 +836,7 @@ class ConnectionMixin:
     def _sc_on_auto_detect_toggled(self, checked):
         if self._sc_active_extra_panel() is not None:
             return  # Auto-Detect 仅主面板；聚焦额外面板时控件已禁用
-        self._sc_baud_combo.setEditable(not checked)
-        self._sc_baud_combo.setEnabled(not checked)
+        self._sc_set_baud_editable(not checked)
         self._sc_auto_baud_monitor.enabled = checked
         self._sc_auto_baud_monitor.runtime_redetect_enabled = checked
         if checked:
@@ -1002,11 +1003,12 @@ class ConnectionMixin:
         last_port = getattr(self, "_sc_last_port", "")
         if not last_port:
             return
+        # 精确匹配端口号（DisplayRole=纯端口号），防止 COM3 误配 COM30
+        target = self._sc_port_name_of(last_port)
+        if not target:
+            return
         for i in range(self._sc_port_combo.count()):
-            if self._sc_port_combo.itemText(i).startswith(last_port.split(" - ")[0].split()[0]):
-                self._sc_port_combo.setCurrentIndex(i)
-                break
-            if last_port in self._sc_port_combo.itemText(i):
+            if self._sc_port_name_of(self._sc_port_combo.itemText(i)) == target:
                 self._sc_port_combo.setCurrentIndex(i)
                 break
 
@@ -1048,8 +1050,8 @@ class ConnectionMixin:
         restored = False
         if current_port:
             for i in range(combo.count()):
-                text = combo.itemText(i)
-                if text.startswith(current_port) or current_port in text:
+                # 精确匹配端口号，防止 COM3 误配 COM30
+                if self._sc_port_name_of(combo.itemText(i)) == current_port:
                     combo.setCurrentIndex(i)
                     restored = True
                     break

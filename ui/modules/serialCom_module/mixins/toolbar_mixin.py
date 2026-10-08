@@ -601,9 +601,7 @@ class ToolbarMixin:
         self._sc_qc_group_delete_btn.clicked.connect(self._sc_qc_delete_current_group)
 
         self._sc_baud_combo.activated.connect(lambda _idx: self._sc_on_baudrate_changed())
-        _baud_line_edit = self._sc_baud_combo.lineEdit()
-        if _baud_line_edit is not None:
-            _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
+        self._sc_bind_baud_line_edit()
 
         # 连接态下切换 Port 走完整断开/重连；须先于写回连接，保证取到旧端口
         self._sc_port_combo.activated.connect(self._sc_on_port_switch_requested)
@@ -628,6 +626,23 @@ class ToolbarMixin:
     # 真值：主面板 Serial = self._sc_primary_serial_cfg（控件仅视图）；
     #       额外面板 = panel["config"]；RX/TX 主面板 = Mixin 属性，额外 = config 键。
     # 控件变更即时写目标；焦点切换时 _sc_sync_top_control_state 尾部调 _sc_sync_sidebar_to_focus 载入。
+
+    def _sc_bind_baud_line_edit(self):
+        """绑定 baud 可编辑行件的 editingFinished（setEditable 切换会重建 lineEdit，须按对象去重重绑）。"""
+        le = self._sc_baud_combo.lineEdit()
+        if le is None:
+            return
+        if getattr(self, "_sc_baud_line_edit_bound", None) is le:
+            return
+        le.editingFinished.connect(self._sc_on_baudrate_changed)
+        self._sc_baud_line_edit_bound = le
+
+    def _sc_set_baud_editable(self, editable: bool):
+        """baud 下拉可编辑态唯一入口：切换后补绑 lineEdit（editable=False 时 lineEdit 销毁）。"""
+        self._sc_baud_combo.setEditable(editable)
+        self._sc_baud_combo.setEnabled(editable)
+        if editable:
+            self._sc_bind_baud_line_edit()
 
     def _sc_sidebar_bound_panel(self):
         """侧栏当前绑定的额外面板（按 bound_index）；绑定主面板时返回 None。"""
@@ -773,8 +788,7 @@ class ToolbarMixin:
             self._sc_parity_combo.setCurrentText(str(cfg.get("parity", "None")))
 
             # Port 下拉连接态保持可选：切换端口由 _sc_on_port_switch_requested 走断开/重连
-            self._sc_baud_combo.setEditable(not auto_detect)
-            self._sc_baud_combo.setEnabled(not auto_detect)
+            self._sc_set_baud_editable(not auto_detect)
 
             self._sc_rx_toggle.set_value("HEX" if rx_hex else "ASCII")
             self._sc_rx_show_time_cb.setChecked(show_time)
