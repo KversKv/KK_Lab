@@ -20,6 +20,7 @@
 
 - 测试类统一信号：`progress(int)` / `point_ready(object)` / `finished(bool, str)`，并提供 `start()` / `stop()`。
 - 线程模型：`QObject + moveToThread`，禁止继承 `QThread` 再 override `run`。
+- `serial_io/read_worker.SerialReadWorker` 的 `run()` 结束（含异常 break）必发 `finished`；连接侧必须据此 `thread.quit` + `worker.deleteLater` 并复位线程引用，否则异常退出后无法重建读线程。
 - `stop()` 只置 `self._abort = True`，子线程循环检测软停止；`finally` 里必须 `thread.quit(); thread.wait()`。
 - 连接状态共享经 [instruments/connection_hub.py](./instruments/connection_hub.py) 的 `ConnectionHub` 单点订阅。
 
