@@ -1709,6 +1709,9 @@ class _IndependentSerialWindow(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.data_received.connect(self._on_data_received)
+        worker.error.connect(lambda err: self._panel.append_log(f"[ERROR] {err}"))
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
         self._read_thread = thread
         self._read_worker = worker
         thread.start()

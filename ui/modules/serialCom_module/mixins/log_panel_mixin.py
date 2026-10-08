@@ -759,6 +759,8 @@ class LogPanelMixin:
         thread.started.connect(worker.run)
         worker.data_received.connect(lambda data, p=panel: self._sc_extra_panel_on_data(p, data))
         worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", _CLR_ERROR))
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
         panel["read_thread"] = thread
         panel["read_worker"] = worker
         thread.start()
@@ -1077,9 +1079,15 @@ class LogPanelMixin:
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._sc_on_ntp_thread_cleanup)
         self._sc_ntp_thread = thread
         self._sc_ntp_worker = worker
         thread.start()
+
+    def _sc_on_ntp_thread_cleanup(self):
+        """NTP 线程结束后复位引用，允许失败/关闭后再次发起同步。"""
+        self._sc_ntp_thread = None
+        self._sc_ntp_worker = None
 
     def _sc_stop_ntp_sync(self):
         worker = getattr(self, "_sc_ntp_worker", None)

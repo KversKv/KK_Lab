@@ -489,10 +489,18 @@ class ConnectionMixin:
         thread.started.connect(worker.run)
         worker.data_received.connect(self._on_serial_data_received)
         worker.error.connect(self._on_serial_read_error)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_serial_read_thread_finished)
 
         self._serial_read_thread = thread
         self._serial_read_worker = worker
         thread.start()
+
+    def _on_serial_read_thread_finished(self):
+        """读线程结束（含异常退出）后清理引用，保证下次连接可重建读线程。"""
+        self._serial_read_thread = None
+        self._serial_read_worker = None
 
     def _stop_serial_read(self):
         if self._serial_read_worker is not None:
