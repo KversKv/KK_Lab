@@ -35,18 +35,20 @@
     "show_send": true,
     "show_system_log": true,
     "line_by_line": false,
-    "sidebar_visible": false,
+    "sidebar_visible": true,
     "footer_visible": false,
     "show_line_num": false,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      378,
+      748,
       0
     ],
     "log_auto_save": false,
     "log_save_path": ""
   },
   "send_history": [
+    "test_camera perf 16 300 2016 1512 7 1920 1080 640 480",
+    "csi",
     "Test2",
     "IBRT_UI:pairing_mode_test",
     "test2",
@@ -218,35 +220,10 @@
     ]
   },
   "window": {
-    "x": 2,
-    "y": 2,
-    "width": 1491,
-    "height": 500,
+    "x": 455,
+    "y": 426,
+    "width": 1571,
+    "height": 848,
     "maximized": false
-  },
-  "extra_panels": [
-    {
-      "title": "Serial Log 2",
-      "port": "COM6",
-      "baudrate": 921600,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_connect": false,
-      "independent_window": false,
-      "connected": false
-    },
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "independent_window": false,
-      "connected": false
-    }
-  ]
+  }
 }
