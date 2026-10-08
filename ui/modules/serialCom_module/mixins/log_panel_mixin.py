@@ -883,6 +883,9 @@ class LogPanelMixin:
             self._sc_stopbit_combo.setCurrentText(dlg.stopbit_combo.currentText())
             self._sc_parity_combo.setCurrentText(dlg.parity_combo.currentText())
 
+            # 连接态下串口参数即时生效：端口变更走断开/重连，其余参数运行时应用
+            self._sc_apply_serial_cfg_to_live_connection()
+
             rx_val = dlg.rx_hex_toggle.value()
             self._sc_rx_display_hex = rx_val == "HEX"
             self._sc_rx_toggle.set_value(rx_val)
@@ -947,6 +950,68 @@ class LogPanelMixin:
         # 恢复聚焦面板侧栏视图（焦点在主面板时 no-op）
         if getattr(self, "_sc_sidebar_bound_index", None) is not None:
             self._sc_sync_sidebar_to_focus()
+
+    def _sc_apply_serial_cfg_to_live_connection(self):
+        """Settings 确认后调用：主面板已连接时把侧栏 Serial 参数即时应用到活连接。"""
+        if not getattr(self, "_serial_connected", False):
+            return
+        new_port = self._sc_port_name_of(self._sc_port_combo.currentText())
+        old_port = getattr(self, "_serial_port", None)
+        if new_port and old_port and new_port != old_port:
+            self._sc_append_system(
+                f"[INFO] Switching port: {old_port} -> {new_port}", force_primary=True
+            )
+            self._sc_do_disconnect()
+            self._sc_do_connect()
+            return
+        conn = self._serial_conn
+        if conn is None or not getattr(conn, "is_open", False):
+            return
+        changed = []
+        try:
+            try:
+                baud = int(self._sc_baud_combo.currentText().strip())
+            except ValueError:
+                baud = None
+            if baud is not None and baud != getattr(self, "_serial_baudrate", None):
+                conn.baudrate = baud
+                self._serial_baudrate = baud
+                if hasattr(self, "_sc_status_baud_label"):
+                    self._sc_status_baud_label.setText(f"Baud rate (bps): {baud}")
+                changed.append(f"baudrate={baud}")
+            databit_txt = self._sc_databit_combo.currentText().strip()
+            if databit_txt.isdigit() and int(databit_txt) != getattr(conn, "bytesize", None):
+                conn.bytesize = int(databit_txt)
+                changed.append(f"databit={databit_txt}")
+            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE,
+                           "2": serial.STOPBITS_TWO}
+            new_stopbits = stopbit_map.get(self._sc_stopbit_combo.currentText(), serial.STOPBITS_ONE)
+            if new_stopbits != getattr(conn, "stopbits", None):
+                conn.stopbits = new_stopbits
+                changed.append(f"stopbits={self._sc_stopbit_combo.currentText()}")
+            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
+                          "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
+            new_parity = parity_map.get(self._sc_parity_combo.currentText(), serial.PARITY_NONE)
+            if new_parity != getattr(conn, "parity", None):
+                conn.parity = new_parity
+                changed.append(f"parity={self._sc_parity_combo.currentText()}")
+            flow = self._sc_flow_combo.currentText()
+            new_xonxoff = flow == "XON/XOFF"
+            new_rtscts = flow == "RTS/CTS"
+            if new_xonxoff != getattr(conn, "xonxoff", False):
+                conn.xonxoff = new_xonxoff
+                changed.append(f"flow={flow}")
+            if new_rtscts != getattr(conn, "rtscts", False):
+                conn.rtscts = new_rtscts
+                if f"flow={flow}" not in changed:
+                    changed.append(f"flow={flow}")
+        except Exception as e:
+            self._sc_append_system(f"[ERROR] Failed to apply serial settings: {e}", force_primary=True)
+            return
+        if changed:
+            self._sc_append_system(
+                f"[INFO] Applied to live connection: {', '.join(changed)}", force_primary=True
+            )
 
     def _sc_apply_max_log_lines(self, value):
         value = max(500, min(int(value), self._SC_MAX_LOG_LINES_LIMIT))

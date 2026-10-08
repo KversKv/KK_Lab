@@ -827,6 +827,8 @@ class ToolbarMixin:
         panel = self._sc_sidebar_bound_panel()
         if panel is None:
             self._sc_show_timestamp = checked
+            if hasattr(self, "_sc_log_panel"):
+                self._sc_log_panel.show_timestamp = checked
         else:
             panel["config"]["show_timestamp"] = checked
             panel["frame"].show_timestamp = checked

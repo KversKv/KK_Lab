@@ -690,10 +690,17 @@ class ConnectionMixin:
             self._sc_append_system(f"[ERROR] Connection failed: {e}", force_primary=True)
 
     def _sc_do_disconnect(self):
+        # 断开即停止运行中的脚本（热插拔自动断开同路径），避免脚本挂起到下一步发送失败
+        if getattr(self, "_sc_script_running", False):
+            self._sc_script_stop()
         self._stop_serial_read()
         self._sc_stop_auto_baud_scan()
         self._sc_stop_auto_save()
         self._sc_close_temp_log(delete=True)
+        # 清 RX 行缓冲与 flush 定时器：断开前的半行数据不拼到下次连接
+        self._sc_rx_line_buf = ""
+        if getattr(self, "_sc_rx_flush_timer", None) is not None:
+            self._sc_rx_flush_timer.stop()
         try:
             if self._serial_conn and self._serial_conn.is_open:
                 self._serial_conn.close()
