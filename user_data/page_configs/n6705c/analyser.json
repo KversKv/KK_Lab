@@ -9,25 +9,13 @@
     "batch_a_ch2_voltage": "0.8",
     "batch_a_ch3_voltage": "1.22",
     "batch_a_ch4_voltage": "1.82",
-    "batch_b_ch1_voltage": "3.8000",
-    "batch_b_ch2_voltage": "0.8000",
-    "batch_b_ch3_voltage": "0.875",
-    "batch_b_ch4_voltage": "1.8000",
     "batch_a_ch1_current": "0.2000",
     "batch_a_ch2_current": "0.02",
     "batch_a_ch3_current": "0.02",
     "batch_a_ch4_current": "0.0200",
-    "batch_b_ch1_current": "0.2000",
-    "batch_b_ch2_current": "0.0200",
-    "batch_b_ch3_current": "0.0200",
-    "batch_b_ch4_current": "0.0200",
     "consumption_a_ch1_enable": false,
     "consumption_a_ch2_enable": true,
     "consumption_a_ch3_enable": false,
-    "consumption_a_ch4_enable": false,
-    "consumption_b_ch1_enable": false,
-    "consumption_b_ch2_enable": false,
-    "consumption_b_ch3_enable": false,
-    "consumption_b_ch4_enable": false
+    "consumption_a_ch4_enable": false
   }
 }
