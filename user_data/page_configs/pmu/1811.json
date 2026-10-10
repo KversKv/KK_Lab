@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "config": {
+    "BUCK_01": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "LDO_01": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.775
+    },
+    "BUCK_02": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "LDO_02": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.089
+    },
+    "LDO_12": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.55
+    },
+    "LDO_06": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.775
+    },
+    "BUCK_06": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "BUCK_03": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "LDO_03": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.485
+    },
+    "LDO_07": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.865
+    },
+    "LDO_08": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.865
+    },
+    "LDO_09": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.255
+    },
+    "LDO_10": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.265
+    },
+    "LDO_11": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.28
+    },
+    "BUCK_04": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "BUCK_05": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.0
+    },
+    "LDO_14": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 2.1
+    },
+    "LDO_15": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 2.1
+    },
+    "LDO_VMIC1": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.716
+    },
+    "LDO_VMIC2": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 1.716
+    },
+    "LDO_05": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 2.0
+    },
+    "LDO_13": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 2.1
+    },
+    "SW1": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW7": {
+      "enabled": false,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW2": {
+      "enabled": false,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW3": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW4": {
+      "enabled": false,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW5": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.0
+    },
+    "SW6": {
+      "enabled": true,
+      "mode": "Normal",
+      "voltage": 0.0
+    }
+  }
+}
