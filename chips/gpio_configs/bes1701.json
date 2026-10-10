@@ -1,0 +1,20 @@
+{
+  "chip": "bes1701",
+  "comment": "BES1701 AON GPIO 配置。bank 内寄存器偏移固定：Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C / Dir Clr=+0x10 / Input Read=+0x50，每 bank 32 个 GPIO（Group x4 ~ x4+3，bit=(group%4)*8+pin）。pull_up/pull_down_bases 与 gpio_banks 平行，null 表示该 bank 上下拉地址待确认（UI 自动禁用对应按钮）。",
+  "gpio_banks": [
+    { "name": "AON_GPIO0", "base": "0x40081000" },
+    { "name": "AON_GPIO1", "base": "0x40089000" },
+    { "name": "AON_GPIO2", "base": "0x4008A000" },
+    { "name": "AON_GPIO3", "base": "0x4008D000" },
+    { "name": "AON_GPIO4", "base": "0x4008F000" }
+  ],
+  "drv": {
+    "base": "0x40086074",
+    "bits_per_gpio": 2,
+    "fast": 3,
+    "slow": 0,
+    "comment": "drv_sel 独立地址区，从 base 起每 32bit 寄存器连续排布；bits_per_gpio=2 → 每寄存器 16 个 GPIO，字段 [1:0] 11=fast 00=slow"
+  },
+  "pull_up_bases": [null, null, null, null, null],
+  "pull_down_bases": [null, null, null, null, null]
+}

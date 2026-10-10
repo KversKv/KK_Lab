@@ -1,0 +1,27 @@
+<h2>DUT GPIO</h2>
+<h3>页面介绍</h3>
+<p>DUT GPIO 页面通过 USB-I2C 直接操作 BES 芯片的 AON GPIO 寄存器，无需固件配合即可控制 DUT 的 GPIO：设置输出高/低电平、输入（高阻/上拉/下拉）、驱动速率，并回读输入电平。页面按 <code>bes_chip_check()</code> 检测到的芯片型号自动加载 <code>chips/gpio_configs/&lt;chip&gt;.json</code> 中保存的各 GPIO bank 基地址、drv_sel 与上下拉寄存器地址。</p>
+
+<h3>功能</h3>
+<ul>
+  <li><b>Detect DUT</b> — 检测芯片型号并自动匹配 GPIO 配置，展示全部 GPIO 网格（按 Bank / Group 分组）</li>
+  <li><b>Refresh All</b> — 回读所有 bank 的输入电平寄存器（base+0x50），刷新每个 GPIO 的电平指示</li>
+  <li><b>单脚控制</b> — 点击任意 GPIO 后，在右侧详情面板设置：Output High / Output Low / Input Hi-Z / Input Pull-Up / Input Pull-Down</li>
+  <li><b>Drv 速率</b> — 设置选中 GPIO 的驱动速率 Fast / Slow（drv_sel 独立地址区）</li>
+  <li><b>Read Level</b> — 只回读选中 GPIO 所在 bank 的输入电平</li>
+</ul>
+
+<h3>使用方法</h3>
+<ol>
+  <li>连接 USB-I2C 适配器并给 DUT 上电</li>
+  <li>选择 I2C 速率（默认 100 kHz），点击 <b>Detect DUT</b></li>
+  <li>识别成功后网格展示全部 GPIO（GPIO00~07 属 Group0，GPIO10~17 属 Group1，依此类推）</li>
+  <li>点击某个 GPIO，在右侧面板选择工作模式或读取电平</li>
+</ol>
+
+<h3>说明</h3>
+<ul>
+  <li>寄存器偏移（各 bank 一致）：Out Set=+0x00、Dir Set=+0x04、Out Clr=+0x0C、Dir Clr=+0x10、Input Read=+0x50</li>
+  <li>若上下拉按钮不可用，说明该芯片 JSON 中 pull_up/pull_down_bases 尚未填写地址</li>
+  <li>新增芯片：复制 <code>chips/gpio_configs/bes1701.json</code> 并按实际填写各基地址即可</li>
+</ul>

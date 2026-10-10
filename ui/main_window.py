@@ -105,6 +105,7 @@ from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
 from ui.pages.vmin_hunter.vmin_hunter_container import VminHunterContainerUI
 from ui.pages.pmu.pmu_1811 import Pmu1811UI
 from ui.pages.pmu.pmu_1860_ui import Pmu1860UI
+from ui.pages.gpio.gpio_control_ui import GpioControlUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
 from ui.modules.IIC_Module.i2c_mixin import I2cMixin
@@ -400,6 +401,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.i2c_control_ui = None
         self.pmu_1811_ui = None
         self.pmu_1860_ui = None
+        self.gpio_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
         # 紧凑（最小）视图状态：True = 仅 Quick Setup 小窗
@@ -1545,6 +1547,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.orchestrator_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.pmu_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.collection_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.gpio_btn.clicked.connect(self._on_nav_button_clicked)
 
         self.status_panel.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
@@ -1835,6 +1838,17 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "pmu_1811"
         self._fade_in_widget(self.pmu_1811_ui)
 
+    def _create_gpio_ui(self):
+        logger.debug("Switching to GPIO UI")
+        self._hide_all_instrument_uis()
+        if self.gpio_ui is None:
+            self.gpio_ui = GpioControlUI()
+            self.instrument_ui_container_layout.addWidget(self.gpio_ui)
+        else:
+            self.gpio_ui.show()
+        self.current_instrument_ui = "gpio"
+        self._fade_in_widget(self.gpio_ui)
+
     def _hide_all_instrument_uis(self):
         self._page_switch_geometry = self.geometry()
         for widget in [
@@ -1844,6 +1858,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.orchestrator_ui,
             self.vmin_hunter_ui, self.kk_serials_ui, self.collection_ui,
             self.i2c_control_ui, self.pmu_1811_ui, self.pmu_1860_ui,
+            self.gpio_ui,
         ]:
             if widget is not None:
                 widget.setGraphicsEffect(None)
@@ -2032,6 +2047,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "i2c_control": "ui.modules.IIC_Module",
             "pmu_1811": "ui.pages.pmu",
             "pmu_1860": "ui.pages.pmu",
+            "gpio": "ui.pages.gpio",
         }
         module_path = module_map.get(self.current_instrument_ui)
         if not module_path:

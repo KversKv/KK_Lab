@@ -51,19 +51,21 @@ KK_Lab/
 ================================================================================
 
 chips/
-└── bes_chip_configs/
-    ├── bes_chip_configs.py  # 芯片配置统一入口，声明 SUPPORTED_CHIPS 列表并
-    │                        # 按型号动态加载 YAML 配置与 Python 模块
-    ├── main_chip_configs/   # 主芯片 YAML 配置（寄存器映射 / 测试参数 / 流程）
-    │                        # 含 bes1000 / bes13xx / bes14xx / bes15xx /
-    │                        # bes16xx / bes17xx / bes20xx / bes23xx /
-    │                        # bes3601p 及 batch_scripts_PMU.yaml 等
-    ├── main_chips/          # 主芯片对应的 Python 驱动模块 (与 YAML 同名)
-    └── pmu_chips/           # 独立 PMU 芯片驱动
-        ├── pmu_1806p.py
-        ├── pmu_1810.py
-        ├── pmu_1810p.py
-        └── pmu_1813.py
+├── bes_chip_configs/
+│   ├── bes_chip_configs.py  # 芯片配置统一入口，声明 SUPPORTED_CHIPS 列表并
+│   │                        # 按型号动态加载 YAML 配置与 Python 模块
+│   ├── main_chip_configs/   # 主芯片 YAML 配置（寄存器映射 / 测试参数 / 流程）
+│   │                        # 含 bes1000 / bes13xx / bes14xx / bes15xx /
+│   │                        # bes16xx / bes17xx / bes20xx / bes23xx /
+│   │                        # bes3601p 及 batch_scripts_PMU.yaml 等
+│   ├── main_chips/          # 主芯片对应的 Python 驱动模块 (与 YAML 同名)
+│   └── pmu_chips/           # 独立 PMU 芯片驱动
+│       ├── pmu_1806p.py
+│       ├── pmu_1810.py
+│       ├── pmu_1810p.py
+│       └── pmu_1813.py
+└── gpio_configs/            # DUT GPIO 页面按芯片保存的 JSON 配置（GPIO bank 基地址 /
+                             # drv_sel 区与位宽 / 上下拉寄存器区地址，如 bes1701.json）
 
 ================================================================================
   core/ - 核心业务逻辑
@@ -179,6 +181,9 @@ core/
 │           ├── schedule.py  # 调度类：schedule_action 登记经 schedule_register_callback
 │           └── kk_lab_memory.py # KK Lab AI 记忆类：archive/list/search/index/generate_quick_action_from_test_item/export_test_case_to_eval_draft/delete/promote_local（Phase 2+3，medium+确认/low/low/low/medium+确认/medium+确认/medium+确认/medium+确认）
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
+├── gpio/                    # DUT GPIO 控制内核（经 USB-I2C 直操作 BES AON GPIO）
+│   ├── gpio_config.py       # GPIO JSON 配置加载 + 寄存器地址/位域计算 + 动作构造（纯 Python 无 Qt）
+│   └── gpio_workers.py      # ChipCheck / ReadBanks / Apply Worker（QObject+moveToThread，BIT_32）
 ├── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
 │   ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
 │   ├── alive_checker.py     # DUT 判活器：可插拔策略（默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）
@@ -456,6 +461,10 @@ ui/
 │   │   ├── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
 │   │   └── vmin_single_test_ui.py    # 单次 Vmin 测试子页 (指定电压点单次执行测试序列)
 │   │
+│   ├── gpio/                  # DUT GPIO 控制页面（TOOLS 组）
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
+│   │   └── gpio_control_ui.py        # Detect DUT→GPIO 网格→单脚 模式/电平/drv 控制（业务走 core/gpio）
+│   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）
 │       ├── AGENTS.md                 # 页级局部 AI 协作指引
 │       ├── orchestrator_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
@@ -579,7 +588,8 @@ helps/
 ├── charger_iterm.html               # Iterm 终止电流测试操作说明
 ├── charger_regulation_voltage.html  # 调节电压测试操作说明
 ├── module_test_ldo.html             # Module Test LDO 子页面操作说明
-└── module_test_dcdc.html            # Module Test DCDC 子页面操作说明
+├── module_test_dcdc.html            # Module Test DCDC 子页面操作说明
+└── gpio.html                        # DUT GPIO 控制页面操作说明
 
 ================================================================================
   docs/ - 项目文档、运行期知识库与 AI 协作资料

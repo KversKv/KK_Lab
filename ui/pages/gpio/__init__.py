@@ -1,0 +1,3 @@
+# DUT GPIO 控制页（经 USB-I2C 直操作 BES 芯片 AON GPIO）
+
+MODULE_VERSION = "1.0.0"

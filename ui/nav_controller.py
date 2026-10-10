@@ -252,6 +252,11 @@ class NavController:
         )
         self._register_nav_button(self.collection_btn, nav_layout)
 
+        self.gpio_btn = SidebarNavButton(
+            "GPIO", "", os.path.join(_PAGE_SVGS_DIR, "gpio.svg")
+        )
+        self._register_nav_button(self.gpio_btn, nav_layout)
+
         self._add_group_title("ORCHESTRATION", nav_layout)
 
         self.orchestrator_btn = SidebarNavButton(
@@ -272,6 +277,7 @@ class NavController:
         self.nav_button_group.addButton(self.orchestrator_btn)
         self.nav_button_group.addButton(self.pmu_btn)
         self.nav_button_group.addButton(self.collection_btn)
+        self.nav_button_group.addButton(self.gpio_btn)
 
         self._refresh_nav_arrow_state()
 
@@ -372,6 +378,7 @@ class NavController:
             self.orchestrator_btn,
             self.pmu_btn,
             self.collection_btn,
+            self.gpio_btn,
         ]
         for btn in nav_buttons:
             if hasattr(btn, "set_arrow_visible"):
@@ -946,6 +953,17 @@ class NavController:
             self._host._create_collection_ui(selected_key=self.current_collection_key)
             self._show_collection_submenu()
 
+        elif sender == self.gpio_btn:
+            self.pmu_submenu.hide()
+            self.pa_submenu.hide()
+            self.charger_submenu.hide()
+            self.consumption_submenu.hide()
+            self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
+            self._host._create_gpio_ui()
+
         self._refresh_nav_arrow_state()
 
     def setup_shortcuts(self):
@@ -958,6 +976,7 @@ class NavController:
             ("Ctrl+6", self.consumption_test_btn),
             ("Ctrl+7", self.vmin_hunter_btn),
             ("Ctrl+8", self.orchestrator_btn),
+            ("Ctrl+9", self.gpio_btn),
             ("Ctrl+0", self.collection_btn),
         ]
         for key_seq, btn in shortcuts:
