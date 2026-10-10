@@ -32,6 +32,9 @@ _COMPACT_ICON_SVG = os.path.join(
 _CAPTURE_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
 )
+_PIN_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "icons_svg", "window", "pin.svg"
+)
 
 _BAR_STYLE = """
 QWidget#appTopBar {
@@ -63,6 +66,22 @@ QPushButton#compactViewBtn:hover {
     background-color: #1b2640;
 }
 QPushButton#compactViewBtn:checked {
+    background-color: #2563eb;
+}
+QPushButton#pinViewBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#pinViewBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#pinViewBtn:checked {
     background-color: #2563eb;
 }
 QPushButton#captureChartBtn {
@@ -177,6 +196,11 @@ class AppTopBar(QWidget):
         self.compact_view_button = self._make_compact_view_button()
         layout.addWidget(self.compact_view_button, 0, Qt.AlignVCenter)
 
+        # 窗口置顶按钮：仅紧凑（最小）视图显示（MainWindow 控制可见性），
+        # checked = 窗口置顶（WindowStaysOnTopHint）。
+        self.pin_button = self._make_pin_button()
+        layout.addWidget(self.pin_button, 0, Qt.AlignVCenter)
+
         layout.addStretch(1)
 
         # 一键截图按钮：当前页图表区域 → 系统剪贴板（MainWindow 连接处理槽）
@@ -199,6 +223,7 @@ class AppTopBar(QWidget):
 
         self._interactive_widgets = [
             self.compact_view_button,
+            self.pin_button,
             self.capture_chart_button,
             self.ai_panel_button,
             self._min_btn,
@@ -226,6 +251,19 @@ class AppTopBar(QWidget):
         btn.setToolTip("最小视图（仅 Quick Setup）")
         if os.path.isfile(_COMPACT_ICON_SVG):
             btn.setIcon(tinted_svg_icon(_COMPACT_ICON_SVG, "#c6d4f2", 16))
+            btn.setIconSize(QSize(16, 16))
+        btn.setVisible(False)
+        return btn
+
+    def _make_pin_button(self):
+        btn = QPushButton(self)
+        btn.setObjectName("pinViewBtn")
+        btn.setCheckable(True)
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setToolTip("窗口置顶")
+        if os.path.isfile(_PIN_ICON_SVG):
+            btn.setIcon(tinted_svg_icon(_PIN_ICON_SVG, "#c6d4f2", 16))
             btn.setIconSize(QSize(16, 16))
         btn.setVisible(False)
         return btn

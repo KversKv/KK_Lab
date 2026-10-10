@@ -139,8 +139,8 @@ from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
 
-# 紧凑（最小）视图窗口尺寸：仅容纳 Quick Setup 面板（双设备列宽 ~950 + 页边距）
-_COMPACT_VIEW_SIZE = (1000, 460)
+# 紧凑（最小）视图窗口尺寸：仅容纳 Quick Setup 面板（双设备列收紧后 ~590 + 页边距）
+_COMPACT_VIEW_SIZE = (600, 200)
 
 # 最小窗口尺寸（逻辑像素）：left_nav(187) + right_content(min 400) + AI 面板
 # 可放的底线；低于 640 高时 left_nav 三段式（Logo/滚动区/状态面板）无法保证可读。
@@ -623,6 +623,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.top_bar = AppTopBar(self)
         _cmc_tick("AppTopBar")
         self.top_bar.compact_view_button.toggled.connect(self._on_compact_view_toggled)
+        self.top_bar.pin_button.toggled.connect(self._on_pin_toggled)
         self.top_bar.capture_chart_button.clicked.connect(self._on_capture_chart)
         self.main_layout.addWidget(self.top_bar)
         # 默认首页（N6705C）装载早于 top_bar 创建，_fade_in_widget 时
@@ -1903,6 +1904,10 @@ class MainWindow(CleanupMixin, QMainWindow):
             if ai_btn is not None and ai_btn.isChecked():
                 self._compact_ai_was_open = True
                 ai_btn.setChecked(False)
+            # 紧凑态顶栏精简：隐藏截图 / AI 按钮，露出置顶按钮
+            self.top_bar.capture_chart_button.setVisible(False)
+            self.top_bar.ai_panel_button.setVisible(False)
+            self.top_bar.pin_button.setVisible(True)
             if page is not None:
                 page.set_compact_mode(True)
             if self.isMaximized():
@@ -1914,6 +1919,12 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.setFixedSize(*_COMPACT_VIEW_SIZE)
             QTimer.singleShot(80, self._fit_compact_size)
         else:
+            # 还原顶栏按钮；退出紧凑态强制取消置顶
+            self.top_bar.pin_button.setChecked(False)
+            self.top_bar.pin_button.setVisible(False)
+            self.top_bar.capture_chart_button.setVisible(True)
+            if self.with_ai and self.ai_settings is not None and self.ai_settings.enabled:
+                self.top_bar.ai_panel_button.setVisible(True)
             if page is not None:
                 page.set_compact_mode(False)
             self.left_nav.setVisible(True)
@@ -1934,6 +1945,23 @@ class MainWindow(CleanupMixin, QMainWindow):
                 if ai_btn is not None:
                     ai_btn.setChecked(True)
             self._compact_ai_was_open = False
+
+    def _on_pin_toggled(self, checked):
+        """紧凑视图置顶按钮：切换 WindowStaysOnTopHint。
+
+        setWindowFlags 会隐藏窗口，须保存 geometry 并重新 show。
+        """
+        flags = self.windowFlags()
+        if checked:
+            flags |= Qt.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowStaysOnTopHint
+        if flags == self.windowFlags():
+            return
+        geometry = self.geometry()
+        self.setWindowFlags(flags)
+        self.setGeometry(geometry)
+        self.show()
 
     def _fit_compact_size(self):
         """紧凑视图尺寸自适应：按内容 hint 收缩高度，消除底部空白。
