@@ -108,6 +108,9 @@ class CleanupMixin:
         if self.orchestrator_ui is not None:
             self._cleanup_sub_ui(self.orchestrator_ui, "OrchestratorUI")
 
+        if self.gpio_ui is not None:
+            self._cleanup_sub_ui(self.gpio_ui, "GpioControlUI")
+
         if self.kk_serials_ui is not None:
             try:
                 self.kk_serials_ui.close_serial()

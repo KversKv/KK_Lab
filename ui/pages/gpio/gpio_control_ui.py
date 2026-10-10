@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DUT GPIO 控制页。
+"""BES GPIO Workbench — DUT GPIO 控制页（暗色精密仪器工作台）。
 
-经 USB-I2C 直操作 BES 芯片 AON GPIO 寄存器：
-Detect DUT（bes_chip_check）→ 按 chip_name 加载 chips/gpio_configs/<chip>.json
-→ 展示全部 GPIO → 点击单个 GPIO 设置 输出高/低、输入高阻/上拉/下拉、
-驱动速率，或回读输入电平。
+布局：Top Bar（品牌 / 7 大视图 Tab / i2c.bes_chip_check() 主按钮）
+→ DUT 状态与 Bank 面板（Profile / Bank / 地址速览 / 遥测统计 / Read 0x50 / 桥接切换）
+→ 批处理与掩码注入工具条（全组操作 / 32bit 掩码 / 0x50 定时轮询）
+→ 中央主工作视口（Pin Matrix / Pin Table / Register Map / I2C Sniffer /
+  JSON Config / Code Export / Confirm Note 七大视图）。
 
-铁律：页面不做阻塞 I2C，所有读写走 core/gpio/ Worker（QThread）。
+硬件语义（严格 SET/CLR，杜绝读-改-写竞态）：
+OUTPUT=Base+0x04 / INPUT=Base+0x10 / HIGH=Base+0x00 / LOW=Base+0x0C / 读=Base+0x50。
+PU/PD/drv 为普通 RW 寄存器，必须 OP_BITS 位域写（DLL RMW）。
+
+铁律：真实硬件读写一律走 core/gpio/ Worker（QThread）；Simulated DUT 为
+页内影子寄存器模型，不触碰硬件。方向寄存器无回读，模式状态仅会话内记忆。
 """
 
 import sys
 import os
+import json
+from datetime import datetime
 
 if not getattr(sys, "frozen", False):
     _PROJECT_ROOT = os.path.dirname(
@@ -22,18 +30,27 @@ if not getattr(sys, "frozen", False):
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
-    QLabel, QFrame, QGroupBox, QScrollArea, QSizePolicy,
+    QLabel, QFrame, QScrollArea, QSizePolicy, QStackedWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QPlainTextEdit, QTextEdit, QLineEdit, QButtonGroup, QFileDialog,
+    QApplication,
 )
 from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtGui import QFont, QIcon, QTransform
 
 from log_config import get_logger
+from ui.resource_path import get_resource_base
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from core.gpio.gpio_config import (
-    load_gpio_config, mode_label,
+    load_gpio_config, list_gpio_config_chips, mode_label,
     MODE_OUT_HIGH, MODE_OUT_LOW, MODE_IN_FLOAT,
     MODE_IN_PULL_UP, MODE_IN_PULL_DOWN,
-    PINS_PER_GROUP, GROUPS_PER_BANK,
+    OP_WRITE, OP_BITS,
+    OFFSET_OUT_SET, OFFSET_DIR_SET, OFFSET_OUT_CLR, OFFSET_DIR_CLR,
+    OFFSET_IN_READ, PINS_PER_GROUP, GROUPS_PER_BANK, GPIOS_PER_BANK,
 )
 from core.gpio.gpio_workers import (
     GpioChipCheckWorker, GpioReadBanksWorker, GpioApplyWorker,
@@ -41,92 +58,433 @@ from core.gpio.gpio_workers import (
 
 logger = get_logger(__name__)
 
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
+_MONO = "Consolas, 'Courier New', monospace"
+
+# ---------------------------------------------------------------- 调色板（60-30-10）
+# 60% 基底 #020617/#0B0F19；30% 面板 #0F172A + 1px #1E293B；
+# 10% 遥测荧光：青 #06B6D4/#22D3EE、翠 #10B981、琥珀 #F59E0B、靛 #6366F1、灰 #475569。
+
 _GPIO_PAGE_QSS = """
 QWidget#gpioPage {
-    background-color: #020817;
-    color: #dbe7ff;
+    background-color: #020617;
+    color: #E2E8F0;
+}
+QWidget#gpioViewPage {
+    background-color: #020617;
 }
 QLabel {
     background-color: transparent;
-    color: #dbe7ff;
+    color: #E2E8F0;
     border: none;
 }
 QLabel#gpioTitle {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
+    color: #F1F5F9;
 }
-QLabel#gpioStatus { color: #7b93bf; }
-QLabel#gpioStatus[ok="1"] { color: #15d1a3; }
-QLabel#gpioStatus[err="1"] { color: #ff5e7a; }
-QGroupBox#gpioBank {
-    background-color: #060f24;
-    border: 1px solid #17345f;
-    border-radius: 8px;
-    margin-top: 18px;
+QLabel#gpioSub {
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    color: #64748B;
+}
+QLabel#gpioStatus { color: #94A3B8; font-size: 11px; }
+QLabel#gpioStatus[ok="1"] { color: #10B981; }
+QLabel#gpioStatus[err="1"] { color: #EF4444; }
+QLabel#gpioDim {
+    color: #64748B;
+    font-size: 11px;
+}
+QLabel#gpioMono {
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    color: #94A3B8;
+}
+QLabel#gpioAddr {
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    color: #22D3EE;
+}
+QLabel#gpioPanelKey {
+    color: #64748B;
+    font-size: 11px;
+}
+QLabel#gpioSection {
+    color: #94A3B8;
+    font-size: 11px;
     font-weight: 600;
-    color: #9db4dd;
 }
-QGroupBox#gpioBank::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 10px;
-    padding: 2px 6px;
+
+/* ---- Top bar tabs（盒模型一致，§25） ---- */
+QPushButton#gpioTab {
+    background-color: transparent;
+    color: #94A3B8;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    padding: 5px 10px 3px 10px;
+    font-size: 12px;
+    min-height: 22px;
+    max-height: 22px;
 }
-QLabel#gpioGroupName { color: #7b93bf; font-size: 11px; }
-QPushButton#gpioPin {
-    background-color: #0f1b33;
-    color: #c7d5f2;
-    border: 1px solid #22355c;
+QPushButton#gpioTab:hover { color: #E2E8F0; }
+QPushButton#gpioTab:checked {
+    color: #22D3EE;
+    border: 1px solid transparent;
+    border-bottom: 2px solid #06B6D4;
+    padding: 5px 10px 3px 10px;
+}
+QPushButton#gpioTab:disabled { color: #334155; }
+
+/* ---- 主操作按钮 chip_check ---- */
+QPushButton#gpioPrimary {
+    background-color: #164E63;
+    color: #A5F3FC;
+    border: 1px solid #06B6D4;
     border-radius: 4px;
-    font-size: 10px;
-    min-height: 24px;
-    max-height: 24px;
-    padding: 0px;
-}
-QPushButton#gpioPin:hover { border-color: #3d5a94; }
-QPushButton#gpioPin[lvl="h"] { color: #7df0cd; border-color: #15d1a3; }
-QPushButton#gpioPin[lvl="l"] { color: #8fa3cc; border-color: #33456b; }
-QPushButton#gpioPin[mode="out_h"] {
-    background-color: #3a2c10; color: #ffcf7d; border-color: #8a6420;
-}
-QPushButton#gpioPin[mode="out_l"] {
-    background-color: #241f12; color: #b39a68; border-color: #57481f;
-}
-QPushButton#gpioPin[sel="1"] { border: 1px solid #7ea1ff; }
-QFrame#gpioDetail {
-    background-color: #060f24;
-    border: 1px solid #17345f;
-    border-radius: 8px;
-}
-QLabel#gpioPinName { font-size: 16px; font-weight: 700; color: #ffcf7d; }
-QLabel#gpioPinInfo { color: #7b93bf; font-size: 11px; }
-QLabel#gpioPinState { font-size: 12px; }
-QPushButton#gpioAction {
-    background-color: #123055;
-    color: #cfe0ff;
-    border: 1px solid #1f4d85;
-    border-radius: 4px;
+    padding: 0px 14px;
+    font-family: """ + _MONO + """;
+    font-size: 12px;
+    font-weight: 600;
     min-height: 26px;
     max-height: 26px;
-    padding: 0px 8px;
 }
-QPushButton#gpioAction:hover { background-color: #173d6b; }
-QPushButton#gpioAction:disabled {
-    background-color: #0b1428; color: #4a5a7c; border-color: #1a2a4a;
+QPushButton#gpioPrimary:hover { background-color: #155E75; }
+QPushButton#gpioPrimary:disabled {
+    background-color: #0B0F19; color: #475569; border-color: #1E293B;
 }
-QPushButton#gpioTopBtn {
-    background-color: #123055;
-    color: #cfe0ff;
-    border: 1px solid #1f4d85;
+
+/* ---- 面板容器 ---- */
+QFrame#gpioPanel {
+    background-color: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 6px;
+}
+QFrame#gpioSep {
+    background-color: #1E293B;
+    min-width: 1px; max-width: 1px;
+}
+QFrame#gpioHSep {
+    background-color: #1E293B;
+    min-height: 1px; max-height: 1px;
+}
+
+/* ---- 通用小按钮 ---- */
+QPushButton#gpioBtn {
+    background-color: #111D33;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
     border-radius: 4px;
+    padding: 0px 10px;
+    font-size: 11px;
+    min-height: 22px;
+    max-height: 22px;
+}
+QPushButton#gpioBtn:hover { border-color: #155E75; color: #E2E8F0; }
+QPushButton#gpioBtn:disabled { background-color: #0B0F19; color: #475569; }
+QPushButton#gpioBtn[on="1"] {
+    background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
+}
+
+QPushButton#gpioBatch {
+    background-color: #111D33;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    padding: 0px 8px;
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    min-height: 22px;
+    max-height: 22px;
+}
+QPushButton#gpioBatch:hover { border-color: #155E75; color: #E2E8F0; }
+QPushButton#gpioBatch:disabled { background-color: #0B0F19; color: #475569; }
+
+/* ---- 输入框 ---- */
+QLineEdit#gpioHexEdit, QLineEdit#gpioSearch, QLineEdit#gpioAliasEdit {
+    background-color: #020617;
+    color: #22D3EE;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: """ + _MONO + """;
+    font-size: 12px;
+    min-height: 20px;
+    selection-background-color: #164E63;
+}
+QLineEdit#gpioSearch { color: #E2E8F0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+QLineEdit#gpioHexEdit:focus, QLineEdit#gpioSearch:focus, QLineEdit#gpioAliasEdit:focus {
+    border-color: #06B6D4;
+}
+QLineEdit#gpioHexEdit:disabled { color: #475569; }
+
+/* ---- 统计遥测 ---- */
+QLabel#gpioStatKey { color: #475569; font-size: 10px; }
+QLabel#gpioStatVal {
+    font-family: """ + _MONO + """;
+    font-size: 13px;
+    font-weight: 700;
+    color: #E2E8F0;
+}
+QLabel#gpioStatVal[k="out"]  { color: #22D3EE; }
+QLabel#gpioStatVal[k="in"]   { color: #10B981; }
+QLabel#gpioStatVal[k="high"] { color: #22D3EE; }
+QLabel#gpioStatVal[k="low"]  { color: #64748B; }
+QLabel#gpioStatVal[k="pu"]   { color: #F59E0B; }
+QLabel#gpioStatVal[k="pd"]   { color: #6366F1; }
+
+/* ---- Pin Matrix 卡片 ---- */
+QFrame#pinCard {
+    background-color: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 6px;
+}
+QFrame#pinCard:hover { border-color: #334155; }
+QFrame#pinCard[sel="1"] { border: 1px solid #06B6D4; }
+QFrame#pinCard[lvl="h"] { border: 1px solid #155E75; }
+QFrame#pinCard[lvl="h"][sel="1"] { border: 1px solid #22D3EE; }
+QLabel#pinName {
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    font-weight: 700;
+    color: #E2E8F0;
+}
+QLabel#pinAlias {
+    font-size: 9px;
+    color: #64748B;
+}
+QFrame#pinLed {
+    background-color: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    min-width: 10px; max-width: 10px;
+    min-height: 10px; max-height: 10px;
+}
+QFrame#pinCard[lvl="h"] QFrame#pinLed {
+    background-color: #22D3EE;
+    border: 1px solid #22D3EE;
+}
+QPushButton#pinMini {
+    background-color: transparent;
+    color: #94A3B8;
+    border: 1px solid #1E293B;
+    border-radius: 3px;
+    padding: 0px 2px;
+    font-family: """ + _MONO + """;
+    font-size: 9px;
+    min-height: 15px;
+    max-height: 15px;
+}
+QPushButton#pinMini:hover { border-color: #334155; color: #E2E8F0; }
+QPushButton#pinMini:disabled { color: #334155; }
+QPushButton#pinMini[cur="out"] { color: #22D3EE; border-color: #155E75; }
+QPushButton#pinMini[cur="in"]  { color: #10B981; border-color: #064E3B; }
+QPushButton#pinMini[cur="h"]   { color: #22D3EE; border-color: #155E75; }
+QPushButton#pinMini[cur="l"]   { color: #64748B; }
+QPushButton#pinMini[cur="pu"]  { color: #F59E0B; border-color: #78350F; }
+QPushButton#pinMini[cur="pd"]  { color: #818CF8; border-color: #312E81; }
+
+/* ---- Inspector ---- */
+QFrame#gpioInspector {
+    background-color: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 6px;
+}
+QLabel#gpioPinName {
+    font-family: """ + _MONO + """;
+    font-size: 18px;
+    font-weight: 700;
+    color: #22D3EE;
+}
+QLabel#gpioPinInfo {
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    color: #64748B;
+}
+QLabel#gpioBigState {
+    font-family: """ + _MONO + """;
+    font-size: 15px;
+    font-weight: 700;
+    color: #475569;
+}
+QLabel#gpioBigState[lvl="h"] { color: #22D3EE; }
+QLabel#gpioBigState[lvl="l"] { color: #64748B; }
+QPushButton#gpioAction {
+    background-color: #111D33;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    padding: 0px 8px;
+    font-size: 11px;
     min-height: 24px;
     max-height: 24px;
-    padding: 0px 12px;
 }
-QPushButton#gpioTopBtn:hover { background-color: #173d6b; }
-QPushButton#gpioTopBtn:disabled {
-    background-color: #0b1428; color: #4a5a7c; border-color: #1a2a4a;
+QPushButton#gpioAction:hover { border-color: #155E75; }
+QPushButton#gpioAction:disabled { background-color: #0B0F19; color: #475569; }
+QPushButton#gpioAction[cur="1"] {
+    background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
 }
+QPushButton#gpioAction[cur="pu"] {
+    background-color: #451A03; color: #F59E0B; border-color: #B45309;
+}
+QPushButton#gpioAction[cur="pd"] {
+    background-color: #1E1B4B; color: #818CF8; border-color: #4F46E5;
+}
+
+/* ---- Detailed Pin Table ---- */
+QTableWidget#gpioTable {
+    background-color: #020617;
+    alternate-background-color: #0B0F19;
+    color: #CBD5E1;
+    gridline-color: #1E293B;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    font-size: 11px;
+    selection-background-color: #164E63;
+    selection-color: #E2E8F0;
+}
+QTableWidget#gpioTable::item { padding: 0px 4px; border: none; }
+QHeaderView::section {
+    background-color: #0F172A;
+    color: #94A3B8;
+    border: none;
+    border-right: 1px solid #1E293B;
+    border-bottom: 1px solid #1E293B;
+    padding: 4px 6px;
+    font-size: 10px;
+    font-weight: 600;
+}
+QPushButton#gpioCellBtn {
+    background-color: #111D33;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    border-radius: 3px;
+    padding: 0px 4px;
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    min-height: 18px;
+    max-height: 18px;
+}
+QPushButton#gpioCellBtn:hover { border-color: #155E75; }
+QPushButton#gpioCellBtn:disabled { background-color: #0B0F19; color: #475569; }
+QPushButton#gpioCellBtn[kind="out"] { color: #22D3EE; border-color: #155E75; }
+QPushButton#gpioCellBtn[kind="in"]  { color: #10B981; border-color: #064E3B; }
+QPushButton#gpioCellBtn[kind="h"]   { color: #22D3EE; border-color: #155E75; }
+QPushButton#gpioCellBtn[kind="l"]   { color: #64748B; }
+
+/* ---- Register Map ---- */
+QFrame#regCard {
+    background-color: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 6px;
+}
+QLabel#regCardName { font-size: 11px; font-weight: 700; color: #E2E8F0; }
+QLabel#regCardAddr {
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    color: #22D3EE;
+}
+QLabel#regCardVal {
+    font-family: """ + _MONO + """;
+    font-size: 12px;
+    font-weight: 700;
+    color: #F59E0B;
+}
+QLabel#regCardHint { font-size: 9px; color: #475569; }
+QPushButton#regBit {
+    background-color: #0B0F19;
+    color: #475569;
+    border: 1px solid #1E293B;
+    border-radius: 2px;
+    padding: 0px;
+    font-family: """ + _MONO + """;
+    font-size: 9px;
+    min-width: 20px; max-width: 20px;
+    min-height: 18px; max-height: 18px;
+}
+QPushButton#regBit:hover { border-color: #334155; }
+QPushButton#regBit[on="1"] {
+    background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
+}
+QPushButton#regBit[rd="1"][on="1"] {
+    background-color: #064E3B; color: #34D399; border-color: #10B981;
+}
+QPushButton#regBit:disabled { color: #1E293B; }
+
+/* ---- I2C Sniffer ---- */
+QTextEdit#gpioSniff {
+    background-color: #020617;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    padding: 4px;
+}
+QPushButton#gpioChip {
+    background-color: transparent;
+    color: #64748B;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    padding: 0px 8px;
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    min-height: 18px;
+    max-height: 18px;
+}
+QPushButton#gpioChip:checked {
+    background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
+}
+
+/* ---- JSON / Code 编辑器 ---- */
+QPlainTextEdit#gpioMonoEdit {
+    background-color: #020617;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    font-family: """ + _MONO + """;
+    font-size: 11px;
+    padding: 4px;
+    selection-background-color: #164E63;
+}
+QLabel#gpioJsonErr { color: #EF4444; font-size: 11px; }
+
+/* ---- Confirm Note ---- */
+QFrame#noteCard {
+    background-color: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 6px;
+}
+QLabel#noteTitle { font-size: 12px; font-weight: 700; color: #E2E8F0; }
+QLabel#noteBody { color: #94A3B8; font-size: 11px; }
+QLabel#noteStatus {
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    font-weight: 700;
+    color: #F59E0B;
+}
+QLabel#noteStatus[ok="1"] { color: #10B981; }
+
+/* ---- 滚动条（页内暗色） ---- */
+QScrollArea#gpioScroll { background-color: #020617; border: none; }
+QScrollBar:vertical {
+    background: transparent; width: 8px; margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: #1E293B; border-radius: 4px; min-height: 24px;
+}
+QScrollBar::handle:vertical:hover { background: #334155; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal {
+    background: transparent; height: 8px; margin: 2px;
+}
+QScrollBar::handle:horizontal {
+    background: #1E293B; border-radius: 4px; min-width: 24px;
+}
+QScrollBar::handle:horizontal:hover { background: #334155; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
 """
 
 _SPEED_OPTIONS = None  # [(I2CSpeedMode, label), ...] 懒加载
@@ -145,8 +503,129 @@ def _speed_options():
     return _SPEED_OPTIONS
 
 
+def _icon(name, color, size=14):
+    return tinted_svg_icon(os.path.join(_ICONS_DIR, name), color, size)
+
+
+def _fmt32(value):
+    return "0x{0:08X}".format(value & 0xFFFFFFFF)
+
+
+def _popcount(value):
+    return bin(value & 0xFFFFFFFF).count("1")
+
+
+def _repolish(widget):
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+
+
+def _parse_hex(text):
+    """解析 16 进制输入（容忍 0x 前缀/空格）；非法返回 None。"""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return int(text, 16) & 0xFFFFFFFF
+    except ValueError:
+        return None
+
+
+class _PinCard(QFrame):
+    """Pin Matrix 单个引脚卡片：名称 + LED + 别名 + OUT/IN、电平、PU/PD 快捷键。"""
+
+    def __init__(self, group, pin, on_select, on_dir, on_level, on_pull,
+                 parent=None):
+        super().__init__(parent)
+        self.group = group
+        self.pin = pin
+        self._on_select = on_select
+        self.setObjectName("pinCard")
+        self.setProperty("sel", "0")
+        self.setProperty("lvl", "x")
+        self.setMinimumSize(104, 78)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setCursor(Qt.PointingHandCursor)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(7, 5, 7, 5)
+        lay.setSpacing(3)
+
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(4)
+        self.name_label = QLabel("P--")
+        self.name_label.setObjectName("pinName")
+        row1.addWidget(self.name_label)
+        row1.addStretch(1)
+        self.led = QFrame()
+        self.led.setObjectName("pinLed")
+        row1.addWidget(self.led)
+        lay.addLayout(row1)
+
+        self.alias_label = QLabel("")
+        self.alias_label.setObjectName("pinAlias")
+        lay.addWidget(self.alias_label)
+
+        row3 = QHBoxLayout()
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.setSpacing(3)
+        self.dir_btn = QPushButton("IN")
+        self.dir_btn.setObjectName("pinMini")
+        self.dir_btn.setToolTip("方向切换 (Dir Set +0x04 / Dir Clr +0x10)")
+        self.dir_btn.clicked.connect(lambda: on_dir(self.group, self.pin))
+        row3.addWidget(self.dir_btn, 1)
+        self.level_btn = QPushButton("-")
+        self.level_btn.setObjectName("pinMini")
+        self.level_btn.setToolTip(
+            "输出: 电平翻转 (Out Set +0x00 / Out Clr +0x0C)；"
+            "输入: 仿真激励翻转 / 硬件回读 0x50")
+        self.level_btn.clicked.connect(lambda: on_level(self.group, self.pin))
+        row3.addWidget(self.level_btn, 1)
+        self.pull_btn = QPushButton("Z")
+        self.pull_btn.setObjectName("pinMini")
+        self.pull_btn.setToolTip("上下拉轮转 Hi-Z -> PU -> PD")
+        self.pull_btn.clicked.connect(lambda: on_pull(self.group, self.pin))
+        row3.addWidget(self.pull_btn, 1)
+        lay.addLayout(row3)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._on_select(self.group, self.pin)
+        super().mousePressEvent(event)
+
+
 class GpioControlUI(QWidget):
-    """DUT GPIO 控制页：Detect DUT → GPIO 网格 → 单脚模式/电平/drv 控制。"""
+    """BES GPIO Workbench：Detect DUT -> Bank 管理 -> 7 大视图 GPIO 操控。"""
+
+    VIEW_TITLES = [
+        ("Pin Matrix", "Pin Matrix Grid（引脚矩阵网格）"),
+        ("Pin Table", "Detailed Pin Table（高密度工程数据表）"),
+        ("Register Map", "Register Map（底层寄存器视图）"),
+        ("I2C Sniffer", "I2C Bus Sniffer（总线事务嗅探器）"),
+        ("JSON Config", "DUT JSON Config（芯片配置文件管理器）"),
+        ("Code Export", "Python / C Export（自动化控制代码导出器）"),
+        ("Confirm Note", "DUT Confirmation Note（硬件确认清单）"),
+    ]
+
+    MASK_TARGETS = [
+        ("VAL_SET (+0x00)", OFFSET_OUT_SET),
+        ("DIR_SET (+0x04)", OFFSET_DIR_SET),
+        ("VAL_CLR (+0x0C)", OFFSET_OUT_CLR),
+        ("DIR_CLR (+0x10)", OFFSET_DIR_CLR),
+    ]
+
+    POLL_INTERVALS = [(200, "200 ms"), (500, "500 ms"),
+                      (1000, "1000 ms"), (2000, "2000 ms")]
+
+    SNIFF_KINDS = ["WRITE32", "READ32", "CHIP_CHECK", "ERROR"]
+
+    _SNIFF_COLORS = {
+        "WRITE32": "#22D3EE",
+        "READ32": "#10B981",
+        "CHIP_CHECK": "#A78BFA",
+        "ERROR": "#EF4444",
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -154,260 +633,1579 @@ class GpioControlUI(QWidget):
         self._cfg = None            # GpioChipConfig
         self._chip_info = None
         self._dev_addr = None
+        self._sim_mode = False
+        self._cur_bank = 0
         self._selected = None       # (group, pin)
-        self._pin_buttons = {}      # (group, pin) -> QPushButton
-        self._pin_state = {}        # (group, pin) -> {"mode": str|None, "level": int|None}
+        self._pin_cards = {}        # (group, pin) -> _PinCard（当前 bank）
+        self._pin_meta = {}         # (group, pin) -> {"alias": str, "stim": int|None}
+        self._dir_shadow = {}       # bank_idx -> 32bit（会话影子，dir 无回读）
+        self._out_shadow = {}       # bank_idx -> 32bit
+        self._reg_shadow = {}       # addr -> 32bit（PU/PD/drv/任意写影子）
+        self._in_value = {}         # bank_idx -> 32bit|None（0x50 最近读值）
+        self._reg_cards = []        # [(kind, addr|None, card_widgets)]
+        self._table_rows = {}       # (group, pin) -> row widgets dict
+        self._sniff_entries = []    # [(kind, raw, html)]
+        self._sniff_kind = None     # None = All
+        self._sniff_paused = False
+        self._json_path = None
         self._thread = None
         self._worker = None
+        self._worker_done_cb = None
+        self._table_updating = False
+        self._spin_angle = 0
         self._build_ui()
 
-    # ------------------------------------------------------------------ UI
+    # ================================================================ UI 构建
 
     def _build_ui(self):
         self.setStyleSheet(_GPIO_PAGE_QSS)
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 12, 16, 12)
-        root.setSpacing(8)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(6)
 
-        root.addLayout(self._build_top_bar())
+        content = QWidget()
+        content.setObjectName("gpioContent")
+        clay = QVBoxLayout(content)
+        clay.setContentsMargins(0, 0, 0, 0)
+        clay.setSpacing(6)
 
-        main = QHBoxLayout()
-        main.setContentsMargins(0, 0, 0, 0)
-        main.setSpacing(8)
+        clay.addLayout(self._build_top_bar())
+        clay.addWidget(self._build_dut_panel())
+        clay.addWidget(self._build_batch_toolbar())
 
-        self._banks_scroll = QScrollArea()
-        self._banks_scroll.setWidgetResizable(True)
-        self._banks_scroll.setFrameShape(QFrame.NoFrame)
-        self._banks_placeholder = QLabel("请先点击 Detect DUT 识别芯片并加载 GPIO 配置")
-        self._banks_placeholder.setObjectName("gpioStatus")
-        self._banks_placeholder.setAlignment(Qt.AlignCenter)
-        self._banks_scroll.setWidget(self._banks_placeholder)
-        main.addWidget(self._banks_scroll, 1)
+        self._stack = QStackedWidget()
+        clay.addWidget(self._stack, 1)
+        self._build_views()
 
-        main.addWidget(self._build_detail_panel())
-
-        main_frame = QFrame()
-        main_frame.setLayout(main)
         self._splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
-            main_frame, title="Activity Logs", show_progress=False,
-            stretch=(4, 1))
+            content, title="Activity Logs", show_progress=False,
+            stretch=(5, 1))
         root.addWidget(self._splitter, 1)
 
-        self.append_log("[INFO] DUT GPIO 页面已初始化，请先 Detect DUT")
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._on_poll_tick)
+
+        self._spin_timer = QTimer(self)
+        self._spin_timer.setInterval(100)
+        self._spin_timer.timeout.connect(self._on_spin_tick)
+
+        # 延迟读定时器：页内子对象（页面销毁自动失效），重复延迟合并为最后一次
+        self._deferred_read_fn = None
+        self._deferred_timer = QTimer(self)
+        self._deferred_timer.setSingleShot(True)
+        self._deferred_timer.timeout.connect(self._on_deferred_read)
+
+        self.append_log("[INFO] BES GPIO Workbench 已初始化，"
+                        "请点击 i2c.bes_chip_check() 或在 Simulated DUT 下加载 Profile")
+        self._refresh_all_views()
 
     def _build_top_bar(self):
         row = QHBoxLayout()
-        row.setSpacing(8)
+        row.setSpacing(6)
 
-        title = QLabel("DUT GPIO")
+        chip_icon = QLabel()
+        pm = tinted_svg_pixmap(os.path.join(_ICONS_DIR, "cpu.svg"), "#22D3EE", 18)
+        if not pm.isNull():
+            chip_icon.setPixmap(pm)
+        row.addWidget(chip_icon)
+
+        title = QLabel("BES GPIO Workbench")
         title.setObjectName("gpioTitle")
         row.addWidget(title)
-        row.addSpacing(12)
+
+        self.dut_sub = QLabel("DUT: --")
+        self.dut_sub.setObjectName("gpioSub")
+        row.addWidget(self.dut_sub)
+        row.addSpacing(8)
+
+        self._tab_group = QButtonGroup(self)
+        self._tab_group.setExclusive(True)
+        self._tab_buttons = []
+        for idx, (short, full) in enumerate(self.VIEW_TITLES):
+            btn = QPushButton(short)
+            btn.setObjectName("gpioTab")
+            btn.setCheckable(True)
+            btn.setToolTip(full)
+            self._tab_group.addButton(btn, idx)
+            row.addWidget(btn)
+            self._tab_buttons.append(btn)
+        self._tab_group.idClicked.connect(self._on_tab_changed)
+        self._tab_buttons[0].setChecked(True)
+
+        row.addStretch(1)
 
         row.addWidget(QLabel("Speed"))
         self.speed_combo = DarkComboBox()
         for mode, label in _speed_options():
             self.speed_combo.addItem(label, mode)
         self.speed_combo.setCurrentIndex(1)  # 100 kHz
+        self.speed_combo.setToolTip("USB-I2C 桥接速率（仿真模式无效）")
         row.addWidget(self.speed_combo)
 
-        self.detect_btn = QPushButton("Detect DUT")
-        self.detect_btn.setObjectName("gpioTopBtn")
+        self.detect_btn = QPushButton("i2c.bes_chip_check()")
+        self.detect_btn.setObjectName("gpioPrimary")
+        self.detect_btn.setIcon(_icon("refresh-cw.svg", "#22D3EE", 13))
         self.detect_btn.clicked.connect(self._on_detect_clicked)
         row.addWidget(self.detect_btn)
-
-        self.refresh_btn = QPushButton("Refresh All")
-        self.refresh_btn.setObjectName("gpioTopBtn")
-        self.refresh_btn.setEnabled(False)
-        self.refresh_btn.clicked.connect(self._on_refresh_all_clicked)
-        row.addWidget(self.refresh_btn)
-
-        row.addSpacing(12)
-        self.status_label = QLabel("未检测")
-        self.status_label.setObjectName("gpioStatus")
-        row.addWidget(self.status_label)
-        row.addStretch(1)
         return row
 
-    def _build_detail_panel(self):
+    def _build_dut_panel(self):
         panel = QFrame()
-        panel.setObjectName("gpioDetail")
-        panel.setFixedWidth(250)
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(12, 12, 12, 12)
+        panel.setObjectName("gpioPanel")
+        lay = QHBoxLayout(panel)
+        lay.setContentsMargins(10, 6, 10, 6)
+        lay.setSpacing(8)
+
+        dut_key = QLabel("DUT")
+        dut_key.setObjectName("gpioPanelKey")
+        lay.addWidget(dut_key)
+        self.profile_combo = DarkComboBox()
+        self.profile_combo.setToolTip("DUT Profile（chips/gpio_configs/*.json 预设）")
+        for name in list_gpio_config_chips():
+            self.profile_combo.addItem(name.upper(), name)
+        lay.addWidget(self.profile_combo)
+        self.load_btn = QPushButton("Load")
+        self.load_btn.setObjectName("gpioBtn")
+        self.load_btn.setToolTip("加载选中的 DUT Profile（仿真模式同时建立虚拟会话）")
+        self.load_btn.clicked.connect(self._on_load_profile_clicked)
+        lay.addWidget(self.load_btn)
+
+        lay.addWidget(self._make_vsep())
+
+        bank_key = QLabel("Bank")
+        bank_key.setObjectName("gpioPanelKey")
+        lay.addWidget(bank_key)
+        self._bank_group = QButtonGroup(self)
+        self._bank_group.setExclusive(True)
+        self._bank_buttons = []
+        self._bank_box = QHBoxLayout()
+        self._bank_box.setContentsMargins(0, 0, 0, 0)
+        self._bank_box.setSpacing(4)
+        lay.addLayout(self._bank_box)
+        self._bank_group.idClicked.connect(self._on_bank_changed)
+
+        lay.addWidget(self._make_vsep())
+
+        self.addr_label = QLabel("Base --")
+        self.addr_label.setObjectName("gpioAddr")
+        lay.addWidget(self.addr_label)
+
+        lay.addWidget(self._make_vsep())
+
+        self._stat_vals = {}
+        for key, label in (("out", "OUT"), ("in", "IN"), ("high", "HIGH"),
+                           ("low", "LOW"), ("pu", "PU"), ("pd", "PD")):
+            box = QVBoxLayout()
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(0)
+            k = QLabel(label)
+            k.setObjectName("gpioStatKey")
+            k.setAlignment(Qt.AlignCenter)
+            v = QLabel("-")
+            v.setObjectName("gpioStatVal")
+            v.setProperty("k", key)
+            v.setAlignment(Qt.AlignCenter)
+            box.addWidget(k)
+            box.addWidget(v)
+            lay.addLayout(box)
+            self._stat_vals[key] = v
+
+        lay.addWidget(self._make_vsep())
+
+        self.read_btn = QPushButton("Read 0x50 (IN)")
+        self.read_btn.setObjectName("gpioBtn")
+        self.read_btn.setToolTip("立即读取当前 Bank 输入状态寄存器 Base + 0x50")
+        self.read_btn.clicked.connect(self._on_read_bank_clicked)
+        lay.addWidget(self.read_btn)
+
+        lay.addStretch(1)
+
+        self.status_label = QLabel("未检测")
+        self.status_label.setObjectName("gpioStatus")
+        lay.addWidget(self.status_label)
+
+        lay.addWidget(self._make_vsep())
+
+        self.bridge_btn = QPushButton("USB-I2C Bridge")
+        self.bridge_btn.setObjectName("gpioBtn")
+        self.bridge_btn.setToolTip(
+            "硬件桥接切换：USB-I2C 物理工装 <-> 高精度内置仿真器 (Simulated DUT)")
+        self.bridge_btn.clicked.connect(self._on_bridge_toggled)
+        lay.addWidget(self.bridge_btn)
+        return panel
+
+    def _build_batch_toolbar(self):
+        bar = QFrame()
+        bar.setObjectName("gpioPanel")
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(10, 5, 10, 5)
         lay.setSpacing(6)
 
-        self.detail_name = QLabel("未选择 GPIO")
-        self.detail_name.setObjectName("gpioPinName")
-        lay.addWidget(self.detail_name)
-
-        self.detail_info = QLabel("-")
-        self.detail_info.setObjectName("gpioPinInfo")
-        lay.addWidget(self.detail_info)
-
-        self.detail_state = QLabel("")
-        self.detail_state.setObjectName("gpioPinState")
-        lay.addWidget(self.detail_state)
-
-        lay.addSpacing(6)
-        self._mode_buttons = {}
-        for mode in (MODE_OUT_HIGH, MODE_OUT_LOW, MODE_IN_FLOAT,
-                     MODE_IN_PULL_UP, MODE_IN_PULL_DOWN):
-            btn = QPushButton(mode_label(mode))
-            btn.setObjectName("gpioAction")
-            btn.setEnabled(False)
-            btn.clicked.connect(
-                lambda _=False, m=mode: self._on_mode_clicked(m))
-            self._mode_buttons[mode] = btn
+        batch_defs = [
+            ("All OUT HIGH (0x00)", self._on_batch_out_high,
+             "当前 Bank 32 引脚全部输出高电平 (DIR_SET+VAL_SET = 0xFFFFFFFF)"),
+            ("All OUT LOW (0x0C)", self._on_batch_out_low,
+             "当前 Bank 32 引脚全部输出低电平 (DIR_SET+VAL_CLR = 0xFFFFFFFF)"),
+            ("All IN Hi-Z (0x10)", self._on_batch_in_hiz,
+             "当前 Bank 32 引脚全部高阻输入 (DIR_CLR = 0xFFFFFFFF，PU/PD 全关)"),
+            ("All PU", lambda: self._on_batch_pull(True),
+             "当前 Bank 32 引脚全部上拉 (OP_BITS 位域写)"),
+            ("All PD", lambda: self._on_batch_pull(False),
+             "当前 Bank 32 引脚全部下拉 (OP_BITS 位域写)"),
+            ("Invert OUT", self._on_batch_invert,
+             "当前 Bank 所有输出引脚高低电平反转"),
+        ]
+        self._batch_buttons = []
+        for text, slot, tip in batch_defs:
+            btn = QPushButton(text)
+            btn.setObjectName("gpioBatch")
+            btn.setToolTip(tip)
+            btn.clicked.connect(slot)
             lay.addWidget(btn)
+            self._batch_buttons.append(btn)
 
-        lay.addSpacing(4)
+        lay.addWidget(self._make_vsep())
+
+        mask_key = QLabel("Mask")
+        mask_key.setObjectName("gpioPanelKey")
+        lay.addWidget(mask_key)
+        self.mask_edit = HexWheelLineEdit()
+        self.mask_edit.setObjectName("gpioHexEdit")
+        self.mask_edit.setPlaceholderText("0x000000FF")
+        self.mask_edit.setFixedWidth(110)
+        self.mask_edit.setToolTip("32-Bit 十六进制掩码（滚轮调值）")
+        lay.addWidget(self.mask_edit)
+        self.mask_target = DarkComboBox()
+        for label, off in self.MASK_TARGETS:
+            self.mask_target.addItem(label, off)
+        lay.addWidget(self.mask_target)
+        self.mask_btn = QPushButton("Write Mask")
+        self.mask_btn.setObjectName("gpioBtn")
+        self.mask_btn.setToolTip("将掩码写入选中的 SET/CLR 寄存器")
+        self.mask_btn.clicked.connect(self._on_mask_write_clicked)
+        lay.addWidget(self.mask_btn)
+
+        lay.addWidget(self._make_vsep())
+
+        poll_key = QLabel("Poll 0x50")
+        poll_key.setObjectName("gpioPanelKey")
+        lay.addWidget(poll_key)
+        self.poll_combo = DarkComboBox()
+        for ms, label in self.POLL_INTERVALS:
+            self.poll_combo.addItem(label, ms)
+        self.poll_combo.setCurrentIndex(1)  # 500 ms
+        self.poll_combo.currentIndexChanged.connect(self._on_poll_interval_changed)
+        lay.addWidget(self.poll_combo)
+        self.poll_btn = QPushButton("Start Poll")
+        self.poll_btn.setObjectName("gpioBtn")
+        self.poll_btn.setProperty("on", "0")
+        self.poll_btn.setToolTip("定时轮询当前 Bank 输入状态寄存器 Base + 0x50")
+        self.poll_btn.clicked.connect(self._on_poll_toggled)
+        lay.addWidget(self.poll_btn)
+
+        lay.addStretch(1)
+        return bar
+
+    def _make_vsep(self):
+        sep = QFrame()
+        sep.setObjectName("gpioSep")
+        return sep
+
+    # ------------------------------------------------------------ 7 大视图
+
+    def _build_views(self):
+        self._stack.addWidget(self._build_matrix_view())   # 0
+        self._stack.addWidget(self._build_table_view())    # 1
+        self._stack.addWidget(self._build_regmap_view())   # 2
+        self._stack.addWidget(self._build_sniffer_view())  # 3
+        self._stack.addWidget(self._build_json_view())     # 4
+        self._stack.addWidget(self._build_export_view())   # 5
+        self._stack.addWidget(self._build_notes_view())    # 6
+
+    # 视图 1：Pin Matrix Grid + Inspector
+    def _build_matrix_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QHBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self._matrix_scroll = QScrollArea()
+        self._matrix_scroll.setObjectName("gpioScroll")
+        self._matrix_scroll.setWidgetResizable(True)
+        self._matrix_scroll.setFrameShape(QFrame.NoFrame)
+        self._matrix_container = QWidget()
+        self._matrix_container.setObjectName("gpioViewPage")
+        self._matrix_grid = QGridLayout(self._matrix_container)
+        self._matrix_grid.setContentsMargins(2, 2, 2, 2)
+        self._matrix_grid.setSpacing(5)
+        self._matrix_placeholder = QLabel(
+            "请先 i2c.bes_chip_check() 或加载 DUT Profile")
+        self._matrix_placeholder.setObjectName("gpioStatus")
+        self._matrix_placeholder.setAlignment(Qt.AlignCenter)
+        self._matrix_grid.addWidget(self._matrix_placeholder, 0, 0)
+        self._matrix_scroll.setWidget(self._matrix_container)
+        lay.addWidget(self._matrix_scroll, 1)
+
+        lay.addWidget(self._build_inspector())
+        return page
+
+    def _build_inspector(self):
+        panel = QFrame()
+        panel.setObjectName("gpioInspector")
+        panel.setFixedWidth(300)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(6)
+
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        self.insp_name = QLabel("P--")
+        self.insp_name.setObjectName("gpioPinName")
+        head.addWidget(self.insp_name)
+        head.addStretch(1)
+        lay.addLayout(head)
+
+        alias_row = QHBoxLayout()
+        alias_row.setSpacing(6)
+        alias_key = QLabel("Alias")
+        alias_key.setObjectName("gpioPanelKey")
+        alias_row.addWidget(alias_key)
+        self.alias_edit = QLineEdit()
+        self.alias_edit.setObjectName("gpioAliasEdit")
+        self.alias_edit.setPlaceholderText("信号别名，如 LED_PWR / I2C_SDA")
+        self.alias_edit.editingFinished.connect(self._on_alias_edited)
+        alias_row.addWidget(self.alias_edit, 1)
+        lay.addLayout(alias_row)
+
+        self.insp_info = QLabel("-")
+        self.insp_info.setObjectName("gpioPinInfo")
+        lay.addWidget(self.insp_info)
+
+        lay.addWidget(self._make_hsep())
+
+        dir_key = QLabel("方向（OUTPUT=写 1 至 Base+0x04 / INPUT=Base+0x10）")
+        dir_key.setObjectName("gpioSection")
+        lay.addWidget(dir_key)
+        dir_row = QHBoxLayout()
+        dir_row.setSpacing(6)
+        self.insp_dir_out = QPushButton("OUTPUT  +0x04")
+        self.insp_dir_out.setObjectName("gpioAction")
+        self.insp_dir_out.clicked.connect(lambda: self._on_insp_dir(True))
+        dir_row.addWidget(self.insp_dir_out)
+        self.insp_dir_in = QPushButton("INPUT  +0x10")
+        self.insp_dir_in.setObjectName("gpioAction")
+        self.insp_dir_in.clicked.connect(lambda: self._on_insp_dir(False))
+        dir_row.addWidget(self.insp_dir_in)
+        lay.addLayout(dir_row)
+
+        lvl_key = QLabel("输出电平（HIGH=写 1 至 Base+0x00 / LOW=Base+0x0C）")
+        lvl_key.setObjectName("gpioSection")
+        lay.addWidget(lvl_key)
+        lvl_row = QHBoxLayout()
+        lvl_row.setSpacing(6)
+        self.insp_lvl_h = QPushButton("HIGH  +0x00")
+        self.insp_lvl_h.setObjectName("gpioAction")
+        self.insp_lvl_h.clicked.connect(lambda: self._on_insp_level(True))
+        lvl_row.addWidget(self.insp_lvl_h)
+        self.insp_lvl_l = QPushButton("LOW  +0x0C")
+        self.insp_lvl_l.setObjectName("gpioAction")
+        self.insp_lvl_l.clicked.connect(lambda: self._on_insp_level(False))
+        lvl_row.addWidget(self.insp_lvl_l)
+        lay.addLayout(lvl_row)
+
+        pull_key = QLabel("上下拉三态（PU/PD 为 RW 寄存器位域写）")
+        pull_key.setObjectName("gpioSection")
+        lay.addWidget(pull_key)
+        pull_row = QHBoxLayout()
+        pull_row.setSpacing(6)
+        self.insp_pull_hiz = QPushButton("High-Z")
+        self.insp_pull_hiz.setObjectName("gpioAction")
+        self.insp_pull_hiz.clicked.connect(lambda: self._on_insp_pull(0))
+        pull_row.addWidget(self.insp_pull_hiz)
+        self.insp_pull_pu = QPushButton("Pull-Up")
+        self.insp_pull_pu.setObjectName("gpioAction")
+        self.insp_pull_pu.clicked.connect(lambda: self._on_insp_pull(1))
+        pull_row.addWidget(self.insp_pull_pu)
+        self.insp_pull_pd = QPushButton("Pull-Down")
+        self.insp_pull_pd.setObjectName("gpioAction")
+        self.insp_pull_pd.clicked.connect(lambda: self._on_insp_pull(2))
+        pull_row.addWidget(self.insp_pull_pd)
+        lay.addLayout(pull_row)
+
+        self.insp_drv_key = QLabel("驱动斜率（drv_sel 位域 [1:0]：00=Slow / 11=Fast）")
+        self.insp_drv_key.setObjectName("gpioSection")
+        lay.addWidget(self.insp_drv_key)
         drv_row = QHBoxLayout()
         drv_row.setSpacing(6)
-        drv_row.addWidget(QLabel("Drv"))
-        self.drv_slow_btn = QPushButton("Slow")
-        self.drv_slow_btn.setObjectName("gpioAction")
-        self.drv_slow_btn.setEnabled(False)
-        self.drv_slow_btn.clicked.connect(lambda: self._on_drv_clicked(False))
-        drv_row.addWidget(self.drv_slow_btn)
-        self.drv_fast_btn = QPushButton("Fast")
-        self.drv_fast_btn.setObjectName("gpioAction")
-        self.drv_fast_btn.setEnabled(False)
-        self.drv_fast_btn.clicked.connect(lambda: self._on_drv_clicked(True))
-        drv_row.addWidget(self.drv_fast_btn)
+        self.insp_drv_slow = QPushButton("00  Slow")
+        self.insp_drv_slow.setObjectName("gpioAction")
+        self.insp_drv_slow.clicked.connect(lambda: self._on_drv_clicked(False))
+        drv_row.addWidget(self.insp_drv_slow)
+        self.insp_drv_fast = QPushButton("11  Fast")
+        self.insp_drv_fast.setObjectName("gpioAction")
+        self.insp_drv_fast.clicked.connect(lambda: self._on_drv_clicked(True))
+        drv_row.addWidget(self.insp_drv_fast)
         lay.addLayout(drv_row)
 
-        self.read_btn = QPushButton("Read Level")
-        self.read_btn.setObjectName("gpioAction")
-        self.read_btn.setEnabled(False)
-        self.read_btn.clicked.connect(self._on_read_pin_clicked)
-        lay.addWidget(self.read_btn)
+        lay.addWidget(self._make_hsep())
+
+        read_row = QHBoxLayout()
+        read_row.setSpacing(6)
+        self.insp_big_state = QLabel("LOGIC --")
+        self.insp_big_state.setObjectName("gpioBigState")
+        read_row.addWidget(self.insp_big_state, 1)
+        self.insp_read_btn = QPushButton("Read 0x50")
+        self.insp_read_btn.setObjectName("gpioBtn")
+        self.insp_read_btn.clicked.connect(self._on_read_bank_clicked)
+        read_row.addWidget(self.insp_read_btn)
+        lay.addLayout(read_row)
+
+        self.insp_mask = QLabel("Mask --")
+        self.insp_mask.setObjectName("gpioPinInfo")
+        lay.addWidget(self.insp_mask)
 
         lay.addStretch(1)
         return panel
 
-    # ------------------------------------------------------------ 网格构建
+    def _make_hsep(self):
+        sep = QFrame()
+        sep.setObjectName("gpioHSep")
+        sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return sep
 
-    def _rebuild_banks(self):
+    # 视图 2：Detailed Pin Table
+    def _build_table_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        self.table_search = QLineEdit()
+        self.table_search.setObjectName("gpioSearch")
+        self.table_search.setPlaceholderText("搜索别名 / 引脚号（如 TX、LED、P05、37）")
+        self.table_search.textChanged.connect(self._apply_table_filter)
+        bar.addWidget(self.table_search, 1)
+        self.table_filter = DarkComboBox()
+        for label in ("All", "Output", "Input"):
+            self.table_filter.addItem(label)
+        self.table_filter.currentIndexChanged.connect(self._apply_table_filter)
+        bar.addWidget(self.table_filter)
+        lay.addLayout(bar)
+
+        self.table = QTableWidget(0, 9)
+        self.table.setObjectName("gpioTable")
+        self.table.setHorizontalHeaderLabels([
+            "Pin #", "Bank Bit", "Signal Alias", "Direction",
+            "Output Level", "Input Level (0x50)", "Pull Mode",
+            "Driver Slew", "Bitmask",
+        ])
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(28)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setDefaultSectionSize(92)
+        for col, width in ((0, 56), (1, 56), (3, 84), (4, 88),
+                           (5, 100), (6, 104), (7, 96), (8, 112)):
+            self.table.setColumnWidth(col, width)
+        self.table.itemChanged.connect(self._on_table_item_changed)
+        lay.addWidget(self.table, 1)
+        return page
+
+    # 视图 3：Register Map
+    def _build_regmap_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        bar = QFrame()
+        bar.setObjectName("gpioPanel")
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(10, 5, 10, 5)
+        bl.setSpacing(6)
+        raw_key = QLabel("Raw Access")
+        raw_key.setObjectName("gpioPanelKey")
+        bl.addWidget(raw_key)
+        self.raw_addr = HexWheelLineEdit()
+        self.raw_addr.setObjectName("gpioHexEdit")
+        self.raw_addr.setPlaceholderText("ADDR 0x40081000")
+        self.raw_addr.setFixedWidth(150)
+        bl.addWidget(self.raw_addr)
+        self.raw_data = HexWheelLineEdit()
+        self.raw_data.setObjectName("gpioHexEdit")
+        self.raw_data.setPlaceholderText("DATA 0x00000001")
+        self.raw_data.setFixedWidth(140)
+        bl.addWidget(self.raw_data)
+        self.raw_write_btn = QPushButton("Write32")
+        self.raw_write_btn.setObjectName("gpioBtn")
+        self.raw_write_btn.clicked.connect(self._on_raw_write)
+        bl.addWidget(self.raw_write_btn)
+        self.raw_read_btn = QPushButton("Read32")
+        self.raw_read_btn.setObjectName("gpioBtn")
+        self.raw_read_btn.clicked.connect(self._on_raw_read)
+        bl.addWidget(self.raw_read_btn)
+        self.raw_result = QLabel("--")
+        self.raw_result.setObjectName("gpioAddr")
+        bl.addWidget(self.raw_result)
+        bl.addStretch(1)
+        self.reg_refresh_btn = QPushButton("Refresh Readable")
+        self.reg_refresh_btn.setObjectName("gpioBtn")
+        self.reg_refresh_btn.setToolTip("回读 VAL_IN / PU / PD / DRV 等可读寄存器")
+        self.reg_refresh_btn.clicked.connect(self._on_refresh_readable)
+        bl.addWidget(self.reg_refresh_btn)
+        lay.addWidget(bar)
+
+        self._regmap_scroll = QScrollArea()
+        self._regmap_scroll.setObjectName("gpioScroll")
+        self._regmap_scroll.setWidgetResizable(True)
+        self._regmap_scroll.setFrameShape(QFrame.NoFrame)
+        self._regmap_container = QWidget()
+        self._regmap_container.setObjectName("gpioViewPage")
+        self._regmap_grid = QGridLayout(self._regmap_container)
+        self._regmap_grid.setContentsMargins(2, 2, 2, 2)
+        self._regmap_grid.setSpacing(6)
+        self._regmap_placeholder = QLabel("加载 DUT 配置后展示寄存器映射")
+        self._regmap_placeholder.setObjectName("gpioStatus")
+        self._regmap_placeholder.setAlignment(Qt.AlignCenter)
+        self._regmap_grid.addWidget(self._regmap_placeholder, 0, 0)
+        self._regmap_scroll.setWidget(self._regmap_container)
+        lay.addWidget(self._regmap_scroll, 1)
+        return page
+
+    # 视图 4：I2C Bus Sniffer
+    def _build_sniffer_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(4)
+        self._sniff_chip_group = QButtonGroup(self)
+        self._sniff_chip_group.setExclusive(True)
+        all_btn = QPushButton("All")
+        all_btn.setObjectName("gpioChip")
+        all_btn.setCheckable(True)
+        all_btn.setChecked(True)
+        self._sniff_chip_group.addButton(all_btn, -1)
+        bar.addWidget(all_btn)
+        for i, kind in enumerate(self.SNIFF_KINDS):
+            btn = QPushButton(kind)
+            btn.setObjectName("gpioChip")
+            btn.setCheckable(True)
+            self._sniff_chip_group.addButton(btn, i)
+            bar.addWidget(btn)
+        self._sniff_chip_group.idClicked.connect(self._on_sniff_kind_changed)
+
+        bar.addSpacing(6)
+        self.sniff_search = QLineEdit()
+        self.sniff_search.setObjectName("gpioSearch")
+        self.sniff_search.setPlaceholderText("搜索地址 / 语义关键字")
+        self.sniff_search.textChanged.connect(self._render_sniffer)
+        bar.addWidget(self.sniff_search, 1)
+
+        self.sniff_pause_btn = QPushButton("Pause")
+        self.sniff_pause_btn.setObjectName("gpioBtn")
+        self.sniff_pause_btn.setCheckable(True)
+        self.sniff_pause_btn.setToolTip("暂停 / 恢复自动滚屏刷新")
+        self.sniff_pause_btn.toggled.connect(self._on_sniff_pause)
+        bar.addWidget(self.sniff_pause_btn)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setObjectName("gpioBtn")
+        clear_btn.setIcon(_icon("trash.svg", "#94A3B8", 12))
+        clear_btn.clicked.connect(self._on_sniff_clear)
+        bar.addWidget(clear_btn)
+
+        export_btn = QPushButton("Export .log")
+        export_btn.setObjectName("gpioBtn")
+        export_btn.setIcon(_icon("download.svg", "#94A3B8", 12))
+        export_btn.clicked.connect(self._on_sniff_export)
+        bar.addWidget(export_btn)
+        lay.addLayout(bar)
+
+        self.sniff_view = QTextEdit()
+        self.sniff_view.setObjectName("gpioSniff")
+        self.sniff_view.setReadOnly(True)
+        lay.addWidget(self.sniff_view, 1)
+        return page
+
+    # 视图 5：DUT JSON Config
+    def _build_json_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        self.json_file_label = QLabel("chips/gpio_configs/--.json")
+        self.json_file_label.setObjectName("gpioMono")
+        bar.addWidget(self.json_file_label)
+        bar.addStretch(1)
+        for text, slot, tip in (
+            ("Import JSON", self._on_json_import, "从本地磁盘载入芯片 JSON 文件"),
+            ("Export JSON", self._on_json_export, "将编辑器内容导出为 JSON 文件"),
+            ("Reload", self._on_json_reload, "放弃修改，重新从磁盘读取当前配置"),
+            ("Apply Config", self._on_json_apply, "校验并写回 chips/gpio_configs/，立即生效"),
+        ):
+            btn = QPushButton(text)
+            btn.setObjectName("gpioBtn")
+            btn.setToolTip(tip)
+            btn.clicked.connect(slot)
+            bar.addWidget(btn)
+        lay.addLayout(bar)
+
+        self.json_err_label = QLabel("")
+        self.json_err_label.setObjectName("gpioJsonErr")
+        lay.addWidget(self.json_err_label)
+
+        self.json_edit = QPlainTextEdit()
+        self.json_edit.setObjectName("gpioMonoEdit")
+        self.json_edit.setPlaceholderText(
+            "DUT JSON 配置：gpio_banks 基地址 / drv_sel / pull_up_bases / pull_down_bases ...")
+        lay.addWidget(self.json_edit, 1)
+        return page
+
+    # 视图 6：Python / C Export
+    def _build_export_view(self):
+        page = QWidget()
+        page.setObjectName("gpioViewPage")
+        lay = QHBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self.py_edit = self._make_export_panel(
+            lay, "Python 自动化测试脚本", self._on_copy_python)
+        self.c_edit = self._make_export_panel(
+            lay, "C / HAL 驱动（bes_gpio.h + bes_gpio.c）", self._on_copy_c)
+        return page
+
+    def _make_export_panel(self, parent_lay, title, copy_slot):
+        panel = QFrame()
+        panel.setObjectName("gpioPanel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(8, 6, 8, 8)
+        lay.setSpacing(4)
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        t = QLabel(title)
+        t.setObjectName("gpioSection")
+        head.addWidget(t)
+        head.addStretch(1)
+        copy_btn = QPushButton("Copy")
+        copy_btn.setObjectName("gpioBtn")
+        copy_btn.setIcon(_icon("copy.svg", "#94A3B8", 12))
+        copy_btn.clicked.connect(copy_slot)
+        head.addWidget(copy_btn)
+        lay.addLayout(head)
+        edit = QPlainTextEdit()
+        edit.setObjectName("gpioMonoEdit")
+        edit.setReadOnly(True)
+        lay.addWidget(edit, 1)
+        parent_lay.addWidget(panel, 1)
+        return edit
+
+    # 视图 7：DUT Confirmation Note
+    def _build_notes_view(self):
+        page = QScrollArea()
+        page.setObjectName("gpioScroll")
+        page.setWidgetResizable(True)
+        page.setFrameShape(QFrame.NoFrame)
         container = QWidget()
-        vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(8)
-        self._pin_buttons.clear()
+        container.setObjectName("gpioViewPage")
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(6)
 
-        for bank_idx, bank in enumerate(self._cfg.banks):
-            box = QGroupBox("{0}  (base 0x{1:08X})".format(bank.name, bank.base))
-            box.setObjectName("gpioBank")
-            grid = QGridLayout()
-            grid.setContentsMargins(10, 4, 10, 10)
-            grid.setSpacing(4)
-            for g_in_bank in range(GROUPS_PER_BANK):
-                group = bank_idx * GROUPS_PER_BANK + g_in_bank
-                name = QLabel("Group{0}".format(group))
-                name.setObjectName("gpioGroupName")
-                grid.addWidget(name, g_in_bank, 0)
-                for pin in range(PINS_PER_GROUP):
-                    btn = QPushButton(self._cfg.gpio_name(group, pin))
-                    btn.setObjectName("gpioPin")
-                    btn.setFixedWidth(58)
-                    btn.setProperty("lvl", "x")
-                    btn.setProperty("sel", "0")
-                    btn.clicked.connect(
-                        lambda _=False, g=group, p=pin: self._on_pin_clicked(g, p))
-                    bit = self._cfg.bit_in_bank(group, pin)
-                    btn.setToolTip(
-                        "{0} · {1} bit{2}".format(
-                            self._cfg.gpio_name(group, pin), bank.name, bit))
-                    grid.addWidget(btn, g_in_bank, pin + 1)
-                    self._pin_buttons[(group, pin)] = btn
-                    self._pin_state[(group, pin)] = {"mode": None, "level": None}
-            box.setLayout(grid)
-            vbox.addWidget(box)
-        vbox.addStretch(1)
+        self._note_status_labels = []
+        self._note_bodies = []
+        for i, title in enumerate((
+            "1. PU / PD 上下拉寄存器地址",
+            "2. Slew 驱动位域连续性（drv_sel）",
+            "3. I2C 7-bit 设备地址与位宽",
+            "4. 通信桥接方式",
+        )):
+            card = QFrame()
+            card.setObjectName("noteCard")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(12, 8, 12, 8)
+            cl.setSpacing(4)
+            head = QHBoxLayout()
+            t = QLabel(title)
+            t.setObjectName("noteTitle")
+            head.addWidget(t)
+            head.addStretch(1)
+            st = QLabel("--")
+            st.setObjectName("noteStatus")
+            head.addWidget(st)
+            cl.addLayout(head)
+            body = QLabel("-")
+            body.setObjectName("noteBody")
+            body.setWordWrap(True)
+            cl.addWidget(body)
+            lay.addWidget(card)
+            self._note_status_labels.append(st)
+            self._note_bodies.append(body)
+        lay.addStretch(1)
+        page.setWidget(container)
+        return page
 
-        old = self._banks_scroll.takeWidget()
-        if old is not None:
-            old.deleteLater()
-        self._banks_scroll.setWidget(container)
+    # ================================================================ 状态访问
 
-    # ------------------------------------------------------------ 状态刷新
+    def _ready(self):
+        return self._cfg is not None and (
+            self._sim_mode or self._dev_addr is not None)
 
-    def _update_pin_button(self, group, pin):
-        btn = self._pin_buttons.get((group, pin))
-        state = self._pin_state.get((group, pin))
-        if btn is None or state is None:
+    def _meta(self, group, pin):
+        return self._pin_meta.setdefault((group, pin),
+                                         {"alias": "", "stim": None})
+
+    def _alias(self, group, pin):
+        return self._pin_meta.get((group, pin), {}).get("alias") or ""
+
+    def _stim(self, group, pin):
+        return self._pin_meta.get((group, pin), {}).get("stim")
+
+    def _dir_bit(self, bank_idx, bit):
+        return (self._dir_shadow.get(bank_idx, 0) >> bit) & 1
+
+    def _out_bit(self, bank_idx, bit):
+        return (self._out_shadow.get(bank_idx, 0) >> bit) & 1
+
+    def _pull_state(self, group, bit):
+        """0=Hi-Z 1=PU 2=PD（由 PU/PD 影子寄存器推导）。"""
+        if self._cfg is None:
+            return 0
+        bank_idx = self._cfg.bank_index(group)
+        pu_addr = self._cfg.pull_up_addr(group)
+        pd_addr = self._cfg.pull_down_addr(group)
+        pu = (self._reg_shadow.get(pu_addr, 0) >> bit) & 1 if pu_addr is not None else 0
+        pd = (self._reg_shadow.get(pd_addr, 0) >> bit) & 1 if pd_addr is not None else 0
+        if pu and not pd:
+            return 1
+        if pd and not pu:
+            return 2
+        return 0
+
+    def _drv_field_value(self, group, pin):
+        field_ = self._cfg.drv_field(group, pin) if self._cfg else None
+        if field_ is None:
+            return None
+        addr, high, low = field_
+        mask = (1 << (high - low + 1)) - 1
+        return (self._reg_shadow.get(addr, 0) >> low) & mask
+
+    def _in_bit(self, bank_idx, bit):
+        val = self._in_value.get(bank_idx)
+        if val is None:
+            return None
+        return (val >> bit) & 1
+
+    def _pin_mode(self, group, pin):
+        """由影子寄存器推导工作模式（用于 label / 表格）。"""
+        bank_idx = self._cfg.bank_index(group)
+        bit = self._cfg.bit_in_bank(group, pin)
+        if self._dir_bit(bank_idx, bit):
+            return MODE_OUT_HIGH if self._out_bit(bank_idx, bit) else MODE_OUT_LOW
+        pull = self._pull_state(group, bit)
+        if pull == 1:
+            return MODE_IN_PULL_UP
+        if pull == 2:
+            return MODE_IN_PULL_DOWN
+        return MODE_IN_FLOAT
+
+    def _reset_session_state(self):
+        self._selected = None
+        self._pin_meta = {}
+        self._dir_shadow = {i: 0 for i in range(len(self._cfg.banks))}
+        self._out_shadow = {i: 0 for i in range(len(self._cfg.banks))}
+        self._reg_shadow = {}
+        self._in_value = {i: None for i in range(len(self._cfg.banks))}
+
+    # ================================================================ 刷新
+
+    def _refresh_all_views(self):
+        has = self._cfg is not None
+        self._rebuild_bank_buttons()
+        self._rebuild_matrix()
+        self._rebuild_table()
+        self._rebuild_regmap()
+        self._refresh_addr_bar()
+        self._refresh_stats()
+        self._refresh_inspector()
+        self._refresh_notes()
+        if has:
+            self._refresh_exports()
+        self._update_op_enabled()
+
+    def _refresh_after_hw(self):
+        """硬件 / 仿真状态变化后的轻量刷新（不重建控件）。"""
+        for group, pin in list(self._pin_cards.keys()):
+            self._refresh_pin_card(group, pin)
+        self._refresh_table_rows()
+        self._refresh_reg_cards()
+        self._refresh_stats()
+        self._refresh_inspector()
+
+    def _rebuild_bank_buttons(self):
+        for btn in self._bank_buttons:
+            self._bank_group.removeButton(btn)
+            btn.deleteLater()
+        self._bank_buttons = []
+        while self._bank_box.count():
+            item = self._bank_box.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        count = len(self._cfg.banks) if self._cfg else 0
+        if count == 0:
+            lbl = QLabel("--")
+            lbl.setObjectName("gpioDim")
+            self._bank_box.addWidget(lbl)
             return
-        mode_prop = {"out_high": "out_h", "out_low": "out_l"}.get(
-            state["mode"], "in")
-        if state["mode"] is None:
-            mode_prop = "none"
-        btn.setProperty("mode", mode_prop)
-        btn.setProperty("lvl", {0: "l", 1: "h"}.get(state["level"], "x"))
-        btn.style().unpolish(btn)
-        btn.style().polish(btn)
+        if self._cur_bank >= count:
+            self._cur_bank = 0
+        for i in range(count):
+            bank = self._cfg.banks[i]
+            g0 = i * GROUPS_PER_BANK
+            g1 = g0 + GROUPS_PER_BANK - 1
+            btn = QPushButton("Bank {0}".format(i))
+            btn.setObjectName("gpioBtn")
+            btn.setCheckable(True)
+            btn.setToolTip("{0} · GPIO_Group{1}~{2} · base {3}".format(
+                bank.name, g0, g1, _fmt32(bank.base)))
+            self._bank_group.addButton(btn, i)
+            self._bank_box.addWidget(btn)
+            self._bank_buttons.append(btn)
+        self._bank_buttons[self._cur_bank].setChecked(True)
 
-    def _update_detail_panel(self):
+    def _rebuild_matrix(self):
+        while self._matrix_grid.count():
+            item = self._matrix_grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._pin_cards = {}
+        if self._cfg is None:
+            ph = QLabel("请先 i2c.bes_chip_check() 或加载 DUT Profile")
+            ph.setObjectName("gpioStatus")
+            ph.setAlignment(Qt.AlignCenter)
+            self._matrix_grid.addWidget(ph, 0, 0)
+            return
+        base_group = self._cur_bank * GROUPS_PER_BANK
+        for bit in range(GPIOS_PER_BANK):
+            group = base_group + bit // PINS_PER_GROUP
+            pin = bit % PINS_PER_GROUP
+            card = _PinCard(
+                group, pin,
+                on_select=self._on_pin_clicked,
+                on_dir=self._on_card_dir,
+                on_level=self._on_card_level,
+                on_pull=self._on_card_pull)
+            r, c = divmod(bit, 8)
+            self._matrix_grid.addWidget(card, r, c)
+            self._pin_cards[(group, pin)] = card
+            self._refresh_pin_card(group, pin)
+
+    def _refresh_pin_card(self, group, pin):
+        card = self._pin_cards.get((group, pin))
+        if card is None or self._cfg is None:
+            return
+        bank_idx = self._cfg.bank_index(group)
+        bit = self._cfg.bit_in_bank(group, pin)
+        linear = self._cfg.linear_index(group, pin)
+        alias = self._alias(group, pin)
+        card.name_label.setText("P{0:02d}".format(bit))
+        card.alias_label.setText(alias if alias else self._cfg.gpio_name(group, pin))
+        card.setToolTip("{0} · {1} bit{2} · 全局 #{3}".format(
+            self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
+            bit, linear))
+
+        is_out = bool(self._dir_bit(bank_idx, bit))
+        card.dir_btn.setText("OUT" if is_out else "IN")
+        card.dir_btn.setProperty("cur", "out" if is_out else "in")
+        _repolish(card.dir_btn)
+
+        if is_out:
+            lvl = self._out_bit(bank_idx, bit)
+            card.level_btn.setText("H" if lvl else "L")
+            card.level_btn.setProperty("cur", "h" if lvl else "l")
+        else:
+            in_lvl = self._in_bit(bank_idx, bit)
+            stim = self._stim(group, pin)
+            if in_lvl is not None:
+                card.level_btn.setText(str(in_lvl))
+                card.level_btn.setProperty("cur", "h" if in_lvl else "l")
+            elif stim is not None:
+                card.level_btn.setText("S{0}".format(stim))
+                card.level_btn.setProperty("cur", "h" if stim else "l")
+            else:
+                card.level_btn.setText("-")
+                card.level_btn.setProperty("cur", "")
+        _repolish(card.level_btn)
+
+        pull_ok = self._cfg.pull_supported(group)
+        pull = self._pull_state(group, bit)
+        card.pull_btn.setText({0: "Z", 1: "PU", 2: "PD"}[pull])
+        card.pull_btn.setProperty("cur", {0: "", 1: "pu", 2: "pd"}[pull])
+        card.pull_btn.setEnabled(pull_ok)
+        card.pull_btn.setToolTip(
+            "上下拉轮转 Hi-Z -> PU -> PD" if pull_ok
+            else "该 Bank 上下拉地址未在 JSON 配置 (pull_up/pull_down_bases)")
+        _repolish(card.pull_btn)
+
+        if is_out:
+            lvl_prop = "h" if self._out_bit(bank_idx, bit) else "l"
+        else:
+            in_lvl = self._in_bit(bank_idx, bit)
+            lvl_prop = {0: "l", 1: "h"}.get(in_lvl, "x")
+        if card.property("lvl") != lvl_prop:
+            card.setProperty("lvl", lvl_prop)
+            _repolish(card)
+        card.setProperty("sel", "1" if self._selected == (group, pin) else "0")
+        _repolish(card)
+
+    def _rebuild_table(self):
+        self._table_updating = True
+        try:
+            self.table.setRowCount(0)
+            self._table_rows = {}
+            if self._cfg is None:
+                return
+            base_group = self._cur_bank * GROUPS_PER_BANK
+            self.table.setRowCount(GPIOS_PER_BANK)
+            for bit in range(GPIOS_PER_BANK):
+                group = base_group + bit // PINS_PER_GROUP
+                pin = bit % PINS_PER_GROUP
+                self._build_table_row(bit, group, pin)
+        finally:
+            self._table_updating = False
+        self._apply_table_filter()
+
+    def _build_table_row(self, row, group, pin):
+        bank_idx = self._cfg.bank_index(group)
+        bit = self._cfg.bit_in_bank(group, pin)
+        linear = self._cfg.linear_index(group, pin)
+        widgets = {}
+
+        item_pin = QTableWidgetItem(str(linear))
+        item_pin.setFlags(item_pin.flags() & ~Qt.ItemIsEditable)
+        item_pin.setToolTip("{0} · {1}".format(self._cfg.gpio_name(group, pin),
+                                               self._cfg.banks[bank_idx].name))
+        f = QFont("Consolas")
+        item_pin.setFont(f)
+        self.table.setItem(row, 0, item_pin)
+        widgets["pin_item"] = item_pin
+
+        item_bit = QTableWidgetItem(str(bit))
+        item_bit.setFlags(item_bit.flags() & ~Qt.ItemIsEditable)
+        item_bit.setFont(f)
+        item_bit.setTextAlignment(Qt.AlignCenter)
+        self.table.setItem(row, 1, item_bit)
+
+        item_alias = QTableWidgetItem(self._alias(group, pin))
+        item_alias.setToolTip("双击编辑信号别名")
+        self.table.setItem(row, 2, item_alias)
+        widgets["alias_item"] = item_alias
+
+        dir_btn = QPushButton()
+        dir_btn.setObjectName("gpioCellBtn")
+        dir_btn.setToolTip("方向切换 (Dir Set +0x04 / Dir Clr +0x10)")
+        dir_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_card_dir(g, p))
+        self.table.setCellWidget(row, 3, dir_btn)
+        widgets["dir_btn"] = dir_btn
+
+        lvl_btn = QPushButton()
+        lvl_btn.setObjectName("gpioCellBtn")
+        lvl_btn.setToolTip("输出电平切换 (Out Set +0x00 / Out Clr +0x0C)")
+        lvl_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_card_level(g, p))
+        self.table.setCellWidget(row, 4, lvl_btn)
+        widgets["lvl_btn"] = lvl_btn
+
+        in_btn = QPushButton()
+        in_btn.setObjectName("gpioCellBtn")
+        in_btn.setToolTip("实时读取值；仿真模式点击注入外部激励，硬件模式点击回读 0x50")
+        in_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_input_stim(g, p))
+        self.table.setCellWidget(row, 5, in_btn)
+        widgets["in_btn"] = in_btn
+
+        pull_combo = DarkComboBox()
+        for label, val in (("High-Z", 0), ("Pull-Up", 1), ("Pull-Down", 2)):
+            pull_combo.addItem(label, val)
+        pull_combo.currentIndexChanged.connect(
+            lambda _i, g=group, p=pin, c=pull_combo: self._on_table_pull(g, p, c.currentData()))
+        self.table.setCellWidget(row, 6, pull_combo)
+        widgets["pull_combo"] = pull_combo
+
+        drv_combo = DarkComboBox()
+        drv_combo.addItem("00 Slow", False)
+        drv_combo.addItem("11 Fast", True)
+        drv_combo.currentIndexChanged.connect(
+            lambda _i, g=group, p=pin, c=drv_combo: self._on_table_drv(g, p, c.currentData()))
+        self.table.setCellWidget(row, 7, drv_combo)
+        widgets["drv_combo"] = drv_combo
+
+        item_mask = QTableWidgetItem(_fmt32(1 << bit))
+        item_mask.setFlags(item_mask.flags() & ~Qt.ItemIsEditable)
+        item_mask.setFont(f)
+        item_mask.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row, 8, item_mask)
+
+        self._table_rows[(group, pin)] = widgets
+        self._refresh_table_row(group, pin)
+
+    def _refresh_table_rows(self):
+        if self._cfg is None:
+            return
+        self._table_updating = True
+        try:
+            for group, pin in self._table_rows:
+                self._refresh_table_row(group, pin)
+        finally:
+            self._table_updating = False
+
+    def _refresh_table_row(self, group, pin):
+        w = self._table_rows.get((group, pin))
+        if w is None or self._cfg is None:
+            return
+        bank_idx = self._cfg.bank_index(group)
+        bit = self._cfg.bit_in_bank(group, pin)
+        is_out = bool(self._dir_bit(bank_idx, bit))
+
+        alias_item = w["alias_item"]
+        if not alias_item.isSelected():
+            cur = self._alias(group, pin)
+            if alias_item.text() != cur:
+                alias_item.setText(cur)
+
+        dir_btn = w["dir_btn"]
+        dir_btn.setText("OUTPUT" if is_out else "INPUT")
+        dir_btn.setProperty("kind", "out" if is_out else "in")
+        _repolish(dir_btn)
+
+        lvl_btn = w["lvl_btn"]
+        lvl = self._out_bit(bank_idx, bit)
+        lvl_btn.setText("HIGH" if lvl else "LOW")
+        lvl_btn.setProperty("kind", "h" if lvl else "l")
+        lvl_btn.setEnabled(is_out)
+        _repolish(lvl_btn)
+
+        in_btn = w["in_btn"]
+        in_lvl = self._in_bit(bank_idx, bit)
+        stim = self._stim(group, pin)
+        if in_lvl is not None:
+            in_btn.setText(str(in_lvl))
+            in_btn.setProperty("kind", "h" if in_lvl else "l")
+        elif stim is not None:
+            in_btn.setText("S{0}".format(stim))
+            in_btn.setProperty("kind", "h" if stim else "l")
+        else:
+            in_btn.setText("--")
+            in_btn.setProperty("kind", "")
+        _repolish(in_btn)
+
+        pull_combo = w["pull_combo"]
+        pull_ok = self._cfg.pull_supported(group)
+        pull_combo.setEnabled(pull_ok)
+        pull = self._pull_state(group, bit)
+        if pull_combo.currentData() != pull:
+            idx = pull_combo.findData(pull)
+            if idx >= 0:
+                pull_combo.blockSignals(True)
+                pull_combo.setCurrentIndex(idx)
+                pull_combo.blockSignals(False)
+
+        drv_combo = w["drv_combo"]
+        drv_ok = self._cfg.drv_supported
+        drv_combo.setEnabled(drv_ok)
+        if drv_ok:
+            val = self._drv_field_value(group, pin)
+            want = val == self._cfg.drv_fast
+            if drv_combo.currentData() != want:
+                drv_combo.blockSignals(True)
+                drv_combo.setCurrentIndex(1 if want else 0)
+                drv_combo.blockSignals(False)
+
+    def _apply_table_filter(self):
+        if self._cfg is None:
+            return
+        text = self.table_search.text().strip().lower()
+        mode = self.table_filter.currentText()
+        base_group = self._cur_bank * GROUPS_PER_BANK
+        for bit in range(GPIOS_PER_BANK):
+            group = base_group + bit // PINS_PER_GROUP
+            pin = bit % PINS_PER_GROUP
+            show = True
+            if text:
+                hay = "{0} {1} p{2:02d} {3} {4}".format(
+                    self._cfg.gpio_name(group, pin), self._alias(group, pin),
+                    bit, bit, self._cfg.linear_index(group, pin)).lower()
+                show = text in hay
+            if show and mode in ("Output", "Input"):
+                is_out = bool(self._dir_bit(self._cur_bank, bit))
+                show = is_out if mode == "Output" else not is_out
+            self.table.setRowHidden(bit, not show)
+
+    def _rebuild_regmap(self):
+        while self._regmap_grid.count():
+            item = self._regmap_grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._reg_cards = []
+        if self._cfg is None:
+            ph = QLabel("加载 DUT 配置后展示寄存器映射")
+            ph.setObjectName("gpioStatus")
+            ph.setAlignment(Qt.AlignCenter)
+            self._regmap_grid.addWidget(ph, 0, 0)
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        specs = [
+            ("val_set", bank.base + OFFSET_OUT_SET, "VAL_SET",
+             "输出置位：写 1 -> 对应位输出 HIGH", False),
+            ("dir_set", bank.base + OFFSET_DIR_SET, "DIR_SET",
+             "方向置位：写 1 -> 对应位设为 OUTPUT", False),
+            ("val_clr", bank.base + OFFSET_OUT_CLR, "VAL_CLR",
+             "输出清零：写 1 -> 对应位输出 LOW", False),
+            ("dir_clr", bank.base + OFFSET_DIR_CLR, "DIR_CLR",
+             "方向清零：写 1 -> 对应位设为 INPUT", False),
+            ("val_in", bank.base + OFFSET_IN_READ, "VAL_IN",
+             "输入电平读取（点击卡片刷新）", True),
+        ]
+        if self._cfg.drv_supported:
+            per_reg = 32 // self._cfg.drv_bits_per_gpio
+            first = (self._cur_bank * GPIOS_PER_BANK) // per_reg
+            for i in range(GPIOS_PER_BANK // per_reg):
+                addr = self._cfg.drv_base + (first + i) * 4
+                specs.append(("drv", addr, "DRV_SEL{0}".format(first + i),
+                              "驱动斜率 {0}bit/脚（点击位翻转 Slow/Fast）".format(
+                                  self._cfg.drv_bits_per_gpio), True))
+        pu_addr = self._cfg.pull_up_bases[self._cur_bank] \
+            if self._cur_bank < len(self._cfg.pull_up_bases) else None
+        pd_addr = self._cfg.pull_down_bases[self._cur_bank] \
+            if self._cur_bank < len(self._cfg.pull_down_bases) else None
+        specs.append(("pu", pu_addr, "PU_REG", "上拉使能（1bit/脚，OP_BITS 位域写）", True))
+        specs.append(("pd", pd_addr, "PD_REG", "下拉使能（1bit/脚，OP_BITS 位域写）", True))
+
+        for i, (kind, addr, name, hint, readable) in enumerate(specs):
+            card = self._make_reg_card(kind, addr, name, hint, readable)
+            self._regmap_grid.addWidget(card["frame"], i // 2, i % 2)
+            self._reg_cards.append(card)
+        self._refresh_reg_cards()
+
+    def _make_reg_card(self, kind, addr, name, hint, readable):
+        frame = QFrame()
+        frame.setObjectName("regCard")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(10, 6, 10, 8)
+        lay.setSpacing(4)
+
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        n = QLabel(name)
+        n.setObjectName("regCardName")
+        head.addWidget(n)
+        a = QLabel(_fmt32(addr) if addr is not None else "TBD")
+        a.setObjectName("regCardAddr")
+        head.addWidget(a)
+        head.addStretch(1)
+        v = QLabel("--")
+        v.setObjectName("regCardVal")
+        head.addWidget(v)
+        if readable and addr is not None:
+            r = QPushButton("R")
+            r.setObjectName("gpioCellBtn")
+            r.setToolTip("回读该寄存器")
+            r.clicked.connect(lambda _=False, k=kind, ad=addr: self._on_reg_read(k, ad))
+            head.addWidget(r)
+        lay.addLayout(head)
+
+        h = QLabel(hint if addr is not None else "地址待确认（JSON 未配置），写入已禁用")
+        h.setObjectName("regCardHint")
+        lay.addWidget(h)
+
+        bit_row = QHBoxLayout()
+        bit_row.setContentsMargins(0, 0, 0, 0)
+        bit_row.setSpacing(2)
+        bit_row.addStretch(1)
+        bits = []
+        for bit in range(31, -1, -1):
+            b = QPushButton("0")
+            b.setObjectName("regBit")
+            b.setProperty("on", "0")
+            b.setToolTip("Bit {0}".format(bit))
+            if readable:
+                b.setProperty("rd", "1")
+            if addr is None:
+                b.setEnabled(False)
+            else:
+                b.clicked.connect(
+                    lambda _=False, k=kind, ad=addr, bi=bit: self._on_reg_bit(k, ad, bi))
+            bit_row.addWidget(b)
+            bits.append((bit, b))
+        bit_row.addStretch(1)
+        lay.addLayout(bit_row)
+        return {"frame": frame, "kind": kind, "addr": addr, "val": v, "bits": bits}
+
+    def _reg_card_value(self, kind, addr):
+        if addr is None or self._cfg is None:
+            return None
+        bank = self._cfg.banks[self._cur_bank]
+        if kind in ("val_set", "val_clr"):
+            return self._out_shadow.get(self._cur_bank, 0)
+        if kind in ("dir_set", "dir_clr"):
+            return self._dir_shadow.get(self._cur_bank, 0)
+        if kind == "val_in":
+            return self._in_value.get(self._cur_bank)
+        return self._reg_shadow.get(addr, 0)
+
+    def _refresh_reg_cards(self):
+        for card in self._reg_cards:
+            value = self._reg_card_value(card["kind"], card["addr"])
+            card["val"].setText("--" if value is None else _fmt32(value))
+            shown = value or 0
+            for bit, btn in card["bits"]:
+                on = (shown >> bit) & 1
+                if btn.text() != str(on):
+                    btn.setText(str(on))
+                if btn.property("on") != str(on):
+                    btn.setProperty("on", str(on))
+                    _repolish(btn)
+
+    def _refresh_addr_bar(self):
+        if self._cfg is None:
+            self.addr_label.setText("Base --")
+            self.dut_sub.setText("DUT: --")
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        g0 = self._cur_bank * GROUPS_PER_BANK
+        self.addr_label.setText(
+            "Base {0} · SET +0x00 · DIR +0x04 · CLR +0x0C · DCLR +0x10 · IN +0x50"
+            .format(_fmt32(bank.base)))
+        mode = "SIM" if self._sim_mode else (
+            "dev 0x{0:02X}".format(self._dev_addr)
+            if self._dev_addr is not None else "--")
+        self.dut_sub.setText("DUT: {0} · {1} · Bank{2} (GPIO_Group{3}~{4})".format(
+            self._cfg.chip.upper(), mode, self._cur_bank, g0,
+            g0 + GROUPS_PER_BANK - 1))
+
+    def _refresh_stats(self):
+        vals = {k: "-" for k in self._stat_vals}
+        if self._cfg is not None:
+            b = self._cur_bank
+            dir_v = self._dir_shadow.get(b, 0)
+            out_n = _popcount(dir_v)
+            vals["out"] = str(out_n)
+            vals["in"] = str(GPIOS_PER_BANK - out_n)
+            in_v = self._in_value.get(b)
+            if in_v is not None:
+                high_n = _popcount(in_v)
+                vals["high"] = str(high_n)
+                vals["low"] = str(GPIOS_PER_BANK - high_n)
+            pu_addr = self._cfg.pull_up_bases[b] \
+                if b < len(self._cfg.pull_up_bases) else None
+            pd_addr = self._cfg.pull_down_bases[b] \
+                if b < len(self._cfg.pull_down_bases) else None
+            if pu_addr is not None:
+                vals["pu"] = str(_popcount(self._reg_shadow.get(pu_addr, 0)))
+            if pd_addr is not None:
+                vals["pd"] = str(_popcount(self._reg_shadow.get(pd_addr, 0)))
+        for k, v in self._stat_vals.items():
+            v.setText(vals[k])
+
+    def _refresh_inspector(self):
         sel = self._selected
         has = sel is not None and self._cfg is not None
+        ready = self._ready()
         if not has:
-            self.detail_name.setText("未选择 GPIO")
-            self.detail_info.setText("-")
-            self.detail_state.setText("")
+            self.insp_name.setText("P--")
+            self.insp_info.setText("未选择引脚")
+            self.insp_mask.setText("Mask --")
+            self.alias_edit.setText("")
+            self.insp_big_state.setText("LOGIC --")
+            self.insp_big_state.setProperty("lvl", "")
+            _repolish(self.insp_big_state)
         else:
             group, pin = sel
-            state = self._pin_state.get(sel, {"mode": None, "level": None})
-            bank = self._cfg.bank(group)
+            bank_idx = self._cfg.bank_index(group)
             bit = self._cfg.bit_in_bank(group, pin)
-            self.detail_name.setText(self._cfg.gpio_name(group, pin))
-            self.detail_info.setText(
-                "{0} · Group{1} Pin{2} · bit{3}".format(
-                    bank.name, group, pin, bit))
-            level_txt = {0: "低", 1: "高"}.get(state["level"], "-")
+            linear = self._cfg.linear_index(group, pin)
+            is_out = bool(self._dir_bit(bank_idx, bit))
+            self.insp_name.setText("P{0:02d}".format(bit))
+            self.insp_info.setText("{0} · {1} Group{2} Pin{3} · 全局 #{4} · {5}".format(
+                self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
+                group, pin, linear, mode_label(self._pin_mode(group, pin))))
+            if self.alias_edit.text() != self._alias(group, pin) \
+                    and not self.alias_edit.hasFocus():
+                self.alias_edit.setText(self._alias(group, pin))
+
+            self.insp_dir_out.setProperty("cur", "1" if is_out else "0")
+            self.insp_dir_in.setProperty("cur", "0" if is_out else "1")
+            _repolish(self.insp_dir_out)
+            _repolish(self.insp_dir_in)
+            lvl = self._out_bit(bank_idx, bit)
+            self.insp_lvl_h.setProperty("cur", "1" if (is_out and lvl) else "0")
+            self.insp_lvl_l.setProperty("cur", "1" if (is_out and not lvl) else "0")
+            _repolish(self.insp_lvl_h)
+            _repolish(self.insp_lvl_l)
+
+            pull = self._pull_state(group, bit)
+            self.insp_pull_hiz.setProperty("cur", "1" if pull == 0 else "0")
+            self.insp_pull_pu.setProperty("cur", "pu" if pull == 1 else "0")
+            self.insp_pull_pd.setProperty("cur", "pd" if pull == 2 else "0")
+            for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
+                _repolish(b)
+
+            if self._cfg.drv_supported:
+                field_ = self._cfg.drv_field(group, pin)
+                val = self._drv_field_value(group, pin)
+                self.insp_drv_slow.setProperty(
+                    "cur", "1" if val == self._cfg.drv_slow else "0")
+                self.insp_drv_fast.setProperty(
+                    "cur", "1" if val == self._cfg.drv_fast else "0")
+                self.insp_drv_key.setText(
+                    "驱动斜率（{0} 位域 [{1}:{2}]：00=Slow / 11=Fast）".format(
+                        _fmt32(field_[0]), field_[1], field_[2]))
+            else:
+                self.insp_drv_slow.setProperty("cur", "0")
+                self.insp_drv_fast.setProperty("cur", "0")
+                self.insp_drv_key.setText("驱动斜率（该芯片 JSON 未配置 drv_sel）")
+            _repolish(self.insp_drv_slow)
+            _repolish(self.insp_drv_fast)
+
+            in_lvl = self._in_bit(bank_idx, bit)
+            if in_lvl is None:
+                self.insp_big_state.setText("LOGIC --")
+                self.insp_big_state.setProperty("lvl", "")
+            else:
+                self.insp_big_state.setText(
+                    "LOGIC {0} ({1})".format("HIGH" if in_lvl else "LOW", in_lvl))
+                self.insp_big_state.setProperty("lvl", "h" if in_lvl else "l")
+            _repolish(self.insp_big_state)
+
             drv_txt = ""
             if self._cfg.drv_supported:
-                drv_txt = "  |  Drv: {0}".format(state.get("drv") or "-")
-            self.detail_state.setText(
-                "电平: {0}  |  模式: {1}{2}".format(
-                    level_txt, mode_label(state["mode"]), drv_txt))
+                field_ = self._cfg.drv_field(group, pin)
+                drv_txt = " · drv {0} [{1}:{2}]".format(
+                    _fmt32(field_[0]), field_[1], field_[2])
+            self.insp_mask.setText(
+                "Mask {0} · bank bit {1}{2}".format(_fmt32(1 << bit), bit, drv_txt))
 
-        detected = self._cfg is not None and self._dev_addr is not None
-        busy = self._thread is not None and self._thread.isRunning()
-        for mode, btn in self._mode_buttons.items():
-            ok = has and detected and not busy
-            if ok and mode in (MODE_IN_PULL_UP, MODE_IN_PULL_DOWN):
-                ok = self._cfg.pull_supported(sel[0])
-            btn.setEnabled(ok)
-        drv_ok = has and detected and not busy and self._cfg.drv_supported
-        self.drv_slow_btn.setEnabled(drv_ok)
-        self.drv_fast_btn.setEnabled(drv_ok)
-        self.read_btn.setEnabled(has and detected and not busy)
+        pull_ok = has and self._cfg.pull_supported(sel[0])
+        drv_ok = has and self._cfg.drv_supported
+        for b in (self.insp_dir_out, self.insp_dir_in,
+                  self.insp_lvl_h, self.insp_lvl_l, self.insp_read_btn):
+            b.setEnabled(has and ready)
+        for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
+            b.setEnabled(has and ready and pull_ok)
+        self.insp_drv_slow.setEnabled(has and ready and drv_ok)
+        self.insp_drv_fast.setEnabled(has and ready and drv_ok)
+        self.alias_edit.setEnabled(has)
 
-    def _set_status(self, text, ok=False, err=False):
-        self.status_label.setText(text)
-        self.status_label.setProperty("ok", "1" if ok else "0")
-        self.status_label.setProperty("err", "1" if err else "0")
-        self.status_label.style().unpolish(self.status_label)
-        self.status_label.style().polish(self.status_label)
+    def _update_op_enabled(self):
+        ready = self._ready()
+        busy = self._busy()
+        for btn in self._batch_buttons:
+            btn.setEnabled(ready and not busy)
+        self.mask_btn.setEnabled(ready and not busy)
+        self.read_btn.setEnabled(ready and not busy)
+        self.raw_write_btn.setEnabled(ready and not busy)
+        self.raw_read_btn.setEnabled(ready and not busy)
+        self.reg_refresh_btn.setEnabled(ready and not busy)
+        self.poll_btn.setEnabled(ready)
+        self.detect_btn.setEnabled(not busy)
+        self.load_btn.setEnabled(not busy)
+        self.bridge_btn.setEnabled(not busy)
 
-    def append_log(self, msg):
-        self.execution_logs.append_log(msg)
+    # ================================================================ Sniffer
 
-    # ------------------------------------------------------------ 线程装配
+    def _sniff(self, kind, addr, data, semantic):
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        parts = ["{0} [{1}]".format(ts, kind)]
+        if addr is not None:
+            parts.append("ADDR: {0}".format(_fmt32(addr)))
+        if data is not None:
+            parts.append("DATA: {0}".format(_fmt32(data)))
+        parts.append(semantic)
+        raw = "  ".join(parts)
+
+        color = self._SNIFF_COLORS.get(kind, "#94A3B8")
+        esc = semantic.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        html = (
+            '<span style="color:#475569">{0}</span> '
+            '<span style="color:{1};font-weight:600">[{2}]</span> '.format(ts, color, kind))
+        if addr is not None:
+            html += '<span style="color:#22D3EE">ADDR: {0}</span> '.format(_fmt32(addr))
+        if data is not None:
+            html += '<span style="color:#F59E0B">DATA: {0}</span> '.format(_fmt32(data))
+        html += '<span style="color:#94A3B8">{0}</span>'.format(esc)
+        self._sniff_entries.append((kind, raw, html))
+        if not self._sniff_paused and self._sniff_match(kind, raw):
+            self.sniff_view.append(html)
+            self._sniff_scroll_bottom()
+
+    def _sniff_match(self, kind, raw):
+        if self._sniff_kind and kind != self._sniff_kind:
+            return False
+        text = self.sniff_search.text().strip().lower()
+        if text and text not in raw.lower():
+            return False
+        return True
+
+    def _sniff_scroll_bottom(self):
+        sb = self.sniff_view.verticalScrollBar()
+        if sb:
+            sb.setValue(sb.maximum())
+
+    def _render_sniffer(self):
+        self.sniff_view.clear()
+        for kind, raw, html in self._sniff_entries:
+            if self._sniff_match(kind, raw):
+                self.sniff_view.append(html)
+        self._sniff_scroll_bottom()
+
+    def _on_sniff_kind_changed(self, idx):
+        self._sniff_kind = None if idx < 0 else self.SNIFF_KINDS[idx]
+        self._render_sniffer()
+
+    def _on_sniff_pause(self, paused):
+        self._sniff_paused = paused
+        self.sniff_pause_btn.setText("Resume" if paused else "Pause")
+        if not paused:
+            self._render_sniffer()
+
+    def _on_sniff_clear(self):
+        self._sniff_entries = []
+        self.sniff_view.clear()
+
+    def _on_sniff_export(self):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出 I2C 嗅探日志",
+            "gpio_i2c_sniffer_{0}.log".format(ts),
+            "Log Files (*.log);;Text Files (*.txt);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("BES GPIO Workbench - I2C Bus Sniffer Log\n")
+                f.write("Chip: {0}  Mode: {1}\n".format(
+                    self._cfg.chip if self._cfg else "--",
+                    "Simulated DUT" if self._sim_mode else "USB-I2C Bridge"))
+                for _kind, raw, _html in self._sniff_entries:
+                    f.write(raw + "\n")
+            self.append_log("[EXPORT] 嗅探日志已导出: {0}".format(path))
+        except OSError as e:
+            logger.error("sniffer export failed: %s", e, exc_info=True)
+            self.append_log("[ERROR] 嗅探日志导出失败: {0}".format(e))
+
+    def _mask_pins(self, mask):
+        bits = [i for i in range(32) if (mask >> i) & 1]
+        if not bits:
+            return "no pin (mask: {0})".format(_fmt32(mask))
+        if len(bits) > 8:
+            head = "{0} pins".format(len(bits))
+        else:
+            head = " ".join("P{0:02d}".format(i) for i in bits)
+        return "{0} (mask: {1})".format(head, _fmt32(mask))
+
+    def _describe_write(self, op, addr, value, hi, lo):
+        cfg = self._cfg
+        if cfg is not None:
+            for bank in cfg.banks:
+                off = addr - bank.base
+                if off == OFFSET_OUT_SET:
+                    return "Output control (set): Write 1 to be HIGH -> {0}".format(
+                        self._mask_pins(value))
+                if off == OFFSET_OUT_CLR:
+                    return "Output control (clr): Write 1 to be LOW -> {0}".format(
+                        self._mask_pins(value))
+                if off == OFFSET_DIR_SET:
+                    return "Dir control (set): Write 1 to be OUTPUT -> {0}".format(
+                        self._mask_pins(value))
+                if off == OFFSET_DIR_CLR:
+                    return "Dir control (clr): Write 1 to be INPUT -> {0}".format(
+                        self._mask_pins(value))
+            for b_idx in range(len(cfg.banks)):
+                pu = cfg.pull_up_bases[b_idx] if b_idx < len(cfg.pull_up_bases) else None
+                pd = cfg.pull_down_bases[b_idx] if b_idx < len(cfg.pull_down_bases) else None
+                if pu is not None and addr == pu:
+                    return "Pull-up enable (RMW [{0}:{1}] = {2}) -> {3}".format(
+                        hi, lo, value, self._mask_pins(
+                            ((value & ((1 << (hi - lo + 1)) - 1)) << lo)))
+                if pd is not None and addr == pd:
+                    return "Pull-down enable (RMW [{0}:{1}] = {2}) -> {3}".format(
+                        hi, lo, value, self._mask_pins(
+                            ((value & ((1 << (hi - lo + 1)) - 1)) << lo)))
+            if cfg.drv_supported:
+                per_reg = 32 // cfg.drv_bits_per_gpio
+                delta = addr - cfg.drv_base
+                if delta >= 0 and delta % 4 == 0:
+                    idx = (delta // 4) * per_reg + lo // cfg.drv_bits_per_gpio
+                    if 0 <= idx < cfg.group_count * PINS_PER_GROUP:
+                        if value == cfg.drv_fast:
+                            speed = "Fast"
+                        elif value == cfg.drv_slow:
+                            speed = "Slow"
+                        else:
+                            speed = "0x{0:X}".format(value)
+                        g, p = divmod(idx, PINS_PER_GROUP)
+                        return "Drv slew select: [{0}:{1}] = {2} -> {3}".format(
+                            hi, lo, speed, cfg.gpio_name(g, p))
+        if op == OP_BITS:
+            return "Raw bits write [{0}:{1}] = 0x{2:X}".format(hi, lo, value)
+        return "Raw register write"
+
+    def _describe_read(self, addr, value):
+        cfg = self._cfg
+        if cfg is not None:
+            for bank in cfg.banks:
+                if addr == bank.base + OFFSET_IN_READ:
+                    return "Input status read ({0} VAL_IN +0x50)".format(bank.name)
+            for b_idx in range(len(cfg.banks)):
+                pu = cfg.pull_up_bases[b_idx] if b_idx < len(cfg.pull_up_bases) else None
+                pd = cfg.pull_down_bases[b_idx] if b_idx < len(cfg.pull_down_bases) else None
+                if pu is not None and addr == pu:
+                    return "Pull-up enable read (Bank{0})".format(b_idx)
+                if pd is not None and addr == pd:
+                    return "Pull-down enable read (Bank{0})".format(b_idx)
+            if cfg.drv_supported and addr >= cfg.drv_base \
+                    and (addr - cfg.drv_base) % 4 == 0:
+                return "Drv slew read"
+        return "Raw register read"
+
+    # ================================================================ 执行管道
 
     def _busy(self):
         return self._thread is not None and self._thread.isRunning()
 
     def _run_worker(self, worker, on_done, on_error):
-        """装配并启动单次 Worker 线程（QObject + moveToThread）。"""
+        """装配并启动单次 Worker 线程（QObject + moveToThread）。
+
+        线程不挂父对象：本页为内嵌子页面，销毁时不走 closeEvent；
+        worker 到页面的信号均为绑定方法连接（页面销毁自动断开），
+        线程自身由 finished -> deleteLater 自清理，杜绝"运行中的
+        QThread 随页面析构"导致的进程崩溃（access violation）。
+        """
         if self._busy():
             return False
-        thread = QThread(self)
+        thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         if hasattr(worker, "progress"):
             worker.progress.connect(self.append_log)
-        if on_done is not None:
-            worker.finished.connect(on_done)
+        self._worker_done_cb = on_done
+        worker.finished.connect(self._on_worker_done)
         worker.error.connect(on_error)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
@@ -420,33 +2218,230 @@ class GpioControlUI(QWidget):
         thread.start()
         return True
 
+    def _on_worker_done(self, *args):
+        """worker.finished 统一分发（绑定方法连接，页面销毁自动断开）。"""
+        cb, self._worker_done_cb = self._worker_done_cb, None
+        if cb is not None:
+            cb(*args)
+
     def _on_thread_cleanup(self):
+        # 旧线程 finished 晚到时勿清新线程引用（sender 校验）
+        sender = self.sender()
+        if sender is not None and self._thread is not None \
+                and sender is not self._thread:
+            return
         self._thread = None
         self._worker = None
         self._set_top_busy(False)
-        self._update_detail_panel()
+
+    def _defer_read(self, fn, delay_ms=80):
+        """延迟执行读操作（§26）；定时器为页内子对象，页面销毁自动失效。"""
+        self._deferred_read_fn = fn
+        self._deferred_timer.start(delay_ms)
+
+    def _on_deferred_read(self):
+        fn, self._deferred_read_fn = self._deferred_read_fn, None
+        if fn is not None:
+            fn()
 
     def _set_top_busy(self, busy):
-        self.detect_btn.setEnabled(not busy)
-        self.refresh_btn.setEnabled(
-            not busy and self._cfg is not None and self._dev_addr is not None)
+        self._update_op_enabled()
 
     def _on_op_error(self, msg):
-        self.append_log("[ERR] {0}".format(msg))
+        self.append_log("[ERROR] {0}".format(msg))
+        self._sniff("ERROR", None, None, "操作失败: {0}".format(msg))
         self._set_status("操作失败: {0}".format(msg), err=True)
+        self._stop_spin()
 
-    # ------------------------------------------------------------ 事件处理
+    def _apply_to_shadow(self, actions):
+        for op, addr, value, hi, lo in actions:
+            if op == OP_BITS:
+                cur = self._reg_shadow.get(addr, 0)
+                mask = ((1 << (hi - lo + 1)) - 1) << lo
+                self._reg_shadow[addr] = (cur & ~mask) | ((value << lo) & mask)
+                continue
+            matched = False
+            if self._cfg is not None:
+                for b_idx, bank in enumerate(self._cfg.banks):
+                    off = addr - bank.base
+                    if off == OFFSET_OUT_SET:
+                        self._out_shadow[b_idx] = \
+                            self._out_shadow.get(b_idx, 0) | value
+                        matched = True
+                        break
+                    if off == OFFSET_OUT_CLR:
+                        self._out_shadow[b_idx] = \
+                            self._out_shadow.get(b_idx, 0) & ~value & 0xFFFFFFFF
+                        matched = True
+                        break
+                    if off == OFFSET_DIR_SET:
+                        self._dir_shadow[b_idx] = \
+                            self._dir_shadow.get(b_idx, 0) | value
+                        matched = True
+                        break
+                    if off == OFFSET_DIR_CLR:
+                        self._dir_shadow[b_idx] = \
+                            self._dir_shadow.get(b_idx, 0) & ~value & 0xFFFFFFFF
+                        matched = True
+                        break
+            if not matched:
+                self._reg_shadow[addr] = value & 0xFFFFFFFF
+
+    def _apply_actions(self, actions, label="", on_done=None):
+        """统一下发管道：嗅探 -> 影子更新 -> 仿真直写 / 硬件 Worker。"""
+        if not actions:
+            return False
+        if not self._sim_mode:
+            if not self._ready():
+                self.append_log("[WARN] 未连接 DUT，请先 i2c.bes_chip_check()")
+                return False
+            if self._busy():
+                self.append_log("[WARN] 上一操作仍在执行，请稍候 ({0})".format(label))
+                return False
+        for op, addr, value, hi, lo in actions:
+            self._sniff("WRITE32", addr, value,
+                        self._describe_write(op, addr, value, hi, lo))
+        if label:
+            self.append_log("[I2C] {0}".format(label))
+        self._apply_to_shadow(actions)
+        if self._sim_mode:
+            self._refresh_after_hw()
+            if on_done is not None:
+                on_done()
+            return True
+        worker = GpioApplyWorker(
+            None, self.speed_combo.currentData(), self._dev_addr,
+            actions, label=label)
+        return self._run_worker(
+            worker,
+            lambda: self._on_hw_applied(on_done),
+            self._on_op_error)
+
+    def _on_hw_applied(self, on_done=None):
+        self._refresh_after_hw()
+        if on_done is not None:
+            on_done()
+
+    def _sim_read(self, addr):
+        """仿真器读值：0x50 由 dir/out/上下拉/外部激励综合判定（真实物理行为）。"""
+        cfg = self._cfg
+        if cfg is not None:
+            for b_idx, bank in enumerate(cfg.banks):
+                if addr == bank.base + OFFSET_IN_READ:
+                    value = 0
+                    for bit in range(32):
+                        if self._dir_bit(b_idx, bit):
+                            lv = self._out_bit(b_idx, bit)
+                        else:
+                            group = b_idx * GROUPS_PER_BANK + bit // PINS_PER_GROUP
+                            pin = bit % PINS_PER_GROUP
+                            pull = self._pull_state(group, bit)
+                            stim = self._stim(group, pin)
+                            if stim is not None:
+                                lv = stim
+                            elif pull == 1:
+                                lv = 1
+                            elif pull == 2:
+                                lv = 0
+                            else:
+                                lv = 0
+                        value |= (lv & 1) << bit
+                    return value
+        return self._reg_shadow.get(addr, 0)
+
+    def _read_registers(self, pairs, on_done=None):
+        """pairs: [(key, addr)]；仿真同步返回，硬件走 Worker。"""
+        if not pairs:
+            return False
+        if self._sim_mode:
+            values = {key: self._sim_read(addr) for key, addr in pairs}
+            self._on_read_done(pairs, values, on_done)
+            return True
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法读取")
+            return False
+        if self._busy():
+            return False
+        worker = GpioReadBanksWorker(
+            None, self.speed_combo.currentData(), self._dev_addr, pairs)
+        return self._run_worker(
+            worker,
+            lambda values: self._on_read_done(pairs, values, on_done),
+            self._on_op_error)
+
+    def _on_read_done(self, pairs, values, on_done=None):
+        for key, addr in pairs:
+            value = values.get(key)
+            if value is None:
+                continue
+            self._sniff("READ32", addr, value, self._describe_read(addr, value))
+            matched = False
+            if self._cfg is not None:
+                for b_idx, bank in enumerate(self._cfg.banks):
+                    if addr == bank.base + OFFSET_IN_READ:
+                        self._in_value[b_idx] = value
+                        matched = True
+                        break
+            if not matched:
+                self._reg_shadow[addr] = value & 0xFFFFFFFF
+        self._refresh_after_hw()
+        if on_done is not None:
+            on_done(values)
+
+    # ================================================================ 事件：顶部
+
+    def _on_tab_changed(self, idx):
+        self._stack.setCurrentIndex(idx)
+        if idx == 5:
+            self._refresh_exports()
+
+    def _on_spin_tick(self):
+        self._spin_angle = (self._spin_angle + 90) % 360
+        pm = tinted_svg_pixmap(os.path.join(_ICONS_DIR, "refresh-cw.svg"),
+                               "#22D3EE", 13)
+        if not pm.isNull():
+            self.detect_btn.setIcon(
+                QIcon(pm.transformed(QTransform().rotate(self._spin_angle))))
+
+    def _start_spin(self):
+        self._spin_angle = 0
+        self._spin_timer.start()
+
+    def _stop_spin(self):
+        self._spin_timer.stop()
+        self.detect_btn.setIcon(_icon("refresh-cw.svg", "#22D3EE", 13))
 
     def _on_detect_clicked(self):
         if self._busy():
             return
-        speed = self.speed_combo.currentData()
+        self._sniff("CHIP_CHECK", None, None,
+                    "i2c.bes_chip_check() -> dev 0x11 reg 0x40080000 (32bit)")
         self._set_status("检测中...")
+        self._start_spin()
+        if self._sim_mode:
+            name = self.profile_combo.currentData()
+            if not name:
+                self._stop_spin()
+                self._set_status("无可用 DUT Profile", err=True)
+                self._sniff("ERROR", None, None,
+                            "chips/gpio_configs/ 下无芯片 JSON 配置")
+                return
+            chip_info = {
+                "chip_name": name,
+                "main_die": name.upper(),
+                "main_die_version": "verA(sim)",
+                "main_die_i2c_addr": 0x11,
+                "simulated": True,
+            }
+            self.append_log("[I2C] Simulated DUT 检测（Profile: {0}）".format(name))
+            self._on_detect_done(chip_info)
+            return
         self.append_log("[I2C] BES 芯片检测中...")
-        worker = GpioChipCheckWorker(None, speed)
+        worker = GpioChipCheckWorker(None, self.speed_combo.currentData())
         self._run_worker(worker, self._on_detect_done, self._on_op_error)
 
     def _on_detect_done(self, chip_info):
+        self._stop_spin()
         self._chip_info = chip_info
         chip_name = chip_info.get("chip_name")
         main_die = chip_info.get("main_die")
@@ -457,13 +2452,18 @@ class GpioControlUI(QWidget):
             self._dev_addr = None
             self._set_status("Main-die 无法读取，请确认芯片已开机并处于非休眠状态",
                              err=True)
-            self.append_log("[ERR] Main-die 检测失败")
-            self._set_top_busy(False)
+            self.append_log("[ERROR] Main-die 检测失败")
+            self._sniff("ERROR", None, None, "Main-die 检测失败")
+            self._refresh_all_views()
             return
         addr = chip_info["main_die_i2c_addr"]
         self._dev_addr = int(addr, 0) if isinstance(addr, str) else int(addr)
         self.append_log("[I2C] 检测结果: {0} {1} · dev=0x{2:02X}".format(
             main_die, chip_info.get("main_die_version") or "", self._dev_addr))
+        self._sniff("CHIP_CHECK", None, None,
+                    "识别结果: {0} {1} · main_die dev=0x{2:02X}".format(
+                        main_die, chip_info.get("main_die_version") or "",
+                        self._dev_addr))
 
         self._cfg = load_gpio_config(chip_name)
         if self._cfg is None:
@@ -473,148 +2473,1011 @@ class GpioControlUI(QWidget):
             self.append_log(
                 "[WARN] 未找到芯片 {0} 的 GPIO 配置，请添加 "
                 "chips/gpio_configs/{0}.json".format(chip_name))
-            self._set_top_busy(False)
+            self._refresh_all_views()
             return
 
-        self._selected = None
-        self._pin_state.clear()
-        self._rebuild_banks()
+        idx = self.profile_combo.findData(chip_name)
+        if idx >= 0:
+            self.profile_combo.blockSignals(True)
+            self.profile_combo.setCurrentIndex(idx)
+            self.profile_combo.blockSignals(False)
+
+        self._reset_session_state()
         self._set_status("{0} {1} · dev 0x{2:02X} · {3} banks".format(
             main_die, chip_info.get("main_die_version") or "",
             self._dev_addr, len(self._cfg.banks)), ok=True)
         self.append_log("[I2C] GPIO 配置已加载: {0}（{1} banks / {2} GPIO）".format(
             self._cfg.chip, len(self._cfg.banks),
-            len(self._cfg.banks) * 32))
-        self._set_top_busy(False)
-        self._update_detail_panel()
+            len(self._cfg.banks) * GPIOS_PER_BANK))
+        self._load_json_editor()
+        self._refresh_all_views()
         # 检测完成后自动全量回读一轮输入电平（§26：延迟 ≥50ms 再起新线程）
-        QTimer.singleShot(80, self._start_read_all_banks)
+        self._defer_read(self._start_read_all_banks)
 
-    def _on_refresh_all_clicked(self):
-        if self._busy() or self._cfg is None:
+    def _on_load_profile_clicked(self):
+        if self._busy():
             return
-        self._start_read_all_banks()
+        name = self.profile_combo.currentData()
+        if not name:
+            self._set_status("无可用 DUT Profile", err=True)
+            return
+        if not self._sim_mode and self._dev_addr is None:
+            self.append_log("[WARN] USB-I2C 模式请先 i2c.bes_chip_check()，"
+                            "或切换到 Simulated DUT 后加载 Profile")
+            self._set_status("请先 Detect DUT 或切换仿真模式", err=True)
+            return
+        cfg = load_gpio_config(name)
+        if cfg is None:
+            self._set_status("Profile 加载失败: {0}".format(name), err=True)
+            return
+        self._cfg = cfg
+        if self._sim_mode:
+            self._chip_info = {
+                "chip_name": name, "main_die": name.upper(),
+                "main_die_version": "verA(sim)", "main_die_i2c_addr": 0x11,
+                "simulated": True,
+            }
+            self._dev_addr = 0x11
+        self._reset_session_state()
+        self._sniff("CHIP_CHECK", None, None,
+                    "DUT Profile 手动加载: {0}".format(name))
+        self._set_status("Profile: {0} · {1} banks".format(name, len(cfg.banks)),
+                         ok=True)
+        self.append_log("[I2C] DUT Profile 已加载: {0}".format(name))
+        self._load_json_editor()
+        self._refresh_all_views()
+        if self._sim_mode:
+            self._start_read_all_banks()
+
+    def _on_bridge_toggled(self):
+        if self._busy():
+            return
+        self._stop_polling()
+        self._sim_mode = not self._sim_mode
+        self._cfg = None
+        self._chip_info = None
+        self._dev_addr = None
+        self._cur_bank = 0
+        self.bridge_btn.setText(
+            "Simulated DUT" if self._sim_mode else "USB-I2C Bridge")
+        self.bridge_btn.setProperty("on", "1" if self._sim_mode else "0")
+        _repolish(self.bridge_btn)
+        if self._sim_mode:
+            self._set_status("Simulated DUT：选择 Profile 后 Load 或 chip_check")
+            self.append_log("[INFO] 已切换到高精度内置仿真器 (Simulated DUT)，"
+                            "所有读写为影子寄存器模拟，不触碰硬件")
+        else:
+            self._set_status("USB-I2C Bridge：请点击 i2c.bes_chip_check()")
+            self.append_log("[INFO] 已切换到 USB-I2C 物理工装桥接")
+        self._sniff("CHIP_CHECK", None, None,
+                    "桥接切换 -> {0}".format(
+                        "Simulated DUT" if self._sim_mode else "USB-I2C Bridge"))
+        self._refresh_all_views()
+
+    def _on_bank_changed(self, idx):
+        if idx == self._cur_bank or self._cfg is None:
+            return
+        self._cur_bank = idx
+        self._selected = None
+        self._rebuild_matrix()
+        self._rebuild_table()
+        self._rebuild_regmap()
+        self._refresh_addr_bar()
+        self._refresh_stats()
+        self._refresh_inspector()
+
+    # ================================================================ 事件：批处理
+
+    def _batch_apply(self, actions, label):
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，请先 Detect 或加载 Profile")
+            return
+        self._apply_actions(actions, label=label,
+                            on_done=lambda: self._queue_bank_read(self._cur_bank))
+
+    def _queue_bank_read(self, bank_idx):
+        # §26：worker finished 槽链里再起读线程须延迟 ≥50ms
+        self._defer_read(lambda: self._start_read_bank(bank_idx))
+
+    def _on_batch_out_high(self):
+        if self._cfg is None:
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        self._batch_apply([
+            (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
+            (OP_WRITE, bank.base + OFFSET_OUT_SET, 0xFFFFFFFF, -1, -1),
+        ], "All OUT HIGH -> Bank{0}".format(self._cur_bank))
+
+    def _on_batch_out_low(self):
+        if self._cfg is None:
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        self._batch_apply([
+            (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
+            (OP_WRITE, bank.base + OFFSET_OUT_CLR, 0xFFFFFFFF, -1, -1),
+        ], "All OUT LOW -> Bank{0}".format(self._cur_bank))
+
+    def _on_batch_in_hiz(self):
+        if self._cfg is None:
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        actions = [(OP_WRITE, bank.base + OFFSET_DIR_CLR, 0xFFFFFFFF, -1, -1)]
+        for addr in (self._cfg.pull_up_bases[self._cur_bank]
+                     if self._cur_bank < len(self._cfg.pull_up_bases) else None,
+                     self._cfg.pull_down_bases[self._cur_bank]
+                     if self._cur_bank < len(self._cfg.pull_down_bases) else None):
+            if addr is not None:
+                actions.append((OP_BITS, addr, 0, 31, 0))
+        self._batch_apply(actions, "All IN Hi-Z -> Bank{0}".format(self._cur_bank))
+
+    def _on_batch_pull(self, up):
+        if self._cfg is None:
+            return
+        b = self._cur_bank
+        pu = self._cfg.pull_up_bases[b] if b < len(self._cfg.pull_up_bases) else None
+        pd = self._cfg.pull_down_bases[b] if b < len(self._cfg.pull_down_bases) else None
+        if pu is None or pd is None:
+            self.append_log("[WARN] Bank{0} 上下拉地址未在 JSON 配置".format(b))
+            return
+        actions = [
+            (OP_BITS, pd if up else pu, 0, 31, 0),
+            (OP_BITS, pu if up else pd, 0xFFFFFFFF, 31, 0),
+        ]
+        self._batch_apply(
+            actions, "All {0} -> Bank{1}".format("PU" if up else "PD", b))
+
+    def _on_batch_invert(self):
+        if self._cfg is None:
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        b = self._cur_bank
+        dir_v = self._dir_shadow.get(b, 0)
+        out_v = self._out_shadow.get(b, 0)
+        set_mask = (~out_v) & dir_v & 0xFFFFFFFF
+        clr_mask = out_v & dir_v
+        actions = []
+        if set_mask:
+            actions.append((OP_WRITE, bank.base + OFFSET_OUT_SET, set_mask, -1, -1))
+        if clr_mask:
+            actions.append((OP_WRITE, bank.base + OFFSET_OUT_CLR, clr_mask, -1, -1))
+        if not actions:
+            self.append_log("[INFO] Bank{0} 无输出引脚可翻转".format(b))
+            return
+        self._batch_apply(actions, "Invert OUT -> Bank{0}".format(b))
+
+    def _on_mask_write_clicked(self):
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法写入掩码")
+            return
+        mask = _parse_hex(self.mask_edit.text())
+        if mask is None:
+            self._set_status("掩码格式非法（示例 0x000000FF）", err=True)
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        off = self.mask_target.currentData()
+        addr = bank.base + off
+        self._apply_actions(
+            [(OP_WRITE, addr, mask, -1, -1)],
+            label="Mask inject {0} -> {1}".format(
+                _fmt32(mask), self.mask_target.currentText()),
+            on_done=lambda: self._queue_bank_read(self._cur_bank))
+
+    def _on_poll_toggled(self):
+        if self._poll_timer.isActive():
+            self._stop_polling()
+            return
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法启动轮询")
+            return
+        self._poll_timer.start(self.poll_combo.currentData())
+        self.poll_btn.setText("Stop Poll")
+        self.poll_btn.setProperty("on", "1")
+        _repolish(self.poll_btn)
+        self.append_log("[I2C] 0x50 定时轮询已启动（{0}）".format(
+            self.poll_combo.currentText()))
+
+    def _stop_polling(self):
+        if self._poll_timer.isActive():
+            self._poll_timer.stop()
+            self.append_log("[I2C] 0x50 定时轮询已停止")
+        self.poll_btn.setText("Start Poll")
+        self.poll_btn.setProperty("on", "0")
+        _repolish(self.poll_btn)
+
+    def _on_poll_interval_changed(self):
+        if self._poll_timer.isActive():
+            self._poll_timer.start(self.poll_combo.currentData())
+
+    def _on_poll_tick(self):
+        if self._busy() or not self._ready():
+            return
+        self._start_read_bank(self._cur_bank)
+
+    # ================================================================ 事件：读取
+
+    def _on_read_bank_clicked(self):
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法读取")
+            return
+        self._start_read_bank(self._cur_bank)
 
     def _start_read_all_banks(self):
-        if self._busy() or self._cfg is None or self._dev_addr is None:
+        if self._cfg is None or (not self._sim_mode and self._dev_addr is None):
             return
-        read_list = [(i, self._cfg.banks[i].base + 0x50)
+        read_list = [(i, self._cfg.banks[i].base + OFFSET_IN_READ)
                      for i in range(len(self._cfg.banks))]
         self.append_log("[I2C] 回读全部 bank 输入电平...")
-        worker = GpioReadBanksWorker(
-            None, self.speed_combo.currentData(), self._dev_addr, read_list)
-        self._run_worker(worker, self._on_banks_read, self._on_op_error)
+        self._read_registers(read_list)
 
-    def _on_banks_read(self, values):
-        for bank_idx, val in values.items():
-            for g_in_bank in range(GROUPS_PER_BANK):
-                group = bank_idx * GROUPS_PER_BANK + g_in_bank
-                for pin in range(PINS_PER_GROUP):
-                    bit = self._cfg.bit_in_bank(group, pin)
-                    state = self._pin_state.get((group, pin))
-                    if state is not None:
-                        state["level"] = (val >> bit) & 1
-                        self._update_pin_button(group, pin)
-        self.append_log("[I2C] 输入电平已刷新")
-        self._update_detail_panel()
+    def _start_read_bank(self, bank_idx):
+        if self._cfg is None or bank_idx >= len(self._cfg.banks):
+            return
+        bank = self._cfg.banks[bank_idx]
+        self._read_registers([(bank_idx, bank.base + OFFSET_IN_READ)])
+
+    def _on_refresh_readable(self):
+        if not self._ready():
+            return
+        pairs = []
+        bank = self._cfg.banks[self._cur_bank]
+        pairs.append((self._cur_bank, bank.base + OFFSET_IN_READ))
+        b = self._cur_bank
+        for addr in (self._cfg.pull_up_bases[b] if b < len(self._cfg.pull_up_bases) else None,
+                     self._cfg.pull_down_bases[b] if b < len(self._cfg.pull_down_bases) else None):
+            if addr is not None:
+                pairs.append(("reg_{0:08X}".format(addr), addr))
+        if self._cfg.drv_supported:
+            for card in self._reg_cards:
+                if card["kind"] == "drv" and card["addr"] is not None:
+                    pairs.append(("reg_{0:08X}".format(card["addr"]), card["addr"]))
+        self._read_registers(pairs)
+
+    def _on_raw_write(self):
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法写入")
+            return
+        addr = _parse_hex(self.raw_addr.text())
+        data = _parse_hex(self.raw_data.text())
+        if addr is None or data is None:
+            self._set_status("Raw 地址 / 数据格式非法", err=True)
+            return
+        self._apply_actions([(OP_WRITE, addr, data, -1, -1)],
+                            label="Raw write {0} = {1}".format(
+                                _fmt32(addr), _fmt32(data)))
+
+    def _on_raw_read(self):
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，无法读取")
+            return
+        addr = _parse_hex(self.raw_addr.text())
+        if addr is None:
+            self._set_status("Raw 地址格式非法", err=True)
+            return
+        self._read_registers(
+            [("raw", addr)],
+            on_done=lambda values: self.raw_result.setText(
+                _fmt32(values.get("raw", 0))))
+
+    def _on_reg_read(self, kind, addr):
+        if not self._ready():
+            return
+        if kind == "val_in":
+            self._start_read_bank(self._cur_bank)
+        else:
+            self._read_registers([("reg_{0:08X}".format(addr), addr)])
+
+    # ================================================================ 事件：引脚操作
 
     def _on_pin_clicked(self, group, pin):
-        if self._selected is not None:
-            old_btn = self._pin_buttons.get(self._selected)
-            if old_btn is not None:
-                old_btn.setProperty("sel", "0")
-                old_btn.style().unpolish(old_btn)
-                old_btn.style().polish(old_btn)
         self._selected = (group, pin)
-        btn = self._pin_buttons.get((group, pin))
-        if btn is not None:
-            btn.setProperty("sel", "1")
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-        self._update_detail_panel()
+        for key in self._pin_cards:
+            self._refresh_pin_card(*key)
+        self._refresh_inspector()
 
-    def _on_mode_clicked(self, mode):
-        if self._busy() or self._selected is None or self._cfg is None:
+    def _on_card_dir(self, group, pin):
+        if not self._ready():
             return
-        group, pin = self._selected
-        actions = self._cfg.build_mode_actions(group, pin, mode)
-        name = self._cfg.gpio_name(group, pin)
-        if actions is None:
-            self.append_log(
-                "[WARN] {0} {1} 需要上下拉地址，但 JSON 未配置 "
-                "(pull_up/pull_down_bases)".format(name, mode_label(mode)))
-            return
-        self.append_log("[I2C] {0} → {1}".format(name, mode_label(mode)))
-        worker = GpioApplyWorker(
-            None, self.speed_combo.currentData(), self._dev_addr,
-            actions, label=name)
+        self._selected = (group, pin)
         bank_idx = self._cfg.bank_index(group)
-        self._run_worker(
-            worker,
-            lambda: self._on_apply_done(mode=mode, bank_idx=bank_idx),
-            self._on_op_error)
+        bit = self._cfg.bit_in_bank(group, pin)
+        out_now = bool(self._dir_bit(bank_idx, bit))
+        addr = (self._cfg.dir_clr_addr(group) if out_now
+                else self._cfg.dir_set_addr(group))
+        name = self._cfg.gpio_name(group, pin)
+        self._apply_actions(
+            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            label="{0} -> {1}".format(name, "INPUT" if out_now else "OUTPUT"),
+            on_done=lambda: self._queue_bank_read(bank_idx))
+
+    def _on_card_level(self, group, pin):
+        if not self._ready():
+            return
+        self._selected = (group, pin)
+        bank_idx = self._cfg.bank_index(group)
+        bit = self._cfg.bit_in_bank(group, pin)
+        name = self._cfg.gpio_name(group, pin)
+        if not self._dir_bit(bank_idx, bit):
+            self._on_input_stim(group, pin)
+            return
+        high_now = bool(self._out_bit(bank_idx, bit))
+        addr = (self._cfg.out_clr_addr(group) if high_now
+                else self._cfg.out_set_addr(group))
+        self._apply_actions(
+            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            label="{0} -> {1}".format(name, "LOW" if high_now else "HIGH"),
+            on_done=lambda: self._queue_bank_read(bank_idx))
+
+    def _on_input_stim(self, group, pin):
+        """Input Level 列：仿真注入外部激励 / 硬件触发回读。"""
+        if not self._ready():
+            return
+        if self._sim_mode:
+            meta = self._meta(group, pin)
+            cur = meta.get("stim")
+            meta["stim"] = 0 if cur else 1
+            name = self._cfg.gpio_name(group, pin)
+            self.append_log("[INFO] {0} 仿真外部激励 -> {1}".format(
+                name, "HIGH" if meta["stim"] else "LOW"))
+            self._start_read_bank(self._cfg.bank_index(group))
+        else:
+            self._start_read_bank(self._cfg.bank_index(group))
+
+    def _on_card_pull(self, group, pin):
+        if not self._ready() or not self._cfg.pull_supported(group):
+            return
+        self._selected = (group, pin)
+        bit = self._cfg.bit_in_bank(group, pin)
+        nxt = (self._pull_state(group, bit) + 1) % 3
+        self._apply_pull(group, pin, nxt)
+
+    def _on_table_pull(self, group, pin, value):
+        if not self._ready():
+            self._refresh_table_row(group, pin)
+            return
+        self._selected = (group, pin)
+        self._apply_pull(group, pin, int(value))
+
+    def _apply_pull(self, group, pin, state):
+        bit = self._cfg.bit_in_bank(group, pin)
+        pu = self._cfg.pull_up_addr(group)
+        pd = self._cfg.pull_down_addr(group)
+        name = self._cfg.gpio_name(group, pin)
+        label = {0: "Hi-Z", 1: "Pull-Up", 2: "Pull-Down"}[state]
+        actions = []
+        if state == 0:
+            actions.append((OP_BITS, pu, 0, bit, bit))
+            actions.append((OP_BITS, pd, 0, bit, bit))
+        elif state == 1:
+            actions.append((OP_BITS, pd, 0, bit, bit))
+            actions.append((OP_BITS, pu, 1, bit, bit))
+        else:
+            actions.append((OP_BITS, pu, 0, bit, bit))
+            actions.append((OP_BITS, pd, 1, bit, bit))
+        self._apply_actions(
+            actions, label="{0} pull -> {1}".format(name, label),
+            on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
+
+    def _on_table_drv(self, group, pin, fast):
+        if not self._ready():
+            self._refresh_table_row(group, pin)
+            return
+        self._selected = (group, pin)
+        self._apply_drv(group, pin, bool(fast))
 
     def _on_drv_clicked(self, fast):
-        if self._busy() or self._selected is None or self._cfg is None:
+        if self._selected is None:
             return
-        group, pin = self._selected
+        self._apply_drv(self._selected[0], self._selected[1], fast)
+
+    def _apply_drv(self, group, pin, fast):
+        if not self._ready():
+            return
         actions = self._cfg.build_drv_actions(group, pin, fast)
         name = self._cfg.gpio_name(group, pin)
         if actions is None:
             self.append_log("[WARN] {0} 不支持 drv 配置".format(name))
             return
-        self.append_log("[I2C] {0} drv → {1}".format(
-            name, "fast" if fast else "slow"))
-        worker = GpioApplyWorker(
-            None, self.speed_combo.currentData(), self._dev_addr,
-            actions, label=name)
-        self._run_worker(
-            worker,
-            lambda: self._on_drv_apply_done(fast),
-            self._on_op_error)
+        self._apply_actions(
+            actions, label="{0} drv -> {1}".format(name, "Fast" if fast else "Slow"))
 
-    def _on_drv_apply_done(self, fast):
-        if self._selected is not None:
-            state = self._pin_state.get(self._selected)
-            if state is not None:
-                state["drv"] = "Fast" if fast else "Slow"
-        self.append_log("[I2C] drv 设置完成")
-        self._update_detail_panel()
-
-    def _on_apply_done(self, mode, bank_idx):
-        if self._selected is not None:
-            state = self._pin_state.get(self._selected)
-            if state is not None:
-                state["mode"] = mode
-                group, pin = self._selected
-                self._update_pin_button(group, pin)
-        self.append_log("[I2C] 模式设置完成")
-        self._update_detail_panel()
-        # 设置后回读该 bank 电平（§26：延迟 ≥50ms 再起新线程）
-        QTimer.singleShot(80, lambda: self._start_read_bank(bank_idx))
-
-    def _on_read_pin_clicked(self):
-        if self._busy() or self._selected is None or self._cfg is None:
+    def _on_insp_dir(self, output):
+        if self._selected is None or not self._ready():
             return
-        group, _pin = self._selected
-        self._start_read_bank(self._cfg.bank_index(group))
+        group, pin = self._selected
+        addr = (self._cfg.dir_set_addr(group) if output
+                else self._cfg.dir_clr_addr(group))
+        bit = self._cfg.bit_in_bank(group, pin)
+        name = self._cfg.gpio_name(group, pin)
+        self._apply_actions(
+            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            label="{0} dir -> {1}".format(name, "OUTPUT" if output else "INPUT"),
+            on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
-    def _start_read_bank(self, bank_idx):
-        if self._busy() or self._cfg is None or self._dev_addr is None:
+    def _on_insp_level(self, high):
+        if self._selected is None or not self._ready():
             return
-        bank = self._cfg.banks[bank_idx]
-        worker = GpioReadBanksWorker(
-            None, self.speed_combo.currentData(), self._dev_addr,
-            [(bank_idx, bank.base + 0x50)])
-        self._run_worker(worker, self._on_banks_read, self._on_op_error)
+        group, pin = self._selected
+        addr = (self._cfg.out_set_addr(group) if high
+                else self._cfg.out_clr_addr(group))
+        bit = self._cfg.bit_in_bank(group, pin)
+        name = self._cfg.gpio_name(group, pin)
+        self._apply_actions(
+            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            label="{0} level -> {1}".format(name, "HIGH" if high else "LOW"),
+            on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
-    # ------------------------------------------------------------ 收尾
+    def _on_insp_pull(self, state):
+        if self._selected is None or not self._ready():
+            return
+        group, pin = self._selected
+        if not self._cfg.pull_supported(group):
+            self.append_log("[WARN] 该 Bank 上下拉地址未配置")
+            return
+        self._apply_pull(group, pin, state)
 
-    def closeEvent(self, event):
+    def _on_alias_edited(self):
+        if self._selected is None or self._cfg is None:
+            return
+        group, pin = self._selected
+        alias = self.alias_edit.text().strip()
+        self._meta(group, pin)["alias"] = alias
+        self._refresh_pin_card(group, pin)
+        self._refresh_table_row(group, pin)
+        if alias:
+            self.append_log("[INFO] {0} 别名 -> {1}".format(
+                self._cfg.gpio_name(group, pin), alias))
+
+    def _on_table_item_changed(self, item):
+        if self._table_updating or self._cfg is None:
+            return
+        if item.column() != 2:
+            return
+        row = item.row()
+        base_group = self._cur_bank * GROUPS_PER_BANK
+        group = base_group + row // PINS_PER_GROUP
+        pin = row % PINS_PER_GROUP
+        alias = item.text().strip()
+        self._meta(group, pin)["alias"] = alias
+        if self._selected == (group, pin) and not self.alias_edit.hasFocus():
+            self.alias_edit.setText(alias)
+        self._refresh_pin_card(group, pin)
+
+    # ================================================================ 事件：寄存器视图
+
+    def _on_reg_bit(self, kind, addr, bit):
+        if not self._ready():
+            return
+        bank = self._cfg.banks[self._cur_bank]
+        mask = 1 << bit
+        if kind == "val_set":
+            self._apply_actions(
+                [(OP_WRITE, bank.base + OFFSET_OUT_SET, mask, -1, -1)],
+                label="Bit flip VAL_SET bit{0}".format(bit),
+                on_done=lambda: self._queue_bank_read(self._cur_bank))
+        elif kind == "val_clr":
+            self._apply_actions(
+                [(OP_WRITE, bank.base + OFFSET_OUT_CLR, mask, -1, -1)],
+                label="Bit flip VAL_CLR bit{0}".format(bit),
+                on_done=lambda: self._queue_bank_read(self._cur_bank))
+        elif kind == "dir_set":
+            self._apply_actions(
+                [(OP_WRITE, bank.base + OFFSET_DIR_SET, mask, -1, -1)],
+                label="Bit flip DIR_SET bit{0}".format(bit),
+                on_done=lambda: self._queue_bank_read(self._cur_bank))
+        elif kind == "dir_clr":
+            self._apply_actions(
+                [(OP_WRITE, bank.base + OFFSET_DIR_CLR, mask, -1, -1)],
+                label="Bit flip DIR_CLR bit{0}".format(bit),
+                on_done=lambda: self._queue_bank_read(self._cur_bank))
+        elif kind == "val_in":
+            self._start_read_bank(self._cur_bank)
+        elif kind == "drv":
+            bits = self._cfg.drv_bits_per_gpio
+            low = bit - (bit % bits)
+            high = low + bits - 1
+            cur = (self._reg_shadow.get(addr, 0) >> low) & ((1 << bits) - 1)
+            new = (self._cfg.drv_slow if cur == self._cfg.drv_fast
+                   else self._cfg.drv_fast)
+            self._apply_actions(
+                [(OP_BITS, addr, new, high, low)],
+                label="Bit flip DRV [{0}:{1}]".format(high, low))
+        elif kind in ("pu", "pd"):
+            cur = (self._reg_shadow.get(addr, 0) >> bit) & 1
+            self._apply_actions(
+                [(OP_BITS, addr, 0 if cur else 1, bit, bit)],
+                label="Bit flip {0} bit{1}".format(kind.upper(), bit),
+                on_done=lambda: self._queue_bank_read(self._cur_bank))
+
+    # ================================================================ JSON 配置视图
+
+    def _config_path(self, chip_name):
+        import chips
+        return os.path.join(
+            os.path.dirname(os.path.abspath(chips.__file__)),
+            "gpio_configs", "{0}.json".format(chip_name.lower()))
+
+    def _load_json_editor(self):
+        self.json_err_label.setText("")
+        if self._cfg is None:
+            self.json_edit.setPlainText("")
+            self.json_file_label.setText("chips/gpio_configs/--.json")
+            self._json_path = None
+            return
+        path = self._config_path(self._cfg.chip)
+        self._json_path = path
+        self.json_file_label.setText(
+            "chips/gpio_configs/{0}.json".format(self._cfg.chip.lower()))
         try:
+            with open(path, "r", encoding="utf-8") as f:
+                self.json_edit.setPlainText(f.read())
+        except OSError as e:
+            logger.error("read gpio json failed: %s", e, exc_info=True)
+            self.json_edit.setPlainText("")
+            self.json_err_label.setText("读取失败: {0}".format(e))
+
+    def _on_json_reload(self):
+        self._load_json_editor()
+        self.append_log("[INFO] JSON 配置已从磁盘重新载入")
+
+    def _on_json_import(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入芯片 JSON 配置", "", "JSON Files (*.json);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                self.json_edit.setPlainText(f.read())
+            self.json_err_label.setText("")
+            self.append_log("[INFO] 已导入 JSON: {0}（未生效，需 Apply Config）".format(path))
+        except OSError as e:
+            logger.error("import gpio json failed: %s", e, exc_info=True)
+            self.json_err_label.setText("导入失败: {0}".format(e))
+
+    def _on_json_export(self):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        chip = self._cfg.chip.lower() if self._cfg else "dut"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出芯片 JSON 配置",
+            "{0}_gpio_config_{1}.json".format(chip, ts),
+            "JSON Files (*.json);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.json_edit.toPlainText())
+            self.append_log("[EXPORT] JSON 配置已导出: {0}".format(path))
+        except OSError as e:
+            logger.error("export gpio json failed: %s", e, exc_info=True)
+            self.json_err_label.setText("导出失败: {0}".format(e))
+
+    def _on_json_apply(self):
+        text = self.json_edit.toPlainText()
+        try:
+            raw = json.loads(text)
+        except ValueError as e:
+            self.json_err_label.setText("JSON 语法错误: {0}".format(e))
+            self.append_log("[ERROR] JSON 语法校验失败: {0}".format(e))
+            return
+        banks = raw.get("gpio_banks")
+        if not isinstance(banks, list) or not banks:
+            self.json_err_label.setText("校验失败: gpio_banks 缺失或为空")
+            return
+        chip = str(raw.get("chip") or self.profile_combo.currentData() or "dut")
+        path = self._config_path(chip)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(raw, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+        except OSError as e:
+            logger.error("apply gpio json failed: %s", e, exc_info=True)
+            self.json_err_label.setText("写回失败: {0}".format(e))
+            self.append_log("[ERROR] JSON 写回失败: {0}".format(e))
+            return
+        self.json_err_label.setText("")
+        cfg = load_gpio_config(chip)
+        if cfg is None:
+            self.json_err_label.setText("配置已写盘但解析失败，请检查字段")
+            return
+        self._cfg = cfg
+        idx = self.profile_combo.findData(chip.lower())
+        if idx < 0:
+            self.profile_combo.addItem(chip.upper(), chip.lower())
+            idx = self.profile_combo.findData(chip.lower())
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.setCurrentIndex(idx)
+        self.profile_combo.blockSignals(False)
+        self._reset_session_state()
+        self._set_status("配置已生效: {0} · {1} banks".format(chip, len(cfg.banks)),
+                         ok=True)
+        self.append_log("[I2C] Apply Config 生效: {0}，引脚图谱与寄存器映射已重算"
+                        .format(chip))
+        self._sniff("CHIP_CHECK", None, None,
+                    "Apply JSON Config -> {0}".format(chip))
+        self._load_json_editor()
+        self._refresh_all_views()
+        if self._sim_mode:
+            self._start_read_all_banks()
+
+    # ================================================================ 代码导出视图
+
+    def _refresh_exports(self):
+        if self._cfg is None:
+            self.py_edit.setPlainText("# 请先加载 DUT 配置")
+            self.c_edit.setPlainText("/* 请先加载 DUT 配置 */")
+            return
+        self.py_edit.setPlainText(self._gen_python_code())
+        self.c_edit.setPlainText(self._gen_c_code())
+
+    def _alias_lines(self):
+        lines = []
+        if self._cfg is None:
+            return lines
+        for (group, pin), meta in sorted(self._pin_meta.items()):
+            alias = meta.get("alias")
+            if alias:
+                lines.append((self._cfg.gpio_name(group, pin),
+                              self._cfg.linear_index(group, pin), alias))
+        return lines
+
+    def _gen_python_code(self):
+        cfg = self._cfg
+        banks = ",\n".join(
+            '    "{0}": {1},'.format(b.name, _fmt32(b.base)) for b in cfg.banks)
+        pu = ", ".join(
+            "None" if (i >= len(cfg.pull_up_bases) or cfg.pull_up_bases[i] is None)
+            else _fmt32(cfg.pull_up_bases[i]) for i in range(len(cfg.banks)))
+        pd = ", ".join(
+            "None" if (i >= len(cfg.pull_down_bases) or cfg.pull_down_bases[i] is None)
+            else _fmt32(cfg.pull_down_bases[i]) for i in range(len(cfg.banks)))
+        aliases = "\n".join(
+            '    "{0}": "{2}",  # linear #{1}'.format(name, lin, alias)
+            for name, lin, alias in self._alias_lines()) or "    # (no aliases)"
+        drv_base = _fmt32(cfg.drv_base) if cfg.drv_supported else "None"
+        dev = "0x{0:02X}".format(self._dev_addr) if self._dev_addr is not None else "0x11"
+        return '''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""BES GPIO automation script -- generated by BES GPIO Workbench.
+
+Chip profile : {chip}
+I2C dev(7bit): {dev} (main-die, 32bit register space)
+Register map : Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C /
+               Dir Clr=+0x10 / Input Read=+0x50 (per bank)
+"""
+
+from lib.i2c.i2c_interface_x64 import I2CInterface
+from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+
+CHIP = "{chip}"
+DEV_ADDR = {dev}
+
+GPIO_BANKS = {{
+{banks}
+}}
+OFFSET_OUT_SET = 0x00
+OFFSET_DIR_SET = 0x04
+OFFSET_OUT_CLR = 0x0C
+OFFSET_DIR_CLR = 0x10
+OFFSET_IN_READ = 0x50
+GPIOS_PER_BANK = 32
+
+DRV_SEL_BASE = {drv_base}
+DRV_BITS_PER_GPIO = {drv_bits}
+DRV_FAST = {drv_fast}
+DRV_SLOW = {drv_slow}
+PULL_UP_BASES = [{pu}]
+PULL_DOWN_BASES = [{pd}]
+
+PIN_ALIASES = {{
+{aliases}
+}}
+
+
+class BesI2cController:
+    """BES AON GPIO controller (SET/CLR semantics, no read-modify-write)."""
+
+    def __init__(self, dll_path=None, speed=I2CSpeedMode.SPEED_100K):
+        self._i2c = I2CInterface(dll_path=dll_path, speed_mode=speed)
+        if not self._i2c.initialize():
+            raise RuntimeError("I2C interface initialize failed")
+        self._w = I2CWidthFlag.BIT_32
+
+    def close(self):
+        self._i2c.close()
+
+    def bes_chip_check(self):
+        return self._i2c.bes_chip_check()
+
+    def write32(self, addr, value):
+        self._i2c.write(DEV_ADDR, addr, value, self._w)
+
+    def read32(self, addr):
+        return int(self._i2c.read(DEV_ADDR, addr, self._w))
+
+    def write_bits(self, addr, value, hi, lo):
+        self._i2c.write(DEV_ADDR, addr, value, self._w, hi, lo)
+
+    # ---- GPIO helpers -------------------------------------------------
+
+    def set_direction(self, bank, mask, output=True):
+        base = GPIO_BANKS[bank]
+        self.write32(base + (OFFSET_DIR_SET if output else OFFSET_DIR_CLR), mask)
+
+    def set_level(self, bank, mask, high=True):
+        base = GPIO_BANKS[bank]
+        self.write32(base + (OFFSET_OUT_SET if high else OFFSET_OUT_CLR), mask)
+
+    def read_bank(self, bank):
+        return self.read32(GPIO_BANKS[bank] + OFFSET_IN_READ)
+
+    def set_pull(self, bank_index, mask, mode):
+        """mode: 'hz' / 'pu' / 'pd'（PU/PD 为 RW 寄存器，必须位域写）。"""
+        pu, pd = PULL_UP_BASES[bank_index], PULL_DOWN_BASES[bank_index]
+        if pu is None or pd is None:
+            raise ValueError("pull bases not configured for bank %d" % bank_index)
+        for bit in range(32):
+            if (mask >> bit) & 1:
+                if mode == "pu":
+                    self.write_bits(pd, 0, bit, bit)
+                    self.write_bits(pu, 1, bit, bit)
+                elif mode == "pd":
+                    self.write_bits(pu, 0, bit, bit)
+                    self.write_bits(pd, 1, bit, bit)
+                else:
+                    self.write_bits(pu, 0, bit, bit)
+                    self.write_bits(pd, 0, bit, bit)
+
+    def set_drv(self, linear_index, fast=True):
+        if DRV_SEL_BASE is None:
+            raise ValueError("drv_sel not configured for this chip")
+        per_reg = 32 // DRV_BITS_PER_GPIO
+        addr = DRV_SEL_BASE + (linear_index // per_reg) * 4
+        low = (linear_index % per_reg) * DRV_BITS_PER_GPIO
+        high = low + DRV_BITS_PER_GPIO - 1
+        self.write_bits(addr, DRV_FAST if fast else DRV_SLOW, high, low)
+
+
+if __name__ == "__main__":
+    dut = BesI2cController()
+    try:
+        info = dut.bes_chip_check()
+        print("chip check:", info)
+        first = next(iter(GPIO_BANKS))
+        dut.set_direction(first, 0x000000FF, output=True)
+        dut.set_level(first, 0x000000FF, high=True)
+        print("bank %s in = 0x%08X" % (first, dut.read_bank(first)))
+    finally:
+        dut.close()
+'''.format(chip=cfg.chip, dev=dev, banks=banks, drv_base=drv_base,
+           drv_bits=cfg.drv_bits_per_gpio, drv_fast=cfg.drv_fast,
+           drv_slow=cfg.drv_slow, pu=pu, pd=pd, aliases=aliases)
+
+    def _gen_c_code(self):
+        cfg = self._cfg
+        defines = "\n".join(
+            "#define BES_GPIO_BANK{0}_BASE  {1}u  /* {2} */".format(
+                i, _fmt32(b.base), b.name)
+            for i, b in enumerate(cfg.banks))
+        bank_tbl = ",\n".join("    {0}u".format(_fmt32(b.base)) for b in cfg.banks)
+        drv_base = _fmt32(cfg.drv_base) if cfg.drv_supported else "0x00000000u"
+        aliases = "\n".join(
+            "/* {0} = linear #{1} = {2} */".format(name, lin, alias)
+            for name, lin, alias in self._alias_lines())
+        alias_block = ("\n/* ---- signal aliases ----\n{0}\n".format(aliases)
+                       if aliases else "")
+        dev = ("0x{0:02X}u".format(self._dev_addr)
+               if self._dev_addr is not None else "0x11u")
+        return '''/* bes_gpio.h -- generated by BES GPIO Workbench
+ * Chip profile : {chip}
+ * I2C dev(7bit): {dev} (main-die, 32bit register space)
+ * Register map : Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C /
+ *                Dir Clr=+0x10 / Input Read=+0x50 (per bank)
+ */
+#ifndef BES_GPIO_H
+#define BES_GPIO_H
+
+#include <stdint.h>
+
+#define BES_GPIO_DEV_ADDR     {dev}
+{defines}
+
+#define BES_GPIO_OUT_SET      0x00u
+#define BES_GPIO_DIR_SET      0x04u
+#define BES_GPIO_OUT_CLR      0x0Cu
+#define BES_GPIO_DIR_CLR      0x10u
+#define BES_GPIO_IN_READ      0x50u
+#define BES_GPIOS_PER_BANK    32u
+
+#define BES_GPIO_DRV_BASE     {drv_base}
+#define BES_GPIO_DRV_BITS     {drv_bits}u
+#define BES_GPIO_DRV_FAST     {drv_fast}u
+#define BES_GPIO_DRV_SLOW     {drv_slow}u
+{alias_block}
+/* ---- platform hooks (implement on your I2C master) ---- */
+typedef int  (*bes_i2c_write32_fn)(uint8_t dev, uint32_t addr, uint32_t value);
+typedef int  (*bes_i2c_read32_fn)(uint8_t dev, uint32_t addr, uint32_t *value);
+typedef void (*bes_i2c_write_bits_fn)(uint8_t dev, uint32_t addr,
+                                      uint32_t value, uint8_t hi, uint8_t lo);
+
+void     bes_gpio_init(bes_i2c_write32_fn w32,
+                       bes_i2c_write_bits_fn wbits,
+                       bes_i2c_read32_fn r32);
+void     bes_gpio_set_direction(uint8_t bank, uint32_t mask, uint8_t output);
+void     bes_gpio_set_level(uint8_t bank, uint32_t mask, uint8_t high);
+uint32_t bes_gpio_read_bank(uint8_t bank);
+void     bes_gpio_set_drv(uint8_t linear_index, uint8_t fast);
+
+#endif /* BES_GPIO_H */
+
+/* ------------------------------------------------------------------ */
+/* bes_gpio.c                                                          */
+
+static bes_i2c_write32_fn    s_w32;
+static bes_i2c_write_bits_fn s_wbits;
+static bes_i2c_read32_fn     s_r32;
+
+static const uint32_t s_bank_base[] = {{
+{bank_tbl}
+}};
+
+void bes_gpio_init(bes_i2c_write32_fn w32,
+                   bes_i2c_write_bits_fn wbits,
+                   bes_i2c_read32_fn r32)
+{{
+    s_w32 = w32;
+    s_wbits = wbits;
+    s_r32 = r32;
+}}
+
+void bes_gpio_set_direction(uint8_t bank, uint32_t mask, uint8_t output)
+{{
+    uint32_t base = s_bank_base[bank];
+    /* SET/CLR semantics: write 1 to take effect, no read-modify-write */
+    s_w32(BES_GPIO_DEV_ADDR,
+          base + (output ? BES_GPIO_DIR_SET : BES_GPIO_DIR_CLR), mask);
+}}
+
+void bes_gpio_set_level(uint8_t bank, uint32_t mask, uint8_t high)
+{{
+    uint32_t base = s_bank_base[bank];
+    s_w32(BES_GPIO_DEV_ADDR,
+          base + (high ? BES_GPIO_OUT_SET : BES_GPIO_OUT_CLR), mask);
+}}
+
+uint32_t bes_gpio_read_bank(uint8_t bank)
+{{
+    uint32_t value = 0u;
+    s_r32(BES_GPIO_DEV_ADDR, s_bank_base[bank] + BES_GPIO_IN_READ, &value);
+    return value;
+}}
+
+void bes_gpio_set_drv(uint8_t linear_index, uint8_t fast)
+{{
+#if BES_GPIO_DRV_BASE != 0x00000000u
+    uint8_t per_reg = 32u / BES_GPIO_DRV_BITS;
+    uint32_t addr = BES_GPIO_DRV_BASE + (linear_index / per_reg) * 4u;
+    uint8_t low = (uint8_t)((linear_index % per_reg) * BES_GPIO_DRV_BITS);
+    uint8_t high = (uint8_t)(low + BES_GPIO_DRV_BITS - 1u);
+    /* drv_sel 为普通 RW 寄存器：位域写（底层 read-modify-write） */
+    s_wbits(BES_GPIO_DEV_ADDR, addr,
+            fast ? BES_GPIO_DRV_FAST : BES_GPIO_DRV_SLOW, high, low);
+#else
+    (void)linear_index;
+    (void)fast;
+#endif
+}}
+'''.format(chip=cfg.chip, dev=dev, defines=defines, drv_base=drv_base,
+           drv_bits=cfg.drv_bits_per_gpio, drv_fast=cfg.drv_fast,
+           drv_slow=cfg.drv_slow, alias_block=alias_block, bank_tbl=bank_tbl)
+
+    def _on_copy_python(self):
+        QApplication.clipboard().setText(self.py_edit.toPlainText())
+        self.append_log("[EXPORT] Python 脚本已复制到剪贴板")
+
+    def _on_copy_c(self):
+        QApplication.clipboard().setText(self.c_edit.toPlainText())
+        self.append_log("[EXPORT] C/HAL 驱动代码已复制到剪贴板")
+
+    # ================================================================ 确认清单视图
+
+    def _refresh_notes(self):
+        cfg = self._cfg
+        # 1. PU/PD 地址
+        if cfg is None:
+            self._note_bodies[0].setText("加载 DUT 配置后显示上下拉寄存器地址确认状态。")
+            self._set_note_status(0, "--", False)
+        else:
+            lines = []
+            all_ok = True
+            for i in range(len(cfg.banks)):
+                pu = cfg.pull_up_bases[i] if i < len(cfg.pull_up_bases) else None
+                pd = cfg.pull_down_bases[i] if i < len(cfg.pull_down_bases) else None
+                if pu is None or pd is None:
+                    all_ok = False
+                lines.append("Bank{0}: PU={1} PD={2}".format(
+                    i,
+                    _fmt32(pu) if pu is not None else "TBD",
+                    _fmt32(pd) if pd is not None else "TBD"))
+            self._note_bodies[0].setText(
+                "PU/PD 各一个独立寄存器区（1bit/GPIO，与 gpio_banks 平行）；"
+                "地址为 null 时 UI 自动禁用上下拉按钮。\n" + "\n".join(lines))
+            self._set_note_status(0, "已确认" if all_ok else "待确认 (TBD)", all_ok)
+        # 2. Slew 位域
+        if cfg is None or not cfg.drv_supported:
+            self._note_bodies[1].setText(
+                "当前芯片 JSON 未配置 drv_sel（drv.base 为 null）。")
+            self._set_note_status(1, "待确认", False)
+        else:
+            per_reg = 32 // cfg.drv_bits_per_gpio
+            self._note_bodies[1].setText(
+                "drv_sel 独立地址区 base {0}：bits_per_gpio={1} → 每 32bit 寄存器 "
+                "{2} 脚，相邻脚位域连续排布；字段值 {3}=Fast / {4}=Slow。\n"
+                "字段地址 = base + (linear // {2}) * 4，"
+                "位域 = [(linear % {2}) * {1} + {5} : (linear % {2}) * {1}]。"
+                .format(_fmt32(cfg.drv_base), cfg.drv_bits_per_gpio, per_reg,
+                        "{0:0{1}b}".format(cfg.drv_fast, cfg.drv_bits_per_gpio),
+                        "{0:0{1}b}".format(cfg.drv_slow, cfg.drv_bits_per_gpio),
+                        cfg.drv_bits_per_gpio - 1))
+            self._set_note_status(1, "已确认", True)
+        # 3. I2C 地址
+        dev_txt = ("0x{0:02X}".format(self._dev_addr)
+                   if self._dev_addr is not None else "--")
+        self._note_bodies[2].setText(
+            "Main-die 32bit 地址空间（GPIO 寄存器位于 0x4008xxxx）；"
+            "设备地址由 bes_chip_check() 返回的 main_die_i2c_addr 决定"
+            "（0x11 / 0x31 自适应），位宽固定 BIT_32。\n"
+            "当前会话 dev = {0}。".format(dev_txt))
+        self._set_note_status(
+            2, "已连接" if self._dev_addr is not None else "未连接",
+            self._dev_addr is not None)
+        # 4. 桥接
+        if self._sim_mode:
+            self._note_bodies[3].setText(
+                "当前：Simulated DUT（高精度内置仿真器）。所有 SET/CLR/位域写作用于"
+                "页内影子寄存器；读 0x50 由方向/输出/上下拉/外部激励综合判定，"
+                "真实再现芯片管脚物理行为，不触碰硬件。")
+            self._set_note_status(3, "SIM", True)
+        else:
+            self._note_bodies[3].setText(
+                "当前：USB-I2C 物理工装桥接（I2CInterface DLL，经 "
+                "core/gpio/ Worker 异步收发，页面无阻塞 I2C）。\n"
+                "顶部右侧 Bridge 按钮可一键切换到 Simulated DUT。")
+            self._set_note_status(3, "USB-I2C", True)
+
+    def _set_note_status(self, idx, text, ok):
+        lbl = self._note_status_labels[idx]
+        lbl.setText(text)
+        lbl.setProperty("ok", "1" if ok else "0")
+        _repolish(lbl)
+
+    # ================================================================ 通用
+
+    def _set_status(self, text, ok=False, err=False):
+        self.status_label.setText(text)
+        self.status_label.setProperty("ok", "1" if ok else "0")
+        self.status_label.setProperty("err", "1" if err else "0")
+        _repolish(self.status_label)
+
+    def append_log(self, msg):
+        self.execution_logs.append_log(msg)
+
+    def cleanup_threads(self):
+        """关停定时器并等待 Worker 线程退出（CleanupMixin 契约）。
+
+        MainWindow 关闭时经 _perform_close_cleanup 调用；closeEvent 复用。
+        """
+        try:
+            self._stop_polling()
+            self._spin_timer.stop()
+            self._deferred_timer.stop()
+            self._deferred_read_fn = None
+            self._worker_done_cb = None
             if self._thread is not None and self._thread.isRunning():
                 self._thread.quit()
                 self._thread.wait(2000)
         except Exception:
-            logger.error("GPIO page close wait failed", exc_info=True)
+            logger.error("GPIO page cleanup wait failed", exc_info=True)
+
+    def closeEvent(self, event):
+        self.cleanup_threads()
         super().closeEvent(event)

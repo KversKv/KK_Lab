@@ -555,3 +555,17 @@ app.installEventFilter(_WinFilter())
 - 重发 NCCALCSIZE 用 `SWP_FRAMECHANGED`，须在 Qt 事件上下文（如 changeEvent）里调，而非 nativeEvent 内。
 
 **参考**：[main_window.py](../../../ui/main_window.py) `nativeEvent` / `_refresh_nc_frame`。
+
+## 39. 内嵌子页面销毁不走 closeEvent → 运行中 QThread 随页面析构崩溃（access violation）
+
+**现象**：GPIO 页开启 Poll 0x50 轮询（或读写进行中）时关窗 / 销毁页面，进程 `Windows fatal exception: access violation`，faulthandler 指向页面文件。
+
+**根因**：`QWidget.closeEvent` 只发给被 `close()` 的顶层窗口，MainWindow 内嵌子页面销毁时**收不到 closeEvent**；页内三条"死后仍触发"通道叠加：① `QThread(self)` 挂页面为父 → 运行中线程随父对象析构（Qt fatal）；② 静态 `QTimer.singleShot(ms, callable)` 无上下文对象 → 页面销毁后依然触发；③ `worker.finished.connect(lambda 捕获 self)` → 不随接收者销毁自动断开。
+
+**修复范式**（[gpio_control_ui.py](../../../ui/pages/gpio/gpio_control_ui.py) 已落地）：
+
+- `QThread()` **不挂父对象**，由 `finished → deleteLater` 自清理；
+- 延迟回调一律用**页内子对象 QTimer**（`setSingleShot(True)`，销毁自动失效），禁静态 `singleShot(ms, callable)`；
+- worker → 页面回调**只连绑定方法**（销毁自动断开）：闭包存页面属性（如 `_worker_done_cb`），信号统一经绑定分发器（`_on_worker_done`）调用；
+- 页面实现 `cleanup_threads()` 并在 `CleanupMixin._perform_close_cleanup` 注册，兜底关窗清理；
+- `thread.finished` 清理槽加 `sender()` 校验，防旧线程 finished 晚到清掉新线程引用。
