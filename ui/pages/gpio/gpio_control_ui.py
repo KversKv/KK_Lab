@@ -1014,9 +1014,9 @@ class GpioControlUI(QWidget):
         lvl_row.addWidget(self.insp_lvl_l)
         lay.addLayout(lvl_row)
 
-        pull_key = QLabel("上下拉三态（PU/PD 为 RW 寄存器位域写）")
-        pull_key.setObjectName("gpioSection")
-        lay.addWidget(pull_key)
+        self.insp_pull_key = QLabel("上下拉三态（PU/PD 为 RW 寄存器位域写）")
+        self.insp_pull_key.setObjectName("gpioSection")
+        lay.addWidget(self.insp_pull_key)
         pull_row = QHBoxLayout()
         pull_row.setSpacing(6)
         self.insp_pull_hiz = QPushButton("High-Z")
@@ -1033,19 +1033,23 @@ class GpioControlUI(QWidget):
         pull_row.addWidget(self.insp_pull_pd)
         lay.addLayout(pull_row)
 
-        self.insp_drv_key = QLabel("驱动斜率（drv_sel 位域 [1:0]：00=Slow / 11=Fast）")
+        self.insp_drv_key = QLabel("驱动强度（drv_sel 位域：增减档调整）")
         self.insp_drv_key.setObjectName("gpioSection")
         lay.addWidget(self.insp_drv_key)
         drv_row = QHBoxLayout()
         drv_row.setSpacing(6)
-        self.insp_drv_slow = QPushButton("00  Slow")
-        self.insp_drv_slow.setObjectName("gpioAction")
-        self.insp_drv_slow.clicked.connect(lambda: self._on_drv_clicked(False))
-        drv_row.addWidget(self.insp_drv_slow)
-        self.insp_drv_fast = QPushButton("11  Fast")
-        self.insp_drv_fast.setObjectName("gpioAction")
-        self.insp_drv_fast.clicked.connect(lambda: self._on_drv_clicked(True))
-        drv_row.addWidget(self.insp_drv_fast)
+        self.insp_drv_dec = QPushButton("- 减档")
+        self.insp_drv_dec.setObjectName("gpioAction")
+        self.insp_drv_dec.clicked.connect(lambda: self._on_drv_step(-1))
+        drv_row.addWidget(self.insp_drv_dec)
+        self.insp_drv_val = QLabel("Lv --")
+        self.insp_drv_val.setObjectName("gpioMono")
+        self.insp_drv_val.setAlignment(Qt.AlignCenter)
+        drv_row.addWidget(self.insp_drv_val, 1)
+        self.insp_drv_inc = QPushButton("+ 增档")
+        self.insp_drv_inc.setObjectName("gpioAction")
+        self.insp_drv_inc.clicked.connect(lambda: self._on_drv_step(1))
+        drv_row.addWidget(self.insp_drv_inc)
         lay.addLayout(drv_row)
 
         lay.addWidget(self._make_hsep())
@@ -1101,7 +1105,7 @@ class GpioControlUI(QWidget):
         self.table.setHorizontalHeaderLabels([
             "Pin #", "Bank Bit", "Signal Alias", "Direction",
             "Output Level", "Input Level (0x50)", "Pull Mode",
-            "Driver Slew", "Bitmask",
+            "Driver Level", "Bitmask",
         ])
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(28)
@@ -1334,9 +1338,10 @@ class GpioControlUI(QWidget):
         self._note_bodies = []
         for i, title in enumerate((
             "1. PU / PD 上下拉寄存器地址",
-            "2. Slew 驱动位域连续性（drv_sel）",
+            "2. 驱动强度档位与阻抗（drv_sel）",
             "3. I2C 7-bit 设备地址与位宽",
             "4. 通信桥接方式",
+            "5. Pin function sel（复用为 GPIO）",
         )):
             card = QFrame()
             card.setObjectName("noteCard")
@@ -1407,6 +1412,58 @@ class GpioControlUI(QWidget):
         addr, high, low = field_
         mask = (1 << (high - low + 1)) - 1
         return (self._reg_shadow.get(addr, 0) >> low) & mask
+
+    def _drv_ohm_text(self, level):
+        """该档位输出阻抗取整文本（"1463/1472 Ω"），无表返回 ""。"""
+        hh, ll = self._cfg.drv_ohm(level)
+        if hh is None or ll is None:
+            return ""
+        return "{0}/{1} Ω".format(round(hh), round(ll))
+
+    def _drv_level_text(self, val):
+        if val is None:
+            return "Lv --"
+        ohm = self._drv_ohm_text(val)
+        return "Lv{0} · {1}".format(val, ohm) if ohm else "Lv{0}".format(val)
+
+    def _func_sel_pin_actions(self, group, pin):
+        """单脚控制前置：func sel 未选 GPIO 功能时生成配置动作（否则空）。"""
+        field_ = self._cfg.func_sel_field(group, pin) if self._cfg else None
+        if field_ is None:
+            return []
+        addr, high, low = field_
+        mask = (1 << (high - low + 1)) - 1
+        cur = (self._reg_shadow.get(addr, 0) >> low) & mask
+        if cur == self._cfg.func_sel_gpio_value:
+            return []
+        return [(OP_BITS, addr, self._cfg.func_sel_gpio_value, high, low)]
+
+    def _func_sel_mask_actions(self, bank_idx, bank_mask):
+        """bank 位掩码涉及脚的 func sel 配置动作，按 group 合并整寄存器写
+        （未涉及字段取影子值保持；影子已为 GPIO 功能时跳过该 group）。"""
+        if self._cfg is None or not self._cfg.func_sel_supported:
+            return []
+        actions = []
+        bits = self._cfg.func_sel_bits_per_gpio
+        fmask = (1 << bits) - 1
+        want = self._cfg.func_sel_gpio_value & fmask
+        g0 = bank_idx * GROUPS_PER_BANK
+        for g in range(g0, g0 + GROUPS_PER_BANK):
+            field_ = self._cfg.func_sel_field(g, 0)
+            if field_ is None:
+                continue
+            pins = (bank_mask >> ((g - g0) * PINS_PER_GROUP)) & 0xFF
+            if not pins:
+                continue
+            addr = field_[0]
+            cur = self._reg_shadow.get(addr, 0)
+            new = cur
+            for p in range(PINS_PER_GROUP):
+                if (pins >> p) & 1:
+                    new = (new & ~(fmask << (p * bits))) | (want << (p * bits))
+            if new != cur:
+                actions.append((OP_BITS, addr, new, 31, 0))
+        return actions
 
     def _in_bit(self, bank_idx, bit):
         val = self._in_value.get(bank_idx)
@@ -1649,8 +1706,12 @@ class GpioControlUI(QWidget):
         widgets["pull_combo"] = pull_combo
 
         drv_combo = DarkComboBox()
-        drv_combo.addItem("00 Slow", False)
-        drv_combo.addItem("11 Fast", True)
+        for lv in range(self._cfg.drv_level_count):
+            drv_combo.addItem("Lv{0}".format(lv), lv)
+            ohm = self._drv_ohm_text(lv)
+            if ohm:
+                drv_combo.setItemData(
+                    lv, "Lv{0} · {1}".format(lv, ohm), Qt.ToolTipRole)
         drv_combo.currentIndexChanged.connect(
             lambda _i, g=group, p=pin, c=drv_combo: self._on_table_drv(g, p, c.currentData()))
         self.table.setCellWidget(row, 7, drv_combo)
@@ -1727,15 +1788,16 @@ class GpioControlUI(QWidget):
                 pull_combo.blockSignals(False)
 
         drv_combo = w["drv_combo"]
-        drv_ok = self._cfg.drv_supported
+        drv_ok = self._cfg.drv_field(group, pin) is not None
         drv_combo.setEnabled(drv_ok)
         if drv_ok:
             val = self._drv_field_value(group, pin)
-            want = val == self._cfg.drv_fast
-            if drv_combo.currentData() != want:
-                drv_combo.blockSignals(True)
-                drv_combo.setCurrentIndex(1 if want else 0)
-                drv_combo.blockSignals(False)
+            if val is not None and drv_combo.currentData() != val:
+                idx = drv_combo.findData(val)
+                if idx >= 0:
+                    drv_combo.blockSignals(True)
+                    drv_combo.setCurrentIndex(idx)
+                    drv_combo.blockSignals(False)
 
     def _apply_table_filter(self):
         if self._cfg is None:
@@ -1783,13 +1845,20 @@ class GpioControlUI(QWidget):
              "输入电平读取（点击卡片刷新）", True),
         ]
         if self._cfg.drv_supported:
-            per_reg = 32 // self._cfg.drv_bits_per_gpio
-            first = (self._cur_bank * GPIOS_PER_BANK) // per_reg
-            for i in range(GPIOS_PER_BANK // per_reg):
-                addr = self._cfg.drv_base + (first + i) * 4
-                specs.append(("drv", addr, "DRV_SEL{0}".format(first + i),
-                              "驱动斜率 {0}bit/脚（点击位翻转 Slow/Fast）".format(
+            for addr, first in self._cfg.drv_registers(self._cur_bank):
+                specs.append(("drv", addr,
+                              "DRV_P{0:02d}".format(first // PINS_PER_GROUP),
+                              "驱动强度 {0}bit/脚（点击位翻转档位）".format(
                                   self._cfg.drv_bits_per_gpio), True))
+        if self._cfg.func_sel_supported:
+            g0 = self._cur_bank * GROUPS_PER_BANK
+            for g in range(g0, g0 + GROUPS_PER_BANK):
+                field_ = self._cfg.func_sel_field(g, 0)
+                if field_ is None:
+                    continue
+                specs.append(("fsel", field_[0], "FSEL_P{0:02d}".format(g),
+                              "功能复用选择：0x{0:X}=GPIO（控制前自动写）".format(
+                                  self._cfg.func_sel_gpio_value), True))
         pu_addr = self._cfg.pull_up_bases[self._cur_bank] \
             if self._cur_bank < len(self._cfg.pull_up_bases) else None
         pd_addr = self._cfg.pull_down_bases[self._cur_bank] \
@@ -1965,23 +2034,29 @@ class GpioControlUI(QWidget):
             self.insp_pull_pd.setProperty("cur", "pd" if pull == 2 else "0")
             for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
                 _repolish(b)
-
-            if self._cfg.drv_supported:
-                field_ = self._cfg.drv_field(group, pin)
-                val = self._drv_field_value(group, pin)
-                self.insp_drv_slow.setProperty(
-                    "cur", "1" if val == self._cfg.drv_slow else "0")
-                self.insp_drv_fast.setProperty(
-                    "cur", "1" if val == self._cfg.drv_fast else "0")
-                self.insp_drv_key.setText(
-                    "驱动斜率（{0} 位域 [{1}:{2}]：00=Slow / 11=Fast）".format(
-                        _fmt32(field_[0]), field_[1], field_[2]))
+            if self._cfg.pull_up_ohm is not None \
+                    and self._cfg.pull_down_ohm is not None:
+                self.insp_pull_key.setText(
+                    "上下拉三态（PU≈{0} Ω / PD≈{1} Ω）".format(
+                        round(self._cfg.pull_up_ohm),
+                        round(self._cfg.pull_down_ohm)))
             else:
-                self.insp_drv_slow.setProperty("cur", "0")
-                self.insp_drv_fast.setProperty("cur", "0")
-                self.insp_drv_key.setText("驱动斜率（该芯片 JSON 未配置 drv_sel）")
-            _repolish(self.insp_drv_slow)
-            _repolish(self.insp_drv_fast)
+                self.insp_pull_key.setText("上下拉三态（PU/PD 为 RW 寄存器位域写）")
+
+            field_ = self._cfg.drv_field(group, pin)
+            if field_ is not None:
+                val = self._drv_field_value(group, pin)
+                self.insp_drv_val.setText(self._drv_level_text(val))
+                self.insp_drv_key.setText(
+                    "驱动强度（{0} 位域 [{1}:{2}]，0~{3} 档阻抗取整）".format(
+                        _fmt32(field_[0]), field_[1], field_[2],
+                        self._cfg.drv_max_level))
+            else:
+                self.insp_drv_val.setText("Lv --")
+                self.insp_drv_key.setText(
+                    "驱动强度（{0}）".format(
+                        "该引脚无 drv_sel 寄存器" if self._cfg.drv_supported
+                        else "该芯片 JSON 未配置 drv_sel"))
 
             in_lvl = self._in_bit(bank_idx, bit)
             if in_lvl is None:
@@ -1994,22 +2069,25 @@ class GpioControlUI(QWidget):
             _repolish(self.insp_big_state)
 
             drv_txt = ""
-            if self._cfg.drv_supported:
-                field_ = self._cfg.drv_field(group, pin)
+            if field_ is not None:
                 drv_txt = " · drv {0} [{1}:{2}]".format(
                     _fmt32(field_[0]), field_[1], field_[2])
             self.insp_mask.setText(
                 "Mask {0} · bank bit {1}{2}".format(_fmt32(1 << bit), bit, drv_txt))
 
         pull_ok = has and self._cfg.pull_supported(sel[0])
-        drv_ok = has and self._cfg.drv_supported
+        drv_ok = has and self._cfg.drv_field(sel[0], sel[1]) is not None
+        drv_val = self._drv_field_value(sel[0], sel[1]) if drv_ok else None
         for b in (self.insp_dir_out, self.insp_dir_in,
                   self.insp_lvl_h, self.insp_lvl_l, self.insp_read_btn):
             b.setEnabled(has and ready)
         for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
             b.setEnabled(has and ready and pull_ok)
-        self.insp_drv_slow.setEnabled(has and ready and drv_ok)
-        self.insp_drv_fast.setEnabled(has and ready and drv_ok)
+        self.insp_drv_dec.setEnabled(
+            ready and drv_val is not None and drv_val > 0)
+        self.insp_drv_inc.setEnabled(
+            ready and drv_val is not None and drv_val < self._cfg.drv_max_level)
+        self.insp_drv_val.setEnabled(drv_ok)
         self.alias_edit.setEnabled(has)
 
     def _update_op_enabled(self):
@@ -2147,21 +2225,26 @@ class GpioControlUI(QWidget):
                     return "Pull-down enable (RMW [{0}:{1}] = {2}) -> {3}".format(
                         hi, lo, value, self._mask_pins(
                             ((value & ((1 << (hi - lo + 1)) - 1)) << lo)))
+            g = cfg.func_sel_reg_group(addr)
+            if g is not None:
+                if lo == 0 and hi == 31:
+                    return "Func sel: [31:0] = {0} -> Group{1} 全 8 脚".format(
+                        _fmt32(value), g)
+                pin = lo // cfg.func_sel_bits_per_gpio
+                if pin < PINS_PER_GROUP:
+                    tag = (" (GPIO function)"
+                           if value == cfg.func_sel_gpio_value else "")
+                    return "Func sel: [{0}:{1}] = 0x{2:X}{3} -> {4}".format(
+                        hi, lo, value, tag, cfg.gpio_name(g, pin))
             if cfg.drv_supported:
-                per_reg = 32 // cfg.drv_bits_per_gpio
-                delta = addr - cfg.drv_base
-                if delta >= 0 and delta % 4 == 0:
-                    idx = (delta // 4) * per_reg + lo // cfg.drv_bits_per_gpio
-                    if 0 <= idx < cfg.group_count * PINS_PER_GROUP:
-                        if value == cfg.drv_fast:
-                            speed = "Fast"
-                        elif value == cfg.drv_slow:
-                            speed = "Slow"
-                        else:
-                            speed = "0x{0:X}".format(value)
-                        g, p = divmod(idx, PINS_PER_GROUP)
-                        return "Drv slew select: [{0}:{1}] = {2} -> {3}".format(
-                            hi, lo, speed, cfg.gpio_name(g, p))
+                owner = cfg.drv_field_owner(addr, lo)
+                if owner is not None:
+                    g, p = owner
+                    ohm = self._drv_ohm_text(value)
+                    return "Drv strength: [{0}:{1}] = Lv{2}{3} -> {4}".format(
+                        hi, lo, value,
+                        " ({0})".format(ohm) if ohm else "",
+                        cfg.gpio_name(g, p))
         if op == OP_BITS:
             return "Raw bits write [{0}:{1}] = 0x{2:X}".format(hi, lo, value)
         return "Raw register write"
@@ -2179,9 +2262,12 @@ class GpioControlUI(QWidget):
                     return "Pull-up enable read (Bank{0})".format(b_idx)
                 if pd is not None and addr == pd:
                     return "Pull-down enable read (Bank{0})".format(b_idx)
-            if cfg.drv_supported and addr >= cfg.drv_base \
-                    and (addr - cfg.drv_base) % 4 == 0:
-                return "Drv slew read"
+            g = cfg.func_sel_reg_group(addr)
+            if g is not None:
+                return "Func sel read (Group{0})".format(g)
+            if cfg.drv_supported \
+                    and any(a == addr for a, _ in cfg.drv_registers()):
+                return "Drv strength read"
         return "Raw register read"
 
     # ================================================================ 执行管道
@@ -2583,25 +2669,28 @@ class GpioControlUI(QWidget):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
-        self._batch_apply([
-            (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
-            (OP_WRITE, bank.base + OFFSET_OUT_SET, 0xFFFFFFFF, -1, -1),
-        ], "All OUT HIGH -> Bank{0}".format(self._cur_bank))
+        self._batch_apply(
+            self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF) + [
+                (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
+                (OP_WRITE, bank.base + OFFSET_OUT_SET, 0xFFFFFFFF, -1, -1),
+            ], "All OUT HIGH -> Bank{0}".format(self._cur_bank))
 
     def _on_batch_out_low(self):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
-        self._batch_apply([
-            (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
-            (OP_WRITE, bank.base + OFFSET_OUT_CLR, 0xFFFFFFFF, -1, -1),
-        ], "All OUT LOW -> Bank{0}".format(self._cur_bank))
+        self._batch_apply(
+            self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF) + [
+                (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
+                (OP_WRITE, bank.base + OFFSET_OUT_CLR, 0xFFFFFFFF, -1, -1),
+            ], "All OUT LOW -> Bank{0}".format(self._cur_bank))
 
     def _on_batch_in_hiz(self):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
-        actions = [(OP_WRITE, bank.base + OFFSET_DIR_CLR, 0xFFFFFFFF, -1, -1)]
+        actions = self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF)
+        actions.append((OP_WRITE, bank.base + OFFSET_DIR_CLR, 0xFFFFFFFF, -1, -1))
         for addr in (self._cfg.pull_up_bases[self._cur_bank]
                      if self._cur_bank < len(self._cfg.pull_up_bases) else None,
                      self._cfg.pull_down_bases[self._cur_bank]
@@ -2619,7 +2708,8 @@ class GpioControlUI(QWidget):
         if pu is None or pd is None:
             self.append_log("[WARN] Bank{0} 上下拉地址未在 JSON 配置".format(b))
             return
-        actions = [
+        actions = self._func_sel_mask_actions(b, 0xFFFFFFFF)
+        actions += [
             (OP_BITS, pd if up else pu, 0, 31, 0),
             (OP_BITS, pu if up else pd, 0xFFFFFFFF, 31, 0),
         ]
@@ -2635,7 +2725,7 @@ class GpioControlUI(QWidget):
         out_v = self._out_shadow.get(b, 0)
         set_mask = (~out_v) & dir_v & 0xFFFFFFFF
         clr_mask = out_v & dir_v
-        actions = []
+        actions = self._func_sel_mask_actions(b, dir_v)
         if set_mask:
             actions.append((OP_WRITE, bank.base + OFFSET_OUT_SET, set_mask, -1, -1))
         if clr_mask:
@@ -2657,7 +2747,8 @@ class GpioControlUI(QWidget):
         off = self.mask_target.currentData()
         addr = bank.base + off
         self._apply_actions(
-            [(OP_WRITE, addr, mask, -1, -1)],
+            self._func_sel_mask_actions(self._cur_bank, mask)
+            + [(OP_WRITE, addr, mask, -1, -1)],
             label="Mask inject {0} -> {1}".format(
                 _fmt32(mask), self.mask_target.currentText()),
             on_done=lambda: self._queue_bank_read(self._cur_bank))
@@ -2726,10 +2817,9 @@ class GpioControlUI(QWidget):
                      self._cfg.pull_down_bases[b] if b < len(self._cfg.pull_down_bases) else None):
             if addr is not None:
                 pairs.append(("reg_{0:08X}".format(addr), addr))
-        if self._cfg.drv_supported:
-            for card in self._reg_cards:
-                if card["kind"] == "drv" and card["addr"] is not None:
-                    pairs.append(("reg_{0:08X}".format(card["addr"]), card["addr"]))
+        for card in self._reg_cards:
+            if card["kind"] in ("drv", "fsel") and card["addr"] is not None:
+                pairs.append(("reg_{0:08X}".format(card["addr"]), card["addr"]))
         self._read_registers(pairs)
 
     def _on_raw_write(self):
@@ -2785,7 +2875,8 @@ class GpioControlUI(QWidget):
                 else self._cfg.dir_set_addr(group))
         name = self._cfg.gpio_name(group, pin)
         self._apply_actions(
-            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            self._func_sel_pin_actions(group, pin)
+            + [(OP_WRITE, addr, 1 << bit, -1, -1)],
             label="{0} -> {1}".format(name, "INPUT" if out_now else "OUTPUT"),
             on_done=lambda: self._queue_bank_read(bank_idx))
 
@@ -2803,7 +2894,8 @@ class GpioControlUI(QWidget):
         addr = (self._cfg.out_clr_addr(group) if high_now
                 else self._cfg.out_set_addr(group))
         self._apply_actions(
-            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            self._func_sel_pin_actions(group, pin)
+            + [(OP_WRITE, addr, 1 << bit, -1, -1)],
             label="{0} -> {1}".format(name, "LOW" if high_now else "HIGH"),
             on_done=lambda: self._queue_bank_read(bank_idx))
 
@@ -2843,7 +2935,7 @@ class GpioControlUI(QWidget):
         pd = self._cfg.pull_down_addr(group)
         name = self._cfg.gpio_name(group, pin)
         label = {0: "Hi-Z", 1: "Pull-Up", 2: "Pull-Down"}[state]
-        actions = []
+        actions = self._func_sel_pin_actions(group, pin)
         if state == 0:
             actions.append((OP_BITS, pu, 0, bit, bit))
             actions.append((OP_BITS, pd, 0, bit, bit))
@@ -2857,28 +2949,36 @@ class GpioControlUI(QWidget):
             actions, label="{0} pull -> {1}".format(name, label),
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
-    def _on_table_drv(self, group, pin, fast):
+    def _on_table_drv(self, group, pin, level):
         if not self._ready():
             self._refresh_table_row(group, pin)
             return
         self._selected = (group, pin)
-        self._apply_drv(group, pin, bool(fast))
+        self._apply_drv(group, pin, int(level))
 
-    def _on_drv_clicked(self, fast):
+    def _on_drv_step(self, delta):
         if self._selected is None:
             return
-        self._apply_drv(self._selected[0], self._selected[1], fast)
+        group, pin = self._selected
+        cur = self._drv_field_value(group, pin)
+        if cur is None:
+            return
+        self._apply_drv(group, pin, cur + delta)
 
-    def _apply_drv(self, group, pin, fast):
+    def _apply_drv(self, group, pin, level):
         if not self._ready():
             return
-        actions = self._cfg.build_drv_actions(group, pin, fast)
+        actions = self._cfg.build_drv_actions(group, pin, level)
         name = self._cfg.gpio_name(group, pin)
         if actions is None:
             self.append_log("[WARN] {0} 不支持 drv 配置".format(name))
             return
+        level = actions[0][2]
+        ohm = self._drv_ohm_text(level)
+        actions = self._func_sel_pin_actions(group, pin) + actions
         self._apply_actions(
-            actions, label="{0} drv -> {1}".format(name, "Fast" if fast else "Slow"))
+            actions, label="{0} drv -> Lv{1}{2}".format(
+                name, level, " ({0})".format(ohm) if ohm else ""))
 
     def _on_insp_dir(self, output):
         if self._selected is None or not self._ready():
@@ -2889,7 +2989,8 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         name = self._cfg.gpio_name(group, pin)
         self._apply_actions(
-            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            self._func_sel_pin_actions(group, pin)
+            + [(OP_WRITE, addr, 1 << bit, -1, -1)],
             label="{0} dir -> {1}".format(name, "OUTPUT" if output else "INPUT"),
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
@@ -2902,7 +3003,8 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         name = self._cfg.gpio_name(group, pin)
         self._apply_actions(
-            [(OP_WRITE, addr, 1 << bit, -1, -1)],
+            self._func_sel_pin_actions(group, pin)
+            + [(OP_WRITE, addr, 1 << bit, -1, -1)],
             label="{0} level -> {1}".format(name, "HIGH" if high else "LOW"),
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
@@ -2971,16 +3073,20 @@ class GpioControlUI(QWidget):
                 on_done=lambda: self._queue_bank_read(self._cur_bank))
         elif kind == "val_in":
             self._start_read_bank(self._cur_bank)
-        elif kind == "drv":
-            bits = self._cfg.drv_bits_per_gpio
+        elif kind in ("drv", "fsel"):
+            bits = (self._cfg.drv_bits_per_gpio if kind == "drv"
+                    else self._cfg.func_sel_bits_per_gpio)
             low = bit - (bit % bits)
             high = low + bits - 1
-            cur = (self._reg_shadow.get(addr, 0) >> low) & ((1 << bits) - 1)
-            new = (self._cfg.drv_slow if cur == self._cfg.drv_fast
-                   else self._cfg.drv_fast)
+            fmask = (1 << bits) - 1
+            cur = (self._reg_shadow.get(addr, 0) >> low) & fmask
+            new = cur ^ (1 << (bit - low))
+            new_txt = ("Lv{0}".format(new) if kind == "drv"
+                       else "0x{0:X}".format(new))
             self._apply_actions(
                 [(OP_BITS, addr, new, high, low)],
-                label="Bit flip DRV [{0}:{1}]".format(high, low))
+                label="Bit flip {0} [{1}:{2}] -> {3}".format(
+                    kind.upper(), high, low, new_txt))
         elif kind in ("pu", "pd"):
             cur = (self._reg_shadow.get(addr, 0) >> bit) & 1
             self._apply_actions(
@@ -3133,7 +3239,20 @@ class GpioControlUI(QWidget):
         aliases = "\n".join(
             '    "{0}": "{2}",  # linear #{1}'.format(name, lin, alias)
             for name, lin, alias in self._alias_lines()) or "    # (no aliases)"
-        drv_base = _fmt32(cfg.drv_base) if cfg.drv_supported else "None"
+        drv_map = "\n".join(
+            "    {0},".format(
+                "None" if cfg.drv_reg(g, 0) is None else
+                "({0}, {1})".format(_fmt32(cfg.drv_reg(g, 0)[0]),
+                                    cfg.drv_reg(g, 0)[1]))
+            for g in range(cfg.group_count))
+        if cfg.drv_out_high_ohm and cfg.drv_out_low_ohm:
+            drv_ohm_block = "# 各档位输出阻抗（Ω，实测参考值）：\n" + "\n".join(
+                "#   Lv{0:<2d} OUT_HIGH {1:.4f} / OUT_LOW {2:.4f}".format(
+                    lv, hh, ll)
+                for lv, (hh, ll) in enumerate(
+                    zip(cfg.drv_out_high_ohm, cfg.drv_out_low_ohm)))
+        else:
+            drv_ohm_block = "# (no per-level ohm table)"
         dev = "0x{0:02X}".format(self._dev_addr) if self._dev_addr is not None else "0x11"
         return '''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -3161,10 +3280,13 @@ OFFSET_DIR_CLR = 0x10
 OFFSET_IN_READ = 0x50
 GPIOS_PER_BANK = 32
 
-DRV_SEL_BASE = {drv_base}
 DRV_BITS_PER_GPIO = {drv_bits}
-DRV_FAST = {drv_fast}
-DRV_SLOW = {drv_slow}
+DRV_LEVELS = {drv_levels}
+{drv_ohm_block}
+# 按 group 索引 (寄存器地址, pin0 起始 bit)；None = 该 group 无 drv_sel
+DRV_GROUP_MAP = [
+{drv_map}
+]
 PULL_UP_BASES = [{pu}]
 PULL_DOWN_BASES = [{pd}]
 
@@ -3227,14 +3349,14 @@ class BesI2cController:
                     self.write_bits(pu, 0, bit, bit)
                     self.write_bits(pd, 0, bit, bit)
 
-    def set_drv(self, linear_index, fast=True):
-        if DRV_SEL_BASE is None:
-            raise ValueError("drv_sel not configured for this chip")
-        per_reg = 32 // DRV_BITS_PER_GPIO
-        addr = DRV_SEL_BASE + (linear_index // per_reg) * 4
-        low = (linear_index % per_reg) * DRV_BITS_PER_GPIO
-        high = low + DRV_BITS_PER_GPIO - 1
-        self.write_bits(addr, DRV_FAST if fast else DRV_SLOW, high, low)
+    def set_drv(self, linear_index, level):
+        """level: 0 ~ DRV_LEVELS-1（档位越高阻值越小、驱动越强）。"""
+        group, pin = divmod(linear_index, 8)
+        if group >= len(DRV_GROUP_MAP) or DRV_GROUP_MAP[group] is None:
+            raise ValueError("drv_sel not configured for group %d" % group)
+        addr, low0 = DRV_GROUP_MAP[group]
+        low = low0 + pin * DRV_BITS_PER_GPIO
+        self.write_bits(addr, level, low + DRV_BITS_PER_GPIO - 1, low)
 
 
 if __name__ == "__main__":
@@ -3248,9 +3370,10 @@ if __name__ == "__main__":
         print("bank %s in = 0x%08X" % (first, dut.read_bank(first)))
     finally:
         dut.close()
-'''.format(chip=cfg.chip, dev=dev, banks=banks, drv_base=drv_base,
-           drv_bits=cfg.drv_bits_per_gpio, drv_fast=cfg.drv_fast,
-           drv_slow=cfg.drv_slow, pu=pu, pd=pd, aliases=aliases)
+'''.format(chip=cfg.chip, dev=dev, banks=banks,
+           drv_bits=cfg.drv_bits_per_gpio, drv_levels=cfg.drv_level_count,
+           drv_ohm_block=drv_ohm_block, drv_map=drv_map,
+           pu=pu, pd=pd, aliases=aliases)
 
     def _gen_c_code(self):
         cfg = self._cfg
@@ -3259,7 +3382,18 @@ if __name__ == "__main__":
                 i, _fmt32(b.base), b.name)
             for i, b in enumerate(cfg.banks))
         bank_tbl = ",\n".join("    {0}u".format(_fmt32(b.base)) for b in cfg.banks)
-        drv_base = _fmt32(cfg.drv_base) if cfg.drv_supported else "0x00000000u"
+        drv_map_rows = "\n".join(
+            "    {{ {0}u, {1}u }},".format(_fmt32(r[0]), r[1])
+            if r is not None else "    { 0x00000000u, 0u },"
+            for r in (cfg.drv_reg(g, 0) for g in range(cfg.group_count)))
+        if cfg.drv_out_high_ohm and cfg.drv_out_low_ohm:
+            drv_ohm_c = "/* 各档位输出阻抗（Ω，实测参考值）：\n" + "\n".join(
+                " *   Lv{0:<2d} OUT_HIGH {1:.4f} / OUT_LOW {2:.4f}".format(
+                    lv, hh, ll)
+                for lv, (hh, ll) in enumerate(
+                    zip(cfg.drv_out_high_ohm, cfg.drv_out_low_ohm))) + "\n */\n"
+        else:
+            drv_ohm_c = ""
         aliases = "\n".join(
             "/* {0} = linear #{1} = {2} */".format(name, lin, alias)
             for name, lin, alias in self._alias_lines())
@@ -3288,10 +3422,8 @@ if __name__ == "__main__":
 #define BES_GPIO_IN_READ      0x50u
 #define BES_GPIOS_PER_BANK    32u
 
-#define BES_GPIO_DRV_BASE     {drv_base}
-#define BES_GPIO_DRV_BITS     {drv_bits}u
-#define BES_GPIO_DRV_FAST     {drv_fast}u
-#define BES_GPIO_DRV_SLOW     {drv_slow}u
+{drv_ohm_c}#define BES_GPIO_DRV_BITS     {drv_bits}u
+#define BES_GPIO_DRV_LEVELS   {drv_levels}u
 {alias_block}
 /* ---- platform hooks (implement on your I2C master) ---- */
 typedef int  (*bes_i2c_write32_fn)(uint8_t dev, uint32_t addr, uint32_t value);
@@ -3305,7 +3437,7 @@ void     bes_gpio_init(bes_i2c_write32_fn w32,
 void     bes_gpio_set_direction(uint8_t bank, uint32_t mask, uint8_t output);
 void     bes_gpio_set_level(uint8_t bank, uint32_t mask, uint8_t high);
 uint32_t bes_gpio_read_bank(uint8_t bank);
-void     bes_gpio_set_drv(uint8_t linear_index, uint8_t fast);
+void     bes_gpio_set_drv(uint8_t linear_index, uint8_t level);
 
 #endif /* BES_GPIO_H */
 
@@ -3318,6 +3450,12 @@ static bes_i2c_read32_fn     s_r32;
 
 static const uint32_t s_bank_base[] = {{
 {bank_tbl}
+}};
+
+typedef struct {{ uint32_t addr; uint8_t low0; }} bes_gpio_drv_reg_t;
+/* 按 group 索引 (寄存器地址, pin0 起始 bit)；addr=0 表示该 group 无 drv_sel */
+static const bes_gpio_drv_reg_t s_drv_map[{drv_map_size}] = {{
+{drv_map_rows}
 }};
 
 void bes_gpio_init(bes_i2c_write32_fn w32,
@@ -3351,24 +3489,25 @@ uint32_t bes_gpio_read_bank(uint8_t bank)
     return value;
 }}
 
-void bes_gpio_set_drv(uint8_t linear_index, uint8_t fast)
+void bes_gpio_set_drv(uint8_t linear_index, uint8_t level)
 {{
-#if BES_GPIO_DRV_BASE != 0x00000000u
-    uint8_t per_reg = 32u / BES_GPIO_DRV_BITS;
-    uint32_t addr = BES_GPIO_DRV_BASE + (linear_index / per_reg) * 4u;
-    uint8_t low = (uint8_t)((linear_index % per_reg) * BES_GPIO_DRV_BITS);
-    uint8_t high = (uint8_t)(low + BES_GPIO_DRV_BITS - 1u);
+    uint8_t group = (uint8_t)(linear_index / 8u);
+    uint8_t pin = (uint8_t)(linear_index % 8u);
+    uint32_t addr;
+    uint8_t low;
+    if (group >= {drv_map_size}u || s_drv_map[group].addr == 0x00000000u) {{
+        return;
+    }}
+    addr = s_drv_map[group].addr;
+    low = (uint8_t)(s_drv_map[group].low0 + pin * BES_GPIO_DRV_BITS);
     /* drv_sel 为普通 RW 寄存器：位域写（底层 read-modify-write） */
-    s_wbits(BES_GPIO_DEV_ADDR, addr,
-            fast ? BES_GPIO_DRV_FAST : BES_GPIO_DRV_SLOW, high, low);
-#else
-    (void)linear_index;
-    (void)fast;
-#endif
+    s_wbits(BES_GPIO_DEV_ADDR, addr, level,
+            (uint8_t)(low + BES_GPIO_DRV_BITS - 1u), low);
 }}
-'''.format(chip=cfg.chip, dev=dev, defines=defines, drv_base=drv_base,
-           drv_bits=cfg.drv_bits_per_gpio, drv_fast=cfg.drv_fast,
-           drv_slow=cfg.drv_slow, alias_block=alias_block, bank_tbl=bank_tbl)
+'''.format(chip=cfg.chip, dev=dev, defines=defines,
+           drv_bits=cfg.drv_bits_per_gpio, drv_levels=cfg.drv_level_count,
+           drv_map_size=cfg.group_count, drv_map_rows=drv_map_rows,
+           drv_ohm_c=drv_ohm_c, alias_block=alias_block, bank_tbl=bank_tbl)
 
     def _on_copy_python(self):
         QApplication.clipboard().setText(self.py_edit.toPlainText())
@@ -3402,22 +3541,25 @@ void bes_gpio_set_drv(uint8_t linear_index, uint8_t fast)
                 "PU/PD 各一个独立寄存器区（1bit/GPIO，与 gpio_banks 平行）；"
                 "地址为 null 时 UI 自动禁用上下拉按钮。\n" + "\n".join(lines))
             self._set_note_status(0, "已确认" if all_ok else "待确认 (TBD)", all_ok)
-        # 2. Slew 位域
+        # 2. drv 档位与阻抗
         if cfg is None or not cfg.drv_supported:
             self._note_bodies[1].setText(
-                "当前芯片 JSON 未配置 drv_sel（drv.base 为 null）。")
+                "当前芯片 JSON 未配置 drv_sel。")
             self._set_note_status(1, "待确认", False)
         else:
-            per_reg = 32 // cfg.drv_bits_per_gpio
+            lines = ["Group{0}: {1}".format(first // PINS_PER_GROUP,
+                                            _fmt32(addr))
+                     for addr, first in cfg.drv_registers()]
+            ohm_txt = ("已配置 0~{0} 档输出阻抗表（UI 取整显示 Ω）。"
+                       .format(cfg.drv_max_level)
+                       if cfg.drv_out_high_ohm and cfg.drv_out_low_ohm
+                       else "未配置档位阻抗表（仅显示档位号）。")
             self._note_bodies[1].setText(
-                "drv_sel 独立地址区 base {0}：bits_per_gpio={1} → 每 32bit 寄存器 "
-                "{2} 脚，相邻脚位域连续排布；字段值 {3}=Fast / {4}=Slow。\n"
-                "字段地址 = base + (linear // {2}) * 4，"
-                "位域 = [(linear % {2}) * {1} + {5} : (linear % {2}) * {1}]。"
-                .format(_fmt32(cfg.drv_base), cfg.drv_bits_per_gpio, per_reg,
-                        "{0:0{1}b}".format(cfg.drv_fast, cfg.drv_bits_per_gpio),
-                        "{0:0{1}b}".format(cfg.drv_slow, cfg.drv_bits_per_gpio),
-                        cfg.drv_bits_per_gpio - 1))
+                "drv_sel per-group 寄存器：每 32bit 寄存器 8 脚 × {0}bit，"
+                "pin N 位域 [N*{0}+{1}:N*{0}]，档位 0~{2}（阻值越小驱动越强）；"
+                "地址不连续时由 JSON group_bases 显式给出。\n{3}\n{4}"
+                .format(cfg.drv_bits_per_gpio, cfg.drv_bits_per_gpio - 1,
+                        cfg.drv_max_level, "\n".join(lines), ohm_txt))
             self._set_note_status(1, "已确认", True)
         # 3. I2C 地址
         dev_txt = ("0x{0:02X}".format(self._dev_addr)
@@ -3443,6 +3585,23 @@ void bes_gpio_set_drv(uint8_t linear_index, uint8_t fast)
                 "core/gpio/ Worker 异步收发，页面无阻塞 I2C）。\n"
                 "顶部右侧 Bridge 按钮可一键切换到 Simulated DUT。")
             self._set_note_status(3, "USB-I2C", True)
+        # 5. func sel
+        if cfg is None or not cfg.func_sel_supported:
+            self._note_bodies[4].setText("当前芯片 JSON 未配置 func_sel。")
+            self._set_note_status(4, "待确认", False)
+        else:
+            per_reg = 32 // cfg.func_sel_bits_per_gpio
+            n = cfg.func_sel_groups or cfg.group_count
+            self._note_bodies[4].setText(
+                "pin function 复用选择：base {0}，每寄存器 {1} 脚 × {2}bit，"
+                "有效 Group0~{3}；控制 GPIO 状态（方向/电平/上下拉/drv/批处理/"
+                "掩码）前页面自动把对应脚位域写 0x{4:X} 选为 GPIO 功能，"
+                "影子已为 0x{4:X} 时跳过。\n"
+                "注意：RegMap 位翻转 / Raw 为底层调试入口，不自动前置 func sel。"
+                .format(_fmt32(cfg.func_sel_base), per_reg,
+                        cfg.func_sel_bits_per_gpio, n - 1,
+                        cfg.func_sel_gpio_value))
+            self._set_note_status(4, "已确认", True)
 
     def _set_note_status(self, idx, text, ok):
         lbl = self._note_status_labels[idx]

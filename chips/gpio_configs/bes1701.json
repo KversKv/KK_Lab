@@ -1,6 +1,6 @@
 {
   "chip": "bes1701",
-  "comment": "BES1701 AON GPIO 配置。bank 内寄存器偏移固定：Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C / Dir Clr=+0x10 / Input Read=+0x50，每 bank 32 个 GPIO（Group x4 ~ x4+3，bit=(group%4)*8+pin）。pull_up/pull_down_bases 与 gpio_banks 平行，null 表示该 bank 上下拉地址待确认（UI 自动禁用对应按钮）。",
+  "comment": "BES1701 AON GPIO 配置。bank 内寄存器偏移固定：Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C / Dir Clr=+0x10 / Input Read=+0x50，每 bank 32 个 GPIO（Group x4 ~ x4+3，bit=(group%4)*8+pin）。pull_up/pull_down_bases 与 gpio_banks 平行（每 32bit 寄存器 4 group×8bit，1bit/GPIO）。",
   "gpio_banks": [
     { "name": "AON_GPIO0", "base": "0x40081000" },
     { "name": "AON_GPIO1", "base": "0x40089000" },
@@ -9,12 +9,42 @@
     { "name": "AON_GPIO4", "base": "0x4008F000" }
   ],
   "drv": {
-    "base": "0x40086074",
-    "bits_per_gpio": 2,
-    "fast": 3,
-    "slow": 0,
-    "comment": "drv_sel 独立地址区，从 base 起每 32bit 寄存器连续排布；bits_per_gpio=2 → 每寄存器 16 个 GPIO，字段 [1:0] 11=fast 00=slow"
+    "group_bases": [
+      "0x40086060", "0x40086064", "0x40086068", "0x4008606C",
+      "0x40086070", "0x40086074", "0x40086078", "0x4008607C",
+      "0x40086080",
+      "0x400860EC", "0x400860F0", "0x400860F4", "0x400860F8",
+      "0x400860FC", "0x40086100", "0x40086104", "0x40086108",
+      "0x4008610C"
+    ],
+    "bits_per_gpio": 4,
+    "levels": 16,
+    "out_high_ohm": [
+      1463.414634, 756.9386039, 415.896488, 330.3964758,
+      244.2333786, 212.7659574, 174.689441, 158.4507042,
+      51.88516084, 50.68994649, 48.79900233, 47.76056039,
+      46.05229494, 45.15125671, 43.73177843, 42.9389313
+    ],
+    "out_low_ohm": [
+      1472.99509, 753.1380753, 414.7465438, 329.3084523,
+      248.6187845, 215.6721783, 176.366843, 159.6310748,
+      51.77770107, 50.5334082, 48.58037353, 47.51095391,
+      45.87389775, 44.94830944, 43.44048653, 42.6196903
+    ],
+    "comment": "drv_sel per-group 独立寄存器（group_bases 按 Group0~17；0x40086084~0x400860E8 为 PU/PD 及其它寄存器区，Group9 起跳至 0x400860EC）。每寄存器 8 脚×4bit，pin N 位域 [4N+3:4N]，档位 0~15（阻值越小驱动越强）；out_high/low_ohm 为各档位输出阻抗表，UI 取整显示。"
   },
-  "pull_up_bases": [null, null, null, null, null],
-  "pull_down_bases": [null, null, null, null, null]
+  "pull_ohm": { "up": 36437.24696, "down": 35516.96922 },
+  "func_sel": {
+    "base": "0x40086004",
+    "bits_per_gpio": 4,
+    "gpio_value": 15,
+    "groups": 18,
+    "comment": "pin function 复用选择（gpio_p{G}{P}_sel）：每 group 一个 32bit 寄存器（8 脚×4bit，pin N 位域 [4N+3:4N]），地址 = base + group*4（Group0~17 → 0x40086004~0x40086048）。控制 GPIO 状态前须先把对应脚位域写 0xF（gpio_value）选为 GPIO 功能。"
+  },
+  "pull_up_bases": [
+    "0x40086084", "0x40086088", "0x4008608C", "0x40086090", "0x40086094"
+  ],
+  "pull_down_bases": [
+    "0x40086098", "0x4008609C", "0x400860A0", "0x400860A4", "0x400860A8"
+  ]
 }

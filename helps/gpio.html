@@ -7,7 +7,7 @@
   <li><b>Detect DUT</b> — 检测芯片型号并自动匹配 GPIO 配置，展示全部 GPIO 网格（按 Bank / Group 分组）</li>
   <li><b>Refresh All</b> — 回读所有 bank 的输入电平寄存器（base+0x50），刷新每个 GPIO 的电平指示</li>
   <li><b>单脚控制</b> — 点击任意 GPIO 后，在右侧详情面板设置：Output High / Output Low / Input Hi-Z / Input Pull-Up / Input Pull-Down</li>
-  <li><b>Drv 速率</b> — 设置选中 GPIO 的驱动速率 Fast / Slow（drv_sel 独立地址区）</li>
+  <li><b>Drv 档位</b> — 以增/减档方式设置选中 GPIO 的驱动强度（drv_sel per-group 寄存器，0~N 档，档位越高阻值越小驱动越强；按 JSON 阻抗表取整显示各档位输出阻抗 Ω）</li>
   <li><b>Read Level</b> — 只回读选中 GPIO 所在 bank 的输入电平</li>
 </ul>
 
@@ -22,6 +22,7 @@
 <h3>说明</h3>
 <ul>
   <li>寄存器偏移（各 bank 一致）：Out Set=+0x00、Dir Set=+0x04、Out Clr=+0x0C、Dir Clr=+0x10、Input Read=+0x50</li>
+  <li>Pin function sel：控制 GPIO 状态前页面自动把对应脚 <code>gpio_p*_sel[3:0]</code> 写 0xF（复用为 GPIO 功能），已配置则跳过；RegMap 位翻转 / Raw 底层入口不自动前置</li>
   <li>若上下拉按钮不可用，说明该芯片 JSON 中 pull_up/pull_down_bases 尚未填写地址</li>
   <li>新增芯片：复制 <code>chips/gpio_configs/bes1701.json</code> 并按实际填写各基地址即可</li>
 </ul>

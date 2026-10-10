@@ -13,14 +13,25 @@ bank 内寄存器偏移（各组一致，硬约定）：
     Input Read = base + 0x50   读输入电平
 每 bank 32 个 GPIO（Group x4 ~ x4+3），bit = (group % 4) * 8 + pin。
 
-drv_sel 独立地址区：从 drv.base 起每 32bit 寄存器连续排布，
-bits_per_gpio=2 → 每寄存器 16 个 GPIO；bits_per_gpio=4 → 每寄存器 8 个。
-字段地址 = base + (linear // per_reg) * 4，
-位域 = [(linear % per_reg) * bits + bits - 1 : (linear % per_reg) * bits]，
-linear = group * 8 + pin。
+drv_sel 两种寻址方式（按 JSON 配置二选一）：
+1. drv.group_bases：per-group 显式寄存器地址表（每寄存器 8 脚×bits_per_gpio），
+   pin N 位域 = [N*bits+bits-1 : N*bits]，支持地址区不连续（如 BES1701）。
+2. drv.base 线性模式：从 base 起每 32bit 寄存器连续排布，
+   bits_per_gpio=2 → 每寄存器 16 个 GPIO；bits_per_gpio=4 → 每寄存器 8 个。
+   字段地址 = base + (linear // per_reg) * 4，
+   位域 = [(linear % per_reg) * bits + bits - 1 : (linear % per_reg) * bits]，
+   linear = group * 8 + pin。
+档位取值 0 ~ drv.levels-1（levels 缺省 = 2**bits_per_gpio）；
+drv.out_high_ohm / out_low_ohm 为各档位输出阻抗表（可选，UI 取整显示）。
 
 上下拉为两个独立地址区（PU / PD 各一），与 gpio_banks 平行按 bank 给基地址，
 每 bank 一个 32bit 寄存器、1 bit/GPIO（1=使能），位序与 GPIO bit 一致。
+pull_ohm.up / down 为输入上下拉阻抗（可选，UI 取整显示）。
+
+func_sel（pin function 复用选择，可选）：控制 GPIO 状态前须先把对应脚的
+sel 位域写为 func_sel.gpio_value（BES1701 = 0xF 选为 GPIO 功能）。
+地址 = base + (linear // per_reg) * 4，位域排布同 drv 线性模式；
+func_sel.groups 限制有效 group 数（0 = 不限制）。
 """
 
 import json
@@ -77,11 +88,19 @@ class GpioChipConfig:
     chip: str
     banks: list = field(default_factory=list)          # list[GpioBank]
     drv_base: int = None
+    drv_group_bases: list = field(default_factory=list)  # list[int|None] 按 group
     drv_bits_per_gpio: int = 2
-    drv_fast: int = 3
-    drv_slow: int = 0
+    drv_levels: int = 0        # 0 → 2**bits_per_gpio
+    drv_out_high_ohm: list = field(default_factory=list)  # 各档位输出阻抗（Ω）
+    drv_out_low_ohm: list = field(default_factory=list)
+    pull_up_ohm: float = None
+    pull_down_ohm: float = None
     pull_up_bases: list = field(default_factory=list)   # list[int|None] 与 banks 平行
     pull_down_bases: list = field(default_factory=list)
+    func_sel_base: int = None
+    func_sel_bits_per_gpio: int = 4
+    func_sel_gpio_value: int = 0xF
+    func_sel_groups: int = 0     # 有效 group 数上限；0 = 不限制
 
     # ---- 基本映射 ----
 
@@ -130,17 +149,106 @@ class GpioChipConfig:
 
     @property
     def drv_supported(self):
-        return self.drv_base is not None
+        return (self.drv_base is not None
+                or any(a is not None for a in self.drv_group_bases))
+
+    @property
+    def drv_level_count(self):
+        return self.drv_levels or (1 << self.drv_bits_per_gpio)
+
+    @property
+    def drv_max_level(self):
+        return self.drv_level_count - 1
+
+    def drv_reg(self, group, pin):
+        """返回 (寄存器地址, 位域低位)；该脚不支持 drv 时返回 None。"""
+        idx = self.linear_index(group, pin)
+        if 0 <= group < len(self.drv_group_bases) \
+                and self.drv_group_bases[group] is not None:
+            return self.drv_group_bases[group], pin * self.drv_bits_per_gpio
+        if self.drv_base is not None:
+            per_reg = 32 // self.drv_bits_per_gpio
+            return (self.drv_base + (idx // per_reg) * 4,
+                    (idx % per_reg) * self.drv_bits_per_gpio)
+        return None
 
     def drv_field(self, group, pin):
         """返回 (addr, high_bit, low_bit)；不支持时返回 None。"""
-        if self.drv_base is None:
+        reg = self.drv_reg(group, pin)
+        if reg is None:
             return None
-        per_reg = 32 // self.drv_bits_per_gpio
-        idx = self.linear_index(group, pin)
-        addr = self.drv_base + (idx // per_reg) * 4
-        low = (idx % per_reg) * self.drv_bits_per_gpio
+        addr, low = reg
         return addr, low + self.drv_bits_per_gpio - 1, low
+
+    def drv_registers(self, bank_idx=None):
+        """drv_sel 寄存器列表 [(addr, first_linear)]；bank_idx 限定该 bank。"""
+        g0 = 0 if bank_idx is None else bank_idx * GROUPS_PER_BANK
+        g1 = self.group_count if bank_idx is None else g0 + GROUPS_PER_BANK
+        regs, seen = [], set()
+        for g in range(g0, min(g1, self.group_count)):
+            reg = self.drv_reg(g, 0)
+            if reg is None or reg[0] in seen:
+                continue
+            seen.add(reg[0])
+            regs.append((reg[0], g * PINS_PER_GROUP))
+        return regs
+
+    def drv_field_owner(self, addr, low_bit):
+        """由寄存器地址与位域低位反查 (group, pin)；未命中返回 None。"""
+        per_reg = 32 // self.drv_bits_per_gpio
+        for reg_addr, first in self.drv_registers():
+            if reg_addr == addr:
+                idx = first + low_bit // self.drv_bits_per_gpio
+                if idx < first + per_reg:
+                    return divmod(idx, PINS_PER_GROUP)
+        return None
+
+    def drv_ohm(self, level):
+        """该档位 (out_high_ohm, out_low_ohm)；未配置返回 (None, None)。"""
+        hh = (self.drv_out_high_ohm[level]
+              if 0 <= level < len(self.drv_out_high_ohm) else None)
+        ll = (self.drv_out_low_ohm[level]
+              if 0 <= level < len(self.drv_out_low_ohm) else None)
+        return hh, ll
+
+    # ---- func_sel 位域 ----
+
+    @property
+    def func_sel_supported(self):
+        return self.func_sel_base is not None
+
+    def func_sel_reg_group(self, addr):
+        """由寄存器地址反查 group；未命中返回 None。"""
+        if self.func_sel_base is None:
+            return None
+        delta = addr - self.func_sel_base
+        if delta < 0 or delta % 4 != 0:
+            return None
+        per_reg = 32 // self.func_sel_bits_per_gpio
+        group = (delta // 4) * per_reg // PINS_PER_GROUP
+        if self.func_sel_groups and group >= self.func_sel_groups:
+            return None
+        return group
+
+    def func_sel_field(self, group, pin):
+        """返回 (addr, high_bit, low_bit)；未配置或超出范围返回 None。"""
+        if self.func_sel_base is None:
+            return None
+        if self.func_sel_groups and group >= self.func_sel_groups:
+            return None
+        per_reg = 32 // self.func_sel_bits_per_gpio
+        idx = self.linear_index(group, pin)
+        addr = self.func_sel_base + (idx // per_reg) * 4
+        low = (idx % per_reg) * self.func_sel_bits_per_gpio
+        return addr, low + self.func_sel_bits_per_gpio - 1, low
+
+    def build_func_sel_actions(self, group, pin):
+        """构造 func sel 选为 GPIO 功能的动作；未配置时返回 None。"""
+        field_ = self.func_sel_field(group, pin)
+        if field_ is None:
+            return None
+        addr, high, low = field_
+        return [(OP_BITS, addr, self.func_sel_gpio_value, high, low)]
 
     # ---- 上下拉地址 ----
 
@@ -202,14 +310,14 @@ class GpioChipConfig:
             return None
         return actions
 
-    def build_drv_actions(self, group, pin, fast):
-        """构造驱动速率设置动作；不支持时返回 None。"""
+    def build_drv_actions(self, group, pin, level):
+        """构造驱动强度档位设置动作（level 自动钳位 0~max）；不支持时返回 None。"""
         field_ = self.drv_field(group, pin)
         if field_ is None:
             return None
         addr, high, low = field_
-        value = self.drv_fast if fast else self.drv_slow
-        return [(OP_BITS, addr, value, high, low)]
+        level = max(0, min(int(level), self.drv_max_level))
+        return [(OP_BITS, addr, level, high, low)]
 
 
 def _parse_int(value):
@@ -258,17 +366,32 @@ def load_gpio_config(chip_name):
             logger.error("GPIO 配置无有效 bank: %s", path)
             return None
         drv = raw.get("drv") or {}
+        pull_ohm = raw.get("pull_ohm") or {}
+        fsel = raw.get("func_sel") or {}
         cfg = GpioChipConfig(
             chip=str(raw.get("chip") or chip_name),
             banks=banks,
             drv_base=_parse_int(drv.get("base")),
+            drv_group_bases=[_parse_int(v)
+                             for v in drv.get("group_bases", [])],
             drv_bits_per_gpio=int(drv.get("bits_per_gpio", 2) or 2),
-            drv_fast=int(drv.get("fast", 3)),
-            drv_slow=int(drv.get("slow", 0)),
+            drv_levels=int(drv.get("levels", 0) or 0),
+            drv_out_high_ohm=[float(v)
+                              for v in drv.get("out_high_ohm", [])],
+            drv_out_low_ohm=[float(v)
+                             for v in drv.get("out_low_ohm", [])],
+            pull_up_ohm=(float(pull_ohm["up"])
+                         if pull_ohm.get("up") is not None else None),
+            pull_down_ohm=(float(pull_ohm["down"])
+                           if pull_ohm.get("down") is not None else None),
             pull_up_bases=[_parse_int(v)
                            for v in raw.get("pull_up_bases", [])],
             pull_down_bases=[_parse_int(v)
                              for v in raw.get("pull_down_bases", [])],
+            func_sel_base=_parse_int(fsel.get("base")),
+            func_sel_bits_per_gpio=int(fsel.get("bits_per_gpio", 4) or 4),
+            func_sel_gpio_value=int(fsel.get("gpio_value", 0xF)),
+            func_sel_groups=int(fsel.get("groups", 0) or 0),
         )
         if cfg.drv_bits_per_gpio not in (2, 4):
             logger.error("drv bits_per_gpio 非法: %s", cfg.drv_bits_per_gpio)
