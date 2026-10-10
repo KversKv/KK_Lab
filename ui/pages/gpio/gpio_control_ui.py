@@ -554,7 +554,7 @@ class _PinCard(QFrame):
         row1 = QHBoxLayout()
         row1.setContentsMargins(0, 0, 0, 0)
         row1.setSpacing(4)
-        self.name_label = QLabel("P--")
+        self.name_label = QLabel("GPIO--")
         self.name_label.setObjectName("pinName")
         row1.addWidget(self.name_label)
         row1.addStretch(1)
@@ -960,7 +960,7 @@ class GpioControlUI(QWidget):
 
         head = QHBoxLayout()
         head.setSpacing(6)
-        self.insp_name = QLabel("P--")
+        self.insp_name = QLabel("GPIO--")
         self.insp_name.setObjectName("gpioPinName")
         head.addWidget(self.insp_name)
         head.addStretch(1)
@@ -1583,9 +1583,11 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         linear = self._cfg.linear_index(group, pin)
         alias = self._alias(group, pin)
-        card.name_label.setText("P{0:02d}".format(bit))
-        card.alias_label.setText(alias if alias else self._cfg.gpio_name(group, pin))
-        card.setToolTip("{0} · {1} bit{2} · 全局 #{3}".format(
+        card.name_label.setText(self._cfg.gpio_name(group, pin))
+        bit_text = "BIT{0:02d}".format(bit)
+        card.alias_label.setText(
+            "{0} · {1}".format(bit_text, alias) if alias else bit_text)
+        card.setToolTip("{0} · {1} BIT{2:02d} · 全局 #{3}".format(
             self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
             bit, linear))
 
@@ -1847,7 +1849,7 @@ class GpioControlUI(QWidget):
         if self._cfg.drv_supported:
             for addr, first in self._cfg.drv_registers(self._cur_bank):
                 specs.append(("drv", addr,
-                              "DRV_P{0:02d}".format(first // PINS_PER_GROUP),
+                              "DRV_GPIO{0}0".format(first // PINS_PER_GROUP),
                               "驱动强度 {0}bit/脚（点击位翻转档位）".format(
                                   self._cfg.drv_bits_per_gpio), True))
         if self._cfg.func_sel_supported:
@@ -1856,7 +1858,7 @@ class GpioControlUI(QWidget):
                 field_ = self._cfg.func_sel_field(g, 0)
                 if field_ is None:
                     continue
-                specs.append(("fsel", field_[0], "FSEL_P{0:02d}".format(g),
+                specs.append(("fsel", field_[0], "FSEL_GPIO{0}0".format(g),
                               "功能复用选择：0x{0:X}=GPIO（控制前自动写）".format(
                                   self._cfg.func_sel_gpio_value), True))
         pu_addr = self._cfg.pull_up_bases[self._cur_bank] \
@@ -1997,7 +1999,7 @@ class GpioControlUI(QWidget):
         has = sel is not None and self._cfg is not None
         ready = self._ready()
         if not has:
-            self.insp_name.setText("P--")
+            self.insp_name.setText("GPIO--")
             self.insp_info.setText("未选择引脚")
             self.insp_mask.setText("Mask --")
             self.alias_edit.setText("")
@@ -2010,9 +2012,9 @@ class GpioControlUI(QWidget):
             bit = self._cfg.bit_in_bank(group, pin)
             linear = self._cfg.linear_index(group, pin)
             is_out = bool(self._dir_bit(bank_idx, bit))
-            self.insp_name.setText("P{0:02d}".format(bit))
-            self.insp_info.setText("{0} · {1} Group{2} Pin{3} · 全局 #{4} · {5}".format(
-                self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
+            self.insp_name.setText(self._cfg.gpio_name(group, pin))
+            self.insp_info.setText("{0} BIT{1:02d} · Group{2} Pin{3} · 全局 #{4} · {5}".format(
+                self._cfg.banks[bank_idx].name, bit,
                 group, pin, linear, mode_label(self._pin_mode(group, pin))))
             if self.alias_edit.text() != self._alias(group, pin) \
                     and not self.alias_edit.hasFocus():
@@ -2194,7 +2196,7 @@ class GpioControlUI(QWidget):
         if len(bits) > 8:
             head = "{0} pins".format(len(bits))
         else:
-            head = " ".join("P{0:02d}".format(i) for i in bits)
+            head = " ".join("BIT{0:02d}".format(i) for i in bits)
         return "{0} (mask: {1})".format(head, _fmt32(mask))
 
     def _describe_write(self, op, addr, value, hi, lo):
@@ -2460,7 +2462,10 @@ class GpioControlUI(QWidget):
             value = values.get(key)
             if value is None:
                 continue
-            self._sniff("READ32", addr, value, self._describe_read(addr, value))
+            desc = self._describe_read(addr, value)
+            self._sniff("READ32", addr, value, desc)
+            self.append_log("[I2C] READ {0} = {1}  {2}".format(
+                _fmt32(addr), _fmt32(value), desc))
             matched = False
             if self._cfg is not None:
                 for b_idx, bank in enumerate(self._cfg.banks):
@@ -2612,8 +2617,7 @@ class GpioControlUI(QWidget):
         self.append_log("[I2C] DUT Profile 已加载: {0}".format(name))
         self._load_json_editor()
         self._refresh_all_views()
-        if self._sim_mode:
-            self._start_read_all_banks()
+        self._start_read_all_banks()
 
     def _on_bridge_toggled(self):
         if self._busy():
@@ -2793,12 +2797,29 @@ class GpioControlUI(QWidget):
         self._start_read_bank(self._cur_bank)
 
     def _start_read_all_banks(self):
+        """全量回读可读状态：各 bank 0x50 电平 + PU/PD + drv + func_sel。"""
         if self._cfg is None or (not self._sim_mode and self._dev_addr is None):
             return
-        read_list = [(i, self._cfg.banks[i].base + OFFSET_IN_READ)
-                     for i in range(len(self._cfg.banks))]
-        self.append_log("[I2C] 回读全部 bank 输入电平...")
-        self._read_registers(read_list)
+        cfg = self._cfg
+        pairs = []
+        for i, bank in enumerate(cfg.banks):
+            pairs.append((i, bank.base + OFFSET_IN_READ))
+            for addr in (cfg.pull_up_bases[i] if i < len(cfg.pull_up_bases) else None,
+                         cfg.pull_down_bases[i] if i < len(cfg.pull_down_bases) else None):
+                if addr is not None:
+                    pairs.append(("reg_{0:08X}".format(addr), addr))
+        seen = set()
+        for addr, _first in cfg.drv_registers():
+            if addr not in seen:
+                seen.add(addr)
+                pairs.append(("reg_{0:08X}".format(addr), addr))
+        for g in range(cfg.group_count):
+            field_ = cfg.func_sel_field(g, 0)
+            if field_ is not None and field_[0] not in seen:
+                seen.add(field_[0])
+                pairs.append(("reg_{0:08X}".format(field_[0]), field_[0]))
+        self.append_log("[I2C] 回读全部 IO 状态（电平/上下拉/drv/func_sel）...")
+        self._read_registers(pairs)
 
     def _start_read_bank(self, bank_idx):
         if self._cfg is None or bank_idx >= len(self._cfg.banks):
