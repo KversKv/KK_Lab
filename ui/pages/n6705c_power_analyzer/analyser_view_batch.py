@@ -52,8 +52,8 @@ class BatchViewMixin:
         # 闪现（standalone / main.py 启动均可见，640×480 白框一闪而过）。见 03§31。
 
         content_layout = QVBoxLayout(self.batch_content)
-        content_layout.setContentsMargins(16, 10, 16, 14)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(10, 8, 10, 8)
+        content_layout.setSpacing(8)
 
         self.batch_channel_buttons = []
         self.batch_voltage_inputs = {}
@@ -63,7 +63,7 @@ class BatchViewMixin:
         self._batch_columns_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._batch_columns_layout = QHBoxLayout(self._batch_columns_widget)
         self._batch_columns_layout.setContentsMargins(0, 0, 0, 0)
-        self._batch_columns_layout.setSpacing(12)
+        self._batch_columns_layout.setSpacing(8)
         content_layout.addWidget(self._batch_columns_widget)
 
         self._build_batch_columns()
@@ -74,7 +74,7 @@ class BatchViewMixin:
         content_layout.addWidget(sep)
 
         buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(8)
+        buttons_layout.setSpacing(6)
 
         self._batch_measure_btn = QPushButton("Measure")
         self._batch_set_btn = QPushButton("Set")
@@ -85,7 +85,7 @@ class BatchViewMixin:
             QPushButton {{{{
                 background-color: {{bg}}; color: {{fg}};
                 border: 1px solid {{border}}; border-radius: {WIDGET_RADIUS};
-                padding: 9px 18px; font-size: 12px; font-weight: 700;
+                padding: 4px 10px; font-size: 11px; font-weight: 700;
             }}}}
             QPushButton:hover {{{{ background-color: {{hover_bg}}; color: {{hover_fg}}; border: 1px solid {{hover_border}}; }}}}
             QPushButton:disabled {{{{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}}}
@@ -103,7 +103,7 @@ class BatchViewMixin:
             QPushButton {{
                 background-color: #4318d9; color: #ffffff;
                 border: 1px solid #5a2ef0; border-radius: {WIDGET_RADIUS};
-                padding: 9px 24px; font-size: 12px; font-weight: 700;
+                padding: 4px 12px; font-size: 11px; font-weight: 700;
             }}
             QPushButton:hover {{ background-color: #5628f0; color: #ffffff; border: 1px solid #7040ff; }}
             QPushButton:disabled {{ background-color: #1a1040; color: #4a3a7a; border: 1px solid #2a1860; }}
@@ -146,12 +146,12 @@ class BatchViewMixin:
         self.batch_voltage_inputs.clear()
         self.batch_current_inputs.clear()
 
-        _label_style = f"font-size: 12px; color: {LABEL_DIM}; font-weight: 600; border: none; background: transparent;"
+        _label_style = f"font-size: 11px; color: {LABEL_DIM}; font-weight: 600; border: none; background: transparent;"
         _input_style = f"""
             QLineEdit {{
                 background-color: #111d36; color: #99aacc;
                 border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
-                padding: 7px 10px; font-size: 12px; font-weight: 600;
+                padding: 3px 4px; font-size: 11px; font-weight: 600;
                 text-align: center;
             }}
             QLineEdit:focus {{ border: 1px solid #3a5a90; color: #b0c0e0; }}
@@ -175,9 +175,9 @@ class BatchViewMixin:
                 }}
             """)
             grid = QGridLayout(dev_frame)
-            grid.setContentsMargins(10, 8, 10, 8)
-            grid.setHorizontalSpacing(8)
-            grid.setVerticalSpacing(8)
+            grid.setContentsMargins(8, 6, 8, 6)
+            grid.setHorizontalSpacing(4)
+            grid.setVerticalSpacing(4)
 
             row = 0
             if dual:
@@ -188,7 +188,7 @@ class BatchViewMixin:
 
             ch_label = QLabel("通道选择")
             ch_label.setStyleSheet(_label_style)
-            ch_label.setFixedWidth(70)
+            ch_label.setFixedWidth(56)
             grid.addWidget(ch_label, row, 0)
             for col_idx, ch_idx in enumerate(range(1, 5)):
                 cb = QPushButton(f"CH {ch_idx}")
@@ -202,7 +202,7 @@ class BatchViewMixin:
 
             v_label = QLabel("电压 (V)")
             v_label.setStyleSheet(_label_style)
-            v_label.setFixedWidth(70)
+            v_label.setFixedWidth(56)
             grid.addWidget(v_label, row, 0)
             self.batch_voltage_inputs[dev_label] = []
             for col_idx, v in enumerate([3.8, 0.8, 1.2, 1.8]):
@@ -215,7 +215,7 @@ class BatchViewMixin:
 
             c_label = QLabel("限流 (A)")
             c_label.setStyleSheet(_label_style)
-            c_label.setFixedWidth(70)
+            c_label.setFixedWidth(56)
             grid.addWidget(c_label, row, 0)
             self.batch_current_inputs[dev_label] = []
             for col_idx, c in enumerate([0.2, 0.02, 0.02, 0.02]):

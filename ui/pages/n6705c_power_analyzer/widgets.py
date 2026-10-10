@@ -258,7 +258,7 @@ def _batch_channel_button_style():
         QPushButton {{
             background-color: #111d36; color: #7a8fb5;
             border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
-            padding: 7px 0px; font-size: 12px; font-weight: 600;
+            padding: 3px 0px; font-size: 11px; font-weight: 600;
         }}
         QPushButton:checked {{ background-color: #1a2a50; color: #c0d0f0; border: 1px solid #3a5a90; }}
         QPushButton:hover {{ background-color: #182844; }}

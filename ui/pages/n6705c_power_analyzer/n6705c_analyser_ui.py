@@ -14,7 +14,7 @@ from ui.modules.n6705c_module_frame import build_n6705c_inline_row
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
-    QFrame, QApplication, QMessageBox,
+    QFrame, QApplication, QMessageBox, QSpacerItem,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPainter, QColor, QPixmap
@@ -466,13 +466,17 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """)
 
     def _create_layout(self):
-        main_layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
+        main_layout = self._main_layout
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(12, 12, 12, 12)
+        # 区块间固定间距保留引用，紧凑模式下归零以压到 ~600x200
+        self._block_spacers = []
 
         self.top_bar = self._create_top_bar()
         main_layout.addWidget(self.top_bar)
-        main_layout.addSpacing(8)
+        self._block_spacers.append(QSpacerItem(0, 8))
+        main_layout.addItem(self._block_spacers[-1])
 
         self.channel_interaction_frame = QFrame()
         self.channel_interaction_frame.setStyleSheet("""
@@ -493,11 +497,13 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         ci_layout.addWidget(self.setting_widget)
 
         main_layout.addWidget(self.channel_interaction_frame)
-        main_layout.addSpacing(8)
+        self._block_spacers.append(QSpacerItem(0, 8))
+        main_layout.addItem(self._block_spacers[-1])
 
         self.batch_tools_panel = self._create_batch_tools_panel()
         main_layout.addWidget(self.batch_tools_panel)
-        main_layout.addSpacing(8)
+        self._block_spacers.append(QSpacerItem(0, 8))
+        main_layout.addItem(self._block_spacers[-1])
 
         self.consumption_test_panel = self._create_consumption_test_panel()
         main_layout.addWidget(self.consumption_test_panel)
@@ -508,6 +514,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """紧凑（最小）视图：仅显示 Quick Setup 面板，隐藏其余区块。
 
         由主窗口顶栏按钮触发；进入时若 Quick Setup 处于收起状态则自动展开。
+        紧凑态额外隐藏折叠头并归零区块间距 / 收窄页边距，配合主窗口
+        压到 ~600x200。
         """
         for widget in (
             self.top_bar,
@@ -518,6 +526,15 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 widget.setVisible(not compact)
         if compact and self.batch_collapsed:
             self._toggle_batch_panel()
+        # 紧凑态下面板是唯一内容，折叠无意义，隐藏折叠头省一行高度
+        self.batch_toggle_btn.setVisible(not compact)
+        for spacer in self._block_spacers:
+            spacer.changeSize(0, 0 if compact else 8)
+        if compact:
+            self._main_layout.setContentsMargins(6, 6, 6, 6)
+        else:
+            self._main_layout.setContentsMargins(12, 12, 12, 12)
+        self._main_layout.invalidate()
 
     def _create_top_bar(self):
         top_frame = QFrame()
