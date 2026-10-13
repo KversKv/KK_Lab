@@ -1,0 +1,12 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "这是什么界面"
+    },
+    {
+      "role": "assistant",
+      "content": "当前是 **N6705C 电源分析仪**页面（power_analyser）。\n\n这个界面用于控制和管理安捷伦/是德 N6705C 直流电源分析仪，主要功能包括：\n\n- **通道控制**：设置各通道的输出电压/电流、开关输出（OUTP ON/OFF）\n- **实时测量**：读取通道电压（MEAS:VOLT?）、电流（MEAS:CURR?）等\n- **自动设置**：Auto Set / Auto Set +20mV 等批量配置功能\n- **数据记录**：配合 Datalog 页面进行波形采集与功耗分析\n\n常用于 BES 芯片的 PMU 供电、功耗测试、电压轨道验证等场景。\n\n需要我帮你查看当前仪器连接状态或执行什么操作吗？"
+    }
+  ]
+}
