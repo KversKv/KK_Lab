@@ -33,13 +33,13 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QScrollArea, QSizePolicy, QStackedWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QPlainTextEdit, QTextEdit, QLineEdit, QButtonGroup, QFileDialog,
-    QApplication,
+    QApplication, QMenu,
 )
 from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtGui import QFont, QIcon, QTransform
 
 from log_config import get_logger
-from ui.resource_path import get_resource_base
+from ui.resource_path import get_resource_base, get_user_data_dir
 from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
@@ -297,6 +297,39 @@ QPushButton#pinMini[cur="l"]   { color: #64748B; }
 QPushButton#pinMini[cur="pu"]  { color: #F59E0B; border-color: #78350F; }
 QPushButton#pinMini[cur="pd"]  { color: #818CF8; border-color: #312E81; }
 
+/* ---- 右键菜单（暗色） ---- */
+QMenu {
+    background-color: #0F172A;
+    color: #CBD5E1;
+    border: 1px solid #1E293B;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 5px 24px 5px 16px;
+    border-radius: 3px;
+}
+QMenu::item:selected { background-color: #164E63; color: #22D3EE; }
+QMenu::item:disabled { color: #475569; }
+
+/* ---- Export Manager（Matrix 右侧导出管理器） ---- */
+QScrollArea#exportList { min-height: 132px; max-height: 132px; }
+QFrame#exportRow {
+    background-color: #111D33;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    min-height: 26px;
+    max-height: 26px;
+}
+QLabel#exportMode { color: #64748B; font-size: 10px; }
+QPushButton#exportDel {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    min-width: 20px; max-width: 20px;
+    min-height: 20px; max-height: 20px;
+}
+QPushButton#exportDel:hover { background-color: #7F1D1D; border-color: #EF4444; }
+
 /* ---- Inspector ---- */
 QFrame#gpioInspector {
     background-color: #0F172A;
@@ -544,15 +577,27 @@ def _parse_hex(text):
         return None
 
 
+def _write_bits_line(op, addr, value, hi, lo):
+    """寄存器动作 -> WRITE_BITS 脚本行；set/clear 单 bit 整写转位域写。"""
+    if hi < 0:
+        if value and (value & (value - 1)) == 0:
+            bit = value.bit_length() - 1
+            hi, lo, value = bit, bit, 1
+        else:
+            hi, lo = 31, 0
+    return "WRITE_BITS 0x{0:08X} {1} {2} 0x{3:X}".format(addr, hi, lo, value)
+
+
 class _PinCard(QFrame):
     """Pin Matrix 单行引脚条：BIT + 名称 + 别名 + OUT/IN、电平、PU/PD + LED。"""
 
     def __init__(self, group, pin, on_select, on_dir, on_level, on_pull,
-                 parent=None):
+                 on_menu, parent=None):
         super().__init__(parent)
         self.group = group
         self.pin = pin
         self._on_select = on_select
+        self._on_menu = on_menu
         self.setObjectName("pinCard")
         self.setProperty("sel", "0")
         self.setProperty("lvl", "x")
@@ -609,6 +654,9 @@ class _PinCard(QFrame):
             self._on_select(self.group, self.pin)
         super().mousePressEvent(event)
 
+    def contextMenuEvent(self, event):
+        self._on_menu(self.group, self.pin, event.globalPos())
+
 
 class GpioControlUI(QWidget):
     """BES GPIO Workbench：Detect DUT -> Bank 管理 -> 7 大视图 GPIO 操控。"""
@@ -629,6 +677,15 @@ class GpioControlUI(QWidget):
         ("VAL_CLR (+0x0C)", OFFSET_OUT_CLR),
         ("DIR_CLR (+0x10)", OFFSET_DIR_CLR),
     ]
+
+    # Pin Matrix 右键 Export Config 可导出配置（标签, mode）
+    EXPORT_MODES = [
+        ("输出高", MODE_OUT_HIGH),
+        ("输出低", MODE_OUT_LOW),
+        ("输入上拉", MODE_IN_PULL_UP),
+        ("输入下拉", MODE_IN_PULL_DOWN),
+    ]
+    _EXPORT_MODE_LABELS = {mode: label for label, mode in EXPORT_MODES}
 
     POLL_INTERVALS = [(200, "200 ms"), (500, "500 ms"),
                       (1000, "1000 ms"), (2000, "2000 ms")]
@@ -668,6 +725,7 @@ class GpioControlUI(QWidget):
         self._worker_done_cb = None
         self._table_updating = False
         self._spin_angle = 0
+        self._export_items = []     # [(group, pin, mode)] 导出管理器条目
         self._build_ui()
 
     # ================================================================ UI 构建
@@ -974,6 +1032,9 @@ class GpioControlUI(QWidget):
         lay.addWidget(self._matrix_scroll, 1)
 
         lay.addWidget(self._build_inspector())
+        self._export_panel = self._build_export_manager()
+        self._export_panel.hide()   # 至少一个导出条目时才显示
+        lay.addWidget(self._export_panel)
         return page
 
     def _build_inspector(self):
@@ -1096,6 +1157,65 @@ class GpioControlUI(QWidget):
         lay.addWidget(self.insp_mask)
 
         lay.addStretch(1)
+        return panel
+
+    # Pin Matrix 右侧：Export Manager（右键 Export Config 收集，合并导出）
+    def _build_export_manager(self):
+        panel = QFrame()
+        panel.setObjectName("gpioPanel")
+        panel.setFixedWidth(340)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(8, 6, 8, 8)
+        lay.setSpacing(4)
+
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        title = QLabel("Export Manager")
+        title.setObjectName("gpioSection")
+        head.addWidget(title)
+        self._export_count = QLabel("(0)")
+        self._export_count.setObjectName("gpioDim")
+        head.addWidget(self._export_count)
+        head.addStretch(1)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setObjectName("gpioBtn")
+        clear_btn.setIcon(_icon("trash.svg", "#94A3B8", 12))
+        clear_btn.setToolTip("清空导出列表")
+        clear_btn.clicked.connect(self._clear_export_items)
+        head.addWidget(clear_btn)
+        lay.addLayout(head)
+
+        hint = QLabel("右键 Pin Matrix 引脚 -> Export Config 添加")
+        hint.setObjectName("gpioDim")
+        lay.addWidget(hint)
+
+        self._export_list_area = QScrollArea()
+        self._export_list_area.setObjectName("exportList")
+        self._export_list_area.setWidgetResizable(True)
+        self._export_list_area.setFrameShape(QFrame.NoFrame)
+        self._export_list_host = QWidget()
+        self._export_list_host.setObjectName("gpioViewPage")
+        self._export_list_lay = QVBoxLayout(self._export_list_host)
+        self._export_list_lay.setContentsMargins(0, 0, 0, 0)
+        self._export_list_lay.setSpacing(3)
+        self._export_list_lay.addStretch(1)
+        self._export_list_area.setWidget(self._export_list_host)
+        lay.addWidget(self._export_list_area)
+
+        preview_key = QLabel("合并脚本预览（WRITE_BITS）")
+        preview_key.setObjectName("gpioSection")
+        lay.addWidget(preview_key)
+        self._export_preview = QPlainTextEdit()
+        self._export_preview.setObjectName("gpioMonoEdit")
+        self._export_preview.setReadOnly(True)
+        lay.addWidget(self._export_preview, 1)
+
+        export_btn = QPushButton("Export")
+        export_btn.setObjectName("gpioPrimary")
+        export_btn.setIcon(_icon("copy.svg", "#E2E8F0", 12))
+        export_btn.setToolTip("把全部 GPIO 配置合并为 WRITE_BITS 脚本并复制到剪贴板")
+        export_btn.clicked.connect(self._on_export_copy)
+        lay.addWidget(export_btn)
         return panel
 
     def _make_hsep(self):
@@ -1517,6 +1637,8 @@ class GpioControlUI(QWidget):
         self._out_shadow = {i: 0 for i in range(len(self._cfg.banks))}
         self._reg_shadow = {}
         self._in_value = {i: None for i in range(len(self._cfg.banks))}
+        self._export_items = self._load_export_items()
+        self._refresh_export_manager()
 
     # ================================================================ 刷新
 
@@ -1530,6 +1652,7 @@ class GpioControlUI(QWidget):
         self._refresh_stats()
         self._refresh_inspector()
         self._refresh_notes()
+        self._refresh_export_manager()
         if has:
             self._refresh_exports()
         self._update_op_enabled()
@@ -1598,7 +1721,8 @@ class GpioControlUI(QWidget):
                 on_select=self._on_pin_clicked,
                 on_dir=self._on_card_dir,
                 on_level=self._on_card_level,
-                on_pull=self._on_card_pull)
+                on_pull=self._on_card_pull,
+                on_menu=self._on_pin_context_menu)
             # 两列排布：左列 BIT31~16 自上往下，右列 BIT15~0 自上往下
             # 行距 0，相邻行以 alt 斑马纹背景区分
             if bit >= 16:
@@ -3571,6 +3695,190 @@ void bes_gpio_set_drv(uint8_t linear_index, uint8_t level)
     def _on_copy_c(self):
         QApplication.clipboard().setText(self.c_edit.toPlainText())
         self.append_log("[EXPORT] C/HAL 驱动代码已复制到剪贴板")
+
+    # ================================================================ Export Manager
+
+    def _on_pin_context_menu(self, group, pin, pos):
+        """Pin Matrix 卡片右键：Export Config 二级菜单收集导出配置。"""
+        if not self._ready():
+            return
+        self._on_pin_clicked(group, pin)
+        menu = QMenu(self)
+        sub = menu.addMenu("Export Config")
+        for label, mode in self.EXPORT_MODES:
+            act = sub.addAction(label)
+            if (mode in (MODE_IN_PULL_UP, MODE_IN_PULL_DOWN)
+                    and not self._cfg.pull_supported(group)):
+                act.setEnabled(False)
+            act.triggered.connect(
+                lambda checked=False, g=group, p=pin, m=mode:
+                self._add_export_item(g, p, m))
+        menu.exec(pos)
+
+    def _add_export_item(self, group, pin, mode):
+        item = (group, pin, mode)
+        name = self._cfg.gpio_name(group, pin)
+        label = self._EXPORT_MODE_LABELS[mode]
+        if item in self._export_items:
+            self.append_log("[INFO] {0}（{1}）已在导出列表".format(name, label))
+            return
+        self._export_items.append(item)
+        self._save_export_items()
+        self._refresh_export_manager()
+        self.append_log("[EXPORT] 加入导出：{0}（{1}）".format(name, label))
+
+    def _remove_export_item(self, index):
+        if not (0 <= index < len(self._export_items)):
+            return
+        group, pin, mode = self._export_items.pop(index)
+        self._save_export_items()
+        self._refresh_export_manager()
+        self.append_log("[EXPORT] 移出导出：{0}（{1}）".format(
+            self._cfg.gpio_name(group, pin), self._EXPORT_MODE_LABELS[mode]))
+
+    def _clear_export_items(self):
+        if not self._export_items:
+            return
+        self._export_items = []
+        self._save_export_items()
+        self._refresh_export_manager()
+        self.append_log("[EXPORT] 导出列表已清空")
+
+    def _export_store_path(self):
+        return os.path.join(get_user_data_dir("gpio"), "export_items.json")
+
+    def _save_export_items(self):
+        """导出列表按芯片持久化到 user_data（重开窗口自动恢复）。"""
+        if self._cfg is None:
+            return
+        path = self._export_store_path()
+        data = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, ValueError) as e:
+                logger.warning("读取 GPIO 导出列表存档失败: %s", e, exc_info=True)
+        if not isinstance(data, dict):
+            data = {}
+        if self._export_items:
+            data[self._cfg.chip] = [list(it) for it in self._export_items]
+        else:
+            data.pop(self._cfg.chip, None)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+        except OSError as e:
+            logger.warning("保存 GPIO 导出列表失败: %s", e, exc_info=True)
+
+    def _load_export_items(self):
+        """按当前芯片恢复导出列表（校验脚位范围 / mode / 上下拉支持）。"""
+        if self._cfg is None:
+            return []
+        path = self._export_store_path()
+        if not os.path.isfile(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            logger.warning("读取 GPIO 导出列表失败: %s", e, exc_info=True)
+            return []
+        raw = data.get(self._cfg.chip, []) if isinstance(data, dict) else []
+        items = []
+        for entry in raw if isinstance(raw, list) else []:
+            try:
+                group, pin, mode = entry
+                group, pin = int(group), int(pin)
+            except (TypeError, ValueError):
+                continue
+            if not (0 <= group < self._cfg.group_count
+                    and 0 <= pin < PINS_PER_GROUP):
+                continue
+            if mode not in self._EXPORT_MODE_LABELS:
+                continue
+            if (mode in (MODE_IN_PULL_UP, MODE_IN_PULL_DOWN)
+                    and not self._cfg.pull_supported(group)):
+                continue
+            item = (group, pin, mode)
+            if item not in items:
+                items.append(item)
+        return items
+
+    def _refresh_export_manager(self):
+        has = self._cfg is not None and bool(self._export_items)
+        self._export_panel.setVisible(has)
+        if not has:
+            return
+        self._export_count.setText("({0})".format(len(self._export_items)))
+        while self._export_list_lay.count():
+            item = self._export_list_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for idx, (group, pin, mode) in enumerate(self._export_items):
+            row = QFrame()
+            row.setObjectName("exportRow")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(6, 0, 4, 0)
+            rl.setSpacing(6)
+            name = QLabel(self._cfg.gpio_name(group, pin))
+            name.setObjectName("pinName")
+            rl.addWidget(name)
+            mode_lb = QLabel(self._EXPORT_MODE_LABELS[mode])
+            mode_lb.setObjectName("exportMode")
+            rl.addWidget(mode_lb, 1)
+            del_btn = QPushButton()
+            del_btn.setObjectName("exportDel")
+            del_btn.setIcon(_icon("x-close.svg", "#94A3B8", 10))
+            del_btn.setToolTip("移出导出列表")
+            del_btn.clicked.connect(
+                lambda checked=False, i=idx: self._remove_export_item(i))
+            rl.addWidget(del_btn)
+            self._export_list_lay.addWidget(row)
+        self._export_list_lay.addStretch(1)
+        self._export_preview.setPlainText(self._gen_export_script())
+
+    def _gen_export_script(self):
+        """导出列表 -> 单段合并 WRITE_BITS 脚本。
+
+        段名合并全部 GPIO 编号（如 GPIO05_62_63_Config，同脚去重）；
+        每脚动作块前以 `  - //GPIO名_mode` 注释标注来源。
+        """
+        if self._cfg is None or not self._export_items:
+            return ""
+        lines = ["# WRITE_BITS <reg_addr_hex> <high_bit> <low_bit> <value_hex>"
+                 "  # 写入特定位"]
+        names = list(dict.fromkeys(
+            self._cfg.gpio_name(group, pin)
+            for group, pin, _ in self._export_items))
+        title = names[0] + "".join("_" + n[4:] for n in names[1:])
+        lines.append(title + "_Config:")
+        for group, pin, mode in self._export_items:
+            lines.append("  - //{0}_{1}".format(
+                self._cfg.gpio_name(group, pin), mode))
+            actions = self._cfg.build_func_sel_actions(group, pin) or []
+            if mode in (MODE_OUT_HIGH, MODE_OUT_LOW):
+                # 输出模式显式关闭上下拉，避免残留输入上下拉状态
+                bit = self._cfg.bit_in_bank(group, pin)
+                pu = self._cfg.pull_up_addr(group)
+                pd = self._cfg.pull_down_addr(group)
+                if pu is not None:
+                    actions.append((OP_BITS, pu, 0, bit, bit))
+                if pd is not None:
+                    actions.append((OP_BITS, pd, 0, bit, bit))
+            actions += self._cfg.build_mode_actions(group, pin, mode) or []
+            for op, addr, value, hi, lo in actions:
+                lines.append("  - " + _write_bits_line(op, addr, value, hi, lo))
+        return "\n".join(lines)
+
+    def _on_export_copy(self):
+        text = self._export_preview.toPlainText()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self.append_log("[EXPORT] GPIO 配置脚本已复制到剪贴板（{0} 项）".format(
+            len(self._export_items)))
 
     # ================================================================ 确认清单视图
 
