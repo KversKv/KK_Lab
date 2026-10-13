@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "config": {
+    "chamber_type": "VT6002",
+    "port": "COM4 (USB Serial Port (COM4))",
+    "target_temp_c": "25.0",
+    "loop_sequence": "-20, 25, 85",
+    "loop_forever": false,
+    "loop_dwell_min": "5",
+    "loop_tolerance_c": "1.0",
+    "loop_cycles": "1"
+  }
+}

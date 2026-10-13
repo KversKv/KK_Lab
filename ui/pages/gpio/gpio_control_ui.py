@@ -233,16 +233,29 @@ QLabel#gpioStatVal[k="low"]  { color: #64748B; }
 QLabel#gpioStatVal[k="pu"]   { color: #F59E0B; }
 QLabel#gpioStatVal[k="pd"]   { color: #6366F1; }
 
-/* ---- Pin Matrix 卡片 ---- */
+/* ---- Pin Matrix 单行卡片（斑马纹，行距 0） ---- */
 QFrame#pinCard {
     background-color: #0F172A;
-    border: 1px solid #1E293B;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 0px;
+    min-height: 24px;
 }
+QFrame#pinCard[alt="1"] { background-color: #141D30; }
 QFrame#pinCard:hover { border-color: #334155; }
 QFrame#pinCard[sel="1"] { border: 1px solid #06B6D4; }
 QFrame#pinCard[lvl="h"] { border: 1px solid #155E75; }
 QFrame#pinCard[lvl="h"][sel="1"] { border: 1px solid #22D3EE; }
+QFrame#matrixDivider {
+    background-color: #1E293B;
+    border: none;
+    min-width: 1px;
+    max-width: 1px;
+}
+QLabel#pinBit {
+    font-family: """ + _MONO + """;
+    font-size: 10px;
+    color: #475569;
+}
 QLabel#pinName {
     font-family: """ + _MONO + """;
     font-size: 11px;
@@ -532,7 +545,7 @@ def _parse_hex(text):
 
 
 class _PinCard(QFrame):
-    """Pin Matrix 单个引脚卡片：名称 + LED + 别名 + OUT/IN、电平、PU/PD 快捷键。"""
+    """Pin Matrix 单行引脚条：BIT + 名称 + 别名 + OUT/IN、电平、PU/PD + LED。"""
 
     def __init__(self, group, pin, on_select, on_dir, on_level, on_pull,
                  parent=None):
@@ -543,51 +556,53 @@ class _PinCard(QFrame):
         self.setObjectName("pinCard")
         self.setProperty("sel", "0")
         self.setProperty("lvl", "x")
-        self.setMinimumSize(104, 78)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setCursor(Qt.PointingHandCursor)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(7, 5, 7, 5)
-        lay.setSpacing(3)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 1, 6, 1)
+        lay.setSpacing(6)
 
-        row1 = QHBoxLayout()
-        row1.setContentsMargins(0, 0, 0, 0)
-        row1.setSpacing(4)
+        self.bit_label = QLabel("BIT--")
+        self.bit_label.setObjectName("pinBit")
+        self.bit_label.setFixedWidth(38)
+        lay.addWidget(self.bit_label)
+
         self.name_label = QLabel("GPIO--")
         self.name_label.setObjectName("pinName")
-        row1.addWidget(self.name_label)
-        row1.addStretch(1)
-        self.led = QFrame()
-        self.led.setObjectName("pinLed")
-        row1.addWidget(self.led)
-        lay.addLayout(row1)
+        self.name_label.setFixedWidth(48)
+        lay.addWidget(self.name_label)
 
         self.alias_label = QLabel("")
         self.alias_label.setObjectName("pinAlias")
-        lay.addWidget(self.alias_label)
+        lay.addWidget(self.alias_label, 1)
 
-        row3 = QHBoxLayout()
-        row3.setContentsMargins(0, 0, 0, 0)
-        row3.setSpacing(3)
         self.dir_btn = QPushButton("IN")
         self.dir_btn.setObjectName("pinMini")
+        self.dir_btn.setFixedWidth(36)
         self.dir_btn.setToolTip("方向切换 (Dir Set +0x04 / Dir Clr +0x10)")
         self.dir_btn.clicked.connect(lambda: on_dir(self.group, self.pin))
-        row3.addWidget(self.dir_btn, 1)
+        lay.addWidget(self.dir_btn)
+
         self.level_btn = QPushButton("-")
         self.level_btn.setObjectName("pinMini")
+        self.level_btn.setFixedWidth(28)
         self.level_btn.setToolTip(
             "输出: 电平翻转 (Out Set +0x00 / Out Clr +0x0C)；"
             "输入: 仿真激励翻转 / 硬件回读 0x50")
         self.level_btn.clicked.connect(lambda: on_level(self.group, self.pin))
-        row3.addWidget(self.level_btn, 1)
+        lay.addWidget(self.level_btn)
+
         self.pull_btn = QPushButton("Z")
         self.pull_btn.setObjectName("pinMini")
+        self.pull_btn.setFixedWidth(32)
         self.pull_btn.setToolTip("上下拉轮转 Hi-Z -> PU -> PD")
         self.pull_btn.clicked.connect(lambda: on_pull(self.group, self.pin))
-        row3.addWidget(self.pull_btn, 1)
-        lay.addLayout(row3)
+        lay.addWidget(self.pull_btn)
+
+        self.led = QFrame()
+        self.led.setObjectName("pinLed")
+        lay.addWidget(self.led)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -936,14 +951,25 @@ class GpioControlUI(QWidget):
         self._matrix_scroll.setFrameShape(QFrame.NoFrame)
         self._matrix_container = QWidget()
         self._matrix_container.setObjectName("gpioViewPage")
-        self._matrix_grid = QGridLayout(self._matrix_container)
-        self._matrix_grid.setContentsMargins(2, 2, 2, 2)
-        self._matrix_grid.setSpacing(5)
+        cols = QHBoxLayout(self._matrix_container)
+        cols.setContentsMargins(0, 0, 0, 0)
+        cols.setSpacing(6)
+        self._matrix_col_l = QVBoxLayout()
+        self._matrix_col_l.setContentsMargins(0, 0, 0, 0)
+        self._matrix_col_l.setSpacing(0)
+        self._matrix_col_r = QVBoxLayout()
+        self._matrix_col_r.setContentsMargins(0, 0, 0, 0)
+        self._matrix_col_r.setSpacing(0)
+        divider = QFrame()
+        divider.setObjectName("matrixDivider")
+        cols.addLayout(self._matrix_col_l, 1)
+        cols.addWidget(divider)
+        cols.addLayout(self._matrix_col_r, 1)
         self._matrix_placeholder = QLabel(
             "请先 i2c.bes_chip_check() 或加载 DUT Profile")
         self._matrix_placeholder.setObjectName("gpioStatus")
         self._matrix_placeholder.setAlignment(Qt.AlignCenter)
-        self._matrix_grid.addWidget(self._matrix_placeholder, 0, 0)
+        self._matrix_col_l.addWidget(self._matrix_placeholder)
         self._matrix_scroll.setWidget(self._matrix_container)
         lay.addWidget(self._matrix_scroll, 1)
 
@@ -1549,16 +1575,19 @@ class GpioControlUI(QWidget):
         self._bank_buttons[self._cur_bank].setChecked(True)
 
     def _rebuild_matrix(self):
-        while self._matrix_grid.count():
-            item = self._matrix_grid.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+        for col in (self._matrix_col_l, self._matrix_col_r):
+            while col.count():
+                item = col.takeAt(0)
+                if item.widget() is not None:
+                    item.widget().deleteLater()
         self._pin_cards = {}
         if self._cfg is None:
             ph = QLabel("请先 i2c.bes_chip_check() 或加载 DUT Profile")
             ph.setObjectName("gpioStatus")
             ph.setAlignment(Qt.AlignCenter)
-            self._matrix_grid.addWidget(ph, 0, 0)
+            self._matrix_col_l.addWidget(ph)
+            self._matrix_col_l.addStretch(1)
+            self._matrix_col_r.addStretch(1)
             return
         base_group = self._cur_bank * GROUPS_PER_BANK
         for bit in range(GPIOS_PER_BANK):
@@ -1570,8 +1599,14 @@ class GpioControlUI(QWidget):
                 on_dir=self._on_card_dir,
                 on_level=self._on_card_level,
                 on_pull=self._on_card_pull)
-            r, c = divmod(bit, 8)
-            self._matrix_grid.addWidget(card, r, c)
+            # 两列排布：左列 BIT31~16 自上往下，右列 BIT15~0 自上往下
+            # 行距 0，相邻行以 alt 斑马纹背景区分
+            if bit >= 16:
+                row, col = 31 - bit, self._matrix_col_l
+            else:
+                row, col = 15 - bit, self._matrix_col_r
+            card.setProperty("alt", str(row % 2))
+            col.addWidget(card)
             self._pin_cards[(group, pin)] = card
             self._refresh_pin_card(group, pin)
 
@@ -1584,9 +1619,8 @@ class GpioControlUI(QWidget):
         linear = self._cfg.linear_index(group, pin)
         alias = self._alias(group, pin)
         card.name_label.setText(self._cfg.gpio_name(group, pin))
-        bit_text = "BIT{0:02d}".format(bit)
-        card.alias_label.setText(
-            "{0} · {1}".format(bit_text, alias) if alias else bit_text)
+        card.bit_label.setText("BIT{0:02d}".format(bit))
+        card.alias_label.setText(alias)
         card.setToolTip("{0} · {1} BIT{2:02d} · 全局 #{3}".format(
             self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
             bit, linear))

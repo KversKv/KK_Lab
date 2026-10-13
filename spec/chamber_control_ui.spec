@@ -122,6 +122,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
+        (os.path.join(PROJECT_ROOT, 'ui', 'theme', 'qss'), os.path.join('ui', 'theme', 'qss')),
         (
             os.path.join(PROJECT_ROOT, 'resources', 'modules', 'SVG_Common'),
             os.path.join('resources', 'modules', 'SVG_Common'),
