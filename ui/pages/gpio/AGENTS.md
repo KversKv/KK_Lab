@@ -24,5 +24,6 @@
 
 ## 局部坑点
 
+- **页面 UI 文本一律英文**（Label/按钮/ToolTip/Activity Logs）；Inspector 的 Direction/Output Level/Drive Strength 标签不带寄存器偏移解释，按钮不显示偏移量；Output Level 与方向联动——INPUT 时 Inspector HIGH/LOW 与卡片电平按钮禁用置灰。
 - **set/clear 寄存器整写**即可（写 1 生效位）；**PU/PD/drv 是普通 RW 寄存器**，必须 OP_BITS 位域写（DLL RMW），禁整写覆盖其他脚。
 - **stack 页 / QScrollArea viewport 背景发白**：默认浅 palette（standalone/离屏）下二者不继承页面 QSS 底色，必须给视图页与滚动容器显式 `setObjectName("gpioViewPage")` / `QScrollArea` 命名 `gpioScroll` 并在页 QSS 钉背景色，否则嵌入/独立运行中间区域发白。
