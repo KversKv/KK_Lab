@@ -186,6 +186,27 @@ QPushButton#gpioBtn[on="1"] {
     background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
 }
 
+/* ---- Bank 切换按钮（宽度受限，仅显示序号；粗体等宽数字方块） ---- */
+QPushButton#gpioBankBtn {
+    background-color: #111D33;
+    color: #64748B;
+    border: 1px solid #1E293B;
+    border-radius: 4px;
+    padding: 0px;
+    font-family: """ + _MONO + """;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 22px;
+    max-height: 22px;
+}
+QPushButton#gpioBankBtn:hover { border-color: #155E75; color: #E2E8F0; }
+QPushButton#gpioBankBtn:checked {
+    background-color: #164E63; color: #22D3EE; border-color: #06B6D4;
+}
+QPushButton#gpioBankBtn:disabled { background-color: #0B0F19; color: #475569; }
+
 QPushButton#gpioBatch {
     background-color: #111D33;
     color: #CBD5E1;
@@ -1687,11 +1708,11 @@ class GpioControlUI(QWidget):
             bank = self._cfg.banks[i]
             g0 = i * GROUPS_PER_BANK
             g1 = g0 + GROUPS_PER_BANK - 1
-            btn = QPushButton("Bank {0}".format(i))
-            btn.setObjectName("gpioBtn")
+            btn = QPushButton(str(i))
+            btn.setObjectName("gpioBankBtn")
             btn.setCheckable(True)
-            btn.setToolTip("{0} · GPIO_Group{1}~{2} · base {3}".format(
-                bank.name, g0, g1, _fmt32(bank.base)))
+            btn.setToolTip("Bank {0} · {1} · GPIO_Group{2}~{3} · base {4}".format(
+                i, bank.name, g0, g1, _fmt32(bank.base)))
             self._bank_group.addButton(btn, i)
             self._bank_box.addWidget(btn)
             self._bank_buttons.append(btn)
