@@ -2,18 +2,18 @@
 # -*- coding: utf-8 -*-
 """BES GPIO Workbench — DUT GPIO 控制页（暗色精密仪器工作台）。
 
-布局：Top Bar（品牌 / 7 大视图 Tab / i2c.bes_chip_check() 主按钮）
-→ DUT 状态与 Bank 面板（Profile / Bank / 地址速览 / 遥测统计 / Read 0x50 / 桥接切换）
-→ 批处理与掩码注入工具条（全组操作 / 32bit 掩码 / 0x50 定时轮询）
-→ 中央主工作视口（Pin Matrix / Pin Table / Register Map / I2C Sniffer /
-  JSON Config / Code Export / Confirm Note 七大视图）。
+布局：Top Bar（品牌 + DUT 副标题 / 5 大视图 Tab / i2c.bes_chip_check() 主按钮）
+→ DUT 状态与 Bank 面板（Profile / Bank / 地址速览 / 遥测统计）
+→ 批处理与掩码注入工具条（全组操作 / 32bit 掩码）
+→ 中央主工作视口（Pin Matrix / Register Map / I2C Sniffer /
+  JSON Config / Confirm Note 五大视图）。
 
 硬件语义（严格 SET/CLR，杜绝读-改-写竞态）：
 OUTPUT=Base+0x04 / INPUT=Base+0x10 / HIGH=Base+0x00 / LOW=Base+0x0C / 读=Base+0x50。
 PU/PD/drv 为普通 RW 寄存器，必须 OP_BITS 位域写（DLL RMW）。
 
-铁律：真实硬件读写一律走 core/gpio/ Worker（QThread）；Simulated DUT 为
-页内影子寄存器模型，不触碰硬件。方向寄存器无回读，模式状态仅会话内记忆。
+铁律：真实硬件读写一律走 core/gpio/ Worker（QThread），页面无阻塞 I2C。
+方向寄存器无回读，模式状态仅会话内记忆。
 """
 
 import sys
@@ -31,12 +31,11 @@ if not getattr(sys, "frozen", False):
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QFrame, QScrollArea, QSizePolicy, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QPlainTextEdit, QTextEdit, QLineEdit, QButtonGroup, QFileDialog,
     QApplication, QMenu,
 )
 from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QFont, QIcon, QTransform
+from PySide6.QtGui import QIcon, QTransform
 
 from log_config import get_logger
 from ui.resource_path import get_resource_base, get_user_data_dir
@@ -105,6 +104,7 @@ QLabel#gpioAddr {
     font-size: 11px;
     color: #22D3EE;
 }
+QLabel#gpioBankInfo { color: #64748B; font-size: 10px; }
 QLabel#gpioPanelKey {
     color: #64748B;
     font-size: 11px;
@@ -124,8 +124,6 @@ QPushButton#gpioTab {
     border-radius: 0px;
     padding: 5px 10px 3px 10px;
     font-size: 12px;
-    min-height: 22px;
-    max-height: 22px;
 }
 QPushButton#gpioTab:hover { color: #E2E8F0; }
 QPushButton#gpioTab:checked {
@@ -152,6 +150,26 @@ QPushButton#gpioPrimary {
 QPushButton#gpioPrimary:hover { background-color: #155E75; }
 QPushButton#gpioPrimary:disabled {
     background-color: #0B0F19; color: #475569; border-color: #1E293B;
+}
+
+/* ---- Pin Matrix 底部 READ 主按钮 ---- */
+QPushButton#gpioReadBtn {
+    background-color: #0E7490;
+    color: #ECFEFF;
+    border: 1px solid #22D3EE;
+    border-radius: 4px;
+    padding: 0px 14px;
+    font-family: """ + _MONO + """;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    min-height: 30px;
+    max-height: 30px;
+}
+QPushButton#gpioReadBtn:hover { background-color: #0891B2; }
+QPushButton#gpioReadBtn:pressed { background-color: #164E63; }
+QPushButton#gpioReadBtn:disabled {
+    background-color: #0B0F19; color: #334155; border-color: #1E293B;
 }
 
 /* ---- 面板容器 ---- */
@@ -398,29 +416,7 @@ QPushButton#gpioAction[cur="pd"] {
     background-color: #1E1B4B; color: #818CF8; border-color: #4F46E5;
 }
 
-/* ---- Detailed Pin Table ---- */
-QTableWidget#gpioTable {
-    background-color: #020617;
-    alternate-background-color: #0B0F19;
-    color: #CBD5E1;
-    gridline-color: #1E293B;
-    border: 1px solid #1E293B;
-    border-radius: 4px;
-    font-size: 11px;
-    selection-background-color: #164E63;
-    selection-color: #E2E8F0;
-}
-QTableWidget#gpioTable::item { padding: 0px 4px; border: none; }
-QHeaderView::section {
-    background-color: #0F172A;
-    color: #94A3B8;
-    border: none;
-    border-right: 1px solid #1E293B;
-    border-bottom: 1px solid #1E293B;
-    padding: 4px 6px;
-    font-size: 10px;
-    font-weight: 600;
-}
+/* ---- 表格 / 寄存器位行内按钮 ---- */
 QPushButton#gpioCellBtn {
     background-color: #111D33;
     color: #CBD5E1;
@@ -655,7 +651,7 @@ class _PinCard(QFrame):
         self.level_btn.setFixedWidth(28)
         self.level_btn.setToolTip(
             "输出: 电平翻转 (Out Set +0x00 / Out Clr +0x0C)；"
-            "输入: 仿真激励翻转 / 硬件回读 0x50")
+            "输入: 点击回读 0x50")
         self.level_btn.clicked.connect(lambda: on_level(self.group, self.pin))
         lay.addWidget(self.level_btn)
 
@@ -680,15 +676,13 @@ class _PinCard(QFrame):
 
 
 class GpioControlUI(QWidget):
-    """BES GPIO Workbench：Detect DUT -> Bank 管理 -> 7 大视图 GPIO 操控。"""
+    """BES GPIO Workbench：Detect DUT -> Bank 管理 -> 5 大视图 GPIO 操控。"""
 
     VIEW_TITLES = [
         ("Pin Matrix", "Pin Matrix Grid（引脚矩阵网格）"),
-        ("Pin Table", "Detailed Pin Table（高密度工程数据表）"),
         ("Register Map", "Register Map（底层寄存器视图）"),
         ("I2C Sniffer", "I2C Bus Sniffer（总线事务嗅探器）"),
         ("JSON Config", "DUT JSON Config（芯片配置文件管理器）"),
-        ("Code Export", "Python / C Export（自动化控制代码导出器）"),
         ("Confirm Note", "DUT Confirmation Note（硬件确认清单）"),
     ]
 
@@ -726,17 +720,15 @@ class GpioControlUI(QWidget):
         self._cfg = None            # GpioChipConfig
         self._chip_info = None
         self._dev_addr = None
-        self._sim_mode = False
         self._cur_bank = 0
         self._selected = None       # (group, pin)
         self._pin_cards = {}        # (group, pin) -> _PinCard（当前 bank）
-        self._pin_meta = {}         # (group, pin) -> {"alias": str, "stim": int|None}
+        self._pin_meta = {}         # (group, pin) -> {"alias": str}
         self._dir_shadow = {}       # bank_idx -> 32bit（会话影子，dir 无回读）
         self._out_shadow = {}       # bank_idx -> 32bit
         self._reg_shadow = {}       # addr -> 32bit（PU/PD/drv/任意写影子）
         self._in_value = {}         # bank_idx -> 32bit|None（0x50 最近读值）
         self._reg_cards = []        # [(kind, addr|None, card_widgets)]
-        self._table_rows = {}       # (group, pin) -> row widgets dict
         self._sniff_entries = []    # [(kind, raw, html)]
         self._sniff_kind = None     # None = All
         self._sniff_paused = False
@@ -744,7 +736,6 @@ class GpioControlUI(QWidget):
         self._thread = None
         self._worker = None
         self._worker_done_cb = None
-        self._table_updating = False
         self._spin_angle = 0
         self._export_items = []     # [(group, pin, mode)] 导出管理器条目
         self._build_ui()
@@ -790,7 +781,7 @@ class GpioControlUI(QWidget):
         self._deferred_timer.timeout.connect(self._on_deferred_read)
 
         self.append_log("[INFO] BES GPIO Workbench 已初始化，"
-                        "请点击 i2c.bes_chip_check() 或在 Simulated DUT 下加载 Profile")
+                        "请点击 i2c.bes_chip_check() 连接 DUT")
         self._refresh_all_views()
 
     def _build_top_bar(self):
@@ -805,11 +796,14 @@ class GpioControlUI(QWidget):
 
         title = QLabel("BES GPIO Workbench")
         title.setObjectName("gpioTitle")
-        row.addWidget(title)
-
         self.dut_sub = QLabel("DUT: --")
         self.dut_sub.setObjectName("gpioSub")
-        row.addWidget(self.dut_sub)
+        head = QVBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(0)
+        head.addWidget(title)
+        head.addWidget(self.dut_sub)
+        row.addLayout(head)
         row.addSpacing(8)
 
         self._tab_group = QButtonGroup(self)
@@ -820,6 +814,8 @@ class GpioControlUI(QWidget):
             btn.setObjectName("gpioTab")
             btn.setCheckable(True)
             btn.setToolTip(full)
+            # 垂直撑满顶栏（高度 = 标题 + DUT 副标题两行），勿在 QSS 钉死
+            btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
             self._tab_group.addButton(btn, idx)
             row.addWidget(btn)
             self._tab_buttons.append(btn)
@@ -833,7 +829,7 @@ class GpioControlUI(QWidget):
         for mode, label in _speed_options():
             self.speed_combo.addItem(label, mode)
         self.speed_combo.setCurrentIndex(1)  # 100 kHz
-        self.speed_combo.setToolTip("USB-I2C 桥接速率（仿真模式无效）")
+        self.speed_combo.setToolTip("USB-I2C 桥接速率")
         row.addWidget(self.speed_combo)
 
         self.detect_btn = QPushButton("i2c.bes_chip_check()")
@@ -860,7 +856,7 @@ class GpioControlUI(QWidget):
         lay.addWidget(self.profile_combo)
         self.load_btn = QPushButton("Load")
         self.load_btn.setObjectName("gpioBtn")
-        self.load_btn.setToolTip("加载选中的 DUT Profile（仿真模式同时建立虚拟会话）")
+        self.load_btn.setToolTip("加载选中的 DUT Profile（需先 i2c.bes_chip_check()）")
         self.load_btn.clicked.connect(self._on_load_profile_clicked)
         lay.addWidget(self.load_btn)
 
@@ -880,9 +876,16 @@ class GpioControlUI(QWidget):
 
         lay.addWidget(self._make_vsep())
 
+        addr_box = QVBoxLayout()
+        addr_box.setContentsMargins(0, 0, 0, 0)
+        addr_box.setSpacing(0)
         self.addr_label = QLabel("Base --")
         self.addr_label.setObjectName("gpioAddr")
-        lay.addWidget(self.addr_label)
+        addr_box.addWidget(self.addr_label)
+        self.bank_label = QLabel("Bank --")
+        self.bank_label.setObjectName("gpioBankInfo")
+        addr_box.addWidget(self.bank_label)
+        lay.addLayout(addr_box)
 
         lay.addWidget(self._make_vsep())
 
@@ -904,28 +907,11 @@ class GpioControlUI(QWidget):
             lay.addLayout(box)
             self._stat_vals[key] = v
 
-        lay.addWidget(self._make_vsep())
-
-        self.read_btn = QPushButton("Read 0x50 (IN)")
-        self.read_btn.setObjectName("gpioBtn")
-        self.read_btn.setToolTip("立即读取当前 Bank 输入状态寄存器 Base + 0x50")
-        self.read_btn.clicked.connect(self._on_read_bank_clicked)
-        lay.addWidget(self.read_btn)
-
         lay.addStretch(1)
 
         self.status_label = QLabel("未检测")
         self.status_label.setObjectName("gpioStatus")
         lay.addWidget(self.status_label)
-
-        lay.addWidget(self._make_vsep())
-
-        self.bridge_btn = QPushButton("USB-I2C Bridge")
-        self.bridge_btn.setObjectName("gpioBtn")
-        self.bridge_btn.setToolTip(
-            "硬件桥接切换：USB-I2C 物理工装 <-> 高精度内置仿真器 (Simulated DUT)")
-        self.bridge_btn.clicked.connect(self._on_bridge_toggled)
-        lay.addWidget(self.bridge_btn)
         return panel
 
     def _build_batch_toolbar(self):
@@ -936,11 +922,11 @@ class GpioControlUI(QWidget):
         lay.setSpacing(6)
 
         batch_defs = [
-            ("All OUT HIGH (0x00)", self._on_batch_out_high,
+            ("All OUT HIGH", self._on_batch_out_high,
              "当前 Bank 32 引脚全部输出高电平 (DIR_SET+VAL_SET = 0xFFFFFFFF)"),
-            ("All OUT LOW (0x0C)", self._on_batch_out_low,
+            ("All OUT LOW", self._on_batch_out_low,
              "当前 Bank 32 引脚全部输出低电平 (DIR_SET+VAL_CLR = 0xFFFFFFFF)"),
-            ("All IN Hi-Z (0x10)", self._on_batch_in_hiz,
+            ("All IN Hi-Z", self._on_batch_in_hiz,
              "当前 Bank 32 引脚全部高阻输入 (DIR_CLR = 0xFFFFFFFF，PU/PD 全关)"),
             ("All PU", lambda: self._on_batch_pull(True),
              "当前 Bank 32 引脚全部上拉 (OP_BITS 位域写)"),
@@ -979,24 +965,6 @@ class GpioControlUI(QWidget):
         self.mask_btn.clicked.connect(self._on_mask_write_clicked)
         lay.addWidget(self.mask_btn)
 
-        lay.addWidget(self._make_vsep())
-
-        poll_key = QLabel("Poll 0x50")
-        poll_key.setObjectName("gpioPanelKey")
-        lay.addWidget(poll_key)
-        self.poll_combo = DarkComboBox()
-        for ms, label in self.POLL_INTERVALS:
-            self.poll_combo.addItem(label, ms)
-        self.poll_combo.setCurrentIndex(1)  # 500 ms
-        self.poll_combo.currentIndexChanged.connect(self._on_poll_interval_changed)
-        lay.addWidget(self.poll_combo)
-        self.poll_btn = QPushButton("Start Poll")
-        self.poll_btn.setObjectName("gpioBtn")
-        self.poll_btn.setProperty("on", "0")
-        self.poll_btn.setToolTip("定时轮询当前 Bank 输入状态寄存器 Base + 0x50")
-        self.poll_btn.clicked.connect(self._on_poll_toggled)
-        lay.addWidget(self.poll_btn)
-
         lay.addStretch(1)
         return bar
 
@@ -1005,16 +973,14 @@ class GpioControlUI(QWidget):
         sep.setObjectName("gpioSep")
         return sep
 
-    # ------------------------------------------------------------ 7 大视图
+    # ------------------------------------------------------------ 5 大视图
 
     def _build_views(self):
         self._stack.addWidget(self._build_matrix_view())   # 0
-        self._stack.addWidget(self._build_table_view())    # 1
-        self._stack.addWidget(self._build_regmap_view())   # 2
-        self._stack.addWidget(self._build_sniffer_view())  # 3
-        self._stack.addWidget(self._build_json_view())     # 4
-        self._stack.addWidget(self._build_export_view())   # 5
-        self._stack.addWidget(self._build_notes_view())    # 6
+        self._stack.addWidget(self._build_regmap_view())   # 1
+        self._stack.addWidget(self._build_sniffer_view())  # 2
+        self._stack.addWidget(self._build_json_view())     # 3
+        self._stack.addWidget(self._build_notes_view())    # 4
 
     # 视图 1：Pin Matrix Grid + Inspector
     def _build_matrix_view(self):
@@ -1050,7 +1016,35 @@ class GpioControlUI(QWidget):
         self._matrix_placeholder.setAlignment(Qt.AlignCenter)
         self._matrix_col_l.addWidget(self._matrix_placeholder)
         self._matrix_scroll.setWidget(self._matrix_container)
-        lay.addWidget(self._matrix_scroll, 1)
+        left = QVBoxLayout()
+        left.setContentsMargins(0, 0, 0, 0)
+        left.setSpacing(6)
+        left.addWidget(self._matrix_scroll, 1)
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(6)
+        self.read_btn = QPushButton("READ")
+        self.read_btn.setObjectName("gpioReadBtn")
+        self.read_btn.setToolTip("立即读取当前 Bank 输入状态寄存器 Base + 0x50")
+        self.read_btn.clicked.connect(self._on_read_bank_clicked)
+        bottom.addWidget(self.read_btn, 1)
+        poll_key = QLabel("Poll 0x50")
+        poll_key.setObjectName("gpioPanelKey")
+        bottom.addWidget(poll_key)
+        self.poll_combo = DarkComboBox()
+        for ms, label in self.POLL_INTERVALS:
+            self.poll_combo.addItem(label, ms)
+        self.poll_combo.setCurrentIndex(1)  # 500 ms
+        self.poll_combo.currentIndexChanged.connect(self._on_poll_interval_changed)
+        bottom.addWidget(self.poll_combo)
+        self.poll_btn = QPushButton("Start Poll")
+        self.poll_btn.setObjectName("gpioBtn")
+        self.poll_btn.setProperty("on", "0")
+        self.poll_btn.setToolTip("定时轮询当前 Bank 输入状态寄存器 Base + 0x50")
+        self.poll_btn.clicked.connect(self._on_poll_toggled)
+        bottom.addWidget(self.poll_btn)
+        left.addLayout(bottom)
+        lay.addLayout(left, 1)
 
         lay.addWidget(self._build_inspector())
         self._export_panel = self._build_export_manager()
@@ -1245,53 +1239,7 @@ class GpioControlUI(QWidget):
         sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return sep
 
-    # 视图 2：Detailed Pin Table
-    def _build_table_view(self):
-        page = QWidget()
-        page.setObjectName("gpioViewPage")
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
-
-        bar = QHBoxLayout()
-        bar.setSpacing(6)
-        self.table_search = QLineEdit()
-        self.table_search.setObjectName("gpioSearch")
-        self.table_search.setPlaceholderText("搜索别名 / 引脚号（如 TX、LED、P05、37）")
-        self.table_search.textChanged.connect(self._apply_table_filter)
-        bar.addWidget(self.table_search, 1)
-        self.table_filter = DarkComboBox()
-        for label in ("All", "Output", "Input"):
-            self.table_filter.addItem(label)
-        self.table_filter.currentIndexChanged.connect(self._apply_table_filter)
-        bar.addWidget(self.table_filter)
-        lay.addLayout(bar)
-
-        self.table = QTableWidget(0, 9)
-        self.table.setObjectName("gpioTable")
-        self.table.setHorizontalHeaderLabels([
-            "Pin #", "Bank Bit", "Signal Alias", "Direction",
-            "Output Level", "Input Level (0x50)", "Pull Mode",
-            "Driver Level", "Bitmask",
-        ])
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(28)
-        self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setDefaultSectionSize(92)
-        for col, width in ((0, 56), (1, 56), (3, 84), (4, 88),
-                           (5, 100), (6, 104), (7, 96), (8, 112)):
-            self.table.setColumnWidth(col, width)
-        self.table.itemChanged.connect(self._on_table_item_changed)
-        lay.addWidget(self.table, 1)
-        return page
-
-    # 视图 3：Register Map
+    # 视图 2：Register Map
     def _build_regmap_view(self):
         page = QWidget()
         page.setObjectName("gpioViewPage")
@@ -1353,7 +1301,7 @@ class GpioControlUI(QWidget):
         lay.addWidget(self._regmap_scroll, 1)
         return page
 
-    # 视图 4：I2C Bus Sniffer
+    # 视图 3：I2C Bus Sniffer
     def _build_sniffer_view(self):
         page = QWidget()
         page.setObjectName("gpioViewPage")
@@ -1412,7 +1360,7 @@ class GpioControlUI(QWidget):
         lay.addWidget(self.sniff_view, 1)
         return page
 
-    # 视图 5：DUT JSON Config
+    # 视图 4：DUT JSON Config
     def _build_json_view(self):
         page = QWidget()
         page.setObjectName("gpioViewPage")
@@ -1450,46 +1398,7 @@ class GpioControlUI(QWidget):
         lay.addWidget(self.json_edit, 1)
         return page
 
-    # 视图 6：Python / C Export
-    def _build_export_view(self):
-        page = QWidget()
-        page.setObjectName("gpioViewPage")
-        lay = QHBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
-
-        self.py_edit = self._make_export_panel(
-            lay, "Python 自动化测试脚本", self._on_copy_python)
-        self.c_edit = self._make_export_panel(
-            lay, "C / HAL 驱动（bes_gpio.h + bes_gpio.c）", self._on_copy_c)
-        return page
-
-    def _make_export_panel(self, parent_lay, title, copy_slot):
-        panel = QFrame()
-        panel.setObjectName("gpioPanel")
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(8, 6, 8, 8)
-        lay.setSpacing(4)
-        head = QHBoxLayout()
-        head.setSpacing(6)
-        t = QLabel(title)
-        t.setObjectName("gpioSection")
-        head.addWidget(t)
-        head.addStretch(1)
-        copy_btn = QPushButton("Copy")
-        copy_btn.setObjectName("gpioBtn")
-        copy_btn.setIcon(_icon("copy.svg", "#94A3B8", 12))
-        copy_btn.clicked.connect(copy_slot)
-        head.addWidget(copy_btn)
-        lay.addLayout(head)
-        edit = QPlainTextEdit()
-        edit.setObjectName("gpioMonoEdit")
-        edit.setReadOnly(True)
-        lay.addWidget(edit, 1)
-        parent_lay.addWidget(panel, 1)
-        return edit
-
-    # 视图 7：DUT Confirmation Note
+    # 视图 5：DUT Confirmation Note
     def _build_notes_view(self):
         page = QScrollArea()
         page.setObjectName("gpioScroll")
@@ -1538,18 +1447,13 @@ class GpioControlUI(QWidget):
     # ================================================================ 状态访问
 
     def _ready(self):
-        return self._cfg is not None and (
-            self._sim_mode or self._dev_addr is not None)
+        return self._cfg is not None and self._dev_addr is not None
 
     def _meta(self, group, pin):
-        return self._pin_meta.setdefault((group, pin),
-                                         {"alias": "", "stim": None})
+        return self._pin_meta.setdefault((group, pin), {"alias": ""})
 
     def _alias(self, group, pin):
         return self._pin_meta.get((group, pin), {}).get("alias") or ""
-
-    def _stim(self, group, pin):
-        return self._pin_meta.get((group, pin), {}).get("stim")
 
     def _dir_bit(self, bank_idx, bit):
         return (self._dir_shadow.get(bank_idx, 0) >> bit) & 1
@@ -1639,7 +1543,7 @@ class GpioControlUI(QWidget):
         return (val >> bit) & 1
 
     def _pin_mode(self, group, pin):
-        """由影子寄存器推导工作模式（用于 label / 表格）。"""
+        """由影子寄存器推导工作模式（用于 label / Inspector）。"""
         bank_idx = self._cfg.bank_index(group)
         bit = self._cfg.bit_in_bank(group, pin)
         if self._dir_bit(bank_idx, bit):
@@ -1664,25 +1568,20 @@ class GpioControlUI(QWidget):
     # ================================================================ 刷新
 
     def _refresh_all_views(self):
-        has = self._cfg is not None
         self._rebuild_bank_buttons()
         self._rebuild_matrix()
-        self._rebuild_table()
         self._rebuild_regmap()
         self._refresh_addr_bar()
         self._refresh_stats()
         self._refresh_inspector()
         self._refresh_notes()
         self._refresh_export_manager()
-        if has:
-            self._refresh_exports()
         self._update_op_enabled()
 
     def _refresh_after_hw(self):
-        """硬件 / 仿真状态变化后的轻量刷新（不重建控件）。"""
+        """硬件状态变化后的轻量刷新（不重建控件）。"""
         for group, pin in list(self._pin_cards.keys()):
             self._refresh_pin_card(group, pin)
-        self._refresh_table_rows()
         self._refresh_reg_cards()
         self._refresh_stats()
         self._refresh_inspector()
@@ -1734,7 +1633,7 @@ class GpioControlUI(QWidget):
             self._matrix_col_r.addStretch(1)
             return
         base_group = self._cur_bank * GROUPS_PER_BANK
-        for bit in range(GPIOS_PER_BANK):
+        for bit in range(GPIOS_PER_BANK - 1, -1, -1):
             group = base_group + bit // PINS_PER_GROUP
             pin = bit % PINS_PER_GROUP
             card = _PinCard(
@@ -1781,13 +1680,9 @@ class GpioControlUI(QWidget):
             card.level_btn.setProperty("cur", "h" if lvl else "l")
         else:
             in_lvl = self._in_bit(bank_idx, bit)
-            stim = self._stim(group, pin)
             if in_lvl is not None:
                 card.level_btn.setText(str(in_lvl))
                 card.level_btn.setProperty("cur", "h" if in_lvl else "l")
-            elif stim is not None:
-                card.level_btn.setText("S{0}".format(stim))
-                card.level_btn.setProperty("cur", "h" if stim else "l")
             else:
                 card.level_btn.setText("-")
                 card.level_btn.setProperty("cur", "")
@@ -1813,192 +1708,6 @@ class GpioControlUI(QWidget):
             _repolish(card)
         card.setProperty("sel", "1" if self._selected == (group, pin) else "0")
         _repolish(card)
-
-    def _rebuild_table(self):
-        self._table_updating = True
-        try:
-            self.table.setRowCount(0)
-            self._table_rows = {}
-            if self._cfg is None:
-                return
-            base_group = self._cur_bank * GROUPS_PER_BANK
-            self.table.setRowCount(GPIOS_PER_BANK)
-            for bit in range(GPIOS_PER_BANK):
-                group = base_group + bit // PINS_PER_GROUP
-                pin = bit % PINS_PER_GROUP
-                self._build_table_row(bit, group, pin)
-        finally:
-            self._table_updating = False
-        self._apply_table_filter()
-
-    def _build_table_row(self, row, group, pin):
-        bank_idx = self._cfg.bank_index(group)
-        bit = self._cfg.bit_in_bank(group, pin)
-        linear = self._cfg.linear_index(group, pin)
-        widgets = {}
-
-        item_pin = QTableWidgetItem(str(linear))
-        item_pin.setFlags(item_pin.flags() & ~Qt.ItemIsEditable)
-        item_pin.setToolTip("{0} · {1}".format(self._cfg.gpio_name(group, pin),
-                                               self._cfg.banks[bank_idx].name))
-        f = QFont("Consolas")
-        item_pin.setFont(f)
-        self.table.setItem(row, 0, item_pin)
-        widgets["pin_item"] = item_pin
-
-        item_bit = QTableWidgetItem(str(bit))
-        item_bit.setFlags(item_bit.flags() & ~Qt.ItemIsEditable)
-        item_bit.setFont(f)
-        item_bit.setTextAlignment(Qt.AlignCenter)
-        self.table.setItem(row, 1, item_bit)
-
-        item_alias = QTableWidgetItem(self._alias(group, pin))
-        item_alias.setToolTip("双击编辑信号别名")
-        self.table.setItem(row, 2, item_alias)
-        widgets["alias_item"] = item_alias
-
-        dir_btn = QPushButton()
-        dir_btn.setObjectName("gpioCellBtn")
-        dir_btn.setToolTip("方向切换 (Dir Set +0x04 / Dir Clr +0x10)")
-        dir_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_card_dir(g, p))
-        self.table.setCellWidget(row, 3, dir_btn)
-        widgets["dir_btn"] = dir_btn
-
-        lvl_btn = QPushButton()
-        lvl_btn.setObjectName("gpioCellBtn")
-        lvl_btn.setToolTip("输出电平切换 (Out Set +0x00 / Out Clr +0x0C)")
-        lvl_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_card_level(g, p))
-        self.table.setCellWidget(row, 4, lvl_btn)
-        widgets["lvl_btn"] = lvl_btn
-
-        in_btn = QPushButton()
-        in_btn.setObjectName("gpioCellBtn")
-        in_btn.setToolTip("实时读取值；仿真模式点击注入外部激励，硬件模式点击回读 0x50")
-        in_btn.clicked.connect(lambda _=False, g=group, p=pin: self._on_input_stim(g, p))
-        self.table.setCellWidget(row, 5, in_btn)
-        widgets["in_btn"] = in_btn
-
-        pull_combo = DarkComboBox()
-        for label, val in (("High-Z", 0), ("Pull-Up", 1), ("Pull-Down", 2)):
-            pull_combo.addItem(label, val)
-        pull_combo.currentIndexChanged.connect(
-            lambda _i, g=group, p=pin, c=pull_combo: self._on_table_pull(g, p, c.currentData()))
-        self.table.setCellWidget(row, 6, pull_combo)
-        widgets["pull_combo"] = pull_combo
-
-        drv_combo = DarkComboBox()
-        for lv in range(self._cfg.drv_level_count):
-            drv_combo.addItem("Lv{0}".format(lv), lv)
-            ohm = self._drv_ohm_text(lv)
-            if ohm:
-                drv_combo.setItemData(
-                    lv, "Lv{0} · {1}".format(lv, ohm), Qt.ToolTipRole)
-        drv_combo.currentIndexChanged.connect(
-            lambda _i, g=group, p=pin, c=drv_combo: self._on_table_drv(g, p, c.currentData()))
-        self.table.setCellWidget(row, 7, drv_combo)
-        widgets["drv_combo"] = drv_combo
-
-        item_mask = QTableWidgetItem(_fmt32(1 << bit))
-        item_mask.setFlags(item_mask.flags() & ~Qt.ItemIsEditable)
-        item_mask.setFont(f)
-        item_mask.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row, 8, item_mask)
-
-        self._table_rows[(group, pin)] = widgets
-        self._refresh_table_row(group, pin)
-
-    def _refresh_table_rows(self):
-        if self._cfg is None:
-            return
-        self._table_updating = True
-        try:
-            for group, pin in self._table_rows:
-                self._refresh_table_row(group, pin)
-        finally:
-            self._table_updating = False
-
-    def _refresh_table_row(self, group, pin):
-        w = self._table_rows.get((group, pin))
-        if w is None or self._cfg is None:
-            return
-        bank_idx = self._cfg.bank_index(group)
-        bit = self._cfg.bit_in_bank(group, pin)
-        is_out = bool(self._dir_bit(bank_idx, bit))
-
-        alias_item = w["alias_item"]
-        if not alias_item.isSelected():
-            cur = self._alias(group, pin)
-            if alias_item.text() != cur:
-                alias_item.setText(cur)
-
-        dir_btn = w["dir_btn"]
-        dir_btn.setText("OUTPUT" if is_out else "INPUT")
-        dir_btn.setProperty("kind", "out" if is_out else "in")
-        _repolish(dir_btn)
-
-        lvl_btn = w["lvl_btn"]
-        lvl = self._out_bit(bank_idx, bit)
-        lvl_btn.setText("HIGH" if lvl else "LOW")
-        lvl_btn.setProperty("kind", "h" if lvl else "l")
-        lvl_btn.setEnabled(is_out)
-        _repolish(lvl_btn)
-
-        in_btn = w["in_btn"]
-        in_lvl = self._in_bit(bank_idx, bit)
-        stim = self._stim(group, pin)
-        if in_lvl is not None:
-            in_btn.setText(str(in_lvl))
-            in_btn.setProperty("kind", "h" if in_lvl else "l")
-        elif stim is not None:
-            in_btn.setText("S{0}".format(stim))
-            in_btn.setProperty("kind", "h" if stim else "l")
-        else:
-            in_btn.setText("--")
-            in_btn.setProperty("kind", "")
-        _repolish(in_btn)
-
-        pull_combo = w["pull_combo"]
-        pull_ok = self._cfg.pull_supported(group)
-        pull_combo.setEnabled(pull_ok)
-        pull = self._pull_state(group, bit)
-        if pull_combo.currentData() != pull:
-            idx = pull_combo.findData(pull)
-            if idx >= 0:
-                pull_combo.blockSignals(True)
-                pull_combo.setCurrentIndex(idx)
-                pull_combo.blockSignals(False)
-
-        drv_combo = w["drv_combo"]
-        drv_ok = self._cfg.drv_field(group, pin) is not None
-        drv_combo.setEnabled(drv_ok)
-        if drv_ok:
-            val = self._drv_field_value(group, pin)
-            if val is not None and drv_combo.currentData() != val:
-                idx = drv_combo.findData(val)
-                if idx >= 0:
-                    drv_combo.blockSignals(True)
-                    drv_combo.setCurrentIndex(idx)
-                    drv_combo.blockSignals(False)
-
-    def _apply_table_filter(self):
-        if self._cfg is None:
-            return
-        text = self.table_search.text().strip().lower()
-        mode = self.table_filter.currentText()
-        base_group = self._cur_bank * GROUPS_PER_BANK
-        for bit in range(GPIOS_PER_BANK):
-            group = base_group + bit // PINS_PER_GROUP
-            pin = bit % PINS_PER_GROUP
-            show = True
-            if text:
-                hay = "{0} {1} p{2:02d} {3} {4}".format(
-                    self._cfg.gpio_name(group, pin), self._alias(group, pin),
-                    bit, bit, self._cfg.linear_index(group, pin)).lower()
-                show = text in hay
-            if show and mode in ("Output", "Input"):
-                is_out = bool(self._dir_bit(self._cur_bank, bit))
-                show = is_out if mode == "Output" else not is_out
-            self.table.setRowHidden(bit, not show)
 
     def _rebuild_regmap(self):
         while self._regmap_grid.count():
@@ -2135,19 +1844,18 @@ class GpioControlUI(QWidget):
     def _refresh_addr_bar(self):
         if self._cfg is None:
             self.addr_label.setText("Base --")
+            self.bank_label.setText("Bank --")
             self.dut_sub.setText("DUT: --")
             return
         bank = self._cfg.banks[self._cur_bank]
         g0 = self._cur_bank * GROUPS_PER_BANK
-        self.addr_label.setText(
-            "Base {0} · SET +0x00 · DIR +0x04 · CLR +0x0C · DCLR +0x10 · IN +0x50"
-            .format(_fmt32(bank.base)))
-        mode = "SIM" if self._sim_mode else (
-            "dev 0x{0:02X}".format(self._dev_addr)
-            if self._dev_addr is not None else "--")
-        self.dut_sub.setText("DUT: {0} · {1} · Bank{2} (GPIO_Group{3}~{4})".format(
-            self._cfg.chip.upper(), mode, self._cur_bank, g0,
-            g0 + GROUPS_PER_BANK - 1))
+        self.addr_label.setText("Base {0}".format(_fmt32(bank.base)))
+        self.bank_label.setText("Bank{0} (GPIO_Group{1}~{2})".format(
+            self._cur_bank, g0, g0 + GROUPS_PER_BANK - 1))
+        mode = ("dev 0x{0:02X}".format(self._dev_addr)
+                if self._dev_addr is not None else "--")
+        self.dut_sub.setText("DUT: {0} · {1}".format(
+            self._cfg.chip.upper(), mode))
 
     def _refresh_stats(self):
         vals = {k: "-" for k in self._stat_vals}
@@ -2284,7 +1992,6 @@ class GpioControlUI(QWidget):
         self.poll_btn.setEnabled(ready)
         self.detect_btn.setEnabled(not busy)
         self.load_btn.setEnabled(not busy)
-        self.bridge_btn.setEnabled(not busy)
 
     # ================================================================ Sniffer
 
@@ -2358,9 +2065,8 @@ class GpioControlUI(QWidget):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write("BES GPIO Workbench - I2C Bus Sniffer Log\n")
-                f.write("Chip: {0}  Mode: {1}\n".format(
-                    self._cfg.chip if self._cfg else "--",
-                    "Simulated DUT" if self._sim_mode else "USB-I2C Bridge"))
+                f.write("Chip: {0}  Mode: USB-I2C Bridge\n".format(
+                    self._cfg.chip if self._cfg else "--"))
                 for _kind, raw, _html in self._sniff_entries:
                     f.write(raw + "\n")
             self.append_log("[EXPORT] 嗅探日志已导出: {0}".format(path))
@@ -2555,27 +2261,21 @@ class GpioControlUI(QWidget):
                 self._reg_shadow[addr] = value & 0xFFFFFFFF
 
     def _apply_actions(self, actions, label="", on_done=None):
-        """统一下发管道：嗅探 -> 影子更新 -> 仿真直写 / 硬件 Worker。"""
+        """统一下发管道：嗅探 -> 影子更新 -> 硬件 Worker。"""
         if not actions:
             return False
-        if not self._sim_mode:
-            if not self._ready():
-                self.append_log("[WARN] 未连接 DUT，请先 i2c.bes_chip_check()")
-                return False
-            if self._busy():
-                self.append_log("[WARN] 上一操作仍在执行，请稍候 ({0})".format(label))
-                return False
+        if not self._ready():
+            self.append_log("[WARN] 未连接 DUT，请先 i2c.bes_chip_check()")
+            return False
+        if self._busy():
+            self.append_log("[WARN] 上一操作仍在执行，请稍候 ({0})".format(label))
+            return False
         for op, addr, value, hi, lo in actions:
             self._sniff("WRITE32", addr, value,
                         self._describe_write(op, addr, value, hi, lo))
         if label:
             self.append_log("[I2C] {0}".format(label))
         self._apply_to_shadow(actions)
-        if self._sim_mode:
-            self._refresh_after_hw()
-            if on_done is not None:
-                on_done()
-            return True
         worker = GpioApplyWorker(
             None, self.speed_combo.currentData(), self._dev_addr,
             actions, label=label)
@@ -2589,41 +2289,10 @@ class GpioControlUI(QWidget):
         if on_done is not None:
             on_done()
 
-    def _sim_read(self, addr):
-        """仿真器读值：0x50 由 dir/out/上下拉/外部激励综合判定（真实物理行为）。"""
-        cfg = self._cfg
-        if cfg is not None:
-            for b_idx, bank in enumerate(cfg.banks):
-                if addr == bank.base + OFFSET_IN_READ:
-                    value = 0
-                    for bit in range(32):
-                        if self._dir_bit(b_idx, bit):
-                            lv = self._out_bit(b_idx, bit)
-                        else:
-                            group = b_idx * GROUPS_PER_BANK + bit // PINS_PER_GROUP
-                            pin = bit % PINS_PER_GROUP
-                            pull = self._pull_state(group, bit)
-                            stim = self._stim(group, pin)
-                            if stim is not None:
-                                lv = stim
-                            elif pull == 1:
-                                lv = 1
-                            elif pull == 2:
-                                lv = 0
-                            else:
-                                lv = 0
-                        value |= (lv & 1) << bit
-                    return value
-        return self._reg_shadow.get(addr, 0)
-
     def _read_registers(self, pairs, on_done=None):
-        """pairs: [(key, addr)]；仿真同步返回，硬件走 Worker。"""
+        """pairs: [(key, addr)]；硬件走 Worker 异步读取。"""
         if not pairs:
             return False
-        if self._sim_mode:
-            values = {key: self._sim_read(addr) for key, addr in pairs}
-            self._on_read_done(pairs, values, on_done)
-            return True
         if not self._ready():
             self.append_log("[WARN] 未连接 DUT，无法读取")
             return False
@@ -2662,8 +2331,6 @@ class GpioControlUI(QWidget):
 
     def _on_tab_changed(self, idx):
         self._stack.setCurrentIndex(idx)
-        if idx == 5:
-            self._refresh_exports()
 
     def _on_spin_tick(self):
         self._spin_angle = (self._spin_angle + 90) % 360
@@ -2688,24 +2355,6 @@ class GpioControlUI(QWidget):
                     "i2c.bes_chip_check() -> dev 0x11 reg 0x40080000 (32bit)")
         self._set_status("检测中...")
         self._start_spin()
-        if self._sim_mode:
-            name = self.profile_combo.currentData()
-            if not name:
-                self._stop_spin()
-                self._set_status("无可用 DUT Profile", err=True)
-                self._sniff("ERROR", None, None,
-                            "chips/gpio_configs/ 下无芯片 JSON 配置")
-                return
-            chip_info = {
-                "chip_name": name,
-                "main_die": name.upper(),
-                "main_die_version": "verA(sim)",
-                "main_die_i2c_addr": 0x11,
-                "simulated": True,
-            }
-            self.append_log("[I2C] Simulated DUT 检测（Profile: {0}）".format(name))
-            self._on_detect_done(chip_info)
-            return
         self.append_log("[I2C] BES 芯片检测中...")
         worker = GpioChipCheckWorker(None, self.speed_combo.currentData())
         self._run_worker(worker, self._on_detect_done, self._on_op_error)
@@ -2771,23 +2420,15 @@ class GpioControlUI(QWidget):
         if not name:
             self._set_status("无可用 DUT Profile", err=True)
             return
-        if not self._sim_mode and self._dev_addr is None:
-            self.append_log("[WARN] USB-I2C 模式请先 i2c.bes_chip_check()，"
-                            "或切换到 Simulated DUT 后加载 Profile")
-            self._set_status("请先 Detect DUT 或切换仿真模式", err=True)
+        if self._dev_addr is None:
+            self.append_log("[WARN] 请先 i2c.bes_chip_check() 再加载 Profile")
+            self._set_status("请先 Detect DUT", err=True)
             return
         cfg = load_gpio_config(name)
         if cfg is None:
             self._set_status("Profile 加载失败: {0}".format(name), err=True)
             return
         self._cfg = cfg
-        if self._sim_mode:
-            self._chip_info = {
-                "chip_name": name, "main_die": name.upper(),
-                "main_die_version": "verA(sim)", "main_die_i2c_addr": 0x11,
-                "simulated": True,
-            }
-            self._dev_addr = 0x11
         self._reset_session_state()
         self._sniff("CHIP_CHECK", None, None,
                     "DUT Profile 手动加载: {0}".format(name))
@@ -2798,38 +2439,12 @@ class GpioControlUI(QWidget):
         self._refresh_all_views()
         self._start_read_all_banks()
 
-    def _on_bridge_toggled(self):
-        if self._busy():
-            return
-        self._stop_polling()
-        self._sim_mode = not self._sim_mode
-        self._cfg = None
-        self._chip_info = None
-        self._dev_addr = None
-        self._cur_bank = 0
-        self.bridge_btn.setText(
-            "Simulated DUT" if self._sim_mode else "USB-I2C Bridge")
-        self.bridge_btn.setProperty("on", "1" if self._sim_mode else "0")
-        _repolish(self.bridge_btn)
-        if self._sim_mode:
-            self._set_status("Simulated DUT：选择 Profile 后 Load 或 chip_check")
-            self.append_log("[INFO] 已切换到高精度内置仿真器 (Simulated DUT)，"
-                            "所有读写为影子寄存器模拟，不触碰硬件")
-        else:
-            self._set_status("USB-I2C Bridge：请点击 i2c.bes_chip_check()")
-            self.append_log("[INFO] 已切换到 USB-I2C 物理工装桥接")
-        self._sniff("CHIP_CHECK", None, None,
-                    "桥接切换 -> {0}".format(
-                        "Simulated DUT" if self._sim_mode else "USB-I2C Bridge"))
-        self._refresh_all_views()
-
     def _on_bank_changed(self, idx):
         if idx == self._cur_bank or self._cfg is None:
             return
         self._cur_bank = idx
         self._selected = None
         self._rebuild_matrix()
-        self._rebuild_table()
         self._rebuild_regmap()
         self._refresh_addr_bar()
         self._refresh_stats()
@@ -2977,7 +2592,7 @@ class GpioControlUI(QWidget):
 
     def _start_read_all_banks(self):
         """全量回读可读状态：各 bank 0x50 电平 + PU/PD + drv + func_sel。"""
-        if self._cfg is None or (not self._sim_mode and self._dev_addr is None):
+        if self._cfg is None or self._dev_addr is None:
             return
         cfg = self._cfg
         pairs = []
@@ -3088,7 +2703,7 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         name = self._cfg.gpio_name(group, pin)
         if not self._dir_bit(bank_idx, bit):
-            self._on_input_stim(group, pin)
+            self._on_input_read(group, pin)
             return
         high_now = bool(self._out_bit(bank_idx, bit))
         addr = (self._cfg.out_clr_addr(group) if high_now
@@ -3099,20 +2714,11 @@ class GpioControlUI(QWidget):
             label="{0} -> {1}".format(name, "LOW" if high_now else "HIGH"),
             on_done=lambda: self._queue_bank_read(bank_idx))
 
-    def _on_input_stim(self, group, pin):
-        """Input Level 列：仿真注入外部激励 / 硬件触发回读。"""
+    def _on_input_read(self, group, pin):
+        """输入脚点击：触发所属 Bank 0x50 输入电平回读。"""
         if not self._ready():
             return
-        if self._sim_mode:
-            meta = self._meta(group, pin)
-            cur = meta.get("stim")
-            meta["stim"] = 0 if cur else 1
-            name = self._cfg.gpio_name(group, pin)
-            self.append_log("[INFO] {0} 仿真外部激励 -> {1}".format(
-                name, "HIGH" if meta["stim"] else "LOW"))
-            self._start_read_bank(self._cfg.bank_index(group))
-        else:
-            self._start_read_bank(self._cfg.bank_index(group))
+        self._start_read_bank(self._cfg.bank_index(group))
 
     def _on_card_pull(self, group, pin):
         if not self._ready() or not self._cfg.pull_supported(group):
@@ -3121,13 +2727,6 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         nxt = (self._pull_state(group, bit) + 1) % 3
         self._apply_pull(group, pin, nxt)
-
-    def _on_table_pull(self, group, pin, value):
-        if not self._ready():
-            self._refresh_table_row(group, pin)
-            return
-        self._selected = (group, pin)
-        self._apply_pull(group, pin, int(value))
 
     def _apply_pull(self, group, pin, state):
         bit = self._cfg.bit_in_bank(group, pin)
@@ -3148,13 +2747,6 @@ class GpioControlUI(QWidget):
         self._apply_actions(
             actions, label="{0} pull -> {1}".format(name, label),
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
-
-    def _on_table_drv(self, group, pin, level):
-        if not self._ready():
-            self._refresh_table_row(group, pin)
-            return
-        self._selected = (group, pin)
-        self._apply_drv(group, pin, int(level))
 
     def _on_drv_step(self, delta):
         if self._selected is None:
@@ -3224,25 +2816,9 @@ class GpioControlUI(QWidget):
         alias = self.alias_edit.text().strip()
         self._meta(group, pin)["alias"] = alias
         self._refresh_pin_card(group, pin)
-        self._refresh_table_row(group, pin)
         if alias:
             self.append_log("[INFO] {0} 别名 -> {1}".format(
                 self._cfg.gpio_name(group, pin), alias))
-
-    def _on_table_item_changed(self, item):
-        if self._table_updating or self._cfg is None:
-            return
-        if item.column() != 2:
-            return
-        row = item.row()
-        base_group = self._cur_bank * GROUPS_PER_BANK
-        group = base_group + row // PINS_PER_GROUP
-        pin = row % PINS_PER_GROUP
-        alias = item.text().strip()
-        self._meta(group, pin)["alias"] = alias
-        if self._selected == (group, pin) and not self.alias_edit.hasFocus():
-            self.alias_edit.setText(alias)
-        self._refresh_pin_card(group, pin)
 
     # ================================================================ 事件：寄存器视图
 
@@ -3402,320 +2978,7 @@ class GpioControlUI(QWidget):
                     "Apply JSON Config -> {0}".format(chip))
         self._load_json_editor()
         self._refresh_all_views()
-        if self._sim_mode:
-            self._start_read_all_banks()
-
-    # ================================================================ 代码导出视图
-
-    def _refresh_exports(self):
-        if self._cfg is None:
-            self.py_edit.setPlainText("# 请先加载 DUT 配置")
-            self.c_edit.setPlainText("/* 请先加载 DUT 配置 */")
-            return
-        self.py_edit.setPlainText(self._gen_python_code())
-        self.c_edit.setPlainText(self._gen_c_code())
-
-    def _alias_lines(self):
-        lines = []
-        if self._cfg is None:
-            return lines
-        for (group, pin), meta in sorted(self._pin_meta.items()):
-            alias = meta.get("alias")
-            if alias:
-                lines.append((self._cfg.gpio_name(group, pin),
-                              self._cfg.linear_index(group, pin), alias))
-        return lines
-
-    def _gen_python_code(self):
-        cfg = self._cfg
-        banks = ",\n".join(
-            '    "{0}": {1},'.format(b.name, _fmt32(b.base)) for b in cfg.banks)
-        pu = ", ".join(
-            "None" if (i >= len(cfg.pull_up_bases) or cfg.pull_up_bases[i] is None)
-            else _fmt32(cfg.pull_up_bases[i]) for i in range(len(cfg.banks)))
-        pd = ", ".join(
-            "None" if (i >= len(cfg.pull_down_bases) or cfg.pull_down_bases[i] is None)
-            else _fmt32(cfg.pull_down_bases[i]) for i in range(len(cfg.banks)))
-        aliases = "\n".join(
-            '    "{0}": "{2}",  # linear #{1}'.format(name, lin, alias)
-            for name, lin, alias in self._alias_lines()) or "    # (no aliases)"
-        drv_map = "\n".join(
-            "    {0},".format(
-                "None" if cfg.drv_reg(g, 0) is None else
-                "({0}, {1})".format(_fmt32(cfg.drv_reg(g, 0)[0]),
-                                    cfg.drv_reg(g, 0)[1]))
-            for g in range(cfg.group_count))
-        if cfg.drv_out_high_ohm and cfg.drv_out_low_ohm:
-            drv_ohm_block = "# 各档位输出阻抗（Ω，实测参考值）：\n" + "\n".join(
-                "#   Lv{0:<2d} OUT_HIGH {1:.4f} / OUT_LOW {2:.4f}".format(
-                    lv, hh, ll)
-                for lv, (hh, ll) in enumerate(
-                    zip(cfg.drv_out_high_ohm, cfg.drv_out_low_ohm)))
-        else:
-            drv_ohm_block = "# (no per-level ohm table)"
-        dev = "0x{0:02X}".format(self._dev_addr) if self._dev_addr is not None else "0x11"
-        return '''#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""BES GPIO automation script -- generated by BES GPIO Workbench.
-
-Chip profile : {chip}
-I2C dev(7bit): {dev} (main-die, 32bit register space)
-Register map : Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C /
-               Dir Clr=+0x10 / Input Read=+0x50 (per bank)
-"""
-
-from lib.i2c.i2c_interface_x64 import I2CInterface
-from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
-
-CHIP = "{chip}"
-DEV_ADDR = {dev}
-
-GPIO_BANKS = {{
-{banks}
-}}
-OFFSET_OUT_SET = 0x00
-OFFSET_DIR_SET = 0x04
-OFFSET_OUT_CLR = 0x0C
-OFFSET_DIR_CLR = 0x10
-OFFSET_IN_READ = 0x50
-GPIOS_PER_BANK = 32
-
-DRV_BITS_PER_GPIO = {drv_bits}
-DRV_LEVELS = {drv_levels}
-{drv_ohm_block}
-# 按 group 索引 (寄存器地址, pin0 起始 bit)；None = 该 group 无 drv_sel
-DRV_GROUP_MAP = [
-{drv_map}
-]
-PULL_UP_BASES = [{pu}]
-PULL_DOWN_BASES = [{pd}]
-
-PIN_ALIASES = {{
-{aliases}
-}}
-
-
-class BesI2cController:
-    """BES AON GPIO controller (SET/CLR semantics, no read-modify-write)."""
-
-    def __init__(self, dll_path=None, speed=I2CSpeedMode.SPEED_100K):
-        self._i2c = I2CInterface(dll_path=dll_path, speed_mode=speed)
-        if not self._i2c.initialize():
-            raise RuntimeError("I2C interface initialize failed")
-        self._w = I2CWidthFlag.BIT_32
-
-    def close(self):
-        self._i2c.close()
-
-    def bes_chip_check(self):
-        return self._i2c.bes_chip_check()
-
-    def write32(self, addr, value):
-        self._i2c.write(DEV_ADDR, addr, value, self._w)
-
-    def read32(self, addr):
-        return int(self._i2c.read(DEV_ADDR, addr, self._w))
-
-    def write_bits(self, addr, value, hi, lo):
-        self._i2c.write(DEV_ADDR, addr, value, self._w, hi, lo)
-
-    # ---- GPIO helpers -------------------------------------------------
-
-    def set_direction(self, bank, mask, output=True):
-        base = GPIO_BANKS[bank]
-        self.write32(base + (OFFSET_DIR_SET if output else OFFSET_DIR_CLR), mask)
-
-    def set_level(self, bank, mask, high=True):
-        base = GPIO_BANKS[bank]
-        self.write32(base + (OFFSET_OUT_SET if high else OFFSET_OUT_CLR), mask)
-
-    def read_bank(self, bank):
-        return self.read32(GPIO_BANKS[bank] + OFFSET_IN_READ)
-
-    def set_pull(self, bank_index, mask, mode):
-        """mode: 'hz' / 'pu' / 'pd'（PU/PD 为 RW 寄存器，必须位域写）。"""
-        pu, pd = PULL_UP_BASES[bank_index], PULL_DOWN_BASES[bank_index]
-        if pu is None or pd is None:
-            raise ValueError("pull bases not configured for bank %d" % bank_index)
-        for bit in range(32):
-            if (mask >> bit) & 1:
-                if mode == "pu":
-                    self.write_bits(pd, 0, bit, bit)
-                    self.write_bits(pu, 1, bit, bit)
-                elif mode == "pd":
-                    self.write_bits(pu, 0, bit, bit)
-                    self.write_bits(pd, 1, bit, bit)
-                else:
-                    self.write_bits(pu, 0, bit, bit)
-                    self.write_bits(pd, 0, bit, bit)
-
-    def set_drv(self, linear_index, level):
-        """level: 0 ~ DRV_LEVELS-1（档位越高阻值越小、驱动越强）。"""
-        group, pin = divmod(linear_index, 8)
-        if group >= len(DRV_GROUP_MAP) or DRV_GROUP_MAP[group] is None:
-            raise ValueError("drv_sel not configured for group %d" % group)
-        addr, low0 = DRV_GROUP_MAP[group]
-        low = low0 + pin * DRV_BITS_PER_GPIO
-        self.write_bits(addr, level, low + DRV_BITS_PER_GPIO - 1, low)
-
-
-if __name__ == "__main__":
-    dut = BesI2cController()
-    try:
-        info = dut.bes_chip_check()
-        print("chip check:", info)
-        first = next(iter(GPIO_BANKS))
-        dut.set_direction(first, 0x000000FF, output=True)
-        dut.set_level(first, 0x000000FF, high=True)
-        print("bank %s in = 0x%08X" % (first, dut.read_bank(first)))
-    finally:
-        dut.close()
-'''.format(chip=cfg.chip, dev=dev, banks=banks,
-           drv_bits=cfg.drv_bits_per_gpio, drv_levels=cfg.drv_level_count,
-           drv_ohm_block=drv_ohm_block, drv_map=drv_map,
-           pu=pu, pd=pd, aliases=aliases)
-
-    def _gen_c_code(self):
-        cfg = self._cfg
-        defines = "\n".join(
-            "#define BES_GPIO_BANK{0}_BASE  {1}u  /* {2} */".format(
-                i, _fmt32(b.base), b.name)
-            for i, b in enumerate(cfg.banks))
-        bank_tbl = ",\n".join("    {0}u".format(_fmt32(b.base)) for b in cfg.banks)
-        drv_map_rows = "\n".join(
-            "    {{ {0}u, {1}u }},".format(_fmt32(r[0]), r[1])
-            if r is not None else "    { 0x00000000u, 0u },"
-            for r in (cfg.drv_reg(g, 0) for g in range(cfg.group_count)))
-        if cfg.drv_out_high_ohm and cfg.drv_out_low_ohm:
-            drv_ohm_c = "/* 各档位输出阻抗（Ω，实测参考值）：\n" + "\n".join(
-                " *   Lv{0:<2d} OUT_HIGH {1:.4f} / OUT_LOW {2:.4f}".format(
-                    lv, hh, ll)
-                for lv, (hh, ll) in enumerate(
-                    zip(cfg.drv_out_high_ohm, cfg.drv_out_low_ohm))) + "\n */\n"
-        else:
-            drv_ohm_c = ""
-        aliases = "\n".join(
-            "/* {0} = linear #{1} = {2} */".format(name, lin, alias)
-            for name, lin, alias in self._alias_lines())
-        alias_block = ("\n/* ---- signal aliases ----\n{0}\n".format(aliases)
-                       if aliases else "")
-        dev = ("0x{0:02X}u".format(self._dev_addr)
-               if self._dev_addr is not None else "0x11u")
-        return '''/* bes_gpio.h -- generated by BES GPIO Workbench
- * Chip profile : {chip}
- * I2C dev(7bit): {dev} (main-die, 32bit register space)
- * Register map : Out Set=+0x00 / Dir Set=+0x04 / Out Clr=+0x0C /
- *                Dir Clr=+0x10 / Input Read=+0x50 (per bank)
- */
-#ifndef BES_GPIO_H
-#define BES_GPIO_H
-
-#include <stdint.h>
-
-#define BES_GPIO_DEV_ADDR     {dev}
-{defines}
-
-#define BES_GPIO_OUT_SET      0x00u
-#define BES_GPIO_DIR_SET      0x04u
-#define BES_GPIO_OUT_CLR      0x0Cu
-#define BES_GPIO_DIR_CLR      0x10u
-#define BES_GPIO_IN_READ      0x50u
-#define BES_GPIOS_PER_BANK    32u
-
-{drv_ohm_c}#define BES_GPIO_DRV_BITS     {drv_bits}u
-#define BES_GPIO_DRV_LEVELS   {drv_levels}u
-{alias_block}
-/* ---- platform hooks (implement on your I2C master) ---- */
-typedef int  (*bes_i2c_write32_fn)(uint8_t dev, uint32_t addr, uint32_t value);
-typedef int  (*bes_i2c_read32_fn)(uint8_t dev, uint32_t addr, uint32_t *value);
-typedef void (*bes_i2c_write_bits_fn)(uint8_t dev, uint32_t addr,
-                                      uint32_t value, uint8_t hi, uint8_t lo);
-
-void     bes_gpio_init(bes_i2c_write32_fn w32,
-                       bes_i2c_write_bits_fn wbits,
-                       bes_i2c_read32_fn r32);
-void     bes_gpio_set_direction(uint8_t bank, uint32_t mask, uint8_t output);
-void     bes_gpio_set_level(uint8_t bank, uint32_t mask, uint8_t high);
-uint32_t bes_gpio_read_bank(uint8_t bank);
-void     bes_gpio_set_drv(uint8_t linear_index, uint8_t level);
-
-#endif /* BES_GPIO_H */
-
-/* ------------------------------------------------------------------ */
-/* bes_gpio.c                                                          */
-
-static bes_i2c_write32_fn    s_w32;
-static bes_i2c_write_bits_fn s_wbits;
-static bes_i2c_read32_fn     s_r32;
-
-static const uint32_t s_bank_base[] = {{
-{bank_tbl}
-}};
-
-typedef struct {{ uint32_t addr; uint8_t low0; }} bes_gpio_drv_reg_t;
-/* 按 group 索引 (寄存器地址, pin0 起始 bit)；addr=0 表示该 group 无 drv_sel */
-static const bes_gpio_drv_reg_t s_drv_map[{drv_map_size}] = {{
-{drv_map_rows}
-}};
-
-void bes_gpio_init(bes_i2c_write32_fn w32,
-                   bes_i2c_write_bits_fn wbits,
-                   bes_i2c_read32_fn r32)
-{{
-    s_w32 = w32;
-    s_wbits = wbits;
-    s_r32 = r32;
-}}
-
-void bes_gpio_set_direction(uint8_t bank, uint32_t mask, uint8_t output)
-{{
-    uint32_t base = s_bank_base[bank];
-    /* SET/CLR semantics: write 1 to take effect, no read-modify-write */
-    s_w32(BES_GPIO_DEV_ADDR,
-          base + (output ? BES_GPIO_DIR_SET : BES_GPIO_DIR_CLR), mask);
-}}
-
-void bes_gpio_set_level(uint8_t bank, uint32_t mask, uint8_t high)
-{{
-    uint32_t base = s_bank_base[bank];
-    s_w32(BES_GPIO_DEV_ADDR,
-          base + (high ? BES_GPIO_OUT_SET : BES_GPIO_OUT_CLR), mask);
-}}
-
-uint32_t bes_gpio_read_bank(uint8_t bank)
-{{
-    uint32_t value = 0u;
-    s_r32(BES_GPIO_DEV_ADDR, s_bank_base[bank] + BES_GPIO_IN_READ, &value);
-    return value;
-}}
-
-void bes_gpio_set_drv(uint8_t linear_index, uint8_t level)
-{{
-    uint8_t group = (uint8_t)(linear_index / 8u);
-    uint8_t pin = (uint8_t)(linear_index % 8u);
-    uint32_t addr;
-    uint8_t low;
-    if (group >= {drv_map_size}u || s_drv_map[group].addr == 0x00000000u) {{
-        return;
-    }}
-    addr = s_drv_map[group].addr;
-    low = (uint8_t)(s_drv_map[group].low0 + pin * BES_GPIO_DRV_BITS);
-    /* drv_sel 为普通 RW 寄存器：位域写（底层 read-modify-write） */
-    s_wbits(BES_GPIO_DEV_ADDR, addr, level,
-            (uint8_t)(low + BES_GPIO_DRV_BITS - 1u), low);
-}}
-'''.format(chip=cfg.chip, dev=dev, defines=defines,
-           drv_bits=cfg.drv_bits_per_gpio, drv_levels=cfg.drv_level_count,
-           drv_map_size=cfg.group_count, drv_map_rows=drv_map_rows,
-           drv_ohm_c=drv_ohm_c, alias_block=alias_block, bank_tbl=bank_tbl)
-
-    def _on_copy_python(self):
-        QApplication.clipboard().setText(self.py_edit.toPlainText())
-        self.append_log("[EXPORT] Python 脚本已复制到剪贴板")
-
-    def _on_copy_c(self):
-        QApplication.clipboard().setText(self.c_edit.toPlainText())
-        self.append_log("[EXPORT] C/HAL 驱动代码已复制到剪贴板")
+        self._start_read_all_banks()
 
     # ================================================================ Export Manager
 
@@ -3957,18 +3220,10 @@ void bes_gpio_set_drv(uint8_t linear_index, uint8_t level)
             2, "已连接" if self._dev_addr is not None else "未连接",
             self._dev_addr is not None)
         # 4. 桥接
-        if self._sim_mode:
-            self._note_bodies[3].setText(
-                "当前：Simulated DUT（高精度内置仿真器）。所有 SET/CLR/位域写作用于"
-                "页内影子寄存器；读 0x50 由方向/输出/上下拉/外部激励综合判定，"
-                "真实再现芯片管脚物理行为，不触碰硬件。")
-            self._set_note_status(3, "SIM", True)
-        else:
-            self._note_bodies[3].setText(
-                "当前：USB-I2C 物理工装桥接（I2CInterface DLL，经 "
-                "core/gpio/ Worker 异步收发，页面无阻塞 I2C）。\n"
-                "顶部右侧 Bridge 按钮可一键切换到 Simulated DUT。")
-            self._set_note_status(3, "USB-I2C", True)
+        self._note_bodies[3].setText(
+            "当前：USB-I2C 物理工装桥接（I2CInterface DLL，经 "
+            "core/gpio/ Worker 异步收发，页面无阻塞 I2C）。")
+        self._set_note_status(3, "USB-I2C", True)
         # 5. func sel
         if cfg is None or not cfg.func_sel_supported:
             self._note_bodies[4].setText("当前芯片 JSON 未配置 func_sel。")
