@@ -20,6 +20,7 @@
 - **func_sel 前置**：JSON 配 `func_sel` 段后，控制 GPIO 状态（方向/电平/上下拉/drv/批处理/掩码注入）前自动把对应脚 sel 位域写 `gpio_value`（`_func_sel_pin_actions` / `_func_sel_mask_actions`，影子已等于则跳过）；RegMap 位翻转 / Raw 底层入口不自动前置。
 - **Simulated DUT**：页内仿真器（Bridge 按钮切换，不触碰硬件），影子即仿真寄存器；读 0x50 由方向/输出/上下拉/外部激励（`_pin_meta stim`）综合判定；切桥接清空全部会话状态。
 - **7 视图 Tab**（QButtonGroup + QStackedWidget）：Matrix/Table/RegMap/Sniffer/JSON/CodeExport/ConfirmNote；页面级 QSS 常量 `_GPIO_PAGE_QSS` 一次性 `setStyleSheet`，控件高度一律 QSS `min-height==max-height` 钉死。
+- **Pin Matrix 右键 Export Config**：卡片右键收集 `(group,pin,mode)` 入 `_export_items`（输出高/低、输入上/下拉，三元组去重；pull 未配置时禁用对应项），≥1 条时 Matrix 右侧自动展开 Export Manager（`_build_export_manager`，行内删除/Clear 减项，Export 复制剪贴板）；脚本合并为单段：段名 = 首脚全名 + 其余脚数字部分 + `_Config`（如 `GPIO05_62_63_Config`，同脚去重），每脚动作块前 `  - //GPIO名_mode` 注释；动作 = func_sel 前置 +（输出模式补 PU/PD 清 0）+ `build_mode_actions`，统一 `_write_bits_line` 转 WRITE_BITS 行（set/clear 单 bit 整写转位域写）；列表按芯片持久化 `get_user_data_dir("gpio")/export_items.json`（增删清即写），`_reset_session_state` 时 `_load_export_items` 校验恢复（范围/mode/pull 支持）。
 
 ## 局部坑点
 
