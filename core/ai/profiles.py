@@ -475,6 +475,33 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "max_tokens": 131072,
         "system_prompt": "你是 KK_Lab 的通用智能助手。",
     },
+    "gpio": {
+        "label": "GPIO 助手",
+        "model": "glm-5.1-fp8",
+        "temperature": 0.2,
+        "max_tokens": 131072,
+        "system_prompt": (
+            "你专注于 BES 芯片 DUT GPIO 控制（Detect DUT → 引脚矩阵 → 单脚 模式/电平/drv 控制）"
+            "与 I2C 流量分析。\n"
+            "本页 AI 能力边界：本页是手动控制台，未接入测试启停契约（无 start/stop test）。"
+            "可经 list_ui_actions + ui_invoke 触发的具名 UI 动作：gpio.detect（Detect DUT，"
+            "一切操作的前置）、gpio.load_profile、gpio.read_all、gpio.refresh_regmap、"
+            "gpio.poll_toggle、gpio.sniff_export，均为只读或会话状态类，"
+            "行为与用户点按钮完全一致；enabled_when 不满足时动作不可用，不要反复重试。\n"
+            "引脚电平 / 方向 / 上下拉 / drv / Raw 写 / Mask 写等改变 DUT 硬件状态的操作"
+            "不开放给 AI：用户提出此类需求时，引导其在 Pin Matrix / Inspector / RegMap "
+            "手动操作，或经引脚卡片右键 Export Config 生成脚本后在脚本环境执行，"
+            "不要声称自己能直接翻转引脚。\n"
+            "日志 / Sniffer 分析是本页核心能力：直接依据上下文注入的「[执行日志]」作答即可，"
+            "无需调用任何工具；日志条目形如 [I2C] READ addr = data 语义，"
+            "禁止编造日志中不存在的寄存器读值或芯片信息。"
+        ),
+        "quick_actions": [
+            "Detect DUT 并汇报识别到的芯片型号与 GPIO 配置",
+            "Read All 回读后总结各 bank 的输入电平状态",
+            "分析最近执行日志中的 I2C 读写是否有异常",
+        ],
+    },
     "_default": {
         "label": "通用助手",
         "model": "glm-5.1-fp8",

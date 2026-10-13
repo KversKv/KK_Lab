@@ -43,6 +43,7 @@ from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from core.ai.ui_action_registry import UIActionSpec
 from core.gpio.gpio_config import (
     load_gpio_config, list_gpio_config_chips, mode_label,
     MODE_OUT_HIGH, MODE_OUT_LOW, MODE_IN_FLOAT,
@@ -714,9 +715,10 @@ class GpioControlUI(QWidget):
         "ERROR": "#EF4444",
     }
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, ui_action_registry=None):
         super().__init__(parent)
         self.setObjectName("gpioPage")
+        self._ui_action_registry = ui_action_registry
         self._cfg = None            # GpioChipConfig
         self._chip_info = None
         self._dev_addr = None
@@ -766,6 +768,8 @@ class GpioControlUI(QWidget):
             content, title="Activity Logs", show_progress=False,
             stretch=(5, 1))
         root.addWidget(self._splitter, 1)
+        # AI 枢纽日志契约：_get_ai_execution_logs 经 page.logs_frame._all_logs 读取
+        self.logs_frame = self.execution_logs
 
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._on_poll_tick)
@@ -783,6 +787,9 @@ class GpioControlUI(QWidget):
         self.append_log("[INFO] BES GPIO Workbench ready. "
                         "Click i2c.bes_chip_check() to connect DUT")
         self._refresh_all_views()
+
+        # §5b：登记本页按钮为 AI 具名 UI 动作（白名单制，handler 复用原槽）
+        self._register_ai_ui_actions()
 
     def _build_top_bar(self):
         row = QHBoxLayout()
@@ -3298,6 +3305,117 @@ class GpioControlUI(QWidget):
         self.status_label.setProperty("ok", "1" if ok else "0")
         self.status_label.setProperty("err", "1" if err else "0")
         _repolish(self.status_label)
+
+    # ================================================================ AI 动作登记
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。
+
+        handler 直接复用按钮原 clicked.connect 的槽，行为与人点完全一致；
+        仅登记只读 / 会话状态类入口（Detect / Load Profile / Read / Poll /
+        Sniffer 导出），引脚电平 / 方向 / 上下拉 / drv / Raw / Mask 等写 DUT
+        硬件状态的操作不开放给 AI（引导用户手动或用 Export Config 脚本流）。
+        enabled_when 不满足时 list_ui_actions 不返回、ui_invoke 明示不可用。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, "{0} executed.".format(label)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("%s failed", label, exc_info=True)
+                    return False, "{0} failed: {1}".format(label, exc)
+            return _run
+
+        def _idle_ready() -> bool:
+            return self._ready() and not self._busy()
+
+        registry.register_many([
+            UIActionSpec(
+                id="gpio.detect",
+                label="Detect DUT",
+                page_key="gpio",
+                handler=_wrap("Detect DUT", self._on_detect_clicked),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: not self._busy(),
+                description=(
+                    "Run i2c.bes_chip_check(): identify the connected BES chip, "
+                    "load its GPIO config and auto read back all pin states. "
+                    "Required before any other GPIO operation."
+                ),
+            ),
+            UIActionSpec(
+                id="gpio.load_profile",
+                label="Load Profile",
+                page_key="gpio",
+                handler=_wrap("Load Profile", self._on_load_profile_clicked),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: self._dev_addr is not None
+                and not self._busy(),
+                description=(
+                    "Load the DUT Profile selected in the profile combo and "
+                    "read back all banks. Requires Detect DUT first."
+                ),
+            ),
+            UIActionSpec(
+                id="gpio.read_all",
+                label="Read All",
+                page_key="gpio",
+                handler=_wrap("Read All", self._start_read_all_banks),
+                risk="low",
+                confirm=False,
+                enabled_when=_idle_ready,
+                description=(
+                    "Read back all banks: 0x50 input levels + PU/PD + drv + "
+                    "func_sel, syncing shadows and pin cards."
+                ),
+            ),
+            UIActionSpec(
+                id="gpio.refresh_regmap",
+                label="Refresh RegMap",
+                page_key="gpio",
+                handler=_wrap("Refresh RegMap", self._on_refresh_readable),
+                risk="low",
+                confirm=False,
+                enabled_when=_idle_ready,
+                description=(
+                    "Re-read all readable registers of the current bank "
+                    "(input level + PU/PD + drv/func_sel cards)."
+                ),
+            ),
+            UIActionSpec(
+                id="gpio.poll_toggle",
+                label="Start / Stop Poll",
+                page_key="gpio",
+                handler=_wrap("Poll toggle", self._on_poll_toggled),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: self._poll_timer.isActive() or _idle_ready(),
+                description=(
+                    "Toggle periodic polling of the current bank input level "
+                    "register (0x50) at the interval selected in the poll combo."
+                ),
+            ),
+            UIActionSpec(
+                id="gpio.sniff_export",
+                label="Export Sniffer Log",
+                page_key="gpio",
+                handler=_wrap("Export Sniffer Log", self._on_sniff_export),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: bool(self._sniff_entries),
+                description=(
+                    "Export the Sniffer view entries (I2C traffic captured by "
+                    "this page) to a log file. Requires at least one entry."
+                ),
+            ),
+        ])
 
     def append_log(self, msg):
         self.execution_logs.append_log(msg)

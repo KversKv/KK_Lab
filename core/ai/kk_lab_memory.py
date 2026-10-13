@@ -81,6 +81,7 @@ _PAGE_KEYS: frozenset[str] = frozenset({
     "charger_status_register",
     "charger_iterm",
     "charger_regulation_voltage",
+    "gpio",
 })
 
 # 伞目录键（来源：conventions.md §2.1）。非页面键，不来自 _get_current_help_key，
@@ -124,6 +125,7 @@ _DIR_OVERRIDE: dict[str, str] = {
     # TOOLS 组
     "kk_serials": "tools/kk_serials",
     "collection": "tools/collection",
+    "gpio": "tools/gpio",
     # ORCHESTRATION 组
     "orchestrator": "orchestration/orchestrator",
 }

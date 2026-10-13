@@ -1450,6 +1450,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "charger_test": getattr(self, "charger_test_ui", None),
             "module_test": getattr(self, "module_test_ui", None),
             "consumption_test": getattr(self, "consumption_test_ui", None),
+            "gpio": getattr(self, "gpio_ui", None),
         }
         return mapping.get(self.current_instrument_ui)
 
@@ -1842,7 +1843,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to GPIO UI")
         self._hide_all_instrument_uis()
         if self.gpio_ui is None:
-            self.gpio_ui = GpioControlUI()
+            self.gpio_ui = GpioControlUI(
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
+            )
             self.instrument_ui_container_layout.addWidget(self.gpio_ui)
         else:
             self.gpio_ui.show()
