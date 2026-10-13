@@ -4003,3 +4003,23 @@ void bes_gpio_set_drv(uint8_t linear_index, uint8_t level)
     def closeEvent(self, event):
         self.cleanup_threads()
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    """独立运行：python ui/pages/gpio/gpio_control_ui.py"""
+    from ui.standalone import run_standalone_widget
+
+    def _create_window():
+        window = GpioControlUI()
+        icon_path = os.path.join(
+            get_resource_base(), "resources", "icons", "kk_lab.ico")
+        if os.path.exists(icon_path):
+            icon = QIcon(icon_path)
+            window.setWindowIcon(icon)
+            app = QApplication.instance()
+            if app is not None:
+                app.setWindowIcon(icon)
+        return window
+
+    sys.exit(run_standalone_widget(
+        _create_window, "BES GPIO Workbench", size=(1600, 950)))
