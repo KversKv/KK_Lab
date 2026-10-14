@@ -15,6 +15,7 @@ from .gpadc_analysis import (
     describe_algorithm,
     assess_fluctuation,
     compare_algorithm_effect,
+    filter_mean_deviation,
 )
 from .gpadc_worker import TestWorker
 from .gpadc_ft_check import run_ft_calib_check
@@ -39,6 +40,7 @@ __all__ = [
     "describe_algorithm",
     "assess_fluctuation",
     "compare_algorithm_effect",
+    "filter_mean_deviation",
     "TestWorker",
     "run_ft_calib_check",
     "parse_hw_int",

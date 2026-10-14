@@ -286,6 +286,29 @@ def algo_deviation_trim_mean(samples, count=10, tolerance_pct=5.0):
     return result
 
 
+def filter_mean_deviation(samples, pos_offset, neg_offset):
+    """按与均值的正/负向最大偏移筛除离群样本（非对称阈值，单趟，保持顺序）。
+
+    以全体样本均值为基准：偏差 > +pos_offset（正向超限）或 < -neg_offset
+    （负向超限）的样本被剔除，其余原值保留（不聚合、长度仅减少）。
+    返回 (kept, removed)——removed 为被剔除样本原值列表（保持原顺序）；
+    阈值过严时 kept 可能为空列表，是否回退原始数据由调用方决定。
+    """
+    n = len(samples)
+    if n == 0:
+        return [], []
+    avg = sum(samples) / n
+    pos_offset = max(0.0, float(pos_offset))
+    neg_offset = max(0.0, float(neg_offset))
+    kept, removed = [], []
+    for v in samples:
+        if -neg_offset <= (v - avg) <= pos_offset:
+            kept.append(v)
+        else:
+            removed.append(v)
+    return kept, removed
+
+
 ALGORITHM_REGISTRY = {
     'moving_average': {
         'name': 'Moving Average (滑动平均)',

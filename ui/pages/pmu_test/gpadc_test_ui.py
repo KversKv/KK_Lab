@@ -22,7 +22,9 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QListWidget, QListWidgetItem, QAbstractItemView,
     QSplitter, QMenu, QInputDialog, QTabWidget, QFileDialog, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal, QThread, QTimer, QEvent
+from PySide6.QtCore import (
+    Qt, Signal, QThread, QTimer, QEvent, Property, QPropertyAnimation, QEasingCurve
+)
 from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter, QCursor
 import datetime
 import math
@@ -36,6 +38,7 @@ import sys
 from pathlib import Path
 
 from lib.i2c.i2c_interface_x64 import I2CInterface
+from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
 
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
@@ -57,6 +60,7 @@ from core.pmu_test.gpadc import (
     describe_algorithm,
     assess_fluctuation,
     compare_algorithm_effect,
+    filter_mean_deviation,
     parse_hw_int,
     run_multi_ch_temp_test,
 )
@@ -80,6 +84,67 @@ _AI_HIGHLIGHT_MS = 1500
 
 # Force Voltage 曲线悬浮命中半径（x/y 归一化到各自轴量程后的欧氏距离阈值）
 _FV_HOVER_RADIUS = 0.015
+
+
+class _ToggleSwitch(QWidget):
+    """页面私有滑动开关（iOS 风格，36x20，150ms 滑块动画）。"""
+
+    toggled = Signal(bool)
+
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent)
+        self._checked = checked
+        self._thumb_pos = 1.0 if checked else 0.0
+        self.setFixedSize(36, 20)
+        self.setCursor(Qt.PointingHandCursor)
+
+        self._anim = QPropertyAnimation(self, b"thumb_pos")
+        self._anim.setDuration(150)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+    def _get_thumb_pos(self):
+        return self._thumb_pos
+
+    def _set_thumb_pos(self, val):
+        self._thumb_pos = val
+        self.update()
+
+    thumb_pos = Property(float, _get_thumb_pos, _set_thumb_pos)
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, val):
+        if val == self._checked:
+            return
+        self._checked = val
+        self._anim.stop()
+        self._anim.setStartValue(self._thumb_pos)
+        self._anim.setEndValue(1.0 if val else 0.0)
+        self._anim.start()
+        self.toggled.emit(val)
+
+    def mousePressEvent(self, event):
+        self.setChecked(not self._checked)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        radius = h / 2.0
+
+        track_color = QColor("#5b5cf6") if self._checked else QColor("#2a3555")
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(track_color))
+        p.drawRoundedRect(0, 0, w, h, radius, radius)
+
+        thumb_r = h - 6
+        x = 3 + self._thumb_pos * (w - thumb_r - 6)
+        y = 3
+        p.setBrush(QBrush(QColor("#ffffff")))
+        p.drawEllipse(int(x), int(y), int(thumb_r), int(thumb_r))
+        p.end()
 
 
 class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
@@ -144,6 +209,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._calib_points_snapshot = None
         # 本次测试启用的采样算法配置（None = 不处理，原始流程）
         self._algorithm_snapshot = None
+        # 本次测试启用的离群样本筛选配置（None = 不筛选；{'pos','neg'} 单位 LSB）
+        self._outlier_filter_snapshot = None
+        # 本次测试的 IIC 速度模式快照（_start_test 时从 iic_speed_combo 读取）
+        self._iic_speed_snapshot = I2CSpeedMode.SPEED_100K
         # 最近一次采样的算法前后统计对比（compare_algorithm_effect 结果，未启用算法为 None）
         self._last_algo_effect = None
         # 最近一次采样应用算法前的原始数据（未启用算法为 None），供 1000CNT 日志输出
@@ -829,6 +898,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.iic_width_combo.setCurrentIndex(1)
         iic_layout.addWidget(self.iic_width_combo, 5, 0)
 
+        iic_layout.addWidget(QLabel("IIC Speed"), 6, 0)
+        self.iic_speed_combo = DarkComboBox(bg="#0a1733", border="#24365e")
+        self.iic_speed_combo.addItem("20 kHz", int(I2CSpeedMode.SPEED_20K))
+        self.iic_speed_combo.addItem("100 kHz", int(I2CSpeedMode.SPEED_100K))
+        self.iic_speed_combo.addItem("400 kHz", int(I2CSpeedMode.SPEED_400K))
+        self.iic_speed_combo.addItem("750 kHz", int(I2CSpeedMode.SPEED_750K))
+        self.iic_speed_combo.setCurrentIndex(1)
+        iic_layout.addWidget(self.iic_speed_combo, 7, 0)
+
         self.uart_group = QFrame()
         self.uart_group.setObjectName("config_inner_panel")
         uart_layout = QVBoxLayout(self.uart_group)
@@ -1065,6 +1143,46 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._algo_param_widgets: dict[str, QDoubleSpinBox] = {}
         self._rebuild_algorithm_params()
         self.algorithm_combo.currentIndexChanged.connect(self._on_algorithm_changed)
+
+        # 离群样本筛选：剔除与平均值正/负向偏差超过阈值的样本（FT 测试项不适用，隐藏）
+        self.outlier_filter_title = QLabel("Outlier Filter")
+        self.outlier_filter_title.setObjectName("muted_label")
+        params_layout.addWidget(self.outlier_filter_title)
+
+        self.outlier_filter_frame = QFrame()
+        self.outlier_filter_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        filter_layout = QGridLayout(self.outlier_filter_frame)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setHorizontalSpacing(6)
+        filter_layout.setVerticalSpacing(6)
+
+        filter_enable_label = QLabel("Enable")
+        filter_enable_label.setObjectName("muted_label")
+        filter_layout.addWidget(filter_enable_label, 0, 0)
+        self.outlier_filter_switch = _ToggleSwitch(checked=False)
+        self.outlier_filter_switch.setToolTip(
+            "启用后剔除与平均值正/负向偏差超过阈值的样本（采样算法之前应用）"
+        )
+        filter_layout.addWidget(self.outlier_filter_switch, 0, 1, Qt.AlignRight)
+
+        filter_layout.addWidget(QLabel("Max Positive Offset (LSB)"), 1, 0)
+        filter_layout.addWidget(QLabel("Max Negative Offset (LSB)"), 1, 1)
+        self.outlier_pos_offset = QDoubleSpinBox()
+        self.outlier_pos_offset.setRange(0.0, 100000.0)
+        self.outlier_pos_offset.setValue(10.0)
+        self.outlier_pos_offset.setSingleStep(1.0)
+        self.outlier_pos_offset.setDecimals(1)
+        self.outlier_neg_offset = QDoubleSpinBox()
+        self.outlier_neg_offset.setRange(0.0, 100000.0)
+        self.outlier_neg_offset.setValue(10.0)
+        self.outlier_neg_offset.setSingleStep(1.0)
+        self.outlier_neg_offset.setDecimals(1)
+        filter_layout.addWidget(self.outlier_pos_offset, 2, 0)
+        filter_layout.addWidget(self.outlier_neg_offset, 2, 1)
+        params_layout.addWidget(self.outlier_filter_frame)
+
+        self.outlier_filter_switch.toggled.connect(self._on_outlier_filter_toggled)
+        self._on_outlier_filter_toggled(False)
 
         self.temp_hint_label = QLabel("Connect chamber to enable temperature testing.")
         self.temp_hint_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
@@ -1366,6 +1484,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             raw_data = [max(0, int(rng.gauss(2844, 2.0))) for _ in range(get_reg_cnt)]
             if progress_callback:
                 progress_callback(100)
+            raw_data = self._apply_outlier_filter(raw_data)
             raw_data = self._apply_algo_tracked(raw_data)
             return compute_reg_stats(raw_data, return_raw=return_raw)
 
@@ -1393,6 +1512,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         if not raw_data:
             raise RuntimeError("未从 UART 日志提取到任何 GPADC 样本，请确认 DUT 日志输出与 Search Keyword 匹配")
+        raw_data = self._apply_outlier_filter(raw_data)
         raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
@@ -1556,10 +1676,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.calib_params_frame.setVisible(not is_cnt_test and not is_ft_test)
         self.ft_params_frame.setVisible(is_ft_test)
 
-        # FT Calibration Check 不应用采样算法：Algorithm 区整体隐藏
+        # FT Calibration Check 不应用采样算法与离群筛选（保 raw↔volt 配对）：两区整体隐藏
         # （其余测试项按注册表恢复参数区可见性，不重建控件以保留已调参数值）
         self.algo_title.setVisible(not is_ft_test)
         self.algorithm_combo.setVisible(not is_ft_test)
+        self.outlier_filter_title.setVisible(not is_ft_test)
+        self.outlier_filter_frame.setVisible(not is_ft_test)
         if is_ft_test:
             self.algo_params_frame.hide()
         else:
@@ -1610,6 +1732,18 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             _algo_spec = ALGORITHM_REGISTRY.get(self._algorithm_snapshot['id']) or {}
             if _algo_spec.get('principle'):
                 self._append_log(f"[INFO] {_algo_spec['principle']}")
+        self._iic_speed_snapshot = I2CSpeedMode(self.iic_speed_combo.currentData())
+        if self.outlier_filter_switch.isChecked():
+            self._outlier_filter_snapshot = {
+                'pos': self.outlier_pos_offset.value(),
+                'neg': self.outlier_neg_offset.value(),
+            }
+            self._append_log(
+                f"[INFO] 启用离群样本筛选: 正向最大偏移 +{self._outlier_filter_snapshot['pos']:.1f} LSB, "
+                f"负向最大偏移 -{self._outlier_filter_snapshot['neg']:.1f} LSB（以样本均值为基准）"
+            )
+        else:
+            self._outlier_filter_snapshot = None
         if self._acq_mode_snapshot == 'UART':
             if not DEBUG_MOCK and not self._serial_connected:
                 self._append_log("[ERROR] DUT 串口未连接，无法通过 UART Log 采集")
@@ -1912,18 +2046,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             if DEBUG_MOCK:
                 self._mock_i2c.write(dev, reg, val, width)
                 return
-            if not hasattr(self, "deviceI2C"):
-                self.deviceI2C = I2CInterface()
-                self.set_system_status("I2C接口初始化成功")
-            self.deviceI2C.write(dev, reg, val, width, high, low)
+            self._ensure_device_i2c().write(dev, reg, val, width, high, low)
 
         def _read_reg_fn(dev, reg, width):
             if DEBUG_MOCK:
                 return self._mock_i2c.read(dev, reg, width)
-            if not hasattr(self, "deviceI2C"):
-                self.deviceI2C = I2CInterface()
-                self.set_system_status("I2C接口初始化成功")
-            return self.deviceI2C.read(dev, reg, width)
+            return self._ensure_device_i2c().read(dev, reg, width)
 
         def _sample_fn(ch_cfg, cnt, stop, mock_hint=None):
             dev = parse_hw_int(ch_cfg.get('read_dev'), device_addr)
@@ -1984,11 +2112,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self.set_system_status("错误: N6705C未连接", is_error=True)
                 return None
 
-        # FT 校准检查不应用采样算法（保持 raw 与 volt 的配对一致性）
+        # FT 校准检查不应用采样算法与离群筛选（保持 raw 与 volt 的配对一致性）
         if self._algorithm_snapshot is not None:
             self._test_worker.log.emit("[INFO] FT Calibration Check 不应用采样算法，已忽略 Algorithm 配置")
         saved_algo = self._algorithm_snapshot
         self._algorithm_snapshot = None
+        if self._outlier_filter_snapshot is not None:
+            self._test_worker.log.emit("[INFO] FT Calibration Check 不应用离群样本筛选，已忽略 Outlier Filter 配置")
+        saved_filter = self._outlier_filter_snapshot
+        self._outlier_filter_snapshot = None
         try:
             def _set_voltage(v):
                 vol_source.set_voltage(voltage_channel, v)
@@ -2033,6 +2165,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             )
         finally:
             self._algorithm_snapshot = saved_algo
+            self._outlier_filter_snapshot = saved_filter
         if result is None:
             return None
         return ('ft_calib_check', result)
@@ -2767,6 +2900,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.serial_combo, self.serial_search_btn, self.serial_connect_btn, self.uart_keyword,
             self.iic_radio, self.uart_radio,
             self.iic_device_address, self.iic_data_address, self.iic_width_combo,
+            self.iic_speed_combo,
             self.test_item_combo,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
@@ -2778,6 +2912,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.ft_raw_tol, self.ft_err_limit,
             self.ft_divider_ratio,
             self.algorithm_combo,
+            self.outlier_filter_switch,
             self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
             self.load_recent_btn, self.clear_recent_btn,
@@ -2787,6 +2922,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             widget.setEnabled(enabled)
         for spin in self._algo_param_widgets.values():
             spin.setEnabled(enabled)
+        # 离群筛选偏移输入的可用性始终跟随开关（恢复可用时不得越过开关状态）
+        self.outlier_pos_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
+        self.outlier_neg_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
 
     def _on_save_multi_ch_config(self):
         """保存页面完整配置（含多通道与前置配置）到 JSON 文件。"""
@@ -2848,6 +2986,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'iic_device_address': self.iic_device_address.text(),
             'iic_data_address': self.iic_data_address.text(),
             'iic_width': self.iic_width_combo.currentData(),
+            'iic_speed': self.iic_speed_combo.currentData(),
             'dut_port': dut_port,
             'uart_keyword': self.uart_keyword.text(),
             'voltage_channel': self.voltage_channel.currentData(),
@@ -2869,6 +3008,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'ft_err_limit': self.ft_err_limit.value(),
             'ft_divider_ratio': self.ft_divider_ratio.value(),
             'algorithm': self._collect_algorithm_config(),
+            'outlier_filter': {
+                'enabled': self.outlier_filter_switch.isChecked(),
+                'pos_offset': self.outlier_pos_offset.value(),
+                'neg_offset': self.outlier_neg_offset.value(),
+            },
             'multi_channels': self.multi_ch_panel.get_channels(),
             'pre_config': self.multi_ch_panel.get_pre_config(),
         }
@@ -3513,6 +3657,18 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         pass
 
     
+    def _ensure_device_i2c(self):
+        """获取（必要时创建）共享 I2C 接口，并按页面 IIC Speed 选择同步速度模式。
+
+        速度在每次访问时重新赋值：设备掉线/接口重建后仍按当前快照生效，
+        且多入口（GPADC 采样、多通道切换写、前置配置写）共用同一实例保持一致。
+        """
+        if not hasattr(self, "deviceI2C"):
+            self.deviceI2C = I2CInterface()
+            self.set_system_status("I2C接口初始化成功")
+        self.deviceI2C.speed_mode = self._iic_speed_snapshot
+        return self.deviceI2C
+
     def gpadc_reg_read_by_cnts(
         self,
         device_addr=0x17,
@@ -3528,10 +3684,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self._mock_i2c = MockI2C()
             deviceI2C = self._mock_i2c
         else:
-            if not hasattr(self, "deviceI2C"):
-                self.deviceI2C = I2CInterface()
-                self.set_system_status("I2C接口初始化成功")
-            deviceI2C = self.deviceI2C
+            deviceI2C = self._ensure_device_i2c()
 
         raw_data = []
 
@@ -3543,6 +3696,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             if progress_callback:
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
+        raw_data = self._apply_outlier_filter(raw_data)
         raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
@@ -3745,6 +3899,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._algo_param_widgets[key] = spin
         self.algo_params_frame.setVisible(True)
 
+    def _on_outlier_filter_toggled(self, checked: bool):
+        """离群筛选开关联动正/负偏移输入可用性。"""
+        self.outlier_pos_offset.setEnabled(checked)
+        self.outlier_neg_offset.setEnabled(checked)
+
     def _on_algorithm_changed(self):
         """切换算法后重建参数区并更新算法说明提示。"""
         self._rebuild_algorithm_params()
@@ -3764,6 +3923,43 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             val = spin.value()
             params[key] = int(round(val)) if spin.decimals() == 0 else float(val)
         return {'id': algo_id, 'params': params}
+
+    def _emit_worker_data_lines(self, header, data):
+        """worker 线程安全的数据序列日志：header 行 + 值按 20 个/行分块（经 worker.log 信号）。"""
+        self._test_worker.log.emit(header)
+        for i in range(0, len(data), 20):
+            self._test_worker.log.emit(
+                ",".join(self._fmt_data_value(v) for v in data[i:i + 20])
+            )
+
+    def _apply_outlier_filter(self, raw_data):
+        """按均值正/负向最大偏移筛除离群样本（worker 线程内调用）。
+
+        未启用时原样返回；启用时在采样算法之前应用（先剔离群点再聚合），
+        剔除数量与被剔除样本值写日志；阈值过严导致全剔除时回退原始数据并告警。
+        """
+        cfg = self._outlier_filter_snapshot
+        if not cfg or not raw_data:
+            return raw_data
+        kept, removed = filter_mean_deviation(raw_data, cfg['pos'], cfg['neg'])
+        if not removed:
+            return raw_data
+        mean_val = sum(raw_data) / len(raw_data)
+        if not kept:
+            self._emit_worker_data_lines(
+                f"[WARN] 离群筛选阈值（均值 {self._fmt_data_value(mean_val)}，"
+                f"+{cfg['pos']:.1f}/-{cfg['neg']:.1f} LSB）过严，"
+                f"全部 {len(raw_data)} 个样本均被剔除，已回退为原始数据；被剔除值 (N={len(removed)}):",
+                removed,
+            )
+            return raw_data
+        self._emit_worker_data_lines(
+            f"[FILTER] 剔除 {len(removed)}/{len(raw_data)} 个离群样本"
+            f"（均值 {self._fmt_data_value(mean_val)}，+{cfg['pos']:.1f}/-{cfg['neg']:.1f} LSB），"
+            f"被剔除值 (N={len(removed)}):",
+            removed,
+        )
+        return kept
 
     def _apply_algo_tracked(self, raw_data):
         """应用采样算法并记录前后统计对比到 _last_algo_effect（worker 线程内调用）。
@@ -3879,10 +4075,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 if self._acq_mode_snapshot == 'UART':
                     deviceI2C = None
                 else:
-                    if not hasattr(self, "deviceI2C"):
-                        self.deviceI2C = I2CInterface()
-                        self.set_system_status("I2C接口初始化成功")
-                    deviceI2C = self.deviceI2C
+                    deviceI2C = self._ensure_device_i2c()
                 chamber = self.chamber
 
             if deviceI2C is not None:
@@ -4060,9 +4253,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 self.set_system_status("错误: N6705C未连接", is_error=True)
                 return None
             if self._acq_mode_snapshot != 'UART':
-                if not hasattr(self, "deviceI2C"):
-                    self.deviceI2C = I2CInterface()
-                    self.set_system_status("I2C接口初始化成功")
+                self._ensure_device_i2c()
             chamber = self.chamber
             vol_source = self.n6705c
 
@@ -5552,6 +5743,7 @@ Temperature (°C) | ADC Value
         _set_text(self.iic_device_address, "iic_device_address")
         _set_text(self.iic_data_address, "iic_data_address")
         _set_combo_data(self.iic_width_combo, "iic_width")
+        _set_combo_data(self.iic_speed_combo, "iic_speed")
 
         # UART 配置
         _set_text(self.uart_keyword, "uart_keyword")
@@ -5602,6 +5794,27 @@ Temperature (°C) | ADC Value
                         continue
                 applied.append("algorithm")
                 touched.append(self.algorithm_combo)
+
+        # 离群样本筛选（enabled + 正/负向最大偏移）
+        filter_cfg = cfg.get("outlier_filter")
+        if isinstance(filter_cfg, dict):
+            enabled = filter_cfg.get("enabled")
+            if enabled is not None:
+                self.outlier_filter_switch.setChecked(bool(enabled))
+                applied.append("outlier_filter")
+                touched.append(self.outlier_filter_switch)
+            for spin, key in ((self.outlier_pos_offset, 'pos_offset'),
+                              (self.outlier_neg_offset, 'neg_offset')):
+                val = filter_cfg.get(key)
+                if val is None:
+                    continue
+                try:
+                    spin.setValue(float(val))
+                except (TypeError, ValueError):
+                    continue
+                if "outlier_filter" not in applied:
+                    applied.append("outlier_filter")
+                touched.append(spin)
 
         # 多通道高低温测试：通道列表与前置配置
         channels = cfg.get("multi_channels")

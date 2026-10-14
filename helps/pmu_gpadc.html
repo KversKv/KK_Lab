@@ -19,7 +19,19 @@
 </ol>
 <p><b>判定与输出</b>：Max/Avg/RMS 误差统计；任一项超出 <b>Error Limit ±mV</b>（IIC 含校准点确认）即判 <b>FAIL</b>。指标卡含 P1/P2 偏差（仅 IIC）、MAX/RMS ERR、CONS MAX（仅 UART）与 RESULT；曲线主图为理想曲线（y=x）+ 校准电压传输曲线，下方子图为误差 vs 施加电压（带 ±Limit 判定线，UART 叠加一致性曲线），X 轴联动；导出 Excel 含 Summary（K/B、校准点确认、误差统计、判定）+ Sweep Data 两个 sheet。</p>
 <p><b>分压比（Divider Ratio，默认 1）</b>：外部有分压电路时设置为 源设定电压 / DUT 引脚电压（如外部四分压填 4）。扫压 Start/End/Step 为源设定电压（按原值输出，不放大）；DUT 侧得出的校准电压按 <code>× 比值</code> 还原到源域后，与设定值比对评估误差（如比值 4、输入 3.2~5V 时，DUT 实测 0.8~1.25V，结果还原为 3.2~5V 评估）。校准点电压填写 DUT 引脚电压（FT 标称值），IIC 确认时源输出自动按 <code>点电压 × 比值</code> 折算。</p>
-<p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本测试项不应用 Algorithm 采样算法（保持 raw 与 volt 配对一致），切到该测试项时 Algorithm 区自动隐藏。</p>
+<p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本测试项不应用 Algorithm 采样算法与 Outlier Filter 离群筛选（保持 raw 与 volt 配对一致），切到该测试项时两区自动隐藏。</p>
+
+<h3>Data Acquisition — IIC Speed</h3>
+<p>I2C 采集模式下可选择总线速度 <b>IIC Speed</b>（20 / 100 / 400 / 750 kHz，默认 100 kHz），对 GPADC 采样读寄存器与多通道测试的通道切换写/前置配置写统一生效。DUT 支持快速模式时可缩短大批量采样（如 1000CNT）的采集耗时；出现通信不稳定时请降回 100 kHz。</p>
+
+<h3>Outlier Filter（离群样本筛选）</h3>
+<p>Test Parameters 的 <b>Outlier Filter</b> 区用于剔除偏离平均值过大的样本：打开 <b>Enable</b> 滑动开关后，以本次采样全体样本的均值为基准，正向偏差超过 <b>Max Positive Offset (LSB)</b> 或负向偏差超过 <b>Max Negative Offset (LSB)</b> 的样本被剔除（正/负阈值可独立设置），TEST LOG 实时输出剔除摘要（<code>[FILTER]</code> 行，含均值/阈值/剔除数量）及被剔除样本的具体值（20 个/行分块打印）。</p>
+<ul>
+  <li>筛选在采样算法（Algorithm）<b>之前</b>应用：先剔离群点，再做算法聚合；不启用（默认）时与原始流程完全一致。</li>
+  <li>对每个采样批次独立生效：1000CNT 为整批一次，Force Voltage / 温度类测试为每个扫描点一次。</li>
+  <li>阈值设置过严导致全部样本被剔除时，该批次自动回退为原始数据并输出 <code>[WARN]</code> 提示，请放宽阈值。</li>
+  <li>FT Calibration Check 不适用本功能（保持 raw 与 volt 配对一致），切到该测试项时本区自动隐藏。</li>
+</ul>
 
 <h3>Multi-Ch Temp Test（多通道高低温联合测试）</h3>
 <p>该测试项在一轮温度循环内，每个温度点依次分发测试多个 GPADC 通道（默认 Temp / Vbat / EXT，可增删），避免每个通道单独跑一轮温循导致的重复升降温耗时。</p>
