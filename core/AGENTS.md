@@ -43,5 +43,6 @@
 - **§7 长耗时 IO 阻塞 UI**：VISA query、下载、温箱等待必须放 QThread / Worker，违反会卡死界面。
 - **§8 QThread 生命周期**：用 `QObject + moveToThread`；线程结束 `quit() → wait()`，否则主窗口关闭时崩溃；跨线程只用 Signal/Slot。
 - **§26 worker finished 槽链里再起新 QThread**：禁止 `QTimer.singleShot(0, ...)` 直接重入，会与上一轮线程清理竞态导致无声闪退；须 `singleShot(≥50ms)`。
+- **VISA 探测禁止并发调用**：`n6705c/search_worker.py` 的 `_probe_one` 必须串行执行——IVI-VISA 多线程并发 viOpen/viRead/viClose（即使每线程独立 RM）会堆损坏崩溃（fatal 0xc0000374 / access violation，2026-10-15 真机实测）；跨网段端口扫描（纯 socket）不受此限可并发。
 - **ADR 005 遗留**：`serialCom_module_frame.py` 主壳仍有对话框未拆、`consumption_test.py` UI 本体仍大，重构时按既有阶段继续切，不要大爆炸。
 - **Orchestrator 裸变量名校验语义**：节点参数裸变量名（如 case4 模板 `temperature: "i"`）运行期由 `resolve_value` 求值，preflight（`schema.validate_param_schema`，签名为 `(node, known_variables=None)`）仅放行**前序节点已产生**的变量名（如循环变量），未知裸名仍按字面值报类型错；外部注入变量必须用 `${name}` 引用（仅 warning 级）。

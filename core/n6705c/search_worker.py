@@ -6,7 +6,8 @@ N6705C VISA 搜索 Worker（仅依赖 QtCore，无 QtWidgets）。
 - 主发现：mDNS / DNS-SD 浏览 _hislip._tcp / _vxi-11._tcp，可跨子网发现
   所有 N6705C（本机与仪器不在同一 /24 网段时 list_resources 枚举不到）；
 - 兜底发现：pyvisa list_resources()（覆盖 VISA 已配置 / 同网段设备）；
-- 两路候选合并后，对每个候选并行 open + IDN 探测，只保留“探测成功”的地址；
+- 三路候选合并后，对每个候选串行 open + IDN 探测（IVI-VISA 并发 viOpen/
+  viRead/viClose 会堆损坏崩溃 0xc0000374，2026-10-15 实测），只保留探测成功的地址；
 - 按序列号聚合：优先 hislip（验证通过），否则回退 inst0；
 - 结果地址规范化为 IP，避免目标机无 mDNS 解析 .local 主机名失败。
 """
@@ -25,7 +26,6 @@ logger = get_logger(__name__)
 # probe timeout（毫秒）：hislip 建链略慢，给稍高值；其它给较短值
 _HISLIP_PROBE_TIMEOUT_MS = 1000
 _DEFAULT_PROBE_TIMEOUT_MS = 500
-_MAX_PROBE_WORKERS = 8
 
 # mDNS 浏览等待时间（秒）：给设备回应留足时间又不过长
 _MDNS_BROWSE_TIMEOUT_S = 3.0
@@ -254,8 +254,10 @@ def _scan_subnets_for_n6705c() -> list[str]:
 def _probe_one(resource: str):
     """对单个资源做 open + IDN 探测。返回 (serial, resource, idn) 或 None。
 
-    每次探测使用独立的 ResourceManager：IVI-VISA 的 RM/session 非线程安全，
-    多线程共享同一个 rm 会导致 viFindNext / viOpen 状态互相踩踏（枚举被打断）。
+    每次探测使用独立的 ResourceManager 隔离状态。调用方必须串行调用本函数：
+    IVI-VISA 在多线程并发 viOpen/viRead/viClose（即使各自独立 RM）时会
+    堆损坏崩溃（Windows fatal exception 0xc0000374，2026-10-15 真机实测），
+    禁止用线程池并发探测。
     """
     rm = None
     instr = None
@@ -340,20 +342,16 @@ def discover_n6705c_details() -> list[dict]:
     if not candidates:
         return []
 
-    # 并行探测（每线程独立 rm），只收集验证通过的地址，按序列号聚合
+    # 串行探测：IVI-VISA 并发 viOpen/viRead/viClose 会堆损坏崩溃（0xc0000374，
+    # 每线程独立 RM 也无法避免），禁止线程池；端口扫描阶段已筛掉死地址，
+    # 候选数量有限，串行耗时可接受。只收集验证通过的地址，按序列号聚合。
     verified: dict[str, list[tuple[str, str]]] = {}
-    try:
-        with ThreadPoolExecutor(max_workers=min(_MAX_PROBE_WORKERS, len(candidates))) as pool:
-            futures = {pool.submit(_probe_one, res): res for res in candidates}
-            for fut in as_completed(futures):
-                result = fut.result()
-                if result is None:
-                    continue
-                serial, resource, idn = result
-                verified.setdefault(serial, []).append((resource, idn))
-    except Exception:
-        logger.debug("N6705C probe failed", exc_info=True)
-        return []
+    for res in candidates:
+        result = _probe_one(res)
+        if result is None:
+            continue
+        serial, resource, idn = result
+        verified.setdefault(serial, []).append((resource, idn))
 
     details = []
     for serial, entries in verified.items():
