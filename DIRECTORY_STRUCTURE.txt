@@ -464,6 +464,9 @@ ui/
 │   ├── gpio/                  # DUT GPIO 控制页面（TOOLS 组）
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── GPIO_CONTROL_UI.md        # gpio_control_ui.py 全功能说明文档
+│   │   ├── NEW_CHIP_JSON_1701.txt    # BES1701 已填写示例（json_example/，对照 chips/gpio_configs/bes1701.json）
+│   │   ├── NEW_CHIP_JSON_TEMPLATE.md # 新芯片 GPIO JSON 配置信息采集模板（json_example/，填后交 AI 生成 chips/gpio_configs/<chip>.json）
+│   │   ├── NEW_CHIP_JSON_TEMPLATE.txt# 同上纯文本版（json_example/，notepad 直接编辑用）
 │   │   └── gpio_control_ui.py        # Detect DUT→GPIO 网格→单脚 模式/电平/drv 控制（业务走 core/gpio）
 │   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）
