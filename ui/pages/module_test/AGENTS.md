@@ -83,7 +83,7 @@
 - CCLoad 0mA 场景（硬红线 12 补充）：0mA 测试点直接关闭通道输出而非设 0mA；也禁止从 0mA 状态开通道——先设非 0 负载电流再 channel_on。
 
 ## 开发环境
-- N6705C真机地址:TCPIP0::K-N6705C-06098.local::hislip0::INSTR
+- N6705C真机地址:TCPIP0::10.31.71.98::hislip0::INSTR
 - MSO64B真机地址:TCPIP0::10.31.31.202::inst0::INSTR
 - DSOX4034A真机地址:TCPIP0::10.31.30.181::inst0::INSTR
 - 优先使用DSOX4034A进行真机测试

@@ -12,7 +12,7 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-N6705C_ADDR = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+N6705C_ADDR = "TCPIP0::10.31.71.98::hislip0::INSTR"
 DSOX4034A_ADDR = "TCPIP0::10.31.30.181::inst0::INSTR"
 CH = 3
 SCH = 1

@@ -1078,7 +1078,7 @@ class N6705C:
 
 
 if __name__ == "__main__":
-    RESOURCE = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    RESOURCE = "TCPIP0::10.31.71.98::hislip0::INSTR"
     CHANNEL = 3
 
     n6705c = N6705C(RESOURCE)

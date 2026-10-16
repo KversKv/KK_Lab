@@ -232,7 +232,7 @@ class ConsumptionTestViewPanelsMixin:
             font = visa_combo.font()
             font.setPixelSize(10)
             visa_combo.setFont(font)
-            visa_combo.addItem(default_res if default_res else "TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
+            visa_combo.addItem(default_res if default_res else "TCPIP0::10.31.71.98::hislip0::INSTR")
             sub_layout.addWidget(visa_combo)
 
             btn_row = QHBoxLayout()

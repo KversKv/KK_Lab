@@ -611,7 +611,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         content_layout.setSpacing(2)
 
         default_addresses = {
-            "A": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR",
+            "A": "TCPIP0::10.31.71.98::hislip0::INSTR",
             "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
         }
 
