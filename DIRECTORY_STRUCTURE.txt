@@ -463,6 +463,7 @@ ui/
 │   │
 │   ├── gpio/                  # DUT GPIO 控制页面（TOOLS 组）
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
+│   │   ├── GPIO_CONTROL_UI.md        # gpio_control_ui.py 全功能说明文档
 │   │   └── gpio_control_ui.py        # Detect DUT→GPIO 网格→单脚 模式/电平/drv 控制（业务走 core/gpio）
 │   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）

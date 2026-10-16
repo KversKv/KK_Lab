@@ -6,6 +6,7 @@
 
 - **职责**：DUT GPIO 控制页（TOOLS 组）——Detect DUT → GPIO 网格 → 单脚 模式/电平/drv 控制。
 - **下游**：`core/gpio/`（配置 + Worker）；页面**禁止**直接发 I2C。
+- **功能说明**：页面全部功能清单见 [GPIO_CONTROL_UI.md](./GPIO_CONTROL_UI.md)（功能变更时同步维护）。
 
 ## 局部约定
 
@@ -22,6 +23,7 @@
 - **func_sel 前置**：JSON 配 `func_sel` 段后，控制 GPIO 状态（方向/电平/上下拉/drv/批处理/掩码注入）前自动把对应脚 sel 位域写 `gpio_value`（`_func_sel_pin_actions` / `_func_sel_mask_actions`，影子已等于则跳过）；RegMap 位翻转 / Raw 底层入口不自动前置。
 - **func_sel.functions 功能表**：JSON `func_sel.functions` 存 iomux 复用功能名（键 `GPIO_P{G}_{P}` → [Func_0..N]，list index=sel 位域值，null=未用；BES1701 源自 `Temp/bes1701_iomux.xlsx`，`tests/gen_bes1701_iomux.py` 注入）；core 侧 `func_name()`/`func_options()`。卡片 GPIO 名后（alias_label 前段）显示当前功能名（影子推导，未命名值回退 `0xN`）；右键 **Set Function** 二级菜单列 `func_options`（GPIO 在前，checkable 勾选当前值），选中即 OP_BITS 写 sel 位域。
 - **5 视图 Tab**（QButtonGroup + QStackedWidget）：Matrix/RegMap/Sniffer/JSON/ConfirmNote；页面级 QSS 常量 `_GPIO_PAGE_QSS` 一次性 `setStyleSheet`，控件高度一律 QSS `min-height==max-height` 钉死。**例外**：顶栏 `#gpioTab` 禁钉高度——`dut_sub`（DUT 芯片/Bank 信息）与标题组成两行竖排块，Tab 按钮靠 `QSizePolicy.Expanding` 垂直撑满顶栏（高度 = 标题行 + 副标题行）。
+- **图标资源**：顶栏品牌图标 = `resources/icons/gpio-pins.svg`；独立打包/窗口图标 = `resources/icons/gpio_control_ui.ico`（`tools/svg_to_ico.py` 自 gpio-pins.svg 生成，参数 `--stroke/--fill "#22D3EE" --bg "#050b1e" --padding 0.12 --radius 0.22`（圆角）；`gpio_control_ui.spec` 的 `icon=` 与 `__main__` 的 `setWindowIcon` 同指向，换图标需重新生成 .ico）。
 - **AI 接入（datalog/power_analyser 同模式）**：构造收 `ui_action_registry`，`_register_ai_ui_actions()` 仅登记只读/会话态动作（detect/load_profile/read_all/refresh_regmap/poll_toggle/sniff_export，page_key=`gpio`），**写 DUT 硬件状态的操作（电平/方向/上下拉/drv/Raw/Mask）不登记**；`self.logs_frame = self.execution_logs`（枢纽日志契约）；profile 在 `core/ai/profiles.py` 的 `AI_PROFILES["gpio"]`，记忆键 `"gpio"` → `tools/gpio`。
 - **Pin Matrix 右键 Export Config**：卡片右键收集 `(group,pin,mode)` 入 `_export_items`（输出高/低、输入上/下拉，三元组去重；pull 未配置时禁用对应项），≥1 条时 Matrix 右侧自动展开 Export Manager（`_build_export_manager`，行内删除/Clear 减项，Export 复制剪贴板）；脚本合并为单段：段名 = 首脚全名 + 其余脚数字部分 + `_Config`（如 `GPIO05_62_63_Config`，同脚去重），每脚动作块前 `  - //GPIO名_mode` 注释；动作 = func_sel 前置 +（输出模式补 PU/PD 清 0）+ `build_mode_actions`，统一 `_write_bits_line` 转 WRITE_BITS 行（set/clear 单 bit 整写转位域写）；动作构造抽出 `_export_item_actions()` 供脚本与 **Exec 按钮**（Export 左侧，绿色 `#gpioExec`）复用——Exec 将全部条目动作一次走 `_apply_actions()` 下发 DUT 并 `_defer_read` 全量回读；列表按芯片持久化 `get_user_data_dir("gpio")/export_items.json`（增删清即写），`_reset_session_state` 时 `_load_export_items` 校验恢复（范围/mode/pull 支持）。
 

@@ -34,7 +34,7 @@ a = Analysis(
         # ExecutionLogsFrame 用的 SVG 图标 (trash/export/filter/logs/chevron-down 等)
         (os.path.join(PROJECT_ROOT, 'resources', 'modules', 'SVG_Logs'),
          os.path.join('resources', 'modules', 'SVG_Logs')),
-        # 页面图标 (cpu/refresh-cw/trash/copy/download/x-close.svg 等) 与 kk_lab.ico
+        # 页面图标 (gpio-pins/refresh-cw/trash/copy/download/x-close.svg 等) 与 gpio_control_ui.ico
         # table.qss 通过 $check_svg / $uncheck_svg 引用 checked_*.svg / unchecked_*.svg
         # theme._checkbox_icon_map 按 get_resource_base()/"resources"/"icons" 定位
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
@@ -123,5 +123,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'kk_lab.ico'),
+    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'gpio_control_ui.ico'),
 )

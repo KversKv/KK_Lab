@@ -816,7 +816,7 @@ class GpioControlUI(QWidget):
         row.setSpacing(6)
 
         chip_icon = QLabel()
-        pm = tinted_svg_pixmap(os.path.join(_ICONS_DIR, "cpu.svg"), "#22D3EE", 18)
+        pm = tinted_svg_pixmap(os.path.join(_ICONS_DIR, "gpio-pins.svg"), "#22D3EE", 18)
         if not pm.isNull():
             chip_icon.setPixmap(pm)
         row.addWidget(chip_icon)
@@ -3761,7 +3761,7 @@ if __name__ == "__main__":
     def _create_window():
         window = GpioControlUI()
         icon_path = os.path.join(
-            get_resource_base(), "resources", "icons", "kk_lab.ico")
+            get_resource_base(), "resources", "icons", "gpio_control_ui.ico")
         if os.path.exists(icon_path):
             icon = QIcon(icon_path)
             window.setWindowIcon(icon)
@@ -3771,4 +3771,4 @@ if __name__ == "__main__":
         return window
 
     sys.exit(run_standalone_widget(
-        _create_window, "BES GPIO Workbench", size=(1600, 950)))
+        _create_window, "BES GPIO Workbench", size=(1200, 700)))

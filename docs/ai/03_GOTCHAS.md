@@ -569,3 +569,9 @@ app.installEventFilter(_WinFilter())
 - worker → 页面回调**只连绑定方法**（销毁自动断开）：闭包存页面属性（如 `_worker_done_cb`），信号统一经绑定分发器（`_on_worker_done`）调用；
 - 页面实现 `cleanup_threads()` 并在 `CleanupMixin._perform_close_cleanup` 注册，兜底关窗清理；
 - `thread.finished` 清理槽加 `sender()` 校验，防旧线程 finished 晚到清掉新线程引用。
+
+## 40. IDE 文件工具写 `resources/icons/` 偶发不落盘（报成功但磁盘未变）
+
+**现象**：Write/SearchReplace 改写 `resources/icons/*.svg` 返回成功且 Read 回显新内容，但磁盘文件长度/mtime 未变（Grep、Qt 渲染均为旧内容），疑似环境（DLP/EDR）拦截。
+
+**对策**：改写 `resources/` 下文件后以 OS 层为准校验（`Get-Item Length/LastWriteTime` 或离屏渲染确认）；未生效时改用 PowerShell `[System.IO.File]::WriteAllText(...)` 落盘并复核。

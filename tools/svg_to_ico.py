@@ -14,6 +14,8 @@ Options:
                                      Use "none" to keep original SVG fill.
     --bg "#050b1e" | "transparent"   Background color. Default: transparent.
     --padding 0.12                   Inner padding ratio (0~0.49). Default: 0.0.
+    --radius 0.22                    Background corner radius ratio (0=square,
+                                     0.5=circle). Default: 0.0 (square).
 
 Examples:
     # Generic transparent icon, no recoloring.
@@ -43,8 +45,8 @@ _PROJECT_ROOT = os.path.dirname(_HERE)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from PySide6.QtCore import QRectF, QByteArray, QBuffer, QIODevice
-from PySide6.QtGui import QImage, QPainter, QColor
+from PySide6.QtCore import Qt, QRectF, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QImage, QPainter, QColor, QBrush
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
 
@@ -83,13 +85,22 @@ def _render_png_bytes(
     size: int,
     bg: Optional[QColor],
     padding: float,
+    radius: float = 0.0,
 ) -> bytes:
+    rounded = bg is not None and radius > 0.0
     image = QImage(size, size, QImage.Format_ARGB32)
-    image.fill(bg if bg is not None else QColor(0, 0, 0, 0))
+    image.fill(QColor(0, 0, 0, 0)
+               if rounded else (bg if bg is not None else QColor(0, 0, 0, 0)))
 
     painter = QPainter(image)
     painter.setRenderHint(QPainter.Antialiasing, True)
     painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+    if rounded:
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg))
+        r = size * max(0.0, min(radius, 0.5))
+        painter.drawRoundedRect(QRectF(0, 0, size, size), r, r)
 
     pad_px = int(size * max(0.0, min(padding, 0.49)))
     target = QRectF(pad_px, pad_px, size - 2 * pad_px, size - 2 * pad_px)
@@ -115,6 +126,7 @@ def svg_to_ico(
     fill: Optional[str] = None,
     bg: Optional[str] = None,
     padding: float = 0.0,
+    radius: float = 0.0,
 ) -> str:
     """Convert an SVG file into a multi-resolution Windows ICO file.
 
@@ -126,6 +138,8 @@ def svg_to_ico(
         fill: Replace `fill="currentColor"` with this color.
         bg: Background color, or None / "transparent" for transparent canvas.
         padding: Inner padding as a ratio of the canvas (0~0.49).
+        radius: Background corner radius as a ratio of the canvas
+            (0=square, 0.5=circle). Only applies when `bg` is set.
 
     Returns:
         The absolute output path actually written.
@@ -145,7 +159,7 @@ def svg_to_ico(
     svg_text = _patch_svg(svg_text, stroke, fill)
 
     images = [
-        Image.open(BytesIO(_render_png_bytes(svg_text, s, bg_color, padding)))
+        Image.open(BytesIO(_render_png_bytes(svg_text, s, bg_color, padding, radius)))
         .convert("RGBA")
         for s in sizes_sorted
     ]
@@ -197,6 +211,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         "--padding", type=float, default=0.0,
         help="Inner padding ratio (0~0.49). Default: 0.0",
     )
+    parser.add_argument(
+        "--radius", type=float, default=0.0,
+        help="Background corner radius ratio (0=square, 0.5=circle). Default: 0.0",
+    )
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -209,6 +227,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             fill=args.fill,
             bg=args.bg,
             padding=args.padding,
+            radius=args.radius,
         )
     except Exception as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
