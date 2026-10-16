@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "config": {
+    "mode_8ch": false,
+    "type_current": true,
+    "min_period": true,
+    "meas_minimum": false,
+    "meas_average": true,
+    "meas_maximum": true,
+    "meas_peak2peak": false,
+    "meas_charge_ah": false,
+    "meas_charge_c": false,
+    "label_time": "",
+    "label_text": ""
+  }
+}

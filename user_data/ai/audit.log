@@ -340,7 +340,7 @@
 {"ts": "2026-06-24 21:52:07", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起扫描（异步），完成后再次调用可获取结果。"}
 {"ts": "2026-06-24 21:57:14", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话。"}
 {"ts": "2026-06-24 21:57:27", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起新一轮扫描；上次扫描到 2 个候选。完成后再次调用可获取最新结果。"}
-{"ts": "2026-06-24 21:58:55", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR", "slot": "A"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
+{"ts": "2026-06-24 21:58:55", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::10.31.71.98::hislip0::INSTR", "slot": "A"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
 {"ts": "2026-06-24 21:58:55", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话。"}
 {"ts": "2026-06-24 21:58:56", "action": "query_instrument", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "command": "*IDN?"}, "message": "查询完成。"}
 {"ts": "2026-06-24 21:59:31", "action": "measure_voltage", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "channel": 1}, "message": "通道 1 电压测量完成。"}
@@ -2580,7 +2580,7 @@
 {"ts": "2026-06-26 13:01:15", "action": "get_task_result", "status": "executed", "risk_level": "low", "arguments": {"task_id": "T-0001"}, "message": "任务 T-0001 当前状态：pending。"}
 {"ts": "2026-06-26 13:01:16", "action": "get_task_result", "status": "executed", "risk_level": "low", "arguments": {"task_id": "T-0001"}, "message": "任务 T-0001 当前状态：pending。"}
 {"ts": "2026-06-26 13:01:25", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起新一轮扫描；上次扫描到 5 个候选。完成后会自动回灌最新结果。"}
-{"ts": "2026-06-26 13:01:52", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR", "slot": "default"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
+{"ts": "2026-06-26 13:01:52", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::10.31.71.98::hislip0::INSTR", "slot": "default"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
 {"ts": "2026-06-26 13:01:52", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话。"}
 {"ts": "2026-06-26 13:02:02", "action": "get_channel_output_state", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "channel": 1}, "message": "通道 1 输出状态读取完成。"}
 {"ts": "2026-06-26 13:02:02", "action": "get_channel_output_state", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "channel": 2}, "message": "通道 2 输出状态读取完成。"}
@@ -2649,7 +2649,7 @@
 {"ts": "2026-06-26 13:40:33", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起扫描（异步），完成后会自动回灌结果。"}
 {"ts": "2026-06-26 13:40:34", "action": "get_task_result", "status": "executed", "risk_level": "low", "arguments": {"task_id": "T-0002"}, "message": "任务 T-0002 当前状态：pending。"}
 {"ts": "2026-06-26 13:40:43", "action": "scan_instruments", "status": "executed", "risk_level": "low", "arguments": {"instrument_type": "n6705c"}, "message": "已发起新一轮扫描；上次扫描到 5 个候选。完成后会自动回灌最新结果。"}
-{"ts": "2026-06-26 13:40:47", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR", "slot": "default"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
+{"ts": "2026-06-26 13:40:47", "action": "connect_instrument", "status": "executed", "risk_level": "medium", "arguments": {"instrument_type": "n6705c", "resource": "TCPIP0::10.31.71.98::hislip0::INSTR", "slot": "default"}, "message": "已发起连接（异步），可稍后用 get_instrument_status 确认。"}
 {"ts": "2026-06-26 13:40:47", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话。"}
 {"ts": "2026-06-26 13:40:49", "action": "get_channel_output_state", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "channel": 1}, "message": "通道 1 输出状态读取完成。"}
 {"ts": "2026-06-26 13:40:49", "action": "get_channel_output_state", "status": "executed", "risk_level": "low", "arguments": {"session_id": "n6705c:A", "channel": 2}, "message": "通道 2 输出状态读取完成。"}
