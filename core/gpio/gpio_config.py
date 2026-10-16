@@ -18,9 +18,15 @@ drv_sel 两种寻址方式（按 JSON 配置二选一）：
    pin N 位域 = [N*bits+bits-1 : N*bits]，支持地址区不连续（如 BES1701）。
 2. drv.base 线性模式：从 base 起每 32bit 寄存器连续排布，
    bits_per_gpio=2 → 每寄存器 16 个 GPIO；bits_per_gpio=4 → 每寄存器 8 个。
-   字段地址 = base + (linear // per_reg) * 4，
-   位域 = [(linear % per_reg) * bits + bits - 1 : (linear % per_reg) * bits]，
-   linear = group * 8 + pin。
+   字段地址 = base + (field // per_reg) * 4，
+   位域 = [(field % per_reg) * bits + bits - 1 : (field % per_reg) * bits]，
+   field = linear // drv.pins_per_field，linear = group * 8 + pin。
+   drv.pins_per_field（缺省 1，仅线性模式）= 共用一个位域的相邻脚数，
+   >1 时 linear 2k/2k+1 共享同一档位字段（如 BES1607：相邻两脚共用
+   4bit/16 档，每寄存器 16 脚，4 个寄存器覆盖双 bank）。
+   drv.base 也可为逐寄存器地址列表（每 32bit 寄存器一项，null=无 drv），
+   寄存器地址 = base[field // per_reg]，支持地址区不连续（如 BEST3601P：
+   Group0~9 在 0x40086050~0x40086060，Group10~11 跳至 0x40086078）。
 档位取值 0 ~ drv.levels-1（levels 缺省 = 2**bits_per_gpio）；
 drv.out_high_ohm / out_low_ohm 为各档位输出阻抗表（可选，UI 取整显示）。
 
@@ -93,8 +99,10 @@ class GpioChipConfig:
     chip: str
     banks: list = field(default_factory=list)          # list[GpioBank]
     drv_base: int = None
+    drv_base_list: list = field(default_factory=list)  # list[int|None] 线性区逐寄存器显式地址（base 配列表时）
     drv_group_bases: list = field(default_factory=list)  # list[int|None] 按 group
     drv_bits_per_gpio: int = 2
+    drv_pins_per_field: int = 1  # 线性模式相邻 N 脚共用一个 drv 位域
     drv_levels: int = 0        # 0 → 2**bits_per_gpio
     drv_out_high_ohm: list = field(default_factory=list)  # 各档位输出阻抗（Ω）
     drv_out_low_ohm: list = field(default_factory=list)
@@ -162,6 +170,7 @@ class GpioChipConfig:
     @property
     def drv_supported(self):
         return (self.drv_base is not None
+                or any(a is not None for a in self.drv_base_list)
                 or any(a is not None for a in self.drv_group_bases))
 
     @property
@@ -178,10 +187,18 @@ class GpioChipConfig:
         if 0 <= group < len(self.drv_group_bases) \
                 and self.drv_group_bases[group] is not None:
             return self.drv_group_bases[group], pin * self.drv_bits_per_gpio
+        per_reg = 32 // self.drv_bits_per_gpio
+        fld = idx // self.drv_pins_per_field
+        if self.drv_base_list:
+            reg_idx = fld // per_reg
+            if reg_idx < len(self.drv_base_list) \
+                    and self.drv_base_list[reg_idx] is not None:
+                return (self.drv_base_list[reg_idx],
+                        (fld % per_reg) * self.drv_bits_per_gpio)
+            return None
         if self.drv_base is not None:
-            per_reg = 32 // self.drv_bits_per_gpio
-            return (self.drv_base + (idx // per_reg) * 4,
-                    (idx % per_reg) * self.drv_bits_per_gpio)
+            return (self.drv_base + (fld // per_reg) * 4,
+                    (fld % per_reg) * self.drv_bits_per_gpio)
         return None
 
     def drv_field(self, group, pin):
@@ -207,12 +224,15 @@ class GpioChipConfig:
         return regs
 
     def drv_field_owner(self, addr, low_bit):
-        """由寄存器地址与位域低位反查 (group, pin)；未命中返回 None。"""
+        """由寄存器地址与位域低位反查 (group, pin)；未命中返回 None。
+        共享位域（pins_per_field>1）时返回该域首脚。"""
         per_reg = 32 // self.drv_bits_per_gpio
+        span = per_reg * self.drv_pins_per_field
         for reg_addr, first in self.drv_registers():
             if reg_addr == addr:
-                idx = first + low_bit // self.drv_bits_per_gpio
-                if idx < first + per_reg:
+                idx = first + (low_bit // self.drv_bits_per_gpio) \
+                    * self.drv_pins_per_field
+                if idx < first + span:
                     return divmod(idx, PINS_PER_GROUP)
         return None
 
@@ -422,15 +442,20 @@ def load_gpio_config(chip_name):
             logger.error("GPIO 配置无有效 bank: %s", path)
             return None
         drv = raw.get("drv") or {}
+        drv_base_raw = drv.get("base")
+        drv_base_list = ([_parse_int(v) for v in drv_base_raw]
+                         if isinstance(drv_base_raw, list) else [])
         pull_ohm = raw.get("pull_ohm") or {}
         fsel = raw.get("func_sel") or {}
         cfg = GpioChipConfig(
             chip=str(raw.get("chip") or chip_name),
             banks=banks,
-            drv_base=_parse_int(drv.get("base")),
+            drv_base=(None if drv_base_list else _parse_int(drv_base_raw)),
+            drv_base_list=drv_base_list,
             drv_group_bases=[_parse_int(v)
                              for v in drv.get("group_bases", [])],
             drv_bits_per_gpio=int(drv.get("bits_per_gpio", 2) or 2),
+            drv_pins_per_field=int(drv.get("pins_per_field", 1) or 1),
             drv_levels=int(drv.get("levels", 0) or 0),
             drv_out_high_ohm=[float(v)
                               for v in drv.get("out_high_ohm", [])],
@@ -453,6 +478,9 @@ def load_gpio_config(chip_name):
         )
         if cfg.drv_bits_per_gpio not in (2, 4):
             logger.error("drv bits_per_gpio 非法: %s", cfg.drv_bits_per_gpio)
+            return None
+        if cfg.drv_pins_per_field < 1:
+            logger.error("drv pins_per_field 非法: %s", cfg.drv_pins_per_field)
             return None
         return cfg
     except Exception:
