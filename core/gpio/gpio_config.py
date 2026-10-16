@@ -32,10 +32,14 @@ func_sel（pin function 复用选择，可选）：控制 GPIO 状态前须先�
 sel 位域写为 func_sel.gpio_value（BES1701 = 0xF 选为 GPIO 功能）。
 地址 = base + (linear // per_reg) * 4，位域排布同 drv 线性模式；
 func_sel.groups 限制有效 group 数（0 = 不限制）。
+func_sel.functions 为 iomux 复用功能表（可选）：键 "GPIO_P{G}_{P}"，
+值为 [Func_0..Func_N] 名字列表，list index = sel 位域值，null = 该值未用；
+UI 据此显示当前功能名并提供 Set Function 菜单。
 """
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 
 from log_config import get_logger
@@ -101,6 +105,7 @@ class GpioChipConfig:
     func_sel_bits_per_gpio: int = 4
     func_sel_gpio_value: int = 0xF
     func_sel_groups: int = 0     # 有效 group 数上限；0 = 不限制
+    func_sel_functions: dict = field(default_factory=dict)  # (group,pin) -> [名字|None]，index=sel 值
 
     # ---- 基本映射 ----
 
@@ -250,6 +255,28 @@ class GpioChipConfig:
         addr, high, low = field_
         return [(OP_BITS, addr, self.func_sel_gpio_value, high, low)]
 
+    def func_name(self, group, pin, value):
+        """该脚某 sel 值对应的功能名；gpio_value → "GPIO"，未配置/未命名 → None。"""
+        if self.func_sel_base is None:
+            return None
+        if value == self.func_sel_gpio_value:
+            return "GPIO"
+        names = self.func_sel_functions.get((group, pin))
+        if names and 0 <= value < len(names):
+            return names[value]
+        return None
+
+    def func_options(self, group, pin):
+        """该脚可选功能 [(value, name)]：GPIO 在前，后接已命名复用功能。"""
+        if self.func_sel_field(group, pin) is None:
+            return []
+        options = [(self.func_sel_gpio_value, "GPIO")]
+        names = self.func_sel_functions.get((group, pin)) or []
+        options.extend(
+            (i, name) for i, name in enumerate(names)
+            if name and i != self.func_sel_gpio_value)
+        return options
+
     # ---- 上下拉地址 ----
 
     def pull_up_addr(self, group):
@@ -328,6 +355,19 @@ def _parse_int(value):
     return int(str(value).strip(), 0)
 
 
+def _parse_func_sel_functions(raw):
+    """解析 func_sel.functions：键 "GPIO_P{G}_{P}" → {(group, pin): [名字|None]}。"""
+    functions = {}
+    for key, names in (raw or {}).items():
+        m = re.fullmatch(r"GPIO_P(\d+)_(\d+)", str(key).strip().upper())
+        if not m or not isinstance(names, list):
+            continue
+        functions[(int(m.group(1)), int(m.group(2)))] = [
+            str(n).strip() if n is not None and str(n).strip() else None
+            for n in names]
+    return functions
+
+
 def _config_dir():
     import chips
     return os.path.join(os.path.dirname(os.path.abspath(chips.__file__)),
@@ -392,6 +432,8 @@ def load_gpio_config(chip_name):
             func_sel_bits_per_gpio=int(fsel.get("bits_per_gpio", 4) or 4),
             func_sel_gpio_value=int(fsel.get("gpio_value", 0xF)),
             func_sel_groups=int(fsel.get("groups", 0) or 0),
+            func_sel_functions=_parse_func_sel_functions(
+                fsel.get("functions")),
         )
         if cfg.drv_bits_per_gpio not in (2, 4):
             logger.error("drv bits_per_gpio 非法: %s", cfg.drv_bits_per_gpio)

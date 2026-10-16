@@ -1519,15 +1519,29 @@ class GpioControlUI(QWidget):
         ohm = self._drv_ohm_text(val)
         return "Lv{0} · {1}".format(val, ohm) if ohm else "Lv{0}".format(val)
 
+    def _func_sel_value(self, group, pin):
+        """该脚 func sel 当前值（影子推导）；未配置返回 None。"""
+        field_ = self._cfg.func_sel_field(group, pin) if self._cfg else None
+        if field_ is None:
+            return None
+        addr, high, low = field_
+        mask = (1 << (high - low + 1)) - 1
+        return (self._reg_shadow.get(addr, 0) >> low) & mask
+
+    def _func_display(self, group, pin):
+        """卡片 GPIO 名后的当前功能名；未配置返回 ""，未命名值回退 0xN。"""
+        val = self._func_sel_value(group, pin)
+        if val is None:
+            return ""
+        return self._cfg.func_name(group, pin, val) or "0x{0:X}".format(val)
+
     def _func_sel_pin_actions(self, group, pin):
         """单脚控制前置：func sel 未选 GPIO 功能时生成配置动作（否则空）。"""
         field_ = self._cfg.func_sel_field(group, pin) if self._cfg else None
         if field_ is None:
             return []
         addr, high, low = field_
-        mask = (1 << (high - low + 1)) - 1
-        cur = (self._reg_shadow.get(addr, 0) >> low) & mask
-        if cur == self._cfg.func_sel_gpio_value:
+        if self._func_sel_value(group, pin) == self._cfg.func_sel_gpio_value:
             return []
         return [(OP_BITS, addr, self._cfg.func_sel_gpio_value, high, low)]
 
@@ -1684,12 +1698,14 @@ class GpioControlUI(QWidget):
         bit = self._cfg.bit_in_bank(group, pin)
         linear = self._cfg.linear_index(group, pin)
         alias = self._alias(group, pin)
+        func = self._func_display(group, pin)
         card.name_label.setText(self._cfg.gpio_name(group, pin))
         card.bit_label.setText("BIT{0:02d}".format(bit))
-        card.alias_label.setText(alias)
-        card.setToolTip("{0} · {1} BIT{2:02d} · Global #{3}".format(
+        card.alias_label.setText(" · ".join(t for t in (func, alias) if t))
+        card.setToolTip("{0} · {1} BIT{2:02d} · Global #{3}{4}".format(
             self._cfg.gpio_name(group, pin), self._cfg.banks[bank_idx].name,
-            bit, linear))
+            bit, linear,
+            " · Function: {0}".format(func) if func else ""))
 
         is_out = bool(self._dir_bit(bank_idx, bit))
         card.dir_btn.setText("OUT" if is_out else "IN")
@@ -2153,8 +2169,8 @@ class GpioControlUI(QWidget):
                         _fmt32(value), g)
                 pin = lo // cfg.func_sel_bits_per_gpio
                 if pin < PINS_PER_GROUP:
-                    tag = (" (GPIO function)"
-                           if value == cfg.func_sel_gpio_value else "")
+                    fname = cfg.func_name(g, pin, value)
+                    tag = " ({0})".format(fname) if fname else ""
                     return "Func sel: [{0}:{1}] = 0x{2:X}{3} -> {4}".format(
                         hi, lo, value, tag, cfg.gpio_name(g, pin))
             if cfg.drv_supported:
@@ -3023,11 +3039,22 @@ class GpioControlUI(QWidget):
     # ================================================================ Export Manager
 
     def _on_pin_context_menu(self, group, pin, pos):
-        """Pin Matrix 卡片右键：Export Config 二级菜单收集导出配置。"""
+        """Pin Matrix 卡片右键：Set Function 切换复用功能；Export Config 收集导出配置。"""
         if not self._ready():
             return
         self._on_pin_clicked(group, pin)
         menu = QMenu(self)
+        fsub = menu.addMenu("Set Function")
+        cur = self._func_sel_value(group, pin)
+        options = self._cfg.func_options(group, pin)
+        for value, fname in options:
+            act = fsub.addAction(fname)
+            act.setCheckable(True)
+            act.setChecked(value == cur)
+            act.triggered.connect(
+                lambda checked=False, g=group, p=pin, v=value, n=fname:
+                self._set_pin_function(g, p, v, n))
+        fsub.setEnabled(bool(options))
         sub = menu.addMenu("Export Config")
         for label, mode in self.EXPORT_MODES:
             act = sub.addAction(label)
@@ -3038,6 +3065,19 @@ class GpioControlUI(QWidget):
                 lambda checked=False, g=group, p=pin, m=mode:
                 self._add_export_item(g, p, m))
         menu.exec(pos)
+
+    def _set_pin_function(self, group, pin, value, fname):
+        """Set Function：该脚 func sel 位域写为选定功能值（影子同步）。"""
+        if not self._ready():
+            return
+        field_ = self._cfg.func_sel_field(group, pin)
+        if field_ is None:
+            return
+        addr, high, low = field_
+        name = self._cfg.gpio_name(group, pin)
+        self._apply_actions(
+            [(OP_BITS, addr, value, high, low)],
+            label="{0} function -> {1}".format(name, fname))
 
     def _add_export_item(self, group, pin, mode):
         item = (group, pin, mode)
