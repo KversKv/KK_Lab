@@ -85,6 +85,7 @@ def mode_label(mode):
 class GpioBank:
     name: str
     base: int
+    groups: int = GROUPS_PER_BANK   # 有效 group 数；高位 group 物理不存在时 < 4
 
 
 @dataclass
@@ -111,7 +112,13 @@ class GpioChipConfig:
 
     @property
     def group_count(self):
-        return len(self.banks) * GROUPS_PER_BANK
+        return sum(b.groups for b in self.banks)
+
+    def bank_group_count(self, bank_idx):
+        """该 bank 有效 group 数（高位 group 不存在时 < GROUPS_PER_BANK）。"""
+        if 0 <= bank_idx < len(self.banks):
+            return self.banks[bank_idx].groups
+        return GROUPS_PER_BANK
 
     @staticmethod
     def gpio_name(group, pin):
@@ -188,7 +195,8 @@ class GpioChipConfig:
     def drv_registers(self, bank_idx=None):
         """drv_sel 寄存器列表 [(addr, first_linear)]；bank_idx 限定该 bank。"""
         g0 = 0 if bank_idx is None else bank_idx * GROUPS_PER_BANK
-        g1 = self.group_count if bank_idx is None else g0 + GROUPS_PER_BANK
+        g1 = self.group_count if bank_idx is None \
+            else g0 + self.bank_group_count(bank_idx)
         regs, seen = [], set()
         for g in range(g0, min(g1, self.group_count)):
             reg = self.drv_reg(g, 0)
@@ -398,9 +406,17 @@ def load_gpio_config(chip_name):
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
-        banks = [GpioBank(name=str(b.get("name", "BANK{0}".format(i))),
-                          base=_parse_int(b.get("base")))
-                 for i, b in enumerate(raw.get("gpio_banks", []))]
+        banks = []
+        for i, b in enumerate(raw.get("gpio_banks", [])):
+            try:
+                groups = int(b.get("groups", GROUPS_PER_BANK)
+                             or GROUPS_PER_BANK)
+            except (TypeError, ValueError):
+                groups = GROUPS_PER_BANK
+            groups = max(1, min(groups, GROUPS_PER_BANK))
+            banks.append(GpioBank(name=str(b.get("name", "BANK{0}".format(i))),
+                                  base=_parse_int(b.get("base")),
+                                  groups=groups))
         banks = [b for b in banks if b.base is not None]
         if not banks:
             logger.error("GPIO 配置无有效 bank: %s", path)

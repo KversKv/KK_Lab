@@ -50,7 +50,7 @@ from core.gpio.gpio_config import (
     MODE_IN_PULL_UP, MODE_IN_PULL_DOWN,
     OP_WRITE, OP_BITS,
     OFFSET_OUT_SET, OFFSET_DIR_SET, OFFSET_OUT_CLR, OFFSET_DIR_CLR,
-    OFFSET_IN_READ, PINS_PER_GROUP, GROUPS_PER_BANK, GPIOS_PER_BANK,
+    OFFSET_IN_READ, PINS_PER_GROUP, GROUPS_PER_BANK,
 )
 from core.gpio.gpio_workers import (
     GpioChipCheckWorker, GpioReadBanksWorker, GpioApplyWorker,
@@ -150,6 +150,24 @@ QPushButton#gpioPrimary {
 }
 QPushButton#gpioPrimary:hover { background-color: #155E75; }
 QPushButton#gpioPrimary:disabled {
+    background-color: #0B0F19; color: #475569; border-color: #1E293B;
+}
+
+/* ---- Export Manager Exec 执行按钮 ---- */
+QPushButton#gpioExec {
+    background-color: #14532D;
+    color: #BBF7D0;
+    border: 1px solid #22C55E;
+    border-radius: 4px;
+    padding: 0px 14px;
+    font-family: """ + _MONO + """;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 26px;
+    max-height: 26px;
+}
+QPushButton#gpioExec:hover { background-color: #166534; }
+QPushButton#gpioExec:disabled {
     background-color: #0B0F19; color: #475569; border-color: #1E293B;
 }
 
@@ -353,6 +371,7 @@ QMenu::item:disabled { color: #475569; }
 
 /* ---- Export Manager（Matrix 右侧导出管理器） ---- */
 QScrollArea#exportList { min-height: 132px; max-height: 132px; }
+QScrollArea#multiSelList { min-height: 108px; max-height: 108px; }
 QFrame#exportRow {
     background-color: #111D33;
     border: 1px solid #1E293B;
@@ -669,7 +688,7 @@ class _PinCard(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self._on_select(self.group, self.pin)
+            self._on_select(self.group, self.pin, event.modifiers())
         super().mousePressEvent(event)
 
     def contextMenuEvent(self, event):
@@ -723,7 +742,8 @@ class GpioControlUI(QWidget):
         self._chip_info = None
         self._dev_addr = None
         self._cur_bank = 0
-        self._selected = None       # (group, pin)
+        self._selected = None       # (group, pin) 主选中脚（最后点击）
+        self._selected_pins = []    # [(group, pin)] Ctrl 多选（有序，含主选中）
         self._pin_cards = {}        # (group, pin) -> _PinCard（当前 bank）
         self._pin_meta = {}         # (group, pin) -> {"alias": str}
         self._dir_shadow = {}       # bank_idx -> 32bit（会话影子，dir 无回读）
@@ -932,18 +952,18 @@ class GpioControlUI(QWidget):
 
         batch_defs = [
             ("All OUT HIGH", self._on_batch_out_high,
-             "Set all 32 pins of current Bank to output HIGH "
-             "(DIR_SET+VAL_SET = 0xFFFFFFFF)"),
+             "Set all pins of current Bank to output HIGH "
+             "(DIR_SET+VAL_SET = valid pin mask)"),
             ("All OUT LOW", self._on_batch_out_low,
-             "Set all 32 pins of current Bank to output LOW "
-             "(DIR_SET+VAL_CLR = 0xFFFFFFFF)"),
+             "Set all pins of current Bank to output LOW "
+             "(DIR_SET+VAL_CLR = valid pin mask)"),
             ("All IN Hi-Z", self._on_batch_in_hiz,
-             "Set all 32 pins of current Bank to Hi-Z input "
-             "(DIR_CLR = 0xFFFFFFFF, PU/PD off)"),
+             "Set all pins of current Bank to Hi-Z input "
+             "(DIR_CLR = valid pin mask, PU/PD off)"),
             ("All PU", lambda: self._on_batch_pull(True),
-             "Pull up all 32 pins of current Bank (OP_BITS bitfield write)"),
+             "Pull up all pins of current Bank (OP_BITS bitfield write)"),
             ("All PD", lambda: self._on_batch_pull(False),
-             "Pull down all 32 pins of current Bank (OP_BITS bitfield write)"),
+             "Pull down all pins of current Bank (OP_BITS bitfield write)"),
             ("Invert OUT", self._on_batch_invert,
              "Invert HIGH/LOW level of all output pins in current Bank"),
         ]
@@ -1082,6 +1102,11 @@ class GpioControlUI(QWidget):
         head.addStretch(1)
         lay.addLayout(head)
 
+        # 单选信息区（别名 + 脚位信息）；多选时隐藏
+        self._insp_single_box = QWidget()
+        single_lay = QVBoxLayout(self._insp_single_box)
+        single_lay.setContentsMargins(0, 0, 0, 0)
+        single_lay.setSpacing(6)
         alias_row = QHBoxLayout()
         alias_row.setSpacing(6)
         alias_key = QLabel("Alias")
@@ -1092,11 +1117,33 @@ class GpioControlUI(QWidget):
         self.alias_edit.setPlaceholderText("Signal alias, e.g. LED_PWR / I2C_SDA")
         self.alias_edit.editingFinished.connect(self._on_alias_edited)
         alias_row.addWidget(self.alias_edit, 1)
-        lay.addLayout(alias_row)
-
+        single_lay.addLayout(alias_row)
         self.insp_info = QLabel("-")
         self.insp_info.setObjectName("gpioPinInfo")
-        lay.addWidget(self.insp_info)
+        single_lay.addWidget(self.insp_info)
+        lay.addWidget(self._insp_single_box)
+
+        # 多选列表区（Ctrl+Click 累加，配置区对全部选中脚统一生效）；单选时隐藏
+        self._insp_multi_box = QWidget()
+        multi_lay = QVBoxLayout(self._insp_multi_box)
+        multi_lay.setContentsMargins(0, 0, 0, 0)
+        multi_lay.setSpacing(4)
+        hint = QLabel("Ctrl+Click toggles pins; config below applies to all")
+        hint.setObjectName("gpioDim")
+        multi_lay.addWidget(hint)
+        self._multi_list_area = QScrollArea()
+        self._multi_list_area.setObjectName("multiSelList")
+        self._multi_list_area.setWidgetResizable(True)
+        self._multi_list_area.setFrameShape(QFrame.NoFrame)
+        self._multi_list_host = QWidget()
+        self._multi_list_host.setObjectName("gpioViewPage")
+        self._multi_list_lay = QVBoxLayout(self._multi_list_host)
+        self._multi_list_lay.setContentsMargins(0, 0, 0, 0)
+        self._multi_list_lay.setSpacing(3)
+        self._multi_list_lay.addStretch(1)
+        self._multi_list_area.setWidget(self._multi_list_host)
+        multi_lay.addWidget(self._multi_list_area)
+        lay.addWidget(self._insp_multi_box)
 
         lay.addWidget(self._make_hsep())
 
@@ -1168,8 +1215,12 @@ class GpioControlUI(QWidget):
         drv_row.addWidget(self.insp_drv_inc)
         lay.addLayout(drv_row)
 
-        lay.addWidget(self._make_hsep())
-
+        # 单选状态区（0x50 大字电平 + mask 信息）；多选时隐藏
+        self._insp_state_box = QWidget()
+        state_lay = QVBoxLayout(self._insp_state_box)
+        state_lay.setContentsMargins(0, 0, 0, 0)
+        state_lay.setSpacing(6)
+        state_lay.addWidget(self._make_hsep())
         read_row = QHBoxLayout()
         read_row.setSpacing(6)
         self.insp_big_state = QLabel("LOGIC --")
@@ -1179,11 +1230,11 @@ class GpioControlUI(QWidget):
         self.insp_read_btn.setObjectName("gpioBtn")
         self.insp_read_btn.clicked.connect(self._on_read_bank_clicked)
         read_row.addWidget(self.insp_read_btn)
-        lay.addLayout(read_row)
-
+        state_lay.addLayout(read_row)
         self.insp_mask = QLabel("Mask --")
         self.insp_mask.setObjectName("gpioPinInfo")
-        lay.addWidget(self.insp_mask)
+        state_lay.addWidget(self.insp_mask)
+        lay.addWidget(self._insp_state_box)
 
         lay.addStretch(1)
         return panel
@@ -1239,13 +1290,25 @@ class GpioControlUI(QWidget):
         self._export_preview.setReadOnly(True)
         lay.addWidget(self._export_preview, 1)
 
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(6)
+        self._exec_btn = QPushButton("Exec")
+        self._exec_btn.setObjectName("gpioExec")
+        self._exec_btn.setIcon(_icon("play.svg", "#BBF7D0", 12))
+        self._exec_btn.setToolTip(
+            "Apply all listed GPIO states to the DUT once "
+            "(func_sel + mode, via I2C)")
+        self._exec_btn.clicked.connect(self._on_export_exec)
+        btn_row.addWidget(self._exec_btn)
         export_btn = QPushButton("Export")
         export_btn.setObjectName("gpioPrimary")
         export_btn.setIcon(_icon("copy.svg", "#E2E8F0", 12))
         export_btn.setToolTip(
             "Merge all GPIO configs into a WRITE_BITS script and copy to clipboard")
         export_btn.clicked.connect(self._on_export_copy)
-        lay.addWidget(export_btn)
+        btn_row.addWidget(export_btn)
+        lay.addLayout(btn_row)
         return panel
 
     def _make_hsep(self):
@@ -1555,7 +1618,7 @@ class GpioControlUI(QWidget):
         fmask = (1 << bits) - 1
         want = self._cfg.func_sel_gpio_value & fmask
         g0 = bank_idx * GROUPS_PER_BANK
-        for g in range(g0, g0 + GROUPS_PER_BANK):
+        for g in range(g0, g0 + self._cfg.bank_group_count(bank_idx)):
             field_ = self._cfg.func_sel_field(g, 0)
             if field_ is None:
                 continue
@@ -1578,6 +1641,11 @@ class GpioControlUI(QWidget):
             return None
         return (val >> bit) & 1
 
+    def _bank_pin_mask(self, bank_idx):
+        """该 bank 有效引脚位掩码（高位 group 不存在时仅低位有效）。"""
+        return (1 << (self._cfg.bank_group_count(bank_idx)
+                      * PINS_PER_GROUP)) - 1
+
     def _pin_mode(self, group, pin):
         """由影子寄存器推导工作模式（用于 label / Inspector）。"""
         bank_idx = self._cfg.bank_index(group)
@@ -1593,6 +1661,7 @@ class GpioControlUI(QWidget):
 
     def _reset_session_state(self):
         self._selected = None
+        self._selected_pins = []
         self._pin_meta = {}
         self._dir_shadow = {i: 0 for i in range(len(self._cfg.banks))}
         self._out_shadow = {i: 0 for i in range(len(self._cfg.banks))}
@@ -1642,7 +1711,7 @@ class GpioControlUI(QWidget):
         for i in range(count):
             bank = self._cfg.banks[i]
             g0 = i * GROUPS_PER_BANK
-            g1 = g0 + GROUPS_PER_BANK - 1
+            g1 = g0 + bank.groups - 1
             btn = QPushButton(str(i))
             btn.setObjectName("gpioBankBtn")
             btn.setCheckable(True)
@@ -1669,7 +1738,8 @@ class GpioControlUI(QWidget):
             self._matrix_col_r.addStretch(1)
             return
         base_group = self._cur_bank * GROUPS_PER_BANK
-        for bit in range(GPIOS_PER_BANK - 1, -1, -1):
+        n_bits = self._cfg.bank_group_count(self._cur_bank) * PINS_PER_GROUP
+        for bit in range(n_bits - 1, -1, -1):
             group = base_group + bit // PINS_PER_GROUP
             pin = bit % PINS_PER_GROUP
             card = _PinCard(
@@ -1747,7 +1817,7 @@ class GpioControlUI(QWidget):
         if card.property("lvl") != lvl_prop:
             card.setProperty("lvl", lvl_prop)
             _repolish(card)
-        card.setProperty("sel", "1" if self._selected == (group, pin) else "0")
+        card.setProperty("sel", "1" if (group, pin) in self._selected_pins else "0")
         _repolish(card)
 
     def _rebuild_regmap(self):
@@ -1784,7 +1854,7 @@ class GpioControlUI(QWidget):
                                   self._cfg.drv_bits_per_gpio), True))
         if self._cfg.func_sel_supported:
             g0 = self._cur_bank * GROUPS_PER_BANK
-            for g in range(g0, g0 + GROUPS_PER_BANK):
+            for g in range(g0, g0 + self._cfg.bank_group_count(self._cur_bank)):
                 field_ = self._cfg.func_sel_field(g, 0)
                 if field_ is None:
                     continue
@@ -1897,7 +1967,7 @@ class GpioControlUI(QWidget):
         g0 = self._cur_bank * GROUPS_PER_BANK
         self.addr_label.setText("Base {0}".format(_fmt32(bank.base)))
         self.bank_label.setText("Bank{0} (GPIO_Group{1}~{2})".format(
-            self._cur_bank, g0, g0 + GROUPS_PER_BANK - 1))
+            self._cur_bank, g0, g0 + bank.groups - 1))
         mode = ("dev 0x{0:02X}".format(self._dev_addr)
                 if self._dev_addr is not None else "--")
         self.dut_sub.setText("DUT: {0} · {1}".format(
@@ -1907,15 +1977,16 @@ class GpioControlUI(QWidget):
         vals = {k: "-" for k in self._stat_vals}
         if self._cfg is not None:
             b = self._cur_bank
+            n_pins = self._cfg.bank_group_count(b) * PINS_PER_GROUP
             dir_v = self._dir_shadow.get(b, 0)
             out_n = _popcount(dir_v)
             vals["out"] = str(out_n)
-            vals["in"] = str(GPIOS_PER_BANK - out_n)
+            vals["in"] = str(n_pins - out_n)
             in_v = self._in_value.get(b)
             if in_v is not None:
-                high_n = _popcount(in_v)
+                high_n = _popcount(in_v & self._bank_pin_mask(b))
                 vals["high"] = str(high_n)
-                vals["low"] = str(GPIOS_PER_BANK - high_n)
+                vals["low"] = str(n_pins - high_n)
             pu_addr = self._cfg.pull_up_bases[b] \
                 if b < len(self._cfg.pull_up_bases) else None
             pd_addr = self._cfg.pull_down_bases[b] \
@@ -1928,9 +1999,14 @@ class GpioControlUI(QWidget):
             v.setText(vals[k])
 
     def _refresh_inspector(self):
-        sel = self._selected
+        pins = self._selected_pins
+        sel = pins[0] if pins else None
         has = sel is not None and self._cfg is not None
+        multi = has and len(pins) > 1
         ready = self._ready()
+        self._insp_single_box.setVisible(has and not multi)
+        self._insp_state_box.setVisible(has and not multi)
+        self._insp_multi_box.setVisible(multi)
         if not has:
             self.insp_name.setText("GPIO--")
             self.insp_info.setText("No pin selected")
@@ -1939,6 +2015,8 @@ class GpioControlUI(QWidget):
             self.insp_big_state.setText("LOGIC --")
             self.insp_big_state.setProperty("lvl", "")
             _repolish(self.insp_big_state)
+        elif multi:
+            self._refresh_multi_rows()
         else:
             group, pin = sel
             bank_idx = self._cfg.bank_index(group)
@@ -2009,25 +2087,93 @@ class GpioControlUI(QWidget):
             self.insp_mask.setText(
                 "Mask {0} · bank bit {1}{2}".format(_fmt32(1 << bit), bit, drv_txt))
 
-        pull_ok = has and self._cfg.pull_supported(sel[0])
-        drv_ok = has and self._cfg.drv_field(sel[0], sel[1]) is not None
-        drv_val = self._drv_field_value(sel[0], sel[1]) if drv_ok else None
-        # 输出电平与方向联动：INPUT 时 HIGH/LOW 禁用置灰
-        out_ok = has and bool(self._dir_bit(
-            self._cfg.bank_index(sel[0]),
-            self._cfg.bit_in_bank(sel[0], sel[1])))
+        if multi:
+            self._update_multi_op_enabled(ready)
+        else:
+            pull_ok = has and self._cfg.pull_supported(sel[0])
+            drv_ok = has and self._cfg.drv_field(sel[0], sel[1]) is not None
+            drv_val = self._drv_field_value(sel[0], sel[1]) if drv_ok else None
+            # 输出电平与方向联动：INPUT 时 HIGH/LOW 禁用置灰
+            out_ok = has and bool(self._dir_bit(
+                self._cfg.bank_index(sel[0]),
+                self._cfg.bit_in_bank(sel[0], sel[1])))
+            for b in (self.insp_dir_out, self.insp_dir_in, self.insp_read_btn):
+                b.setEnabled(has and ready)
+            for b in (self.insp_lvl_h, self.insp_lvl_l):
+                b.setEnabled(has and ready and out_ok)
+            for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
+                b.setEnabled(has and ready and pull_ok)
+            self.insp_drv_dec.setEnabled(
+                ready and drv_val is not None and drv_val > 0)
+            self.insp_drv_inc.setEnabled(
+                ready and drv_val is not None and drv_val < self._cfg.drv_max_level)
+            self.insp_drv_val.setEnabled(drv_ok)
+            self.alias_edit.setEnabled(has)
+
+    def _refresh_multi_rows(self):
+        """多选列表行：GPIO 名 + 当前模式 + 行内移除。"""
+        pins = self._selected_pins
+        self.insp_name.setText("{0} pins".format(len(pins)))
+        while self._multi_list_lay.count():
+            item = self._multi_list_lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for group, pin in pins:
+            row = QFrame()
+            row.setObjectName("exportRow")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(6, 0, 4, 0)
+            rl.setSpacing(6)
+            name = QLabel(self._cfg.gpio_name(group, pin))
+            name.setObjectName("pinName")
+            rl.addWidget(name)
+            mode_lb = QLabel(mode_label(self._pin_mode(group, pin)))
+            mode_lb.setObjectName("exportMode")
+            rl.addWidget(mode_lb, 1)
+            del_btn = QPushButton()
+            del_btn.setObjectName("exportDel")
+            del_btn.setIcon(_icon("x-close.svg", "#94A3B8", 10))
+            del_btn.setToolTip("Remove from selection")
+            del_btn.clicked.connect(
+                lambda checked=False, g=group, p=pin:
+                self._remove_selected_pin(g, p))
+            rl.addWidget(del_btn)
+            self._multi_list_lay.addWidget(row)
+        self._multi_list_lay.addStretch(1)
+
+    def _update_multi_op_enabled(self, ready):
+        """多选模式：配置区按全体选中脚判定使能，单脚状态高亮复位。"""
+        pins = self._selected_pins
+        all_out = all(self._dir_bit(self._cfg.bank_index(g),
+                                    self._cfg.bit_in_bank(g, p))
+                      for g, p in pins)
+        pull_ok = all(self._cfg.pull_supported(g) for g, _ in pins)
+        drvs = [self._drv_field_value(g, p) for g, p in pins]
+        drv_ok = all(v is not None for v in drvs)
         for b in (self.insp_dir_out, self.insp_dir_in, self.insp_read_btn):
-            b.setEnabled(has and ready)
+            b.setEnabled(ready)
         for b in (self.insp_lvl_h, self.insp_lvl_l):
-            b.setEnabled(has and ready and out_ok)
+            b.setEnabled(ready and all_out)
         for b in (self.insp_pull_hiz, self.insp_pull_pu, self.insp_pull_pd):
-            b.setEnabled(has and ready and pull_ok)
-        self.insp_drv_dec.setEnabled(
-            ready and drv_val is not None and drv_val > 0)
+            b.setEnabled(ready and pull_ok)
+        self.insp_drv_dec.setEnabled(ready and drv_ok and min(drvs) > 0)
         self.insp_drv_inc.setEnabled(
-            ready and drv_val is not None and drv_val < self._cfg.drv_max_level)
+            ready and drv_ok and max(drvs) < self._cfg.drv_max_level)
         self.insp_drv_val.setEnabled(drv_ok)
-        self.alias_edit.setEnabled(has)
+        self.alias_edit.setEnabled(False)
+        if drv_ok:
+            lo, hi = min(drvs), max(drvs)
+            self.insp_drv_val.setText(
+                self._drv_level_text(lo) if lo == hi
+                else "Lv{0}~{1}".format(lo, hi))
+        else:
+            self.insp_drv_val.setText("Lv --")
+        self.insp_drv_key.setText("Drive Strength")
+        for b in (self.insp_dir_out, self.insp_dir_in, self.insp_lvl_h,
+                  self.insp_lvl_l, self.insp_pull_hiz, self.insp_pull_pu,
+                  self.insp_pull_pd):
+            b.setProperty("cur", "0")
+            _repolish(b)
 
     def _update_op_enabled(self):
         ready = self._ready()
@@ -2042,6 +2188,7 @@ class GpioControlUI(QWidget):
         self.poll_btn.setEnabled(ready)
         self.detect_btn.setEnabled(not busy)
         self.load_btn.setEnabled(not busy)
+        self._exec_btn.setEnabled(ready and not busy)
 
     # ================================================================ Sniffer
 
@@ -2458,7 +2605,7 @@ class GpioControlUI(QWidget):
             self._dev_addr, len(self._cfg.banks)), ok=True)
         self.append_log("[I2C] GPIO config loaded: {0} ({1} banks / {2} GPIO)".format(
             self._cfg.chip, len(self._cfg.banks),
-            len(self._cfg.banks) * GPIOS_PER_BANK))
+            self._cfg.group_count * PINS_PER_GROUP))
         self._load_json_editor()
         self._refresh_all_views()
         # 检测完成后自动全量回读一轮输入电平（§26：延迟 ≥50ms 再起新线程）
@@ -2495,6 +2642,7 @@ class GpioControlUI(QWidget):
             return
         self._cur_bank = idx
         self._selected = None
+        self._selected_pins = []
         self._rebuild_matrix()
         self._rebuild_regmap()
         self._refresh_addr_bar()
@@ -2518,28 +2666,31 @@ class GpioControlUI(QWidget):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
+        mask = self._bank_pin_mask(self._cur_bank)
         self._batch_apply(
-            self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF) + [
-                (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
-                (OP_WRITE, bank.base + OFFSET_OUT_SET, 0xFFFFFFFF, -1, -1),
+            self._func_sel_mask_actions(self._cur_bank, mask) + [
+                (OP_WRITE, bank.base + OFFSET_DIR_SET, mask, -1, -1),
+                (OP_WRITE, bank.base + OFFSET_OUT_SET, mask, -1, -1),
             ], "All OUT HIGH -> Bank{0}".format(self._cur_bank))
 
     def _on_batch_out_low(self):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
+        mask = self._bank_pin_mask(self._cur_bank)
         self._batch_apply(
-            self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF) + [
-                (OP_WRITE, bank.base + OFFSET_DIR_SET, 0xFFFFFFFF, -1, -1),
-                (OP_WRITE, bank.base + OFFSET_OUT_CLR, 0xFFFFFFFF, -1, -1),
+            self._func_sel_mask_actions(self._cur_bank, mask) + [
+                (OP_WRITE, bank.base + OFFSET_DIR_SET, mask, -1, -1),
+                (OP_WRITE, bank.base + OFFSET_OUT_CLR, mask, -1, -1),
             ], "All OUT LOW -> Bank{0}".format(self._cur_bank))
 
     def _on_batch_in_hiz(self):
         if self._cfg is None:
             return
         bank = self._cfg.banks[self._cur_bank]
-        actions = self._func_sel_mask_actions(self._cur_bank, 0xFFFFFFFF)
-        actions.append((OP_WRITE, bank.base + OFFSET_DIR_CLR, 0xFFFFFFFF, -1, -1))
+        mask = self._bank_pin_mask(self._cur_bank)
+        actions = self._func_sel_mask_actions(self._cur_bank, mask)
+        actions.append((OP_WRITE, bank.base + OFFSET_DIR_CLR, mask, -1, -1))
         for addr in (self._cfg.pull_up_bases[self._cur_bank]
                      if self._cur_bank < len(self._cfg.pull_up_bases) else None,
                      self._cfg.pull_down_bases[self._cur_bank]
@@ -2558,10 +2709,10 @@ class GpioControlUI(QWidget):
             self.append_log(
                 "[WARN] Bank{0} pull addresses not configured in JSON".format(b))
             return
-        actions = self._func_sel_mask_actions(b, 0xFFFFFFFF)
+        actions = self._func_sel_mask_actions(b, self._bank_pin_mask(b))
         actions += [
             (OP_BITS, pd if up else pu, 0, 31, 0),
-            (OP_BITS, pu if up else pd, 0xFFFFFFFF, 31, 0),
+            (OP_BITS, pu if up else pd, self._bank_pin_mask(b), 31, 0),
         ]
         self._batch_apply(
             actions, "All {0} -> Bank{1}".format("PU" if up else "PD", b))
@@ -2573,8 +2724,9 @@ class GpioControlUI(QWidget):
         b = self._cur_bank
         dir_v = self._dir_shadow.get(b, 0)
         out_v = self._out_shadow.get(b, 0)
-        set_mask = (~out_v) & dir_v & 0xFFFFFFFF
-        clr_mask = out_v & dir_v
+        pin_mask = self._bank_pin_mask(b)
+        set_mask = (~out_v) & dir_v & pin_mask
+        clr_mask = out_v & dir_v & pin_mask
         actions = self._func_sel_mask_actions(b, dir_v)
         if set_mask:
             actions.append((OP_WRITE, bank.base + OFFSET_OUT_SET, set_mask, -1, -1))
@@ -2726,16 +2878,35 @@ class GpioControlUI(QWidget):
 
     # ================================================================ 事件：引脚操作
 
-    def _on_pin_clicked(self, group, pin):
-        self._selected = (group, pin)
-        for key in self._pin_cards:
-            self._refresh_pin_card(*key)
+    def _on_pin_clicked(self, group, pin, modifiers=Qt.NoModifier):
+        """卡片点击选中；按住 Ctrl 累加/移除多选（属性面板切换为选中列表）。"""
+        key = (group, pin)
+        if modifiers & Qt.ControlModifier:
+            if key in self._selected_pins:
+                self._selected_pins.remove(key)
+            else:
+                self._selected_pins.append(key)
+        else:
+            self._selected_pins = [key]
+        self._selected = self._selected_pins[-1] if self._selected_pins else None
+        for k in self._pin_cards:
+            self._refresh_pin_card(*k)
+        self._refresh_inspector()
+
+    def _remove_selected_pin(self, group, pin):
+        key = (group, pin)
+        if key in self._selected_pins:
+            self._selected_pins.remove(key)
+        self._selected = self._selected_pins[-1] if self._selected_pins else None
+        for k in self._pin_cards:
+            self._refresh_pin_card(*k)
         self._refresh_inspector()
 
     def _on_card_dir(self, group, pin):
         if not self._ready():
             return
         self._selected = (group, pin)
+        self._selected_pins = [(group, pin)]
         bank_idx = self._cfg.bank_index(group)
         bit = self._cfg.bit_in_bank(group, pin)
         out_now = bool(self._dir_bit(bank_idx, bit))
@@ -2752,6 +2923,7 @@ class GpioControlUI(QWidget):
         if not self._ready():
             return
         self._selected = (group, pin)
+        self._selected_pins = [(group, pin)]
         bank_idx = self._cfg.bank_index(group)
         bit = self._cfg.bit_in_bank(group, pin)
         name = self._cfg.gpio_name(group, pin)
@@ -2777,16 +2949,24 @@ class GpioControlUI(QWidget):
         if not self._ready() or not self._cfg.pull_supported(group):
             return
         self._selected = (group, pin)
+        self._selected_pins = [(group, pin)]
         bit = self._cfg.bit_in_bank(group, pin)
         nxt = (self._pull_state(group, bit) + 1) % 3
         self._apply_pull(group, pin, nxt)
 
     def _apply_pull(self, group, pin, state):
+        name = self._cfg.gpio_name(group, pin)
+        label = {0: "Hi-Z", 1: "Pull-Up", 2: "Pull-Down"}[state]
+        self._apply_actions(
+            self._pull_pin_actions(group, pin, state),
+            label="{0} pull -> {1}".format(name, label),
+            on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
+
+    def _pull_pin_actions(self, group, pin, state):
+        """单脚上下拉动作为：func_sel 前置 + PU/PD 位域写。"""
         bit = self._cfg.bit_in_bank(group, pin)
         pu = self._cfg.pull_up_addr(group)
         pd = self._cfg.pull_down_addr(group)
-        name = self._cfg.gpio_name(group, pin)
-        label = {0: "Hi-Z", 1: "Pull-Up", 2: "Pull-Down"}[state]
         actions = self._func_sel_pin_actions(group, pin)
         if state == 0:
             actions.append((OP_BITS, pu, 0, bit, bit))
@@ -2797,14 +2977,40 @@ class GpioControlUI(QWidget):
         else:
             actions.append((OP_BITS, pu, 0, bit, bit))
             actions.append((OP_BITS, pd, 1, bit, bit))
-        self._apply_actions(
-            actions, label="{0} pull -> {1}".format(name, label),
-            on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
+        return actions
+
+    def _selected_by_bank(self):
+        """选中脚位按 bank 聚合 {bank_idx: 位掩码}（多选统一配置用）。"""
+        banks = {}
+        for group, pin in self._selected_pins:
+            b = self._cfg.bank_index(group)
+            banks[b] = banks.get(b, 0) | (1 << self._cfg.bit_in_bank(group, pin))
+        return banks
+
+    def _queue_banks_read(self, bank_indices):
+        """延迟回读多个 bank 的 0x50 输入电平（§26 延迟合并）。"""
+        pairs = [(b, self._cfg.banks[b].base + OFFSET_IN_READ)
+                 for b in sorted(bank_indices)]
+        self._defer_read(lambda: self._read_registers(pairs))
 
     def _on_drv_step(self, delta):
-        if self._selected is None:
+        if not self._selected_pins or not self._ready():
             return
-        group, pin = self._selected
+        if len(self._selected_pins) > 1:
+            actions = []
+            for group, pin in self._selected_pins:
+                cur = self._drv_field_value(group, pin)
+                if cur is None:
+                    continue
+                actions += self._func_sel_pin_actions(group, pin)
+                actions += self._cfg.build_drv_actions(group, pin, cur + delta)
+            if not actions:
+                return
+            self._apply_actions(
+                actions, label="{0} pins drv {1:+d}".format(
+                    len(self._selected_pins), delta))
+            return
+        group, pin = self._selected_pins[0]
         cur = self._drv_field_value(group, pin)
         if cur is None:
             return
@@ -2826,9 +3032,23 @@ class GpioControlUI(QWidget):
                 name, level, " ({0})".format(ohm) if ohm else ""))
 
     def _on_insp_dir(self, output):
-        if self._selected is None or not self._ready():
+        if not self._selected_pins or not self._ready():
             return
-        group, pin = self._selected
+        if len(self._selected_pins) > 1:
+            banks = self._selected_by_bank()
+            off = OFFSET_DIR_SET if output else OFFSET_DIR_CLR
+            actions = []
+            for b, mask in banks.items():
+                actions += self._func_sel_mask_actions(b, mask)
+                actions.append(
+                    (OP_WRITE, self._cfg.banks[b].base + off, mask, -1, -1))
+            self._apply_actions(
+                actions,
+                label="{0} pins dir -> {1}".format(
+                    len(self._selected_pins), "OUTPUT" if output else "INPUT"),
+                on_done=lambda: self._queue_banks_read(banks))
+            return
+        group, pin = self._selected_pins[0]
         addr = (self._cfg.dir_set_addr(group) if output
                 else self._cfg.dir_clr_addr(group))
         bit = self._cfg.bit_in_bank(group, pin)
@@ -2840,9 +3060,23 @@ class GpioControlUI(QWidget):
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
     def _on_insp_level(self, high):
-        if self._selected is None or not self._ready():
+        if not self._selected_pins or not self._ready():
             return
-        group, pin = self._selected
+        if len(self._selected_pins) > 1:
+            banks = self._selected_by_bank()
+            off = OFFSET_OUT_SET if high else OFFSET_OUT_CLR
+            actions = []
+            for b, mask in banks.items():
+                actions += self._func_sel_mask_actions(b, mask)
+                actions.append(
+                    (OP_WRITE, self._cfg.banks[b].base + off, mask, -1, -1))
+            self._apply_actions(
+                actions,
+                label="{0} pins level -> {1}".format(
+                    len(self._selected_pins), "HIGH" if high else "LOW"),
+                on_done=lambda: self._queue_banks_read(banks))
+            return
+        group, pin = self._selected_pins[0]
         addr = (self._cfg.out_set_addr(group) if high
                 else self._cfg.out_clr_addr(group))
         bit = self._cfg.bit_in_bank(group, pin)
@@ -2854,9 +3088,26 @@ class GpioControlUI(QWidget):
             on_done=lambda: self._queue_bank_read(self._cfg.bank_index(group)))
 
     def _on_insp_pull(self, state):
-        if self._selected is None or not self._ready():
+        if not self._selected_pins or not self._ready():
             return
-        group, pin = self._selected
+        if len(self._selected_pins) > 1:
+            if not all(self._cfg.pull_supported(g)
+                       for g, _ in self._selected_pins):
+                self.append_log(
+                    "[WARN] Pull addresses not configured for some Bank")
+                return
+            label = {0: "Hi-Z", 1: "Pull-Up", 2: "Pull-Down"}[state]
+            actions = []
+            for group, pin in self._selected_pins:
+                actions += self._pull_pin_actions(group, pin, state)
+            self._apply_actions(
+                actions,
+                label="{0} pins pull -> {1}".format(
+                    len(self._selected_pins), label),
+                on_done=lambda: self._queue_banks_read(
+                    self._selected_by_bank()))
+            return
+        group, pin = self._selected_pins[0]
         if not self._cfg.pull_supported(group):
             self.append_log("[WARN] Pull addresses not configured for this Bank")
             return
@@ -3203,6 +3454,21 @@ class GpioControlUI(QWidget):
         self._export_list_lay.addStretch(1)
         self._export_preview.setPlainText(self._gen_export_script())
 
+    def _export_item_actions(self, group, pin, mode):
+        """单脚导出/执行动作：func_sel 前置 +（输出模式清 PU/PD）+ 模式动作。"""
+        actions = list(self._cfg.build_func_sel_actions(group, pin) or [])
+        if mode in (MODE_OUT_HIGH, MODE_OUT_LOW):
+            # 输出模式显式关闭上下拉，避免残留输入上下拉状态
+            bit = self._cfg.bit_in_bank(group, pin)
+            pu = self._cfg.pull_up_addr(group)
+            pd = self._cfg.pull_down_addr(group)
+            if pu is not None:
+                actions.append((OP_BITS, pu, 0, bit, bit))
+            if pd is not None:
+                actions.append((OP_BITS, pd, 0, bit, bit))
+        actions += self._cfg.build_mode_actions(group, pin, mode) or []
+        return actions
+
     def _gen_export_script(self):
         """导出列表 -> 单段合并 WRITE_BITS 脚本。
 
@@ -3221,20 +3487,26 @@ class GpioControlUI(QWidget):
         for group, pin, mode in self._export_items:
             lines.append("  - //{0}_{1}".format(
                 self._cfg.gpio_name(group, pin), mode))
-            actions = self._cfg.build_func_sel_actions(group, pin) or []
-            if mode in (MODE_OUT_HIGH, MODE_OUT_LOW):
-                # 输出模式显式关闭上下拉，避免残留输入上下拉状态
-                bit = self._cfg.bit_in_bank(group, pin)
-                pu = self._cfg.pull_up_addr(group)
-                pd = self._cfg.pull_down_addr(group)
-                if pu is not None:
-                    actions.append((OP_BITS, pu, 0, bit, bit))
-                if pd is not None:
-                    actions.append((OP_BITS, pd, 0, bit, bit))
-            actions += self._cfg.build_mode_actions(group, pin, mode) or []
-            for op, addr, value, hi, lo in actions:
+            for op, addr, value, hi, lo in self._export_item_actions(
+                    group, pin, mode):
                 lines.append("  - " + _write_bits_line(op, addr, value, hi, lo))
         return "\n".join(lines)
+
+    def _on_export_exec(self):
+        """Exec：导出列表全部 GPIO 状态经统一下发管道在 DUT 上执行一遍。"""
+        if self._cfg is None or not self._export_items:
+            return
+        actions = []
+        for group, pin, mode in self._export_items:
+            actions += self._export_item_actions(group, pin, mode)
+        names = ",".join(dict.fromkeys(
+            self._cfg.gpio_name(group, pin)
+            for group, pin, _ in self._export_items))
+        self._apply_actions(
+            actions,
+            label="Exec export list ({0} items): {1}".format(
+                len(self._export_items), names),
+            on_done=lambda: self._defer_read(self._start_read_all_banks))
 
     def _on_export_copy(self):
         text = self._export_preview.toPlainText()
