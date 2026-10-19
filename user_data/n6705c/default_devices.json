@@ -4,7 +4,8 @@
       "serial": "TCPIP0::10.31.71.98::hislip0::INSTR",
       "model": "N6705C",
       "display_ip": "10.31.71.98",
-      "visa_resource": "TCPIP0::10.31.71.98::hislip0::INSTR"
+      "visa_resource": "TCPIP0::10.31.71.98::hislip0::INSTR",
+      "auto_connect": true
     }
   ]
 }
