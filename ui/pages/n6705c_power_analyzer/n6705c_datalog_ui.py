@@ -1289,6 +1289,9 @@ class N6705CDatalogUI(QWidget):
             self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
             self._instrument_manager.disconnect_failed.connect(self._on_manager_disconnect_failed)
 
+        # 自动连接放在 top/manager 状态同步之后，避免对已连接设备重复发起
+        self._auto_connect_enabled_cards()
+
         if not (self.is_connected_a or self.is_connected_b):
             self.instrument_toggle_btn.setChecked(True)
             self._toggle_instrument_panel(True)
@@ -1512,7 +1515,10 @@ class N6705CDatalogUI(QWidget):
         # 连接后拿到真实序列号，应就地替换该卡片而非新增，避免出现重复卡片。
         for idx, existing_card in enumerate(self.device_cards):
             if existing_card.property("visa_resource") == visa_resource:
-                new_card = self._create_device_card(serial, model, display_ip, visa_resource)
+                new_card = self._create_device_card(
+                    serial, model, display_ip, visa_resource,
+                    auto_connect=existing_card.property("auto_connect"),
+                )
                 layout_idx = self.device_list_layout.indexOf(existing_card)
                 self.device_list_layout.removeWidget(existing_card)
                 existing_card.deleteLater()
@@ -2351,7 +2357,7 @@ class N6705CDatalogUI(QWidget):
 
         return frame
 
-    def _create_device_card(self, serial, model, ip_addr, visa_resource):
+    def _create_device_card(self, serial, model, ip_addr, visa_resource, auto_connect=False):
         card = QFrame()
         card.setObjectName("cardFrame")
         card.setFixedHeight(72)
@@ -2431,8 +2437,14 @@ class N6705CDatalogUI(QWidget):
 
         card.setProperty("visa_resource", visa_resource)
         card.setProperty("serial", serial)
+        card.setProperty("auto_connect", bool(auto_connect))
         card.setProperty("connect_btn", connect_btn)
         card.setProperty("disconnect_btn", disconnect_btn)
+
+        card.setContextMenuPolicy(Qt.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, c=card: self._on_device_card_context_menu(c, pos)
+        )
 
         return card
 
@@ -2502,6 +2514,7 @@ class N6705CDatalogUI(QWidget):
                 self._ensure_device_card_exists(serial, "N6705C", resource)
         self._sync_device_card_states()
         self._maybe_show_scope_hint()
+        self._auto_connect_enabled_cards()
 
     def _maybe_show_scope_hint(self):
         """搜索完成后提示搜索作用域（每次运行仅弹一次，未配置跨网段时才弹）。"""
@@ -2629,6 +2642,7 @@ class N6705CDatalogUI(QWidget):
 
     def _on_connect_success(self, n6705c, serial, visa_resource, slot_label):
         logger.debug("Datalog UI connect success: slot=%s, serial=%s", slot_label, serial)
+        self._last_connect_succeeded = True
         self._pending_connects.pop(slot_label, None)
         if slot_label == "A":
             self.n6705c_a = n6705c
@@ -2650,6 +2664,7 @@ class N6705CDatalogUI(QWidget):
 
     def _on_connect_error(self, serial, slot_label, error_msg=None):
         logger.error("Datalog UI connect failed: serial=%s, error=%s", serial, error_msg)
+        self._last_connect_succeeded = False
         self._pending_connects.pop(slot_label, None)
         self._sync_device_card_states()
         QMessageBox.warning(self, "连接失败", f"仪器连接失败：{error_msg}")
@@ -2657,6 +2672,11 @@ class N6705CDatalogUI(QWidget):
     def _on_connect_thread_done(self):
         self._connect_thread = None
         self._connect_worker = None
+        # 仅连接成功才链式补连其余 auto_connect 卡片，失败即终止，避免无限重试；
+        # §26：finished 槽链里延后 50ms 再起新 QThread，避开上一轮线程清理竞态
+        if getattr(self, "_last_connect_succeeded", False):
+            self._last_connect_succeeded = False
+            QTimer.singleShot(50, self._auto_connect_enabled_cards)
 
     def _on_slot_context_menu(self, frame, pos):
         serial = frame.property("assigned_serial")
@@ -2669,6 +2689,87 @@ class N6705CDatalogUI(QWidget):
         action = menu.exec(frame.mapToGlobal(pos))
         if action == disconnect_action:
             self._on_device_disconnect(serial)
+
+    def _on_device_card_context_menu(self, card, pos):
+        serial = (card.property("serial") or "").strip()
+        visa_resource = card.property("visa_resource") or ""
+        for slot in self.slot_frames.values():
+            if (slot.property("assigned_serial") or "").strip() == serial \
+                    or slot.property("assigned_resource") == visa_resource:
+                QMessageBox.information(self, "无法删除", "该仪器已连接，请先断开连接后再删除。")
+                return
+        if visa_resource in self._pending_connects.values():
+            QMessageBox.information(self, "无法删除", "该仪器正在连接中，请稍后再试。")
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(dss.INSTR_MENU_STYLE)
+        auto_action = menu.addAction(
+            _make_svg_icon("zap.svg", "#d4a514", 14), "Auto Connect"
+        )
+        auto_action.setCheckable(True)
+        auto_action.setChecked(bool(card.property("auto_connect")))
+        menu.addSeparator()
+        remove_action = menu.addAction(
+            _make_svg_icon("x-close.svg", "#d14b72", 14), "Remove"
+        )
+        action = menu.exec(card.mapToGlobal(pos))
+        if action == auto_action:
+            self._set_device_auto_connect(card, auto_action.isChecked())
+        elif action == remove_action:
+            self._remove_device_card(card)
+
+    def _set_device_auto_connect(self, card, enabled):
+        enabled = bool(enabled)
+        card.setProperty("auto_connect", enabled)
+        visa_resource = card.property("visa_resource") or ""
+        devices = self._load_default_devices()
+        changed = False
+        for d in devices:
+            if d.get("visa_resource") == visa_resource \
+                    and bool(d.get("auto_connect", False)) != enabled:
+                d["auto_connect"] = enabled
+                changed = True
+        if changed:
+            path = self._default_devices_path()
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump({"devices": devices}, f, ensure_ascii=False, indent=2)
+            except Exception:
+                logger.warning("Update auto_connect in default_devices.json failed", exc_info=True)
+        if enabled:
+            self._auto_connect_enabled_cards()
+
+    def _auto_connect_enabled_cards(self):
+        for card in list(self.device_cards):
+            if not card.property("auto_connect"):
+                continue
+            visa_resource = card.property("visa_resource") or ""
+            serial = card.property("serial") or ""
+            if not visa_resource or visa_resource in self._pending_connects.values():
+                continue
+            already = any(
+                self.slot_frames[l].property("assigned_serial")
+                and self.slot_frames[l].property("assigned_resource") == visa_resource
+                for l in ["A", "B"]
+            )
+            if already or self._find_next_free_slot() is None:
+                continue
+            # 本地连接路径仅单实例线程，等本轮完成后由 _on_connect_thread_done 链式补连
+            if self._instrument_manager is None \
+                    and getattr(self, "_connect_thread", None) is not None:
+                break
+            self._on_device_connect(visa_resource, serial)
+
+    def _remove_device_card(self, card):
+        visa_resource = card.property("visa_resource") or ""
+        if card in self.device_cards:
+            self.device_cards.remove(card)
+        self.device_list_layout.removeWidget(card)
+        card.deleteLater()
+        self._remove_default_device(visa_resource)
+        self._sync_device_card_states()
 
     def _on_device_disconnect(self, serial):
         logger.debug("Datalog UI _on_device_disconnect: serial=%s", serial)
@@ -4408,6 +4509,7 @@ class N6705CDatalogUI(QWidget):
             "model": model,
             "display_ip": display_ip,
             "visa_resource": visa_resource,
+            "auto_connect": False,
         })
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -4416,6 +4518,22 @@ class N6705CDatalogUI(QWidget):
             logger.debug("Saved default device: %s", visa_resource)
         except Exception:
             logger.warning("Save default_devices.json failed", exc_info=True)
+
+    def _remove_default_device(self, visa_resource):
+        if not visa_resource:
+            return
+        path = self._default_devices_path()
+        devices = self._load_default_devices()
+        remaining = [d for d in devices if d.get("visa_resource") != visa_resource]
+        if len(remaining) == len(devices):
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"devices": remaining}, f, ensure_ascii=False, indent=2)
+            logger.debug("Removed default device: %s", visa_resource)
+        except Exception:
+            logger.warning("Remove default_devices.json failed", exc_info=True)
 
     def _add_default_saved_devices(self):
         existing_serials = {c.property("serial") for c in self.device_cards}
@@ -4431,6 +4549,7 @@ class N6705CDatalogUI(QWidget):
             card = self._create_device_card(
                 serial, d.get("model", "N6705C"),
                 d.get("display_ip", ""), d["visa_resource"],
+                auto_connect=d.get("auto_connect", False),
             )
             self.device_list_layout.insertWidget(
                 self.device_list_layout.count() - 1, card
