@@ -291,6 +291,9 @@ class BatchViewMixin:
                 if not dev["is_connected"] or not dev["n6705c"]:
                     continue
                 channels = self._get_selected_batch_channels(label)
+                if label not in self.batch_current_inputs:
+                    continue
+                currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
                 for ch in channels:
                     try:
                         dev["n6705c"].set_mode(ch, "VMETer")
@@ -300,8 +303,7 @@ class BatchViewMixin:
                         dev["n6705c"].set_voltage(ch, new_v)
                         dev["n6705c"].set_current_limit(ch, 0.02)
                         dev["n6705c"].channel_on(ch)
-                        final_limit = 0.07 if new_v < 1.0 else 0.15
-                        dev["n6705c"].set_current_limit(ch, final_limit)
+                        dev["n6705c"].set_current_limit(ch, currents[ch - 1])
                     except Exception as e:
                         logger.error("[%s] CH%d Auto Set failed: %s", label, ch, e)
         self._start_channel_sync()
@@ -312,6 +314,9 @@ class BatchViewMixin:
                 if not dev["is_connected"] or not dev["n6705c"]:
                     continue
                 channels = self._get_selected_batch_channels(label)
+                if label not in self.batch_current_inputs:
+                    continue
+                currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
                 for ch in channels:
                     try:
                         dev["n6705c"].set_mode(ch, "VMETer")
@@ -321,8 +326,7 @@ class BatchViewMixin:
                         dev["n6705c"].set_voltage(ch, new_v)
                         dev["n6705c"].set_current_limit(ch, 0.02)
                         dev["n6705c"].channel_on(ch)
-                        final_limit = 0.07 if new_v < 1.0 else 0.15
-                        dev["n6705c"].set_current_limit(ch, final_limit)
+                        dev["n6705c"].set_current_limit(ch, currents[ch - 1])
                     except Exception as e:
                         logger.error("[%s] CH%d Auto failed: %s", label, ch, e)
         self._start_channel_sync()
