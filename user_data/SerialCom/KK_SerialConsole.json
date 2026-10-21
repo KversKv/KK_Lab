@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "",
+    "port": "COM4",
     "baudrate": "921600",
     "auto_detect": false,
     "databits": "8",
@@ -225,5 +225,20 @@
     "width": 1571,
     "height": 848,
     "maximized": false
-  }
+  },
+  "extra_panels": [
+    {
+      "title": "Serial Log 2",
+      "port": "COM6",
+      "baudrate": 921600,
+      "databit": 8,
+      "stopbit": "1",
+      "parity": "None",
+      "flow": "None",
+      "auto_connect": true,
+      "independent_window": false,
+      "auto_detect": false,
+      "connected": true
+    }
+  ]
 }
