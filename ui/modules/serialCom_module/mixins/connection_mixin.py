@@ -786,6 +786,8 @@ class ConnectionMixin:
             stop_btn.blockSignals(False)
         # 侧栏 Serial/RX/TX Config 跟随聚焦面板
         self._sc_sync_sidebar_to_focus()
+        # Clear All 按钮可见性跟随全局连接数（主/额外面板连接、断开、焦点切换均过此方法）
+        self._sc_sync_clear_all_btn_state()
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()

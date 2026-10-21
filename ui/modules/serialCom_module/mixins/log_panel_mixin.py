@@ -271,6 +271,7 @@ class LogPanelMixin:
         self._sc_extra_log_panels.append(panel)
         self._sc_relayout_log_panels()
         self._sc_remove_log_btn.setEnabled(True)
+        self._sc_sync_clear_all_btn_state()
         self._sc_append_system(
             f"[INFO] New LOG panel: {panel_info.get('title', 'Log')} "
             f"({panel_info.get('port', 'N/A')} @ {panel_info.get('baudrate', 'N/A')})",
@@ -286,7 +287,9 @@ class LogPanelMixin:
             self._sc_independent_windows = []
         self._sc_independent_windows.append(win)
         win.setAttribute(Qt.WA_DeleteOnClose)
-        win.destroyed.connect(lambda: self._sc_independent_windows.remove(win) if win in self._sc_independent_windows else None)
+        win.destroyed.connect(lambda _=None, w=win: self._sc_on_independent_window_destroyed(w))
+        win.connection_changed.connect(self._sc_sync_clear_all_btn_state)
+        self._sc_sync_clear_all_btn_state()
         win.show()
         self._sc_append_system(
             f"[INFO] Independent window opened: {panel_info.get('title', 'Log')} "
@@ -318,6 +321,7 @@ class LogPanelMixin:
             if restored_panels:
                 self._sc_relayout_log_panels()
                 self._sc_remove_log_btn.setEnabled(True)
+                self._sc_sync_clear_all_btn_state()
 
         restored_windows = 0
         win_cfgs = data.get("independent_windows")
@@ -363,6 +367,60 @@ class LogPanelMixin:
         if not self._sc_extra_log_panels:
             return
         self._sc_remove_specific_panel(self._sc_extra_log_panels[-1])
+
+    def _sc_clear_all_logs(self):
+        """一键清除全部串口日志：主面板 + 额外内嵌面板 + 独立浮窗。"""
+        cleared = 0
+        main_panel = getattr(self, "_sc_log_panel", None)
+        if main_panel is not None:
+            main_panel.clear_logs()
+            cleared += 1
+        for panel in list(getattr(self, "_sc_extra_log_panels", []) or []):
+            frame = panel.get("frame")
+            if frame is not None:
+                frame.clear_logs()
+                cleared += 1
+        for win in list(getattr(self, "_sc_independent_windows", []) or []):
+            try:
+                win.clear_logs()
+                cleared += 1
+            except RuntimeError:
+                # 浮窗已销毁但尚未从列表移除
+                pass
+        self._sc_append_system(
+            f"[INFO] Cleared all logs ({cleared} panel(s))", force_primary=True
+        )
+
+    def _sc_connected_serial_count(self):
+        """已连接串口总数：主面板 + 额外内嵌面板 + 独立浮窗。"""
+        count = 1 if getattr(self, "_serial_connected", False) else 0
+        for panel in list(getattr(self, "_sc_extra_log_panels", []) or []):
+            try:
+                if self._sc_extra_panel_is_connected(panel):
+                    count += 1
+            except RuntimeError:
+                pass
+        for win in list(getattr(self, "_sc_independent_windows", []) or []):
+            try:
+                if win.is_connected():
+                    count += 1
+            except RuntimeError:
+                # 浮窗已销毁但尚未从列表移除
+                pass
+        return count
+
+    def _sc_sync_clear_all_btn_state(self):
+        """Clear All 按钮仅在多个串口同时连接时可见。"""
+        btn = getattr(self, "_sc_clear_all_btn", None)
+        if btn is None:
+            return
+        btn.setVisible(self._sc_connected_serial_count() >= 2)
+
+    def _sc_on_independent_window_destroyed(self, win):
+        windows = getattr(self, "_sc_independent_windows", None)
+        if windows and win in windows:
+            windows.remove(win)
+        self._sc_sync_clear_all_btn_state()
 
     def _sc_relayout_log_panels(self):
         while self._sc_log_grid.count():
@@ -654,6 +712,7 @@ class LogPanelMixin:
         panel["frame"].deleteLater()
         self._sc_relayout_log_panels()
         self._sc_remove_log_btn.setEnabled(len(self._sc_extra_log_panels) > 0)
+        self._sc_sync_clear_all_btn_state()
         if self._sc_active_log_panel_index == idx + 1:
             self._sc_active_log_panel_index = 0
             self._sc_active_session_id = "primary"

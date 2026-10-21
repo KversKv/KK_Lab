@@ -1568,6 +1568,8 @@ class _PanelSettingsDialog(_FramelessChromeDialog):
 
 class _IndependentSerialWindow(QWidget):
 
+    connection_changed = Signal()
+
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
         self._config = config
@@ -1644,6 +1646,10 @@ class _IndependentSerialWindow(QWidget):
             return self._connect_btn.text() == "Disconnect"
         return self._conn is not None and self._conn.is_open
 
+    def clear_logs(self):
+        """供 Clear All 统一调用：清空本浮窗日志面板。"""
+        self._panel.clear_logs()
+
     def _do_connect(self):
         port = self._config.get("port", "")
         baudrate = self._config.get("baudrate", 115200)
@@ -1657,6 +1663,7 @@ class _IndependentSerialWindow(QWidget):
             self._status_label.setText(f"MOCK @ {baudrate}")
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
             self._panel.append_log(f"[INFO] Mock connected: {port} @ {baudrate}")
+            self.connection_changed.emit()
             return
 
         try:
@@ -1678,6 +1685,7 @@ class _IndependentSerialWindow(QWidget):
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
             self._panel.append_log(f"[INFO] Connected: {port} @ {baudrate}")
             self._start_read()
+            self.connection_changed.emit()
         except Exception as e:
             self._panel.append_log(f"[ERROR] Connection failed: {e}")
 
@@ -1692,6 +1700,7 @@ class _IndependentSerialWindow(QWidget):
         self._connect_btn.setText("Connect")
         self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
         self._panel.append_log("[INFO] Disconnected")
+        self.connection_changed.emit()
 
     def disconnect_on_port_removed(self, port: str) -> bool:
         """热插拔移除当前连接端口时自动断开；返回是否真正触发了断开。"""

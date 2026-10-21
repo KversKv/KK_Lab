@@ -331,6 +331,23 @@ class ToolbarMixin:
 
         layout.addStretch()
 
+        self._sc_clear_all_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), ""
+        )
+        self._sc_clear_all_btn.setFixedSize(28, 28)
+        self._sc_clear_all_btn.setToolTip(
+            "Clear All Logs\nClear log content of all serial panels at once"
+        )
+        self._sc_clear_all_btn.setStyleSheet(log_panel_button_style())
+        icon_clear_all = self._sc_make_enabled_disabled_icon(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), 14
+        )
+        if not icon_clear_all.isNull():
+            self._sc_clear_all_btn.setIcon(icon_clear_all)
+        # 仅在多个串口同时连接时可见（_sc_sync_clear_all_btn_state 统一驱动）
+        self._sc_clear_all_btn.setVisible(False)
+        layout.addWidget(self._sc_clear_all_btn)
+
         self._sc_chart_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "chart.svg"), "Chart"
         )
@@ -574,6 +591,7 @@ class ToolbarMixin:
         self._sc_refresh_btn.clicked.connect(self._sc_on_refresh)
         self._sc_add_log_btn.clicked.connect(self._sc_on_add_log_panel)
         self._sc_remove_log_btn.clicked.connect(self._sc_on_remove_log_panel)
+        self._sc_clear_all_btn.clicked.connect(self._sc_clear_all_logs)
         self._sc_sidebar_toggle_btn.clicked.connect(self._sc_on_sidebar_toggle)
         # toggled 绑定：持久化回放 setChecked 时同步生效
         self._sc_footer_toggle_btn.toggled.connect(self._sc_on_footer_toggle)
