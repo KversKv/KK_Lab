@@ -53,16 +53,18 @@ _CAPTURE_ICON_SVG = os.path.join(
 # tab active/inactive 的 padding/border 盒模型一致（03§25），仅换色不改尺寸
 _TITLE_BAR_STYLE = """
 QWidget#suiteTitleBar {
-    background-color: #020817;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #061127, stop:1 #020817);
+    border-bottom: 1px solid #0f1c36;
 }
 QWidget#suiteTitleBar QLabel {
     background: transparent;
     border: none;
 }
 QLabel#suiteTitleText {
-    color: #c6d4f2;
-    font-size: 12px;
-    font-weight: 600;
+    color: #e8f0ff;
+    font-size: 13px;
+    font-weight: 700;
     letter-spacing: 1px;
     background: transparent;
     border: none;
@@ -72,20 +74,23 @@ QPushButton#suitePageTab {
     max-height: 22px;
     padding: 0px 14px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 12px;
     background-color: transparent;
-    color: #8ea2c9;
+    color: #93a7cf;
     font-size: 12px;
     font-weight: 600;
 }
 QPushButton#suitePageTab:hover {
-    background-color: #1b2640;
-    color: #c6d4f2;
+    background-color: rgba(147, 176, 230, 26);
+    color: #d7e3fa;
 }
 QPushButton#suitePageTab:checked {
-    background-color: #2563eb;
-    border: 1px solid #2563eb;
-    color: #ffffff;
+    background-color: rgba(59, 130, 246, 46);
+    border: 1px solid rgba(96, 150, 250, 140);
+    color: #eef4ff;
+}
+QPushButton#suitePageTab:checked:hover {
+    background-color: rgba(59, 130, 246, 60);
 }
 QPushButton#captureChartBtn {
     min-width: 28px;

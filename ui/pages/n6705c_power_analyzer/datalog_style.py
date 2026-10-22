@@ -238,6 +238,7 @@ CH_CFG_TOGGLE_BTN_EXPANDED = """
         border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
         padding: 0px 14px; font-size: 11px; font-weight: 700;
         text-align: left;
+        min-height: 30px; max-height: 30px;
     }
     QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
 """
@@ -247,6 +248,7 @@ CH_CFG_TOGGLE_BTN_COLLAPSED = """
         background-color: #0a1930; color: #8ea6cf;
         border: 1px solid #132849; border-radius: 8px;
         padding: 0px 14px; font-size: 11px; font-weight: 700; text-align: left;
+        min-height: 30px; max-height: 30px;
     }
     QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
 """
@@ -263,7 +265,7 @@ CH_CFG_TABBAR_STYLE = """
         border-bottom: none;
         border-top-left-radius: 5px;
         border-top-right-radius: 5px;
-        padding: 4px 14px;
+        padding: 7px 14px;
         margin-right: 1px;
         margin-bottom: 0px;
         font-size: 11px;
@@ -472,7 +474,20 @@ TIME_EDIT_STYLE = (
 
 MIN_PERIOD_CB_STYLE = "font-size: 10px; color: #8eb0e3;"
 
-SAMPLE_PERIOD_READONLY_STYLE = "QLineEdit { background: #1a2b52; color: #667ba0; }"
+SAMPLE_PERIOD_EDIT_STYLE = (
+    "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+    "background-color: #0c1a35; border: 1px solid #1e3460; "
+    "color: #eaf2ff; font-size: 11px; }"
+    "QLineEdit:focus { border-color: #3a6fd4; }"
+)
+
+# 只读态必须自带完整盒模型（padding/font-size/border），否则级联回页面全局
+# QLineEdit padding: 6px 10px，24px 固定高下数字底部被截断。
+SAMPLE_PERIOD_READONLY_STYLE = (
+    "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+    "background: #1a2b52; border: 1px solid #1e3460; "
+    "color: #667ba0; font-size: 11px; }"
+)
 
 TIME_UNIT_LABEL_STYLE = "color: #8eb0e3; font-size: 10px; padding: 0px; border: none;"
 

@@ -42,3 +42,5 @@
 - **窗口几何恢复禁按 margin 压尺寸**：`_clamped_window_geometry` 只允许"超出可用区域才截断"（`min(saved, available)`）；若按 `可用宽-40` 预留 margin，Windows 吸附 1/2 屏（宽=整屏）后重开会被压小，150% DPI 下右侧出现 60 物理 px 空白。`_WINDOW_MARGIN` 仅用于默认窗口尺寸。
 - Datalog 导出是二进制+CSV 混合，**不要重复造解析轮子**，用 instruments 层 datalog_process。
 - 波形单位事实源在 `n6705c_datalog_process.py`（`parse_channel_label` 等），勿在 UI 另写推断。
+- **纯 QWidget 自建标题栏 QSS 背景不生效**：正常 paint 路径下纯 `QWidget` 不绘制 QSS `background-color`（透出父级底色；`grab()` 离屏渲染却会绘制，易被误导），必须 `setAttribute(Qt.WA_StyledBackground, True)`（`_StandaloneTitleBar` 已处理；`ui/app_top_bar.py` 因背景色与页面相近未暴露，改色时需同样处理）。
+- **固定高输入框的控件级样式必须自带完整盒模型**：本页全局 `QLineEdit { padding: 6px 10px; border: 1px }`，24px 固定高输入框内容区仅剩 10px，数字底部截断；`setStyleSheet` 只设颜色不设 padding/font/border 会级联回全局同样截断。参考 `SAMPLE_PERIOD_EDIT_STYLE / SAMPLE_PERIOD_READONLY_STYLE`（padding 2px 4px + font 11px 全套）。

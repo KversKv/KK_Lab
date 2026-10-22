@@ -1566,13 +1566,6 @@ class N6705CDatalogUI(QWidget):
                 border: none;
             }
 
-            QLabel#pageTitle {
-                font-size: 18px;
-                font-weight: 700;
-                color: #f8fbff;
-                background-color: transparent;
-            }
-
             QLabel#pageSubtitle {
                 font-size: 12px;
                 color: #7da2d6;
@@ -1909,15 +1902,6 @@ class N6705CDatalogUI(QWidget):
 
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
-
-        title_row = QHBoxLayout()
-        icon_lbl = self._svg_icon_label("sparkles.svg", "#d4a514", 20)
-        self.page_title = QLabel("Keysight N6705C Datalog Analyzer")
-        self.page_title.setObjectName("pageTitle")
-        title_row.addWidget(icon_lbl)
-        title_row.addWidget(self.page_title)
-        title_row.addStretch()
-        title_layout.addLayout(title_row)
 
         self.page_subtitle = QLabel(
             "Record, analyze, and export high-resolution datalogs from the N6705C."
@@ -2891,6 +2875,7 @@ class N6705CDatalogUI(QWidget):
         self.sample_period_edit.set_wheel_step(1)
         self.sample_period_edit.setFixedWidth(56)
         self.sample_period_edit.setFixedHeight(24)
+        self.sample_period_edit.setStyleSheet(dss.SAMPLE_PERIOD_EDIT_STYLE)
         self.sample_period_edit.editingFinished.connect(self._validate_sample_period)
 
         self.min_period_cb = QCheckBox("Minimum")
@@ -4609,10 +4594,14 @@ class N6705CDatalogUI(QWidget):
         bottom_axis.setStyle(tickLength=-5)
 
         left_axis = self.plot_widget.getPlotItem().getAxis("left")
-        left_axis.setPen(pg.mkPen(color="#0a1733"))
+        left_axis.setPen(axis_pen)
+        left_axis.setTextPen(pg.mkPen(text_color))
         left_axis.setTicks([])
         left_axis.setLabel("")
         left_axis.setWidth(0)
+        left_tick_font = QFont()
+        left_tick_font.setPixelSize(10)
+        left_axis.setStyle(tickFont=left_tick_font, tickLength=-6)
 
         self.plot_widget.setLabel("bottom", "Time (s)", color=text_color)
 
@@ -5248,6 +5237,11 @@ class N6705CDatalogUI(QWidget):
         for key, curve in self.plot_curves.items():
             curve.setVisible(key in visible_keys)
 
+        for line in self._sep_lines:
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
         self._sep_lines.clear()
 
         self._band_info = {}
@@ -5503,7 +5497,7 @@ class N6705CDatalogUI(QWidget):
         is_min = self.min_period_cb.isChecked()
         self.sample_period_edit.setReadOnly(is_min)
         self.sample_period_edit.setStyleSheet(
-            dss.SAMPLE_PERIOD_READONLY_STYLE if is_min else ""
+            dss.SAMPLE_PERIOD_READONLY_STYLE if is_min else dss.SAMPLE_PERIOD_EDIT_STYLE
         )
         if is_min:
             self._apply_minimum_period()
@@ -7205,15 +7199,24 @@ class N6705CDatalogUI(QWidget):
             except Exception:
                 pass
         self._ch_label_items.clear()
+        for line in self._sep_lines:
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._sep_lines.clear()
 
         left_axis = self.plot_widget.getPlotItem().getAxis("left")
 
         if not entries:
             left_axis.setWidth(0)
+            left_axis.setTicks([])
             return
 
         left_axis.setWidth(65)
 
+        band_boundaries = []
+        tick_values = []
         for key, color in entries:
             display = self.ch_name_renames.get(key, _display_label(key))
             band = self._band_info.get(key)
@@ -7233,6 +7236,25 @@ class N6705CDatalogUI(QWidget):
             text_item.setProperty("y_center", y_center)
             text_item.setProperty("ch_key", key)
             self._ch_label_items.append(text_item)
+
+            # 纵轴刻度：每通道带上/下缘的 raw max/min 作为轴刻度（刻度线+数值），
+            # 带间画淡色分隔线
+            if band:
+                ch_unit = _unit_for_label(key)
+                tick_values.append((band["plot_top"], _auto_format(band["raw_max"], ch_unit)))
+                tick_values.append((band["plot_bottom"], _auto_format(band["raw_min"], ch_unit)))
+                band_boundaries.append(band["band_bottom"])
+
+        left_axis.setTicks([tick_values])
+
+        for boundary_y in band_boundaries[:-1]:
+            sep = pg.InfiniteLine(
+                pos=boundary_y, angle=0, movable=False,
+                pen=pg.mkPen(color="#2a4272", width=1, style=Qt.DashLine),
+            )
+            sep.setZValue(-10)
+            self.plot_widget.addItem(sep, ignoreBounds=True)
+            self._sep_lines.append(sep)
 
         vb = self.plot_widget.getPlotItem().getViewBox()
         # pyqtgraph 对未连接的 slot 调 disconnect 不抛异常而是 RuntimeWarning，
@@ -8677,7 +8699,8 @@ if sys.platform == "win32":
     _DWMWCP_ROUND = 2
     _WINDOW_BORDER_COLOR = 0x00403420  # COLORREF 0x00BBGGRR -> 边框 #203440
 
-_TITLE_BAR_HEIGHT = 32
+# 32px 内容区 + 1px 底部分隔线（QSS 盒模型：border 计入总高）
+_TITLE_BAR_HEIGHT = 33
 _CAPTURE_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
 )
@@ -8685,17 +8708,19 @@ _CAPTURE_ICON_SVG = os.path.join(
 # 控件高度单一权威：标题栏内按钮用 ID 选择器钉死尺寸，不写裸 QPushButton 规则
 _TITLE_BAR_STYLE = """
 QWidget#standaloneTitleBar {
-    background-color: #020817;
+    background-color: #121417;
+    border-bottom: 1px solid #1a2b52;
 }
 QWidget#standaloneTitleBar QLabel {
     background: transparent;
     border: none;
 }
 QLabel#standaloneTitleText {
-    color: #c6d4f2;
+    color: #e6eeff;
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
     background: transparent;
     border: none;
 }
@@ -8743,13 +8768,15 @@ class _StandaloneTitleBar(QWidget):
         self.setObjectName("standaloneTitleBar")
         self.setFixedHeight(_TITLE_BAR_HEIGHT)
         self.setStyleSheet(_TITLE_BAR_STYLE)
+        # 纯 QWidget 默认不绘制 QSS 背景（会透出父级底色），须显式打开
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._drag_origin = None
 
         from ui.app_top_bar import _caption_icon
         self._caption_icon = _caption_icon
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 0, 0, 0)
+        layout.setContentsMargins(12, 0, 0, 0)
         layout.setSpacing(8)
 
         icon_label = QLabel(self)
@@ -8902,8 +8929,19 @@ class _StandaloneDatalogWindow(N6705CDatalogUI):
 
         self._title_bar = _StandaloneTitleBar(self)
         self._title_bar.capture_button.clicked.connect(self._on_capture_chart)
-        # 标题栏背景与页面同色（#020817），root_layout 原有 8px 边距不留视觉接缝
-        self.layout().insertWidget(0, self._title_bar)
+        # 标题栏全宽顶格（去掉 root_layout 8px 边距在标题栏四周造成的空隙）；
+        # 原 8px 页面边距移交内容子布局，页面内容视觉保持不变
+        root_layout = self.layout()
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.insertWidget(0, self._title_bar)
+        last_index = root_layout.count() - 1
+        for index in range(1, root_layout.count()):
+            child_layout = root_layout.itemAt(index).layout()
+            if child_layout is None:
+                continue
+            child_layout.setContentsMargins(
+                8, 2 if index == 1 else 0, 8, 8 if index == last_index else 0
+            )
 
     # ---- 一键截图：get_capture_pixmap() → 系统剪贴板 ----
     def _on_capture_chart(self):

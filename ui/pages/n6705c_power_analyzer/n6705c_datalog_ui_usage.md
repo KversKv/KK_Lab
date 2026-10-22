@@ -35,7 +35,7 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 界面由以下几个主要区域组成：
 
 ### 1. 标题栏
-显示页面标题 "Keysight N6705C Datalog Analyzer" 和副标题说明。
+页面内不再显示大标题（由套件 / 独立窗口标题栏承载），仅保留副标题说明。
 
 ### 2. 左侧侧边栏 —— Instrument Connection（仪器连接面板）
 - 点击左侧 **"Instrument Connection"** 垂直文字按钮展开/折叠。
