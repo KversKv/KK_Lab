@@ -22,6 +22,9 @@
 - **一键截图钩子 `get_capture_pixmap()`**（MainWindow 降级链最高优先级）：`chart_frame` + `measurement_card` 纵向合成（gap 6 与 `chart_and_meas_layout` 一致，底色 #020817）；改布局间距 / 页面底色需同步。
 - **Datalog 页布局骨架**：`mid_layout`（QHBox）= 左控制列（240，通高，Start/Export/Import 三按钮靠底部排布）+ `center_col_layout`（QVBox：chart+meas 居上、Channel Config 居下，二者强制同宽）+ 右 Custom Labels 侧栏（通高）；Channel Config 禁再挂回 `main_area`（会拉通全宽）。
 - **独立运行入口是 `_StandaloneDatalogWindow`**（文件尾部，`__main__` 勿直接实例化 `N6705CDatalogUI`）：无边框 + `_StandaloneTitleBar` 自建标题栏（含一键截图按钮），nativeEvent 方案与 [ui/main_window.py](../../main_window.py) 一致（WM_NCCALCSIZE→0 + WM_NCHITTEST 边框缩放 + HTCAPTION 拖动）。
+- **套件入口 `N6705CSuiteWindow`**（[n6705c_suite_ui.py](./n6705c_suite_ui.py)）：无边框 + 标题栏内嵌页面切换 tab，`QStackedWidget` 承载多页；页面注册表 `_SUITE_PAGES`（key/标题/类），新增界面只追加注册项；全部子页注入同一 `N6705CTop` + `InstrumentManager`；关闭时逐页 `sendEvent(QCloseEvent)` 复用子页清理（嵌入态 `isWindow()=False`，datalog 几何记忆保存空转不污染）。
+  - `standalone=True` 独立运行（`python n6705c_suite_ui.py`）；`standalone=False` 嵌入 MainWindow——N6705C 为**一级菜单**（无二级子菜单），标题栏仅留 tab，子页经 `analyser_page` / `datalog_page` 暴露给 MainWindow 既有引用（compact / AI 回调 / 截图链），tab 切换经 `page_changed` 信号同步 `current_instrument_ui`。
+  - 注意：MainWindow 首页装载即构造两子页，datalog 的 auto_connect 启动即触发（原懒加载为首次切换才触发）。
 - `set_compact_mode(compact: bool)`（主壳对外方法）：主窗口顶栏「最小视图」按钮调用——True 时隐藏页面 top_bar / 通道区 / 功耗区，仅留 Quick Setup（`batch_tools_panel`，收起态自动展开），并隐藏折叠头、归零区块间距、收窄页边距（配合 main_window `_COMPACT_VIEW_SIZE=(600,200)`）；False 恢复。命名与语义不可改（[main_window.py](../../main_window.py) `_on_compact_view_toggled` 依赖）。
 
 ## 局部约定
@@ -34,6 +37,7 @@
 ## 局部坑点
 
 - **Datalog 连接管理三律**：① 连接/断连/刷新收尾统一走 `_after_slot_states_synced`（槽位签名去重，禁止绕过重发 `connection_status_changed` 或直调 `_refresh_channel_config`）；② 并发连接用 `_pending_connects`（slot→resource）守卫，`_find_next_free_slot` 必须跳过 pending 槽；③ manager 的 `connection_failed` **不发** `sessions_changed`，必须单独监听恢复卡片按钮态，否则按钮卡死 "Connecting..."；session 被他页 `remove_session` 移除时靠 `_on_manager_sessions_changed` 对账清理。
+- **签名必须含 pending**：manager 连接成功先发 `session_connected`（→ top → `_sync_from_top` 抢跑收尾）后发 `sessions_changed`（→ 对账清 pending）；`_after_slot_states_synced` 签名若不含 `_pending_connects`，pending 清除时被去重跳过，设备卡片永久卡 "Connecting..."（suite 双页同建场景实踩）。
 - **§25 Tab 盒模型坑**：见上"局部约定"第一条，是本页踩过的真实坑。
 - **窗口几何恢复禁按 margin 压尺寸**：`_clamped_window_geometry` 只允许"超出可用区域才截断"（`min(saved, available)`）；若按 `可用宽-40` 预留 margin，Windows 吸附 1/2 屏（宽=整屏）后重开会被压小，150% DPI 下右侧出现 60 物理 px 空白。`_WINDOW_MARGIN` 仅用于默认窗口尺寸。
 - Datalog 导出是二进制+CSV 混合，**不要重复造解析轮子**，用 instruments 层 datalog_process。
