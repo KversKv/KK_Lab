@@ -92,8 +92,7 @@ if sys.platform == "win32":
     _WINDOW_BORDER_COLOR = 0x00403420  # COLORREF 0x00BBGGRR -> 边框 #203440
 from PySide6.QtGui import QPalette, QColor, QFont, QPixmap
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
-from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
-from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import N6705CDatalogUI
+from ui.pages.n6705c_power_analyzer.n6705c_suite_ui import N6705CSuiteWindow
 from ui.pages.n6705c_power_analyzer.n6705c_top import N6705CTop
 from ui.pages.oscilloscope.mso64b_top import MSO64BTop
 from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
@@ -386,6 +385,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.mso64b_top.connect_instrument("MOCK::MSO64B", mock_scope, "MSO64B")
             _init_tick("DEBUG_MOCK 自动连接")
 
+        self.n6705c_suite_ui = None
         self.n6705c_analyser_ui = None
         self.n6705c_datalog_ui = None
         self.oscilloscope_ui = None
@@ -608,8 +608,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.instrument_ui_container_layout = QVBoxLayout(self.instrument_ui_container)
         self.instrument_ui_container_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._create_power_analyser_ui()
-        _cmc_tick("_create_power_analyser_ui (N6705C首页)")
+        self._create_n6705c_suite_ui()
+        _cmc_tick("_create_n6705c_suite_ui (N6705C首页)")
         self.right_content_layout.addWidget(self.instrument_ui_container)
 
         main_splitter.addWidget(self.right_content)
@@ -994,6 +994,11 @@ class MainWindow(CleanupMixin, QMainWindow):
             "vmin_hunter": "hunt",
             "vmin_single_test": "single_test",
         }
+        # N6705C Suite 子页：点击父按钮后切到目标 tab
+        _suite_subkeys = {
+            "power_analyser": "analyser",
+            "datalog": "datalog",
+        }
         if page in _collection_subkeys:
             self.nav.current_collection_key = _collection_subkeys[page]
         if page in _pmu_tool_subkeys:
@@ -1004,6 +1009,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         if button is None:
             return False, f"未知页面：{page}"
         self.nav.handle_nav_button_clicked(button)
+        if page in _suite_subkeys and self.n6705c_suite_ui is not None:
+            self.n6705c_suite_ui.switch_page(_suite_subkeys[page])
         return True, f"已跳转到 {page}"
 
     def _ai_toggle_panel(self, want_open):
@@ -1565,46 +1572,42 @@ class MainWindow(CleanupMixin, QMainWindow):
             return super().eventFilter(obj, event)
         return super().eventFilter(obj, event)
 
-    def _switch_pa_mode(self, mode_key):
-        if mode_key == "analyser":
-            self._create_power_analyser_ui()
-        elif mode_key == "datalog":
-            self._create_datalog_ui()
-        else:
-            self._create_power_analyser_ui()
-
-    def _create_power_analyser_ui(self):
-        logger.debug("Switching to Power Analyser UI")
+    def _create_n6705c_suite_ui(self):
+        logger.debug("Switching to N6705C Suite UI")
         self._hide_all_instrument_uis()
-        if self.n6705c_analyser_ui is None:
-            self.n6705c_analyser_ui = N6705CAnalyserUI(
+        if self.n6705c_suite_ui is None:
+            self.n6705c_suite_ui = N6705CSuiteWindow(
                 n6705c_top=self.n6705c_top,
                 instrument_manager=self.instrument_manager,
                 ui_action_registry=getattr(self, "_ui_action_registry", None),
+                standalone=False,
             )
-            self.instrument_ui_container_layout.addWidget(self.n6705c_analyser_ui)
-        else:
+            self.n6705c_suite_ui.page_changed.connect(self._on_suite_page_changed)
+            self.instrument_ui_container_layout.addWidget(self.n6705c_suite_ui)
+            # 子页引用：compact / AI 回调 / 截图链 / 功耗更新等既有代码直连
+            self.n6705c_analyser_ui = self.n6705c_suite_ui.analyser_page
+            self.n6705c_datalog_ui = self.n6705c_suite_ui.datalog_page
             self.n6705c_analyser_ui._sync_from_top()
-            self.n6705c_analyser_ui.show()
-        self.current_instrument_ui = "power_analyser"
-        self.channels = self.n6705c_analyser_ui.channels if hasattr(self.n6705c_analyser_ui, 'channels') else []
-        self._fade_in_widget(self.n6705c_analyser_ui)
-
-    def _create_datalog_ui(self):
-        logger.debug("Switching to Datalog UI")
-        self._hide_all_instrument_uis()
-        if self.n6705c_datalog_ui is None:
-            self.n6705c_datalog_ui = N6705CDatalogUI(
-                n6705c_top=self.n6705c_top,
-                instrument_manager=self.instrument_manager,
-                ui_action_registry=getattr(self, "_ui_action_registry", None),
-            )
-            self.instrument_ui_container_layout.addWidget(self.n6705c_datalog_ui)
-        else:
             self.n6705c_datalog_ui._sync_from_top()
-            self.n6705c_datalog_ui.show()
-        self.current_instrument_ui = "datalog"
-        self._fade_in_widget(self.n6705c_datalog_ui)
+        else:
+            self.n6705c_suite_ui.show()
+        key = self.n6705c_suite_ui.current_page_key()
+        self.current_instrument_ui = "power_analyser" if key == "analyser" else "datalog"
+        self.channels = self.n6705c_analyser_ui.channels if hasattr(self.n6705c_analyser_ui, 'channels') else []
+        self._fade_in_widget(self.n6705c_suite_ui)
+
+    def _on_suite_page_changed(self, key):
+        """suite 内 tab 切换：同步页面键（compact 按钮 / AI 上下文 / 帮助页随动）。"""
+        self.current_instrument_ui = "power_analyser" if key == "analyser" else "datalog"
+        if key == "analyser" and hasattr(self.n6705c_analyser_ui, 'channels'):
+            self.channels = self.n6705c_analyser_ui.channels
+        self._sync_compact_view_button()
+        if getattr(self, "ai_service", None) is not None:
+            self.ai_service.set_page_context(self._get_current_help_key())
+            self._update_ai_apply_callbacks()
+            if getattr(self, "ai_panel", None) is not None:
+                self.ai_panel.refresh_quick_actions()
+                self.ai_panel.on_page_changed()
 
     def _create_oscilloscope_ui(self):
         logger.debug("Switching to Oscilloscope UI")
@@ -1855,7 +1858,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _hide_all_instrument_uis(self):
         self._page_switch_geometry = self.geometry()
         for widget in [
-            self.n6705c_analyser_ui, self.n6705c_datalog_ui,
+            self.n6705c_suite_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
             self.consumption_test_ui, self.charger_test_ui, self.module_test_ui,
             self.orchestrator_ui,
@@ -2025,12 +2028,6 @@ class MainWindow(CleanupMixin, QMainWindow):
         elif self.current_instrument_ui == "vmin_hunter":
             key_map = {"hunt": "vmin_hunter", "single_test": "vmin_single_test"}
             return key_map.get(self.nav.current_vmin_hunter_key, "vmin_hunter")
-        elif self.current_instrument_ui == "power_analyser":
-            if self.nav.current_pa_mode == "datalog":
-                return "datalog"
-            return "power_analyser"
-        elif self.current_instrument_ui == "datalog":
-            return "datalog"
         elif self.current_instrument_ui:
             return self.current_instrument_ui
         return "power_analyser"

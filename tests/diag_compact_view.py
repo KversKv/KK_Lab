@@ -91,7 +91,7 @@ def run(win):
 
             def after_in2():
                 check_compact_view(win)
-                win._switch_pa_mode("datalog")
+                win.n6705c_suite_ui.switch_page("datalog")
 
                 def after_away():
                     check("切离后按钮隐藏", not btn.isVisible())
@@ -100,7 +100,7 @@ def run(win):
                           f"实际 {win.geometry()} vs 期望 {geo_before}")
                     check("切离后左导航还原", win.left_nav.isVisible())
                     # 切回 analyser 验证页面区块已随紧凑退出同步还原
-                    win._switch_pa_mode("analyser")
+                    win.n6705c_suite_ui.switch_page("analyser")
 
                     def after_back():
                         check_full_view(win)
