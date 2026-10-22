@@ -29,6 +29,11 @@ a = Analysis(
             os.path.join(PROJECT_ROOT, 'resources', 'pages', 'n6705c_power_analyzer_SVGs'),
             os.path.join('resources', 'pages', 'n6705c_power_analyzer_SVGs'),
         ),
+        # 独立窗口标题栏一键截图图标（capture.svg）
+        (
+            os.path.join(PROJECT_ROOT, 'resources', 'icons_svg', 'window'),
+            os.path.join('resources', 'icons_svg', 'window'),
+        ),
         # ui/styles/__init__.py 连带 import ui.widgets.start_sequence,
         # 其模块级 load_qss("start_button") 依赖 ui/theme/qss/,
         # 缺失则打包后启动即 FileNotFoundError (与 kk_lab.spec 保持一致)

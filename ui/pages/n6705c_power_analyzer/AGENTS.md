@@ -19,6 +19,9 @@
 - `N6705CTop`（[n6705c_top.py](./n6705c_top.py)）：**双台仪器 A/B** 连接状态共享中枢，供多页注入。
 - 主壳 [n6705c_analyser_ui.py](./n6705c_analyser_ui.py)：状态机 / 连接 / 通道切换 / 装配；视图拆分为 `analyser_view_setting / analyser_view_batch / analyser_view_consumption` Mixin + `widgets.py`。
 - `N6705CDatalogUI`：可独立运行（`python n6705c_datalog_ui.py`）或 `N6705CDatalogUI(n6705c_top=...)` 嵌入同步连接。
+- **一键截图钩子 `get_capture_pixmap()`**（MainWindow 降级链最高优先级）：`chart_frame` + `measurement_card` 纵向合成（gap 6 与 `chart_and_meas_layout` 一致，底色 #020817）；改布局间距 / 页面底色需同步。
+- **Datalog 页布局骨架**：`mid_layout`（QHBox）= 左控制列（240，通高，Start/Export/Import 三按钮靠底部排布）+ `center_col_layout`（QVBox：chart+meas 居上、Channel Config 居下，二者强制同宽）+ 右 Custom Labels 侧栏（通高）；Channel Config 禁再挂回 `main_area`（会拉通全宽）。
+- **独立运行入口是 `_StandaloneDatalogWindow`**（文件尾部，`__main__` 勿直接实例化 `N6705CDatalogUI`）：无边框 + `_StandaloneTitleBar` 自建标题栏（含一键截图按钮），nativeEvent 方案与 [ui/main_window.py](../../main_window.py) 一致（WM_NCCALCSIZE→0 + WM_NCHITTEST 边框缩放 + HTCAPTION 拖动）。
 - `set_compact_mode(compact: bool)`（主壳对外方法）：主窗口顶栏「最小视图」按钮调用——True 时隐藏页面 top_bar / 通道区 / 功耗区，仅留 Quick Setup（`batch_tools_panel`，收起态自动展开），并隐藏折叠头、归零区块间距、收窄页边距（配合 main_window `_COMPACT_VIEW_SIZE=(600,200)`）；False 恢复。命名与语义不可改（[main_window.py](../../main_window.py) `_on_compact_view_toggled` 依赖）。
 
 ## 局部约定
