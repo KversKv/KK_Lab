@@ -1409,6 +1409,10 @@ class N6705CDatalogUI(QWidget):
             self.slot_frames["A"].property("assigned_serial") or "",
             self.is_connected_b,
             self.slot_frames["B"].property("assigned_serial") or "",
+            # pending 必须纳入签名：top 路同步（session_connected→connection_changed
+            # →_sync_from_top）先于 manager 对账（sessions_changed 清 pending）到达，
+            # 否则 pending 清除时签名不变被去重跳过，设备卡片永久卡 "Connecting..."
+            tuple(sorted(self._pending_connects.items())),
         )
         if sig == self._last_slot_sync_sig:
             return
