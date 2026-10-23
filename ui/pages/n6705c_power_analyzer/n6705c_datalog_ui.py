@@ -72,8 +72,12 @@ from ui.widgets.toast_notification import ToastNotification
 logger = get_logger(__name__)
 
 
-def _make_svg_icon(svg_file, color="#dfe8ff", size=18):
-    """加载 resources/pages/n6705c_power_analyzer_SVGs 下的 SVG 并渲染为 QIcon。"""
+def _make_svg_icon(svg_file, color="#dfe8ff", size=18, zoom=1.0):
+    """加载 resources/pages/n6705c_power_analyzer_SVGs 下的 SVG 并渲染为 QIcon。
+
+    zoom > 1 时将 viewBox 放大 zoom 倍后居中裁剪，削掉 SVG 内建留白，
+    使可见笔画在小尺寸按钮（如左侧 rail 图标）中填满绘制区。
+    """
     svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
     with open(svg_path, "r", encoding="utf-8") as f:
         svg_data = f.read().replace("currentColor", color)
@@ -81,6 +85,10 @@ def _make_svg_icon(svg_file, color="#dfe8ff", size=18):
     pixmap = QPixmap(size, size)
     pixmap.fill(QColor(0, 0, 0, 0))
     painter = QPainter(pixmap)
+    if zoom != 1.0:
+        offset = (size - size * zoom) / 2.0
+        painter.translate(offset, offset)
+        painter.scale(zoom, zoom)
     renderer.render(painter)
     painter.end()
     return QIcon(pixmap)
@@ -140,6 +148,8 @@ EXTRA_MARKER_COLORS = [
 ]
 
 _BAND_CEILING = 0.88
+# 通道 band 纵向最小占比：拖拽分隔线时单个 band 高度下限，防止被压到不可见
+_BAND_MIN_FRAC = 0.05
 
 # 成对 Marker 区间注释（Δt/avg 文本框）：默认字号与可选字号
 _ANN_DEFAULT_FONT = 10
@@ -355,6 +365,9 @@ class ScaleOffsetEdit(QLineEdit):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setFocusPolicy(Qt.StrongFocus)
+        # 纵向随行高拉伸：行高由 ToggleLabel(24) 决定，QLineEdit 默认 Fixed 会短一截，
+        # 导致相邻行输入框间距 (2+高度差) 与 V/I/P 按钮间距 (2) 不一致
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def wheelEvent(self, event):
         if not self.hasFocus():
@@ -400,7 +413,7 @@ class ChannelNameLabel(QWidget):
         self._edit.setAlignment(Qt.AlignRight)
         self._edit.setStyleSheet(
             f"background: #0c1a35; color: {color}; font-size: 13px; font-weight: 800; "
-            f"border: 1px solid {color}; border-radius: 2px; padding: 0 2px;"
+            f"border: 1px solid {color}; border-radius: 1px; padding: 0 2px;"
         )
         self._edit.hide()
         layout.addWidget(self._edit)
@@ -1109,6 +1122,11 @@ class N6705CDatalogUI(QWidget):
 
         self._band_info = {}
         self._sep_lines = []
+        self._band_grid_lines = []
+        self._band_zero_lines = {}
+        # 各 band 纵向高度占比（和为 1，默认均分）；分隔线拖拽时逐对调整
+        self._band_fractions = []
+        self._sep_drag_index = None
         self._selected_ch_key = None
         self._selected_orig_pen = None
         self._selected_highlight = None
@@ -1336,9 +1354,12 @@ class N6705CDatalogUI(QWidget):
                 continue
             if snap.connected:
                 if self._pending_connects.get(label) == snap.resource:
-                    # 本页发起的连接成功：清除 pending 并折叠仪器面板
+                    # 本页发起的连接成功：清除 pending 并折叠仪器面板；
+                    # 门禁用 isHidden() 而非 isVisible()——启动自动连接完成时本页
+                    # 常非 QStackedWidget 当前页，isVisible() 受祖先隐藏影响恒为
+                    # False 会跳过折叠，切回本页时仪器面板仍展开
                     self._pending_connects.pop(label, None)
-                    if self.instrument_panel.isVisible():
+                    if not self.instrument_panel.isHidden():
                         self._collapse_instrument_panel()
                 instance = self._instrument_manager.get_instance(snap.session_id)
                 display_serial = snap.serial if snap.serial else snap.resource
@@ -1502,25 +1523,25 @@ class N6705CDatalogUI(QWidget):
             QFrame#cardFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 12px;
+                border-radius: 6px;
             }
 
             QFrame#topControlsFrame {
                 background-color: #0a1733;
                 border: 1px solid #1a2b52;
-                border-radius: 12px;
+                border-radius: 6px;
             }
 
             QFrame#chartFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 12px;
+                border-radius: 6px;
             }
 
             QFrame#chResultCard {
                 background-color: #0a1733;
                 border: 1px solid #1a2b52;
-                border-radius: 12px;
+                border-radius: 6px;
             }
 
             QFrame#separator {
@@ -1534,7 +1555,7 @@ class N6705CDatalogUI(QWidget):
                 background-color: #0a1733;
                 color: #eaf2ff;
                 border: 1px solid #27406f;
-                border-radius: 8px;
+                border-radius: 4px;
                 padding: 6px 10px;
                 selection-background-color: #4f46e5;
             }
@@ -1584,7 +1605,7 @@ class N6705CDatalogUI(QWidget):
 
             QPushButton {
                 min-height: 34px;
-                border-radius: 8px;
+                border-radius: 4px;
                 padding: 6px 14px;
                 border: 1px solid #2a4272;
                 background-color: #102042;
@@ -1610,7 +1631,7 @@ class N6705CDatalogUI(QWidget):
             QPushButton#chartToolBtn {
                 min-height: 28px;
                 padding: 4px 12px;
-                border-radius: 8px;
+                border-radius: 4px;
                 background-color: #13254b;
                 color: #dce7ff;
                 font-size: 11px;
@@ -1631,7 +1652,7 @@ class N6705CDatalogUI(QWidget):
                 min-height: 28px;
                 max-height: 28px;
                 padding: 0px;
-                border-radius: 8px;
+                border-radius: 4px;
                 border: 1px solid transparent;
                 background-color: #13254b;
             }
@@ -1667,7 +1688,7 @@ class N6705CDatalogUI(QWidget):
 
             QPushButton#primaryActionBtn {
                 min-height: 40px;
-                border-radius: 8px;
+                border-radius: 4px;
                 font-size: 14px;
                 font-weight: 800;
                 color: white;
@@ -1704,7 +1725,7 @@ class N6705CDatalogUI(QWidget):
             QPushButton#exportBtn {
                 min-height: 30px;
                 padding: 4px 12px;
-                border-radius: 8px;
+                border-radius: 4px;
                 background-color: #16284f;
                 color: #dfe8ff;
             }
@@ -1716,7 +1737,7 @@ class N6705CDatalogUI(QWidget):
             QPushButton#addLabelBtn {
                 min-height: 30px;
                 padding: 0px 8px;
-                border-radius: 8px;
+                border-radius: 4px;
                 background-color: #5b5cf6;
                 color: white;
                 font-size: 22px;
@@ -1771,12 +1792,12 @@ class N6705CDatalogUI(QWidget):
             }
 
             QPushButton#railIconBtn {
-                min-width: 24px;
-                max-width: 24px;
-                min-height: 24px;
-                max-height: 24px;
+                min-width: 18px;
+                max-width: 18px;
+                min-height: 18px;
+                max-height: 18px;
                 padding: 0px;
-                border-radius: 6px;
+                border-radius: 3px;
                 border: 1px solid transparent;
                 background-color: transparent;
             }
@@ -1798,9 +1819,11 @@ class N6705CDatalogUI(QWidget):
             }
 
             QPushButton#exportBtn {
+                min-width: 34px;
+                max-width: 34px;
                 min-height: 34px;
                 max-height: 34px;
-                padding: 0px 12px;
+                padding: 0px;
             }
 
             QPushButton#bottomSettingsBtn {
@@ -1809,14 +1832,13 @@ class N6705CDatalogUI(QWidget):
                 min-height: 34px;
                 max-height: 34px;
                 padding: 0px;
-                border-radius: 8px;
-                border: 1px solid #2a4272;
-                background-color: #13254b;
+                border-radius: 4px;
+                border: none;
+                background-color: transparent;
             }
 
             QPushButton#bottomSettingsBtn:hover {
                 background-color: #1a3260;
-                border: 1px solid #3c5fa1;
             }
         """ + SCROLL_AREA_STYLE).replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
         self.setStyleSheet(full_style)
@@ -1871,7 +1893,8 @@ class N6705CDatalogUI(QWidget):
 
         self.rail_settings_btn = QPushButton()
         self.rail_settings_btn.setObjectName("railIconBtn")
-        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", self._rail_icon_normal, 14))
+        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", self._rail_icon_normal, 16, zoom=1.15))
+        self.rail_settings_btn.setIconSize(QSize(16, 16))
         self.rail_settings_btn.setCheckable(True)
         self.rail_settings_btn.setToolTip("Settings")
         self.rail_settings_btn.clicked.connect(self._toggle_settings_panel)
@@ -1879,7 +1902,8 @@ class N6705CDatalogUI(QWidget):
 
         self.rail_instrument_btn = QPushButton()
         self.rail_instrument_btn.setObjectName("railIconBtn")
-        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", self._rail_icon_normal, 14))
+        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", self._rail_icon_normal, 16, zoom=1.15))
+        self.rail_instrument_btn.setIconSize(QSize(16, 16))
         self.rail_instrument_btn.setCheckable(True)
         self.rail_instrument_btn.setToolTip("Instrument Connection")
         self.rail_instrument_btn.clicked.connect(self._toggle_instrument_panel)
@@ -2039,7 +2063,7 @@ class N6705CDatalogUI(QWidget):
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("chartFrame")
         chart_outer = QVBoxLayout(self.chart_frame)
-        chart_outer.setContentsMargins(12, 10, 12, 10)
+        chart_outer.setContentsMargins(12, 3, 12, 10)
         chart_outer.setSpacing(8)
 
         chart_header = QHBoxLayout()
@@ -2147,7 +2171,9 @@ class N6705CDatalogUI(QWidget):
 
         chart_and_meas_layout.addWidget(self.chart_frame, 1)
 
-        self.measurement_card = CardFrame("MEASUREMENT", svg_icon="crosshair.svg", svg_color="#8eb0e3")
+        # 无独立标题行：MEASUREMENT 图标+标题放入结果表左上角表头单元格，省一行高度
+        self.measurement_card = CardFrame()
+        self.measurement_card.main_layout.setContentsMargins(14, 2, 14, 6)
         self._build_measurement_card()
         chart_and_meas_layout.addWidget(self.measurement_card)
 
@@ -2179,16 +2205,16 @@ class N6705CDatalogUI(QWidget):
         self.start_btn.setProperty("running", "false")
         bottom_bar_layout.addWidget(self.start_btn)
 
-        self.export_btn = QPushButton("Export Datalog")
+        self.export_btn = QPushButton()
         self.export_btn.setIcon(_make_svg_icon("download.svg"))
         self.export_btn.setObjectName("exportBtn")
-        self.export_btn.setFixedWidth(120)
+        self.export_btn.setToolTip("Export Datalog")
         bottom_bar_layout.addWidget(self.export_btn)
 
-        self.import_btn = QPushButton("Import Datalog")
+        self.import_btn = QPushButton()
         self.import_btn.setIcon(_make_svg_icon("upload.svg"))
         self.import_btn.setObjectName("exportBtn")
-        self.import_btn.setFixedWidth(120)
+        self.import_btn.setToolTip("Import Datalog")
         bottom_bar_layout.addWidget(self.import_btn)
 
         bottom_bar_layout.addStretch()
@@ -2267,6 +2293,7 @@ class N6705CDatalogUI(QWidget):
     def _build_measurement_card(self):
         layout = self.measurement_card.main_layout
 
+        self._meas_corner_icon = _make_svg_icon("crosshair.svg", "#8eb0e3", 12)
         self.meas_table = QTableWidget()
         self.meas_table.setObjectName("measTable")
         self.meas_table.setStyleSheet(dss.MEAS_TABLE_STYLE)
@@ -2290,6 +2317,15 @@ class N6705CDatalogUI(QWidget):
         self.analysis_hint_label.setAlignment(Qt.AlignCenter)
         self.analysis_hint_label.setWordWrap(True)
         layout.addWidget(self.analysis_hint_label)
+
+    def _apply_meas_corner_title(self):
+        """MEASUREMENT 图标+标题写入结果表左上角表头单元格（替代独立标题行）。"""
+        hi = self.meas_table.horizontalHeaderItem(0)
+        if hi is None:
+            return
+        hi.setText("MEASUREMENT")
+        hi.setIcon(self._meas_corner_icon)
+        hi.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     def get_capture_pixmap(self):
         """一键截图目标：Datalog 波形卡（chart_frame）+ MEASUREMENT 卡纵向合成。
@@ -2670,7 +2706,8 @@ class N6705CDatalogUI(QWidget):
         self._ensure_device_card_exists(serial, "N6705C", visa_resource)
         self._after_slot_states_synced()
 
-        if self.instrument_panel.isVisible():
+        # 同 manager 路：门禁用 isHidden()（启动自动连接时本页可能非当前页）
+        if not self.instrument_panel.isHidden():
             self._collapse_instrument_panel()
 
     def _on_connect_error(self, serial, slot_label, error_msg=None):
@@ -3100,9 +3137,8 @@ class N6705CDatalogUI(QWidget):
 
         self._instruments_tab = QWidget()
         self._instruments_tab.setStyleSheet("background: #071127;")
-        self._instruments_tab.setMinimumHeight(150)
         self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
-        self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
+        self._instruments_tab_layout.setContentsMargins(0, 2, 0, 0)
         self._instruments_tab_layout.setSpacing(0)
         active_tab_idx = self.channel_config_tabbar.addTab("Active")
         self.channel_config_tabbar.setTabIcon(active_tab_idx, _make_svg_icon("zap.svg", "#8eb0e3", 14))
@@ -3130,6 +3166,8 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
         self.no_instrument_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
+        # 与导入页签一致：末尾 stretch 收口袋，多余纵向空间沉底，不回灌各行撑宽边距
+        self._instruments_tab_layout.addStretch()
 
     def _add_channel_config_import_tab(self):
         tab_idx = self.channel_config_tabbar.addTab(_make_svg_icon("plus.svg", "#8eb0e3", 16), "")
@@ -3239,7 +3277,7 @@ class N6705CDatalogUI(QWidget):
             slot_frame = QFrame()
             slot_frame.setStyleSheet(dss.SLOT_FRAME_STYLE)
             slot_layout = QVBoxLayout(slot_frame)
-            slot_layout.setContentsMargins(6, 4, 6, 4)
+            slot_layout.setContentsMargins(6, 1, 6, 4)
             slot_layout.setSpacing(0)
 
             slot_title = QLabel(f"Slot {slot_char}  ─  {serial}")
@@ -3261,10 +3299,12 @@ class N6705CDatalogUI(QWidget):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
 
                 out_frame = QFrame()
-                out_frame.setMaximumWidth(260)
-                out_frame.setStyleSheet(dss.OUT_FRAME_STYLE)
+                # 仅整行最末槽的最末通道单元格去掉右边框，避免与卡片右边框形成"双线"
+                out_frame.setStyleSheet(
+                    dss.OUT_FRAME_LAST_STYLE if (ch == 3 and slot_char == connected_slots[-1])
+                    else dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
-                out_vbox.setContentsMargins(4, 3, 4, 3)
+                out_vbox.setContentsMargins(4, 1, 4, 1)
                 out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch + 1}")
@@ -3344,9 +3384,7 @@ class N6705CDatalogUI(QWidget):
                     else:
                         power_cbs.append(btn)
 
-                outputs_row.addWidget(out_frame)
-
-            outputs_row.addStretch()
+                outputs_row.addWidget(out_frame, 1)
 
             if slot_char == "A":
                 self.ch_checkboxes_a = current_cbs
@@ -3463,7 +3501,7 @@ class N6705CDatalogUI(QWidget):
         tab_widget = QWidget()
         tab_widget.setStyleSheet("background: #071127;")
         tab_layout = QVBoxLayout(tab_widget)
-        tab_layout.setContentsMargins(0, 6, 0, 0)
+        tab_layout.setContentsMargins(0, 2, 0, 0)
         tab_layout.setSpacing(0)
 
         inner = QWidget()
@@ -3494,7 +3532,7 @@ class N6705CDatalogUI(QWidget):
             slot_frame = QFrame()
             slot_frame.setStyleSheet(dss.SLOT_FRAME_STYLE)
             slot_layout = QVBoxLayout(slot_frame)
-            slot_layout.setContentsMargins(6, 4, 6, 4)
+            slot_layout.setContentsMargins(6, 1, 6, 4)
             slot_layout.setSpacing(0)
 
             slot_title = QLabel(f"{tab_name}  ─  Slot {slot_char}")
@@ -3518,7 +3556,7 @@ class N6705CDatalogUI(QWidget):
                 out_frame.setMaximumWidth(260)
                 out_frame.setStyleSheet(dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
-                out_vbox.setContentsMargins(4, 3, 4, 3)
+                out_vbox.setContentsMargins(4, 1, 4, 1)
                 out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch}")
@@ -3545,6 +3583,7 @@ class N6705CDatalogUI(QWidget):
                         dummy_scale.setAlignment(Qt.AlignCenter)
                         dummy_scale.setStyleSheet(edit_style)
                         dummy_scale.setEnabled(False)
+                        dummy_scale.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                         dummy_sep = QLabel("/")
                         dummy_sep.setFixedWidth(8)
                         dummy_sep.setAlignment(Qt.AlignCenter)
@@ -3554,6 +3593,7 @@ class N6705CDatalogUI(QWidget):
                         dummy_offset.setAlignment(Qt.AlignCenter)
                         dummy_offset.setStyleSheet(edit_style)
                         dummy_offset.setEnabled(False)
+                        dummy_offset.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                         row_layout = QHBoxLayout()
                         row_layout.setContentsMargins(0, 0, 0, 0)
                         row_layout.setSpacing(1)
@@ -3992,13 +4032,13 @@ class N6705CDatalogUI(QWidget):
             return (
                 f"background-color: {color}; color: #ffffff; "
                 f"font-size: 10px; font-weight: 800; "
-                f"border: 1px solid {color}; border-radius: 2px;"
+                f"border: 1px solid {color}; border-radius: 1px;"
             )
         else:
             return (
                 "background-color: #152040; color: #8eb0e3; "
                 "font-size: 10px; font-weight: 700; "
-                "border: 1px solid #1e3460; border-radius: 2px;"
+                "border: 1px solid #1e3460; border-radius: 1px;"
             )
 
     def _on_ch_toggle(self, btn, checked):
@@ -4176,6 +4216,8 @@ class N6705CDatalogUI(QWidget):
         if n == 0:
             return
 
+        band_edges = self._compute_band_edges(n)
+
         for idx, key in enumerate(visible_sorted):
             ch_data = self.datalog_data[key]
             raw_vals = ch_data["values"]
@@ -4184,8 +4226,7 @@ class N6705CDatalogUI(QWidget):
 
             scale_val, offset_val, user_edited = self._get_ch_scale_offset(key)
 
-            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
-            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
+            band_top, band_bottom = band_edges[idx]
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
@@ -4242,6 +4283,7 @@ class N6705CDatalogUI(QWidget):
                 curve.setData(times, norm_vals)
                 curve.resetTransform()
 
+        self._update_band_zero_lines()
         self._update_marker_analysis()
 
     def _show_left_panel(self, which):
@@ -4255,9 +4297,9 @@ class N6705CDatalogUI(QWidget):
         self.rail_instrument_btn.setChecked(which == "instrument")
         self.rail_instrument_btn.blockSignals(False)
         settings_color = self._rail_icon_active if which == "settings" else self._rail_icon_normal
-        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", settings_color, 14))
+        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", settings_color, 16, zoom=1.15))
         instr_color = self._rail_icon_active if which == "instrument" else self._rail_icon_normal
-        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", instr_color, 14))
+        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", instr_color, 16, zoom=1.15))
 
     def _toggle_settings_panel(self, checked):
         self._show_left_panel("settings" if checked else None)
@@ -4623,7 +4665,7 @@ class N6705CDatalogUI(QWidget):
 
     def _setup_plot(self):
         self.plot_widget.setBackground("#071127")
-        self.plot_widget.showGrid(x=True, y=False, alpha=0.15)
+        self.plot_widget.showGrid(x=True, y=False, alpha=0.3)
 
         axis_pen = pg.mkPen(color="#2a4272", width=1)
         text_color = "#8eb0e3"
@@ -4771,6 +4813,11 @@ class N6705CDatalogUI(QWidget):
                 mouse_point = vb.mapSceneToView(scene_pos)
                 x = mouse_point.x()
                 y = mouse_point.y()
+                sep_idx = self._find_separator_at_y(y)
+                if sep_idx is not None:
+                    # 命中 band 分隔线：进入高度分配拖拽（优先于通道选中/偏移拖拽）
+                    self._sep_drag_index = sep_idx
+                    return True
                 clicked_key = self._find_band_at_y(y, x)
                 if clicked_key:
                     self._select_channel(clicked_key)
@@ -4803,6 +4850,11 @@ class N6705CDatalogUI(QWidget):
                 self._update_marker_analysis()
                 return True
 
+            if self._sep_drag_index is not None:
+                mouse_point = vb.mapSceneToView(scene_pos)
+                self._drag_separator_to(mouse_point.y())
+                return True
+
             if self._ch_drag_active and self._selected_ch_key:
                 mouse_point = vb.mapSceneToView(scene_pos)
                 y = mouse_point.y()
@@ -4811,13 +4863,19 @@ class N6705CDatalogUI(QWidget):
 
             snap_marker = self._find_nearest_marker_at_scene(scene_pos)
             widget = self.plot_widget.viewport() if hasattr(self.plot_widget, 'viewport') else self.plot_widget
-            if snap_marker:
+            mouse_point = vb.mapSceneToView(scene_pos)
+            if self._find_separator_at_y(mouse_point.y()) is not None:
+                widget.setCursor(Qt.SizeVerCursor)
+            elif snap_marker:
                 widget.setCursor(Qt.SizeHorCursor)
             else:
                 widget.unsetCursor()
 
         if event.type() == QEvent.GraphicsSceneMouseRelease:
             if event.button() == Qt.LeftButton:
+                if self._sep_drag_index is not None:
+                    self._sep_drag_index = None
+                    return True
                 if self._marker_drag_target:
                     self._marker_drag_target = None
                     return True
@@ -4827,6 +4885,128 @@ class N6705CDatalogUI(QWidget):
                     return True
 
         return super().eventFilter(obj, event)
+
+    def _compute_band_edges(self, n):
+        """按当前各 band 高度占比计算 (band_top, band_bottom) 列表（自顶向下累计）。
+
+        占比数量与可见通道数不一致（通道增删/显隐切换）时重置为均分。
+        """
+        if n <= 0:
+            return []
+        fracs = self._band_fractions
+        total = sum(fracs)
+        if len(fracs) != n or total <= 0:
+            fracs = [1.0 / n] * n
+        elif abs(total - 1.0) > 1e-6:
+            fracs = [f / total for f in fracs]
+        self._band_fractions = fracs
+        edges = []
+        top = _BAND_CEILING
+        for f in fracs:
+            bottom = top - f * _BAND_CEILING
+            edges.append((top, bottom))
+            top = bottom
+        return edges
+
+    def _find_separator_at_y(self, y):
+        """命中检测：y 是否落在某条 band 分隔线的拖拽容差内，返回线索引或 None。"""
+        if not self._sep_lines:
+            return None
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        view_height_px = vb.screenGeometry().height() or 1
+        y_min, y_max = vb.viewRange()[1]
+        y_range = (y_max - y_min) if y_max > y_min else 1.0
+        tol = y_range / view_height_px * 6
+        best = None
+        best_dist = tol
+        for i, sep in enumerate(self._sep_lines):
+            d = abs(sep.value() - y)
+            if d <= best_dist:
+                best_dist = d
+                best = i
+        return best
+
+    def _drag_separator_to(self, y):
+        """拖拽分隔线到 y：仅调整相邻两个 band 的占比（和不变），夹紧最小高度后重排。"""
+        idx = self._sep_drag_index
+        if idx is None:
+            return
+        keys = list(self._band_info.keys())
+        if idx < 0 or idx >= len(keys) - 1:
+            return
+        self._compute_band_edges(len(keys))  # 确保占比与当前通道数同步
+        band_above = self._band_info[keys[idx]]
+        band_below = self._band_info[keys[idx + 1]]
+        top = band_above["band_top"]
+        bottom = band_below["band_bottom"]
+        min_h = _BAND_CEILING * _BAND_MIN_FRAC
+        y = max(bottom + min_h, min(top - min_h, y))
+        self._band_fractions[idx] = (top - y) / _BAND_CEILING
+        self._band_fractions[idx + 1] = (y - bottom) / _BAND_CEILING
+        self._apply_band_layout()
+
+    def _apply_band_layout(self):
+        """按 _band_fractions 重算各 band 几何，重排曲线/分隔线/网格/零线/通道标签。"""
+        keys = list(self._band_info.keys())
+        if not keys:
+            return
+        edges = self._compute_band_edges(len(keys))
+        for (band_top, band_bottom), key in zip(edges, keys):
+            band = self._band_info[key]
+            margin = (band_top - band_bottom) * 0.08
+            plot_top = band_top - margin
+            plot_bottom = band_bottom + margin
+            plot_range = plot_top - plot_bottom
+            band["band_top"] = band_top
+            band["band_bottom"] = band_bottom
+            band["plot_top"] = plot_top
+            band["plot_bottom"] = plot_bottom
+            band["plot_range"] = plot_range
+
+            curve = self.plot_curves.get(key)
+            ch_data = self.datalog_data.get(key)
+            if curve is None or not ch_data or not ch_data["values"]:
+                continue
+            init_min = band.get("init_raw_min", band["raw_min"])
+            init_range = band.get("init_raw_range", band["raw_range"]) or 1.0
+            raw_vals = np.asarray(ch_data["values"], dtype=np.float64)
+            norm_vals = plot_bottom + (raw_vals - init_min) * (plot_range / init_range)
+            times = self._get_effective_times(key, ch_data["time"])
+            curve.setData(times, norm_vals)
+            curve.resetTransform()
+            self._redraw_single_channel(key)
+
+        # 分隔线 i 对应 band i 的下边界（与 _rebuild_ch_name_panel 的创建顺序一致）
+        for i, sep in enumerate(self._sep_lines):
+            if i < len(keys):
+                sep.setPos(self._band_info[keys[i]]["band_bottom"])
+        self._rebuild_band_grid_lines()
+        for item in self._ch_label_items:
+            band = self._band_info.get(item.property("ch_key"))
+            if band:
+                item.setProperty("y_center", (band["plot_top"] + band["plot_bottom"]) / 2)
+        self._update_ch_label_positions()
+        self._update_band_zero_lines()
+
+    def _rebuild_band_grid_lines(self):
+        """纵轴点线网格：每个 band 内部 5 等分（按各 band 实际上下界），band 交界处不叠线。"""
+        for line in self._band_grid_lines:
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._band_grid_lines.clear()
+        for band in self._band_info.values():
+            band_h = band["band_top"] - band["band_bottom"]
+            for k in range(1, 5):
+                gy = band["band_bottom"] + k * band_h / 5
+                grid_line = pg.InfiniteLine(
+                    pos=gy, angle=0, movable=False,
+                    pen=pg.mkPen(color=(142, 176, 227, 100), width=1, style=Qt.DotLine),
+                )
+                grid_line.setZValue(-11)
+                self.plot_widget.addItem(grid_line, ignoreBounds=True)
+                self._band_grid_lines.append(grid_line)
 
     def _find_band_at_y(self, y, x=None):
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -4982,6 +5162,7 @@ class N6705CDatalogUI(QWidget):
 
         curve.setTransform(QTransform(1.0, 0.0, 0.0, sy, 0.0, ty))
         self._update_ch_label_positions()
+        self._update_band_zero_lines()
 
     def _update_ch_scale_offset_display(self, key):
         band = self._band_info.get(key)
@@ -5283,13 +5464,28 @@ class N6705CDatalogUI(QWidget):
             except Exception:
                 pass
         self._sep_lines.clear()
+        for line in self._band_grid_lines:
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._band_grid_lines.clear()
+        for line in self._band_zero_lines.values():
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._band_zero_lines.clear()
 
         self._band_info = {}
+        self._sep_drag_index = None
 
         if n == 0:
             for item in self._ch_label_items:
                 item.setVisible(False)
             return
+
+        band_edges = self._compute_band_edges(n)
 
         for idx, key in enumerate(visible_sorted):
             ch_data = self.datalog_data[key]
@@ -5303,8 +5499,7 @@ class N6705CDatalogUI(QWidget):
             if raw_range == 0:
                 raw_range = 1.0
 
-            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
-            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
+            band_top, band_bottom = band_edges[idx]
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
@@ -5343,6 +5538,7 @@ class N6705CDatalogUI(QWidget):
         y_bottom, y_top = self._compute_y_range_with_labels()
         self.plot_widget.setYRange(y_bottom, y_top)
         self._update_marker_analysis()
+        self._update_x_limits()
 
     def _sync_checkboxes_to_data(self):
         all_cbs = (
@@ -5950,12 +6146,16 @@ class N6705CDatalogUI(QWidget):
         self._marker_ab_text_item = None
         self._band_info = {}
         self._sep_lines = []
+        self._band_grid_lines = []
+        self._band_zero_lines = {}
+        self._sep_drag_index = None
         self._selected_ch_key = None
         self._selected_orig_pen = None
         self._selected_highlight = None
         self._ch_drag_active = False
         self._ch_drag_last_y = None
         self._marker_drag_target = None
+        self._update_x_limits()
 
         self.crosshair_v = pg.InfiniteLine(
             angle=90, movable=False,
@@ -5999,6 +6199,8 @@ class N6705CDatalogUI(QWidget):
             self._update_marker_analysis()
             return
 
+        band_edges = self._compute_band_edges(n)
+
         for idx, label in enumerate(sorted_keys):
             ch_data = self.datalog_data[label]
             color = _color_for_label(label)
@@ -6012,8 +6214,7 @@ class N6705CDatalogUI(QWidget):
             raw_max = max(raw_vals)
             raw_range = raw_max - raw_min if raw_max > raw_min else 1.0
 
-            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
-            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
+            band_top, band_bottom = band_edges[idx]
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
@@ -6067,6 +6268,26 @@ class N6705CDatalogUI(QWidget):
         self._restore_label_lines()
         self._update_marker_analysis()
         self._refresh_label_ch_combo()
+
+    def _update_x_limits(self):
+        # 横轴视图限制在数据时间范围内（含 B 机/文件对齐时差），
+        # 防止以鼠标为中心缩放或平移时出现数据范围外的无意义空白区
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        x_min = None
+        x_max = None
+        for lbl, ch_data in self.datalog_data.items():
+            times = ch_data["time"]
+            if not times:
+                continue
+            off = self._get_total_time_offset(lbl)
+            t0 = times[0] + off
+            t1 = times[-1] + off
+            x_min = t0 if x_min is None else min(x_min, t0)
+            x_max = t1 if x_max is None else max(x_max, t1)
+        if x_min is None or x_max - x_min <= 0:
+            vb.setLimits(xMin=None, xMax=None, maxXRange=None)
+            return
+        vb.setLimits(xMin=x_min, xMax=x_max, maxXRange=x_max - x_min)
 
     def _reset_view(self):
         if not self.datalog_data:
@@ -6534,7 +6755,7 @@ class N6705CDatalogUI(QWidget):
         base_y = 1.0
         text_item = PairAnnotationItem(
             html=f"<div style='background:#0a1733dd; padding:2px 6px; "
-                 f"border: 1px solid {color}; border-radius:3px; "
+                 f"border: 1px solid {color}; border-radius:1.5px; "
                  f"font-size:{font_size}px; font-weight:600; color:{color};'>"
                  f"\u0394t={delta_str}"
                  f"{avg_str}</div>",
@@ -7245,18 +7466,27 @@ class N6705CDatalogUI(QWidget):
             except Exception:
                 pass
         self._sep_lines.clear()
+        for line in self._band_grid_lines:
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._band_grid_lines.clear()
+        for line in self._band_zero_lines.values():
+            try:
+                self.plot_widget.removeItem(line)
+            except Exception:
+                pass
+        self._band_zero_lines.clear()
 
         left_axis = self.plot_widget.getPlotItem().getAxis("left")
+        left_axis.setWidth(0)
+        left_axis.setTicks([])
 
         if not entries:
-            left_axis.setWidth(0)
-            left_axis.setTicks([])
             return
 
-        left_axis.setWidth(65)
-
         band_boundaries = []
-        tick_values = []
         for key, color in entries:
             display = self.ch_name_renames.get(key, _display_label(key))
             band = self._band_info.get(key)
@@ -7266,7 +7496,7 @@ class N6705CDatalogUI(QWidget):
                 y_center = 0.5
 
             text_item = pg.TextItem(
-                html=f"<div style='background:#071127; padding:1px 6px 1px 2px; border-radius:2px;'>"
+                html=f"<div style='background:#071127; padding:1px 6px 1px 2px; border-radius:1px;'>"
                      f"<span style='color:{color}; font-size:12px; font-weight:700;'>"
                      f"{display}</span></div>",
                 anchor=(0, 0.5),
@@ -7277,24 +7507,20 @@ class N6705CDatalogUI(QWidget):
             text_item.setProperty("ch_key", key)
             self._ch_label_items.append(text_item)
 
-            # 纵轴刻度：每通道带上/下缘的 raw max/min 作为轴刻度（刻度线+数值），
-            # 带间画淡色分隔线
             if band:
-                ch_unit = _unit_for_label(key)
-                tick_values.append((band["plot_top"], _auto_format(band["raw_max"], ch_unit)))
-                tick_values.append((band["plot_bottom"], _auto_format(band["raw_min"], ch_unit)))
                 band_boundaries.append(band["band_bottom"])
-
-        left_axis.setTicks([tick_values])
 
         for boundary_y in band_boundaries[:-1]:
             sep = pg.InfiniteLine(
                 pos=boundary_y, angle=0, movable=False,
-                pen=pg.mkPen(color="#2a4272", width=1, style=Qt.DashLine),
+                pen=pg.mkPen(color="#3d5a94", width=1, style=Qt.DashLine),
             )
             sep.setZValue(-10)
             self.plot_widget.addItem(sep, ignoreBounds=True)
             self._sep_lines.append(sep)
+
+        # 纵轴 scale 网格：每个 band 内部 5 等分点线（band 交界处由分隔虚线表达，不叠点线）
+        self._rebuild_band_grid_lines()
 
         vb = self.plot_widget.getPlotItem().getViewBox()
         # pyqtgraph 对未连接的 slot 调 disconnect 不抛异常而是 RuntimeWarning，
@@ -7308,6 +7534,36 @@ class N6705CDatalogUI(QWidget):
         vb.sigRangeChanged.connect(self._update_ch_label_positions)
         self._ch_label_range_connected = True
         self._update_ch_label_positions()
+        self._update_band_zero_lines()
+
+    def _update_band_zero_lines(self):
+        # 每通道纵向 0 刻度强调线：0 落在该通道当前显示量程内时显示，
+        # 位置随拖动/滚轮/Scale 编辑后的 raw 映射实时更新
+        for key in list(self._band_zero_lines):
+            if key not in self._band_info:
+                try:
+                    self.plot_widget.removeItem(self._band_zero_lines[key])
+                except Exception:
+                    pass
+                self._band_zero_lines.pop(key, None)
+        for key, band in self._band_info.items():
+            line = self._band_zero_lines.get(key)
+            if line is None:
+                line = pg.InfiniteLine(
+                    angle=0, movable=False,
+                    pen=pg.mkPen(color=(190, 212, 245, 130), width=1),
+                )
+                line.setZValue(-9)
+                self.plot_widget.addItem(line, ignoreBounds=True)
+                self._band_zero_lines[key] = line
+            raw_min = band["raw_min"]
+            raw_max = band["raw_max"]
+            if raw_min < 0.0 < raw_max:
+                zero_y = band["plot_bottom"] + (0.0 - raw_min) * band["plot_range"] / band["raw_range"]
+                line.setPos(zero_y)
+                line.setVisible(True)
+            else:
+                line.setVisible(False)
 
     def _update_ch_label_positions(self, *args):
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -7374,6 +7630,7 @@ class N6705CDatalogUI(QWidget):
         self.meas_table.setRowCount(num_rows)
         self.meas_table.setColumnCount(num_cols)
         self.meas_table.setHorizontalHeaderLabels(headers)
+        self._apply_meas_corner_title()
 
         ROW_BG = ["#080f22", "#0c1838"]
 
@@ -7435,6 +7692,7 @@ class N6705CDatalogUI(QWidget):
         self.meas_table.setRowCount(num_rows)
         self.meas_table.setColumnCount(num_cols)
         self.meas_table.setHorizontalHeaderLabels(headers)
+        self._apply_meas_corner_title()
 
         for ci, h in enumerate(headers):
             if h == "Avg":
@@ -7774,7 +8032,7 @@ class N6705CDatalogUI(QWidget):
 
         label_item = pg.TextItem(
             html=f"<div style='background:#0a1733ee; padding:2px 5px; "
-                 f"border: 1px solid {color}; border-radius:3px; "
+                 f"border: 1px solid {color}; border-radius:1.5px; "
                  f"font-size:10px; font-weight:700; color:{color};'>"
                  f"{text}: {val_str}</div>",
             anchor=(0.5, 1),
@@ -7879,7 +8137,7 @@ class N6705CDatalogUI(QWidget):
             row_frame = QFrame()
             row_frame.setStyleSheet(
                 f"QFrame {{ background-color: #0c1a35; border-left: 3px solid {color}; "
-                f"border-radius: 3px; padding: 0px; }}"
+                f"border-radius: 1.5px; padding: 0px; }}"
             )
             row_layout = QHBoxLayout(row_frame)
             row_layout.setContentsMargins(6, 3, 4, 3)
@@ -7904,7 +8162,7 @@ class N6705CDatalogUI(QWidget):
             del_btn.setFixedSize(22, 22)
             del_btn.setStyleSheet(
                 "QPushButton { background: transparent; color: #3a5070; font-size: 12px; "
-                "border: none; border-radius: 2px; }"
+                "border: none; border-radius: 1px; }"
                 "QPushButton:hover { background: #1e3460; color: #ff6b6b; }"
             )
             del_btn.clicked.connect(lambda checked=False, idx=i: self._delete_custom_label(idx))
@@ -8771,7 +9029,7 @@ QPushButton#captureChartBtn {
     max-height: 28px;
     padding: 0px;
     border: none;
-    border-radius: 6px;
+    border-radius: 3px;
     background-color: transparent;
 }
 QPushButton#captureChartBtn:hover {
@@ -8791,7 +9049,7 @@ QPushButton#labelsToggleBtn {
     max-height: 28px;
     padding: 0px;
     border: none;
-    border-radius: 6px;
+    border-radius: 3px;
     background-color: transparent;
 }
 QPushButton#labelsToggleBtn:hover {
@@ -9306,7 +9564,7 @@ if __name__ == "__main__":
         }
         QPushButton {
             border: 1px solid #555;
-            border-radius: 4px;
+            border-radius: 2px;
             padding: 6px 12px;
             background-color: #32353a;
             color: #c8c8c8;
@@ -9316,7 +9574,7 @@ if __name__ == "__main__":
         QPushButton:disabled { background-color: #2a2d32; color: #666; }
         QComboBox {
             border: 1px solid #555;
-            border-radius: 4px;
+            border-radius: 2px;
             padding: 4px 20px 4px 8px;
             background-color: #32353a;
             color: #c8c8c8;
@@ -9330,7 +9588,7 @@ if __name__ == "__main__":
         }
         QLineEdit {
             border: 1px solid #555;
-            border-radius: 4px;
+            border-radius: 2px;
             padding: 4px 8px;
             background-color: #32353a;
             color: #c8c8c8;
@@ -9339,7 +9597,7 @@ if __name__ == "__main__":
         QCheckBox { color: #c8c8c8; }
         QFrame {
             border: 1px solid #333;
-            border-radius: 4px;
+            border-radius: 2px;
             background-color: #020618;
         }
     """)

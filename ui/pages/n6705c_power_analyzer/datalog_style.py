@@ -20,7 +20,7 @@ _DIALOG_BASE = """
     QLineEdit {
         background-color: #0c1a35;
         border: 1px solid #1e3460;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #eaf2ff;
         padding: 6px 10px;
         font-size: 12px;
@@ -31,7 +31,7 @@ _DIALOG_BASE = """
     QPushButton {
         background-color: #162d55;
         border: 1px solid #1e3460;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #c8daf5;
         padding: 6px 18px;
         font-size: 12px;
@@ -46,7 +46,7 @@ _DIALOG_COMBO = """
     QComboBox {
         background-color: #0c1a35;
         border: 1px solid #1e3460;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #eaf2ff;
         padding: 6px 10px;
         font-size: 12px;
@@ -100,13 +100,13 @@ _MENU_BASE = """
     QMenu {
         background-color: #0c1a35;
         border: 1px solid #1e3460;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #c8daf5;
         padding: 4px;
     }
     QMenu::item {
         padding: 6px 20px;
-        border-radius: 4px;
+        border-radius: 2px;
     }
     QMenu::item:selected {
         background-color: #1e3460;
@@ -123,7 +123,7 @@ _MENU_SMALL = """
     }
     QMenu::item {
         padding: 6px 18px 6px 24px;
-        border-radius: 3px;
+        border-radius: 1.5px;
     }
     QMenu::item:selected {
         background-color: #1e3460;
@@ -151,7 +151,7 @@ PRIMARY_BTN_STYLE = """
     QPushButton {
         background-color: #1a4b8c;
         border: 1px solid #3a6fd4;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #eaf2ff;
         padding: 6px 18px;
         font-size: 12px;
@@ -166,7 +166,7 @@ EXPORT_OK_BTN_STYLE = """
     QPushButton {
         background-color: #1a3a6e;
         border: 1px solid #3a6fd4;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #eaf2ff;
         padding: 6px 18px;
         font-size: 12px;
@@ -184,7 +184,7 @@ _SQUARE_ICON_BTN_BASE = """
     {selector} {{
         background-color: #13254b;
         border: 1px solid #22376A;
-        border-radius: 8px;
+        border-radius: 4px;
         color: #dce7ff;
         font-weight: 600;
         min-height: 0px;
@@ -233,7 +233,7 @@ CH_CFG_TOGGLE_BTN_EXPANDED = """
     QPushButton {
         background-color: #0a1930; color: #b8d0f0;
         border: 1px solid #132849;
-        border-top-left-radius: 8px;
+        border-top-left-radius: 4px;
         border-top-right-radius: 0px;
         border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
         padding: 0px 14px; font-size: 11px; font-weight: 700;
@@ -246,7 +246,7 @@ CH_CFG_TOGGLE_BTN_EXPANDED = """
 CH_CFG_TOGGLE_BTN_COLLAPSED = """
     QPushButton {
         background-color: #0a1930; color: #8ea6cf;
-        border: 1px solid #132849; border-radius: 8px;
+        border: 1px solid #132849; border-radius: 4px;
         padding: 0px 14px; font-size: 11px; font-weight: 700; text-align: left;
         min-height: 30px; max-height: 30px;
     }
@@ -263,8 +263,8 @@ CH_CFG_TABBAR_STYLE = """
         color: #4a6a96;
         border: 1px solid #1a2b52;
         border-bottom: none;
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
+        border-top-left-radius: 2.5px;
+        border-top-right-radius: 2.5px;
         padding: 7px 14px;
         margin-right: 1px;
         margin-bottom: 0px;
@@ -298,21 +298,21 @@ CH_CFG_CARD_STYLE = """
         border-top: none;
         border-top-left-radius: 0px;
         border-top-right-radius: 0px;
-        border-bottom-left-radius: 12px;
-        border-bottom-right-radius: 12px;
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 6px;
     }
 """
 
 CH_CFG_TAB_CLOSE_BTN_STYLE = (
     "QPushButton { background: transparent; color: #4a6a96; font-size: 11px; "
-    "border: none; border-radius: 3px; padding: 0; margin: 0; min-height: 0; }"
+    "border: none; border-radius: 1.5px; padding: 0; margin: 0; min-height: 0; }"
     "QPushButton:hover { background: #2a1525; color: #ff6b6b; }"
 )
 
-# 通道 Scale/Offset 输入框
+# 通道 Scale/Offset 输入框（padding 自带完整盒模型，避免级联回全局 6px 10px 撑高单元格）
 SCALE_OFFSET_EDIT_STYLE = (
     "QLineEdit { background: #0c1a35; color: #8eb0e3; font-size: 10px; "
-    "border: 1px solid #1e3460; border-radius: 2px; }"
+    "border: 1px solid #1e3460; border-radius: 1px; padding: 2px 4px; }"
     "QLineEdit:focus { border-color: #3a6aad; }"
 )
 
@@ -324,7 +324,13 @@ SLOT_FRAME_STYLE = """
 """
 
 OUT_FRAME_STYLE = (
-    "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
+    "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 2px; }"
+)
+
+# 每行最末单元格：去掉右边框，避免与卡片右边框平行形成"双线"
+OUT_FRAME_LAST_STYLE = (
+    "QFrame { background-color: #0a1430; border: 1px solid #152040; "
+    "border-right: none; border-radius: 2px; }"
 )
 
 SEP_LABEL_STYLE = "color: #3a5070; font-size: 10px; border: none;"
@@ -336,7 +342,7 @@ CONTAINER_NO_BORDER_STYLE = "border: none;"
 DUMMY_TOGGLE_STYLE = (
     "background-color: #0a1020; color: #2a3a55; "
     "font-size: 10px; font-weight: 700; "
-    "border: 1px solid #121e38; border-radius: 2px;"
+    "border: 1px solid #121e38; border-radius: 1px;"
 )
 
 # ---- 通道开关按钮（ToggleLabel 激活/未激活） --------------------------------
@@ -344,7 +350,7 @@ DUMMY_TOGGLE_STYLE = (
 CH_TOGGLE_INACTIVE_STYLE = (
     "background-color: #152040; color: #8eb0e3; "
     "font-size: 10px; font-weight: 700; "
-    "border: 1px solid #1e3460; border-radius: 2px;"
+    "border: 1px solid #1e3460; border-radius: 1px;"
 )
 
 
@@ -354,7 +360,7 @@ def ch_toggle_style(color, active):
         return (
             f"background-color: {color}; color: #ffffff; "
             f"font-size: 10px; font-weight: 800; "
-            f"border: 1px solid {color}; border-radius: 2px;"
+            f"border: 1px solid {color}; border-radius: 1px;"
         )
     return CH_TOGGLE_INACTIVE_STYLE
 
@@ -416,7 +422,7 @@ PROGRESS_BAR_STYLE = """
     QProgressBar {
         background-color: #152749;
         border: 1px solid #27406f;
-        border-radius: 9px;
+        border-radius: 4.5px;
         text-align: center;
         color: #b7c8ea;
         font-size: 11px;
@@ -424,16 +430,16 @@ PROGRESS_BAR_STYLE = """
     QProgressBar::chunk {
         background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
             stop:0 #4f46e5, stop:1 #7c3aed);
-        border-radius: 8px;
+        border-radius: 4px;
     }
 """
 
 PROGRESS_OVERLAY_STYLE = (
-    "QFrame { background-color: rgba(2, 8, 23, 200); border: none; border-radius: 12px; }"
+    "QFrame { background-color: rgba(2, 8, 23, 200); border: none; border-radius: 6px; }"
 )
 
 CH_CFG_OVERLAY_STYLE = (
-    "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 12px; }"
+    "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 6px; }"
 )
 
 PROGRESS_STAGE_STYLE = "color: #c8daf5; font-size: 13px; font-weight: 600; background: transparent;"
@@ -448,7 +454,7 @@ SLOT_ASSIGNED_STYLE = """
     QFrame#cardFrame {
         background-color: #0c2254;
         border: 1px solid #3a6fd4;
-        border-radius: 12px;
+        border-radius: 6px;
     }
 """
 
@@ -460,13 +466,13 @@ SLOT_NAME_DEFAULT_STYLE = "font-size: 11px; color: #667ba0; border: none;"
 CARD_SERIAL_STYLE = "font-size: 9px; color: #667ba0; border: none;"
 CARD_MODEL_STYLE = "font-size: 13px; font-weight: bold; color: #eaf2ff; border: none;"
 CARD_IP_STYLE = "font-size: 11px; color: #8eb0e3; border: none;"
-CARD_THUMB_STYLE = "border: none; border-radius: 4px;"
+CARD_THUMB_STYLE = "border: none; border-radius: 2px;"
 CARD_VISA_STYLE = "font-size: 9px; color: #5a6f96; border: none; background: transparent; padding: 0px 2px;"
 
 # ---- 采样周期 / 监控时长 -------------------------------------------------------
 
 TIME_EDIT_STYLE = (
-    "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+    "QLineEdit { padding: 2px 4px; border-radius: 1.5px; "
     "background-color: #0c1a35; border: 1px solid #1e3460; "
     "color: #eaf2ff; font-size: 11px; }"
     "QLineEdit:focus { border-color: #3a6fd4; }"
@@ -475,7 +481,7 @@ TIME_EDIT_STYLE = (
 MIN_PERIOD_CB_STYLE = "font-size: 10px; color: #8eb0e3;"
 
 SAMPLE_PERIOD_EDIT_STYLE = (
-    "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+    "QLineEdit { padding: 2px 4px; border-radius: 1.5px; "
     "background-color: #0c1a35; border: 1px solid #1e3460; "
     "color: #eaf2ff; font-size: 11px; }"
     "QLineEdit:focus { border-color: #3a6fd4; }"
@@ -484,7 +490,7 @@ SAMPLE_PERIOD_EDIT_STYLE = (
 # 只读态必须自带完整盒模型（padding/font-size/border），否则级联回页面全局
 # QLineEdit padding: 6px 10px，24px 固定高下数字底部被截断。
 SAMPLE_PERIOD_READONLY_STYLE = (
-    "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+    "QLineEdit { padding: 2px 4px; border-radius: 1.5px; "
     "background: #1a2b52; border: 1px solid #1e3460; "
     "color: #667ba0; font-size: 11px; }"
 )
@@ -517,7 +523,7 @@ SAVE_DEFAULT_CB_STYLE = """
         width: 15px;
         height: 15px;
         border: 1px solid #1e3460;
-        border-radius: 3px;
+        border-radius: 1.5px;
         background-color: #0c1a35;
     }
     QCheckBox::indicator:checked {
@@ -531,7 +537,7 @@ ALIGN_BTN_ENABLED_STYLE = """
     QPushButton {
         background-color: #1a3a2e;
         border: 1px solid #2a8c5a;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #7fffcf;
         padding: 6px 18px;
         font-size: 12px;
@@ -547,7 +553,7 @@ ALIGN_BTN_DISABLED_STYLE = """
     QPushButton {
         background-color: #0c1a35;
         border: 1px solid #1e3460;
-        border-radius: 6px;
+        border-radius: 3px;
         color: #3a5070;
         padding: 6px 18px;
         font-size: 12px;
@@ -573,7 +579,7 @@ CH_CFG_TABBAR_HOLDER_STYLE = """
         border-right: 1px solid #132849;
         border-bottom: 1px solid #132849;
         border-left: none;
-        border-top-right-radius: 8px;
+        border-top-right-radius: 4px;
     }
 """
 
