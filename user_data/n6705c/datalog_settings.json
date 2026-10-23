@@ -1,0 +1,15 @@
+{
+  "auto_connect_enabled": true,
+  "dlog_save": {
+    "auto_save": false,
+    "save_dir": "",
+    "name_template": "dlog_{datetime}",
+    "auto_increment": false,
+    "next_seq": 1
+  },
+  "waveform_summary": {
+    "max_stages": 40,
+    "lttb_threshold": 3000,
+    "pelt_max_n": 4000
+  }
+}
