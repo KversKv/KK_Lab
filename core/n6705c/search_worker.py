@@ -164,18 +164,7 @@ def _load_extra_subnets() -> list[str]:
 
     path = _discovery_config_path()
     if not os.path.isfile(path):
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "_comment": "extra_subnets 里填要主动扫描的跨网段(CIDR)，"
-                                    "例如 10.31.40.0/24；mDNS 只能发现本广播域内仪器。",
-                        "extra_subnets": [],
-                    },
-                    f, indent=2, ensure_ascii=False,
-                )
-        except OSError:
-            logger.debug("create discovery.json failed", exc_info=True)
+        _write_discovery_template([])
         return []
 
     try:
@@ -188,6 +177,31 @@ def _load_extra_subnets() -> list[str]:
     except (OSError, json.JSONDecodeError):
         logger.debug("read discovery.json failed", exc_info=True)
         return []
+
+
+def _write_discovery_template(subnets: list[str]) -> bool:
+    import json
+
+    try:
+        with open(_discovery_config_path(), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "_comment": "extra_subnets 里填要主动扫描的跨网段(CIDR)，"
+                                "例如 10.31.40.0/24；mDNS 只能发现本广播域内仪器。",
+                    "extra_subnets": subnets,
+                },
+                f, indent=2, ensure_ascii=False,
+            )
+        return True
+    except OSError:
+        logger.debug("write discovery.json failed", exc_info=True)
+        return False
+
+
+def save_extra_subnets(subnets: list[str]) -> bool:
+    """把用户配置的额外扫描网段（CIDR）写回 discovery.json（保留注释字段）。"""
+    clean = [str(s).strip() for s in subnets if str(s).strip()]
+    return _write_discovery_template(clean)
 
 
 def _tcp_port_open(ip: str, port: int, timeout: float) -> bool:

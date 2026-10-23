@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QSizePolicy, QFileDialog,
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
-    QToolButton, QDialog, QTabWidget, QTabBar, QDialogButtonBox,
+    QToolButton, QDialog, QTabWidget, QTabBar,
     QProgressBar, QStackedWidget, QMessageBox, QApplication,
     QStyle, QStyleOptionTab, QStylePainter,
 )
@@ -64,6 +64,13 @@ from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
+from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import (
+    N6705CSettingsDialog,
+    build_auto_save_paths,
+    load_datalog_app_settings,
+    save_datalog_app_settings,
+    waveform_summary_params,
+)
 from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
 from ui.widgets.config_memory import ConfigMemory
 from ui.utils.icon_utils import tinted_svg_icon
@@ -331,17 +338,24 @@ def _summary_unit_factor(unit):
     return 1.0 / (1000.0 * threshold)
 
 
-def _build_summary_stages(times, values, stat, max_stages=40):
+def _build_summary_stages(times, values, stat, max_stages=None):
     """把单通道波形压成全程覆盖的平直线段阶段序列。
 
     分段算法与 AI 摘要同源（core.ai PELT 均值变点 + classify_segment 形态标注）：
-    先 LTTB 降采样到 ≤3000 点再跑 PELT 变点（PELT 仅限 max_n 内），
+    先 LTTB 降采样再跑 PELT 变点（PELT 仅限 max_n 内），
     段均值用原始数据在该时间窗内的真实均值（换算 stat.unit 展示单位）。
+    max_stages / LTTB 阈值 / PELT max_n 默认取设置对话框 Waveform Summary 页参数。
     """
     if not times or not values:
         return []
     from core.ai.algorithms import detect_change_points, lttb_downsample
     from core.ai.providers.waveform_provider import segment_features
+
+    ws_params = waveform_summary_params()
+    if max_stages is None:
+        max_stages = ws_params["max_stages"]
+    lttb_threshold = ws_params["lttb_threshold"]
+    pelt_max_n = ws_params["pelt_max_n"]
 
     factor = _summary_unit_factor(getattr(stat, "unit", ""))
     fallback_mean = getattr(stat, "average", 0.0)
@@ -353,11 +367,11 @@ def _build_summary_stages(times, values, stat, max_stages=40):
             return fallback_mean
         return (sum(values[i0:i1]) / (i1 - i0)) * factor
 
-    if len(values) > 3000:
-        ds_t, ds_v = lttb_downsample(list(times), list(values), 3000)
+    if len(values) > lttb_threshold:
+        ds_t, ds_v = lttb_downsample(list(times), list(values), lttb_threshold)
     else:
         ds_t, ds_v = list(times), list(values)
-    cps = [c for c in detect_change_points(ds_v, max_n=4000) if 0 < c < len(ds_v) - 1]
+    cps = [c for c in detect_change_points(ds_v, max_n=pelt_max_n) if 0 < c < len(ds_v) - 1]
     if not cps:
         return [{
             "start": float(times[0]), "end": float(times[-1]),
@@ -2792,6 +2806,8 @@ class N6705CDatalogUI(QWidget):
         card.setProperty("auto_connect", bool(auto_connect))
         card.setProperty("connect_btn", connect_btn)
         card.setProperty("disconnect_btn", disconnect_btn)
+        card.setProperty("model_label", model_label)
+        card.setProperty("ip_label", ip_label)
 
         card.setContextMenuPolicy(Qt.CustomContextMenu)
         card.customContextMenuRequested.connect(
@@ -3095,6 +3111,8 @@ class N6705CDatalogUI(QWidget):
             self._auto_connect_enabled_cards()
 
     def _auto_connect_enabled_cards(self):
+        if not load_datalog_app_settings().get("auto_connect_enabled", True):
+            return
         for card in list(self.device_cards):
             if not card.property("auto_connect"):
                 continue
@@ -3123,6 +3141,75 @@ class N6705CDatalogUI(QWidget):
         card.deleteLater()
         self._remove_default_device(visa_resource)
         self._sync_device_card_states()
+
+    def is_instrument_busy(self, serial, visa_resource):
+        """设备已连接或连接中（设置对话框据此禁止删除 / 改地址）。"""
+        serial = (serial or "").strip()
+        for slot in self.slot_frames.values():
+            s = (slot.property("assigned_serial") or "").strip()
+            if s and (s == serial or slot.property("assigned_resource") == visa_resource):
+                return True
+        return visa_resource in self._pending_connects.values()
+
+    def apply_instrument_settings(self, devices, auto_connect_enabled=None):
+        """设置对话框提交仪器列表：同步设备卡片（增/删/改属性）并按需触发自动连接。
+
+        devices 为 default_devices.json 的完整新列表；已连接 / 连接中的卡片
+        仅更新 auto_connect 属性，不删卡、不改地址。
+        """
+        new_by_res = {
+            d.get("visa_resource"): d for d in devices if d.get("visa_resource")
+        }
+        busy_serials = set()
+        busy_resources = set(self._pending_connects.values())
+        for label_char in ["A", "B"]:
+            slot = self.slot_frames[label_char]
+            s = (slot.property("assigned_serial") or "").strip()
+            if s:
+                busy_serials.add(s)
+                busy_resources.add(slot.property("assigned_resource"))
+
+        for card in list(self.device_cards):
+            res = card.property("visa_resource") or ""
+            serial = (card.property("serial") or "").strip()
+            busy = serial in busy_serials or res in busy_resources
+            dev = new_by_res.get(res)
+            if dev is None:
+                if busy:
+                    continue
+                self.device_cards.remove(card)
+                self.device_list_layout.removeWidget(card)
+                card.deleteLater()
+                continue
+            card.setProperty("auto_connect", bool(dev.get("auto_connect", False)))
+            if not busy:
+                card.setProperty("serial", dev.get("serial") or res)
+                model_label = card.property("model_label")
+                ip_label = card.property("ip_label")
+                if model_label is not None:
+                    model_label.setText(dev.get("model", "N6705C"))
+                if ip_label is not None:
+                    ip_label.setText(dev.get("display_ip", ""))
+
+        existing_resources = {c.property("visa_resource") for c in self.device_cards}
+        for dev in devices:
+            res = dev.get("visa_resource")
+            if not res or res in existing_resources:
+                continue
+            card = self._create_device_card(
+                dev.get("serial") or res, dev.get("model", "N6705C"),
+                dev.get("display_ip", ""), res,
+                auto_connect=bool(dev.get("auto_connect", False)),
+            )
+            self.device_list_layout.insertWidget(
+                self.device_list_layout.count() - 1, card
+            )
+            self.device_cards.append(card)
+            existing_resources.add(res)
+
+        self._sync_device_card_states()
+        if auto_connect_enabled:
+            self._auto_connect_enabled_cards()
 
     def _on_device_disconnect(self, serial):
         logger.debug("Datalog UI _on_device_disconnect: serial=%s", serial)
@@ -4619,33 +4706,8 @@ class N6705CDatalogUI(QWidget):
         self._show_left_panel(None)
 
     def _on_open_settings_dialog(self):
-        """底部控制栏设置齿轮：弹出设置对话框（内容预留）。"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Settings")
-        dialog.setMinimumWidth(360)
-        dialog.setStyleSheet(dss.dlg_style())
-
-        dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.setContentsMargins(16, 16, 16, 16)
-        dialog_layout.setSpacing(12)
-
-        placeholder = QLabel("Settings content will be added here.")
-        placeholder.setAlignment(Qt.AlignCenter)
-        dialog_layout.addWidget(placeholder, 1)
-
-        btn_box = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog
-        )
-        ok_btn = btn_box.button(QDialogButtonBox.Ok)
-        ok_btn.setDefault(True)
-        ok_btn.setAutoDefault(True)
-        cancel_btn = btn_box.button(QDialogButtonBox.Cancel)
-        cancel_btn.setDefault(False)
-        cancel_btn.setAutoDefault(False)
-        btn_box.accepted.connect(dialog.accept)
-        btn_box.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(btn_box)
-
+        """底部控制栏设置齿轮：弹出五标签设置对话框（仪器/网段/DLog/摘要/关于）。"""
+        dialog = N6705CSettingsDialog(self)
         dialog.exec()
 
     def _on_add_instrument_manually(self):
@@ -6081,6 +6143,8 @@ class N6705CDatalogUI(QWidget):
             return
 
         self._datalog_leases = []
+        self._raw_dlog_list = []
+        self._recording_had_error = False
         if self._instrument_manager:
             if self.is_connected_a and self.n6705c_a:
                 lease_a = self._instrument_manager.create_lease("n6705c:A", "datalog")
@@ -6318,6 +6382,7 @@ class N6705CDatalogUI(QWidget):
         self._raw_dlog_list = dlog_list
 
     def _on_recording_finished(self):
+        self._maybe_auto_save_dlog()
         self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
         self._release_datalog_leases()
@@ -6325,8 +6390,44 @@ class N6705CDatalogUI(QWidget):
         self._record_worker = None
         self._record_thread = None
 
+    def _maybe_auto_save_dlog(self):
+        """录制正常结束（含手动停止）后按 DLog Save 设置自动保存原始 .dlog。"""
+        try:
+            cfg = load_datalog_app_settings()
+        except Exception:
+            logger.error("读取 DLog Save 设置失败", exc_info=True)
+            return
+        save_cfg = cfg.get("dlog_save", {})
+        if not save_cfg.get("auto_save"):
+            return
+        # 出错路径（_on_recording_error 先于 finished）不自动保存，避免误存残缺数据
+        if getattr(self, "_recording_had_error", False):
+            return
+        if not self._raw_dlog_list:
+            return
+        try:
+            paths, next_seq = build_auto_save_paths(cfg, len(self._raw_dlog_list))
+            for path, blob in zip(paths, self._raw_dlog_list):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "wb") as f:
+                    f.write(blob)
+            if next_seq is not None:
+                cfg["dlog_save"]["next_seq"] = next_seq
+                save_datalog_app_settings(cfg)
+            logger.info("Datalog 自动保存完成: %s", paths[0])
+            self._show_capture_toast(
+                f"Datalog 已自动保存: {os.path.basename(paths[0])}",
+                ToastNotification.TYPE_SUCCESS,
+            )
+        except Exception:
+            logger.error("Datalog 自动保存失败", exc_info=True)
+            self._show_capture_toast(
+                "Datalog 自动保存失败，请查看日志", ToastNotification.TYPE_ERROR
+            )
+
     def _on_recording_error(self, msg):
         logger.error("[Datalog] Recording error: %s", msg)
+        self._recording_had_error = True
         self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
         self._hide_progress_overlay()
