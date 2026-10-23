@@ -15,11 +15,13 @@ def _ensure_app():
 
 
 def main():
-    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.independent_window as isw
+    import ui.modules.serialCom_module.dialogs.panel_dialogs as panel_dlg
     import ui.modules.serialCom_module.mixins.log_panel_mixin as lpm
     import ui.modules.serialCom_module.mixins.connection_mixin as cm
 
-    frame.DEBUG_MOCK = True
+    isw.DEBUG_MOCK = True
+    panel_dlg.DEBUG_MOCK = True
     lpm.DEBUG_MOCK = True
     cm.DEBUG_MOCK = True
 

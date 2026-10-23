@@ -50,7 +50,17 @@ def test_compile_mixin_files():
     base = os.path.join(_ROOT, "ui", "modules", "serialCom_module")
     targets = [
         os.path.join(base, "serialCom_module_frame.py"),
+        os.path.join(base, "serial_style.py"),
         os.path.join(base, "widgets.py"),
+        os.path.join(base, "serial_log_panel.py"),
+        os.path.join(base, "independent_window.py"),
+        os.path.join(base, "controls", "mini_slide_toggle.py"),
+        os.path.join(base, "controls", "quick_cmd_controls.py"),
+        os.path.join(base, "dialogs", "panel_dialogs.py"),
+        os.path.join(base, "dialogs", "quick_cmd_dialogs.py"),
+        os.path.join(base, "dialogs", "script_dialogs.py"),
+        os.path.join(base, "dialogs", "save_dialog.py"),
+        os.path.join(base, "dialogs", "settings_dialog.py"),
         os.path.join(base, "mixins", "connection_mixin.py"),
         os.path.join(base, "mixins", "toolbar_mixin.py"),
         os.path.join(base, "mixins", "log_panel_mixin.py"),
@@ -58,6 +68,7 @@ def test_compile_mixin_files():
         os.path.join(base, "mixins", "send_mixin.py"),
         os.path.join(base, "mixins", "chart_mixin.py"),
         os.path.join(base, "mixins", "script_mixin.py"),
+        os.path.join(base, "mixins", "persistence_mixin.py"),
     ]
     for t in targets:
         py_compile.compile(t, doraise=True)

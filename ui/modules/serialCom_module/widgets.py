@@ -16,7 +16,7 @@ from PySide6.QtGui import QPixmap, QPainter, QIcon, QColor
 from PySide6.QtSvg import QSvgRenderer
 
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     _SERIAL_BTN_ICON_SIZE, _SERIAL_BTN_HEIGHT, _SERIAL_BTN_RADIUS,
     _SEARCH_ICON_PATH, _UNLINK_ICON_PATH, _LINK_ICON_PATH,
     _serial_search_style, _serial_disconnect_style, _serial_connect_style,

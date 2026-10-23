@@ -49,7 +49,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,

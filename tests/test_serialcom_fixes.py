@@ -18,9 +18,11 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PySide6.QtCore import Signal
 
 from ui.modules.serialCom_module.serialCom_module_frame import (
-    SerialComMixin, MODE_FULL, _IndependentSerialWindow, _SerialScriptEditorDialog,
+    SerialComMixin, MODE_FULL,
 )
 from ui.modules.serialCom_module.serialCom_module_frame import add_serial_port_item
+from ui.modules.serialCom_module.independent_window import _IndependentSerialWindow
+from ui.modules.serialCom_module.dialogs.script_dialogs import _SerialScriptEditorDialog
 from core.serial_io.read_worker import SerialReadWorker
 
 PASS, FAIL = [], []

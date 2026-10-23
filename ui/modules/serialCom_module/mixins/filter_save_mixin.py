@@ -49,7 +49,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
@@ -265,7 +265,7 @@ class FilterSaveMixin:
             self._sc_stop_manual_save()
 
     def _sc_start_manual_save(self) -> bool:
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialSaveDialog
+        from ui.modules.serialCom_module.dialogs.save_dialog import _SerialSaveDialog
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
         default_name = f"serial_log_{ts}.txt"
@@ -387,7 +387,7 @@ class FilterSaveMixin:
             self._sc_extra_panel_stop_save(panel)
 
     def _sc_extra_panel_start_save(self, panel) -> bool:
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialSaveDialog
+        from ui.modules.serialCom_module.dialogs.save_dialog import _SerialSaveDialog
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
         title = panel["config"].get("title", "") or panel["config"].get("port", "") or "extra"

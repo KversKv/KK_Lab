@@ -49,7 +49,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
@@ -294,7 +294,7 @@ class SendMixin:
         return divider
 
     def _build_sc_qc_tab(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _ProjectTabBar
+        from ui.modules.serialCom_module.controls.quick_cmd_controls import _ProjectTabBar
         frame = QFrame()
         # 双 objectName 不可行：保留 scQuickFrame 给现有内嵌 QSS；面板级 QSS 通过 quickCommandsPanel 选择器命中
         frame.setObjectName("quickCommandsPanel")
@@ -808,7 +808,7 @@ class SendMixin:
                 w.deleteLater()
 
     def _sc_refresh_quick_buttons(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdButton
+        from ui.modules.serialCom_module.controls.quick_cmd_controls import _QuickCmdButton
         self._sc_qc_clear_button_grid()
         group = self._sc_qc_current_group()
         if group is None:
@@ -926,7 +926,7 @@ class SendMixin:
             self._sc_qc_delete_project(project)
 
     def _sc_qc_rename_project(self, project):
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickTextInputDialog
+        from ui.modules.serialCom_module.dialogs.quick_cmd_dialogs import _QuickTextInputDialog
         if not isinstance(project, dict):
             return
         old_name = project.get("name", "")
@@ -992,7 +992,7 @@ class SendMixin:
     # --- 新增 ---
 
     def _sc_qc_prompt_text(self, title: str, label: str) -> str:
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickTextInputDialog
+        from ui.modules.serialCom_module.dialogs.quick_cmd_dialogs import _QuickTextInputDialog
         clean_label = label.rstrip("：:").strip()
         text, ok = _QuickTextInputDialog.get_input(
             self, title=title, label=clean_label,
@@ -1071,7 +1071,7 @@ class SendMixin:
         self._sc_qc_delete_group(group)
 
     def _sc_qc_rename_group(self, group):
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickTextInputDialog
+        from ui.modules.serialCom_module.dialogs.quick_cmd_dialogs import _QuickTextInputDialog
         if not isinstance(group, dict):
             return
         old_name = group.get("name", "")
@@ -1117,7 +1117,7 @@ class SendMixin:
         self._sc_refresh_quick_buttons()
 
     def _sc_add_quick_cmd(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdDialog
+        from ui.modules.serialCom_module.dialogs.quick_cmd_dialogs import _QuickCmdDialog
         group = self._sc_qc_current_group()
         if group is None:
             QMessageBox.warning(self, "提示", "请先创建项目和分组")
@@ -1167,7 +1167,7 @@ class SendMixin:
         self._sc_refresh_quick_buttons()
 
     def _sc_qc_edit_command(self, idx):
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdDialog
+        from ui.modules.serialCom_module.dialogs.quick_cmd_dialogs import _QuickCmdDialog
         group = self._sc_qc_current_group()
         if group is None:
             return
@@ -1249,7 +1249,7 @@ class SendMixin:
                 return True
             return False
         # 仅处理快捷指令容器上的拖拽事件；其它一律放行
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdButton
+        from ui.modules.serialCom_module.controls.quick_cmd_controls import _QuickCmdButton
         container = getattr(self, "_sc_qc_btn_container", None)
         if container is not None and obj is container:
             etype = event.type()
@@ -1283,7 +1283,7 @@ class SendMixin:
         """根据落点定位目标插入索引：命中按钮取其 command_index；
         否则按 grid 行列估算最近按钮；都不命中则返回末尾。
         """
-        from ui.modules.serialCom_module.serialCom_module_frame import _QuickCmdButton
+        from ui.modules.serialCom_module.controls.quick_cmd_controls import _QuickCmdButton
         container = self._sc_qc_btn_container
         commands = (
             self._sc_qc_current_group() or {}

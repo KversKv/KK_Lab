@@ -49,7 +49,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
@@ -486,7 +486,7 @@ class ToolbarMixin:
     _COMBO_END_W = _TOGGLE_W
 
     def _build_sc_section_rx_settings(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _MiniSlideToggle
+        from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideToggle
         grp = self._make_sc_section(
             "RX Config", os.path.join(_SVG_SERIAL_DIR, "zap.svg")
         )
@@ -537,7 +537,7 @@ class ToolbarMixin:
         return grp
 
     def _build_sc_section_tx_settings(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _MiniSlideToggle
+        from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideToggle
         grp = self._make_sc_section(
             "TX Config", os.path.join(_SVG_SERIAL_DIR, "send-outline.svg")
         )

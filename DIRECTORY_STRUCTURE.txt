@@ -341,16 +341,28 @@ ui/
 │   ├── mcu_io_module_frame.py          # MCU IO 连接区 Mixin (串口搜索/连接/GPIO 高低HighZ 输出/读取)
 │   ├── ch9114f_gpio_module_frame.py    # CH9114F GPIO 连接区 Mixin (CH9114F 端口搜索/连接/GPIO 高低输出/读取)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开/收发/脚本)
-│       ├── serialCom_module_frame.py   # SerialComMixin 薄壳：装配 7 Mixin + complete_serialComWidget + 持久化
+│       ├── serialCom_module_frame.py   # SerialComMixin 薄壳：装配 8 Mixin + complete_serialComWidget + __main__ demo
+│       ├── serial_style.py             # 叶子模块：样式动态装载/导出 + SVG 目录 + MODE_* + add_serial_port_item + 高亮调色板
 │       ├── widgets.py                  # 可复用串口 UI 组件 (_SerialSearchButton/_FramelessChromeDialog/...)
-│       ├── mixins/                     # SerialComMixin 职责拆分 (Phase 4 重构，7 个 Mixin)
+│       ├── independent_window.py       # _IndependentSerialWindow 独立串口浮窗
+│       ├── controls/                   # 自定义控件
+│       │   ├── mini_slide_toggle.py    # _MiniSlideToggle ASCII/HEX 滑动开关
+│       │   └── quick_cmd_controls.py   # _QuickCmdButton/_QuickCmdPreviewPopup/_ProjectTabBar/_QuickCommandPickerPopup
+│       ├── dialogs/                    # 对话框
+│       │   ├── panel_dialogs.py        # _AddLogPanelDialog/_PanelSettingsDialog
+│       │   ├── quick_cmd_dialogs.py    # _QuickTextInputDialog/_QuickCmdDialog
+│       │   ├── script_dialogs.py       # _SerialScriptStepDialog/_SerialScriptEditorDialog
+│       │   ├── save_dialog.py          # _SerialSaveDialog
+│       │   └── settings_dialog.py      # _SerialSettingsDialog
+│       ├── mixins/                     # SerialComMixin 职责拆分 (8 个 Mixin)
 │       │   ├── connection_mixin.py     # 端口搜索/连接/断开/自动波特率/读线程/会话管理
 │       │   ├── toolbar_mixin.py        # 工具栏/侧栏/状态栏构建 + 通用按钮工厂
 │       │   ├── log_panel_mixin.py      # 日志区/多面板/追加/过滤增量/临时日志/NTP
 │       │   ├── filter_save_mixin.py    # 过滤/手动保存/导出
 │       │   ├── send_mixin.py           # 发送区/快捷指令/HEX/历史/事件过滤
 │       │   ├── chart_mixin.py          # RX 可视化图表配置接入
-│       │   └── script_mixin.py         # 脚本编辑/运行/循环/超时/导入导出 (委托 core.serial_script)
+│       │   ├── script_mixin.py         # 脚本编辑/运行/循环/超时/导入导出 (委托 core.serial_script)
+│       │   └── persistence_mixin.py    # 持久化/窗口几何/配置迁移/About
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
 │       ├── serial_log_panel.py         # 统一串口日志面板组件 (SerialLogPanel：主面板/额外面板/独立浮窗三处共用)
 │       ├── serial_session_manager.py   # 多串口会话管理器 (SerialSessionManager)

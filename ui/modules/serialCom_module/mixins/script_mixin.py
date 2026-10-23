@@ -54,7 +54,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
@@ -687,7 +687,7 @@ class ScriptMixin:
         self._sc_script_refresh_table()
 
     def _sc_script_edit_step(self, row: int):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialScriptStepDialog
+        from ui.modules.serialCom_module.dialogs.script_dialogs import _SerialScriptStepDialog
         cur = self._sc_script_current()
         if cur is None:
             return
@@ -724,7 +724,7 @@ class ScriptMixin:
         self._sc_script_refresh_table()
 
     def _sc_script_add_step(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialScriptStepDialog
+        from ui.modules.serialCom_module.dialogs.script_dialogs import _SerialScriptStepDialog
         cur = self._sc_script_current()
         if cur is None:
             QMessageBox.information(self, "提示", "请先新建或选择一个脚本")
@@ -768,7 +768,7 @@ class ScriptMixin:
     # ---- 编辑 / 增删 ----
 
     def _sc_script_new(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialScriptEditorDialog
+        from ui.modules.serialCom_module.dialogs.script_dialogs import _SerialScriptEditorDialog
         script = {
             "id": self._sc_qc_gen_id("script"),
             "name": "新脚本",
@@ -787,7 +787,7 @@ class ScriptMixin:
             self._sc_script_refresh_all()
 
     def _sc_script_edit(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialScriptEditorDialog
+        from ui.modules.serialCom_module.dialogs.script_dialogs import _SerialScriptEditorDialog
         cur = self._sc_script_current()
         if cur is None:
             QMessageBox.information(self, "提示", "请先新建一个脚本")

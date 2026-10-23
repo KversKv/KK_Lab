@@ -27,7 +27,7 @@ from ui.modules.serialCom_module.widgets import (
     _update_serial_btn_state,
 )
 from ui.modules.serialCom_module.serial_hotplug import SerialPortHotplugMonitor
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     _CLR_CONNECT_TEXT,
@@ -477,7 +477,7 @@ class ConnectionMixin:
             self.serial_settings_btn.setEnabled(not connected)
 
     def _start_serial_read(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialReadWorker
+        from core.serial_io import SerialReadWorker as _SerialReadWorker
         if self._serial_conn is None or not self._serial_conn.is_open:
             return
         if self._serial_read_thread is not None and self._serial_read_thread.isRunning():

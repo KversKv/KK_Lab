@@ -2,6 +2,7 @@
 
 > 串口调试控制台（KK Serial Console）核心实现文件。
 > 既可作为主程序内嵌页面（暗色风格），也可作为独立打包程序运行（Apple 浅色风格）。
+> 注意（2026-10）：文件已拆分（对话框→`dialogs/`、控件→`controls/`、浮窗→`independent_window.py`、持久化→`mixins/persistence_mixin.py`、样式枢纽→`serial_style.py`），下文行号引用对应拆分前单体文件，结构归属以 §2 表为准。
 
 ---
 
@@ -20,7 +21,12 @@
 
 | 文件 | 职责 |
 |---|---|
-| `serialCom_module_frame.py` | 主体：`SerialComMixin` 业务逻辑 + 所有对话框 / 控件类 |
+| `serialCom_module_frame.py` | 装配薄壳：`SerialComMixin` 多继承装配 + `complete_serialComWidget` + `__main__` demo |
+| `serial_style.py` | 叶子模块：样式动态装载/导出 + SVG 目录 + `MODE_*` + `add_serial_port_item()` + 高亮调色板 |
+| `mixins/`（8 个） | `connection/toolbar/log_panel/filter_save/send/chart/script/persistence` 职责 Mixin |
+| `dialogs/` | 全部对话框（panel / quick_cmd / script / save / settings） |
+| `controls/` | `_MiniSlideToggle`、`_QuickCmdButton`、`_ProjectTabBar`、弹窗等自定义控件 |
+| `independent_window.py` | `_IndependentSerialWindow` 独立串口浮窗 |
 | `serialCom_dark_style.py` | 暗色主题样式表（主程序内嵌时使用）|
 | `serialCom_apple_gpt5p5_style.py` | Apple 浅色主题样式表（独立运行时使用）|
 | `serial_session.py` | `SerialSession`：单条串口会话（端口、读线程、收发计数）|

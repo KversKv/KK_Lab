@@ -6,7 +6,7 @@ legacy 专属值字面量化，渲染结果与迁移前 1:1 一致（基准比�
 
 serialCom 模块皮肤不使用本模块：其样式 token 见 ``ui.styles.serial_tokens``，
 QSS 生成见 ``ui.modules.serialCom_module.serialCom_apple_gpt5p5_style`` /
-``serialCom_dark_style``（由 ``serialCom_module_frame._select_serialcom_style_module`` 切换）。
+``serialCom_dark_style``（由 ``serialCom_module.serial_style._select_serialcom_style_module`` 切换）。
 """
 from ui.theme.legacy import Colors
 from ui.theme.theme import load_qss

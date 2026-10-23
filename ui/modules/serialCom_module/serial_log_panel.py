@@ -31,7 +31,7 @@ from PySide6.QtGui import QAction, QColor, QTextCursor
 
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     _SC_HIGHLIGHT_PALETTE,
     _SVG_LOGS_DIR,
     _SVG_SERIAL_DIR,

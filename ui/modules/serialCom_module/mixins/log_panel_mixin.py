@@ -49,7 +49,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
-from ui.modules.serialCom_module.serialCom_module_frame import (
+from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
     MODE_SEARCH_SELECT,
@@ -254,7 +254,7 @@ class LogPanelMixin:
 
 
     def _sc_on_add_log_panel(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _AddLogPanelDialog
+        from ui.modules.serialCom_module.dialogs.panel_dialogs import _AddLogPanelDialog
         if len(self._sc_extra_log_panels) >= 3:
             self._sc_append_system("[WARN] Maximum 4 LOG panels supported", force_primary=True)
             return
@@ -281,7 +281,7 @@ class LogPanelMixin:
             self._sc_extra_panel_connect(panel)
 
     def _sc_open_independent_window(self, panel_info):
-        from ui.modules.serialCom_module.serialCom_module_frame import _IndependentSerialWindow
+        from ui.modules.serialCom_module.independent_window import _IndependentSerialWindow
         win = _IndependentSerialWindow(panel_info, parent=None)
         if not hasattr(self, "_sc_independent_windows"):
             self._sc_independent_windows = []
@@ -539,7 +539,7 @@ class LogPanelMixin:
 
     def _sc_primary_panel_settings(self):
         """主面板 Settings：仅改名，真值 _sc_primary_panel_title 随 ui 段持久化。"""
-        from ui.modules.serialCom_module.serialCom_module_frame import _PanelSettingsDialog
+        from ui.modules.serialCom_module.dialogs.panel_dialogs import _PanelSettingsDialog
         dlg = _PanelSettingsDialog(
             {"title": getattr(self, "_sc_primary_panel_title", "Serial Log")},
             parent=self, name_only=True,
@@ -664,7 +664,7 @@ class LogPanelMixin:
         self._sc_sync_top_control_state()
 
     def _sc_extra_panel_settings(self, panel):
-        from ui.modules.serialCom_module.serialCom_module_frame import _PanelSettingsDialog
+        from ui.modules.serialCom_module.dialogs.panel_dialogs import _PanelSettingsDialog
         dlg = _PanelSettingsDialog(panel["config"], parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
@@ -823,7 +823,7 @@ class LogPanelMixin:
             panel["session_id"] = None
 
     def _sc_extra_panel_start_read(self, panel):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialReadWorker
+        from core.serial_io import SerialReadWorker as _SerialReadWorker
         if panel["conn"] is None or not panel["conn"].is_open:
             return
         worker = _SerialReadWorker(panel["conn"])
@@ -879,7 +879,7 @@ class LogPanelMixin:
             self._sc_center_splitter.setSizes(list(restore))
 
     def _sc_open_settings_dialog(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _SerialSettingsDialog
+        from ui.modules.serialCom_module.dialogs.settings_dialog import _SerialSettingsDialog
         # 设置对话框是主面板/全局语义：先把侧栏切回主面板视图，关闭后恢复聚焦视图
         if getattr(self, "_sc_sidebar_bound_index", None) is not None:
             self._sc_sidebar_load_focus(force_primary=True)
@@ -1204,7 +1204,7 @@ class LogPanelMixin:
     # --- NTP network time ---
 
     def _sc_start_ntp_sync(self):
-        from ui.modules.serialCom_module.serialCom_module_frame import _NtpSyncWorker
+        from core.serial_io import NtpSyncWorker as _NtpSyncWorker
         if self._sc_ntp_thread is not None:
             return
         self._sc_ntp_synced = False

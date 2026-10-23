@@ -36,12 +36,14 @@ def _ensure_app():
 
 
 def _make_widget():
-    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.independent_window as isw
+    import ui.modules.serialCom_module.dialogs.panel_dialogs as panel_dlg
     import ui.modules.serialCom_module.mixins.log_panel_mixin as lpm
     import ui.modules.serialCom_module.mixins.connection_mixin as cm
     import ui.modules.serialCom_module.mixins.send_mixin as sm
 
-    frame.DEBUG_MOCK = True
+    isw.DEBUG_MOCK = True
+    panel_dlg.DEBUG_MOCK = True
     lpm.DEBUG_MOCK = True
     cm.DEBUG_MOCK = True
     sm.DEBUG_MOCK = True
@@ -234,7 +236,7 @@ def test_primary_panel_rename():
 
     主面板串口参数由侧栏持有，Settings 仅改名（name_only 对话框）。
     """
-    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.dialogs.panel_dialogs as panel_dialogs_mod
     from PySide6.QtWidgets import QDialog, QMenu
 
     app, w = _make_widget()
@@ -258,12 +260,12 @@ def test_primary_panel_rename():
         def get_config(self):
             return {"title": "Main Console"}
 
-    orig_dlg = frame._PanelSettingsDialog
-    frame._PanelSettingsDialog = _FakeDlg
+    orig_dlg = panel_dialogs_mod._PanelSettingsDialog
+    panel_dialogs_mod._PanelSettingsDialog = _FakeDlg
     try:
         w._sc_primary_panel_settings()
     finally:
-        frame._PanelSettingsDialog = orig_dlg
+        panel_dialogs_mod._PanelSettingsDialog = orig_dlg
     app.processEvents()
     assert w._sc_primary_panel_title == "Main Console", "改名未写真值"
     assert w._sc_log_panel.title_label.text() == "Main Console", "改名未刷新标题"

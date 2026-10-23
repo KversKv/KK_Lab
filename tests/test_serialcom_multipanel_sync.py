@@ -35,7 +35,7 @@ def _ensure_app():
 
 
 def test_independent_window_buttons_and_autoscroll():
-    from ui.modules.serialCom_module.serialCom_module_frame import _IndependentSerialWindow
+    from ui.modules.serialCom_module.independent_window import _IndependentSerialWindow
 
     app = _ensure_app()
     win = _IndependentSerialWindow({"title": "T", "port": "COM1", "baudrate": 115200})
@@ -98,11 +98,13 @@ def test_independent_window_buttons_and_autoscroll():
 
 
 def test_top_controls_follow_focus():
-    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.independent_window as isw
+    import ui.modules.serialCom_module.dialogs.panel_dialogs as panel_dlg
     import ui.modules.serialCom_module.mixins.log_panel_mixin as lpm
     import ui.modules.serialCom_module.mixins.connection_mixin as cm
 
-    frame.DEBUG_MOCK = True
+    isw.DEBUG_MOCK = True
+    panel_dlg.DEBUG_MOCK = True
     lpm.DEBUG_MOCK = True
     cm.DEBUG_MOCK = True
 
@@ -249,11 +251,13 @@ def test_multipanel_layout_persist_restore():
     """多开串口的窗口记忆：额外面板 + 独立浮窗（几何/连接态）随配置保存并在重开时恢复。"""
     import json
 
-    import ui.modules.serialCom_module.serialCom_module_frame as frame
+    import ui.modules.serialCom_module.independent_window as isw
+    import ui.modules.serialCom_module.dialogs.panel_dialogs as panel_dlg
     import ui.modules.serialCom_module.mixins.log_panel_mixin as lpm
     import ui.modules.serialCom_module.mixins.connection_mixin as cm
 
-    frame.DEBUG_MOCK = True
+    isw.DEBUG_MOCK = True
+    panel_dlg.DEBUG_MOCK = True
     lpm.DEBUG_MOCK = True
     cm.DEBUG_MOCK = True
 
