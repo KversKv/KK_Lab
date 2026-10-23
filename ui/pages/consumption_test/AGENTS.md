@@ -17,7 +17,7 @@
 ## 接口契约（对外不可破坏）
 
 - 复用 Mixin：`N6705CConnectionMixin` + `SerialComMixin(MODE_INLINE)` + `ExecutionLogsFrame`。
-- 视图拆分：`view_config / view_panels / view_results / widgets`；controller 在 `core/consumption_test/consumption_controller.py`。
+- 视图拆分：`view_config / view_panels / view_results / view_device / view_chip_config / view_mcu / view_test_exec / view_ai`（8 Mixin 平移零行为变更）+ `widgets`；`consumption_test.py` 为薄壳（装配 + `__init__` + 样式 + 简单 getter）；controller 在 `core/consumption_test/consumption_controller.py`；MCU 本地 Worker（`_SearchMcuPortWorker` 等 4 个）在 `core/consumption_test/workers/mcu_workers.py`。
 - 固件下载走 `lib/download_tools/`（dldtool.exe），禁在 UI 直接调。
 - **`<chip>.yaml` 顶层 key 契约**：5 个电源轨 key（Vcore/VcoreM/VcoreL/VANA/VHPPA，值为命令行列表）+ 2 个测试前配置 key（`vbat_pre_test` / `power_pre_distribution`，值为 `{enabled: bool, commands: [...]}`，键名常量在 `view_panels._PRE_CONFIG_AREAS`）。Save/加载/Exec 统一走 `_on_chip_save` / `_load_rail_configs_from_chip` / `_execute_config_area`。
 - **`AutoTestWorker` 新增 kwargs**：`vbat_pre_test_text` / `power_pre_distribution_text`（空文本=开关 OFF 跳过）；均为独立步骤——`vbat_pre_test` 在 Step 8.5（Vbat 总电流测量前）、`power_pre_distribution` 在 Step 10.5（Step 10 外供电压稳定后、Step 11 主配置下发前，芯片各轨已外部供电才写 I2C），失败仅记日志不中断；主 I2C 会话不可用时临时独立初始化并关闭。
@@ -34,6 +34,6 @@
 
 ## 局部坑点
 
-- **ADR 005 遗留**：`consumption_test.py` UI 本体仍较大，后续按 `view_config / view_results` 继续拆，勿新增上帝类。
+- **ADR 005 已收尾**：`consumption_test.py` 已拆为薄壳 + 8 视图 Mixin（2026-10-24）；新增方法按职责落对应 Mixin，勿回堆主壳、勿新增上帝类。
 - 温箱温度稳定等待为分钟级，必须异步（见 03§7）。
 - AI 受控接入评估后**推迟**（`HighLowTempConsumptionTestUI` 双仪器 + 温箱，契约命名非标准 `_on_start_clicked` / `_test_worker`），建议独立迭代。

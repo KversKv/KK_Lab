@@ -479,12 +479,18 @@ ui/
 │   │
 │   ├── consumption_test/        # 功耗测试页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
-│   │   ├── consumption_test.py       # 功耗测试主界面 (委托 controller + mixin)
+│   │   ├── consumption_test.py       # 功耗测试主界面薄壳 (装配 8 视图 mixin + controller)
 │   │   ├── consumption_test_wrapper.py # 功耗测试封装层 (对外统一入口)
 │   │   ├── high_low_temp_test_ui.py  # 高低温联动功耗测试界面
 │   │   ├── widgets.py                # 专属控件 (DownloadModeToggle/ControlMethodToggle/PolarityToggle)
 │   │   ├── view_config.py            # 通道配置面板视图 mixin
-│   │   └── view_results.py           # 结果卡片视图 mixin
+│   │   ├── view_panels.py            # 主面板/连接/固件/结果区视图 mixin
+│   │   ├── view_results.py           # 结果卡片视图 mixin
+│   │   ├── view_device.py            # 设备连接与通道管理 mixin
+│   │   ├── view_chip_config.py       # Chip YAML 配置 mixin
+│   │   ├── view_mcu.py               # MCU 会话/搜索/连接/IO mixin (Worker 在 core/.../workers/mcu_workers.py)
+│   │   ├── view_test_exec.py         # 测试执行与结果导出 mixin
+│   │   └── view_ai.py                # AI 契约与配置记忆 mixin
 │   │
 │   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引

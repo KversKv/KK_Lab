@@ -11,6 +11,7 @@ Consumption Test 下的所有 Worker(QObject)集中管理。
  - consumption_worker.py : 基础功耗测试 Worker
  - force_worker.py       : BaseForceTestWorker + ForceHigh + ForceAuto
  - auto_test_worker.py   : Auto Test Worker(自动多 BIN 流程)
+ - mcu_workers.py        : MCU 端口扫描/连接/高阻/IO 快捷设置 Worker(自 UI 平移)
 
 同时保留带下划线前缀的别名(`_DownloadWorker` 等),以便主文件可直接沿用
 原有的引用名称。
@@ -31,6 +32,12 @@ from .force_worker import (
     ConsumptionTestForceWorker,
 )
 from .auto_test_worker import AutoTestWorker
+from .mcu_workers import (
+    _SearchMcuPortWorker,
+    _ConnectMcuWorker,
+    _McuPinsHighZWorker,
+    _IoStateSetWorker,
+)
 
 # 向后兼容的旧名字(带下划线前缀)
 _DownloadWorker = DownloadWorker
@@ -58,4 +65,8 @@ __all__ = [
     "_ConsumptionTestForceHighWorker",
     "_ConsumptionTestForceWorker",
     "_AutoTestWorker",
+    "_SearchMcuPortWorker",
+    "_ConnectMcuWorker",
+    "_McuPinsHighZWorker",
+    "_IoStateSetWorker",
 ]
