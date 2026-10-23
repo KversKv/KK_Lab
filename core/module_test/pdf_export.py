@@ -3,7 +3,7 @@
 HTML 报告为纯 JS 渲染的单文件（数据 = REPORT_DATA JSON），非浏览器排版引擎
 （weasyprint / reportlab 等）无法复用其图表与表格渲染；故 PDF 导出走系统已装
 Chromium 内核浏览器 headless --print-to-pdf。调用方传入打印变体 HTML
-（report._to_print_variant：@media print 提为基础版式 + 版心锁 180mm +
+（report/api.py ``_to_print_variant``：@media print 提为基础版式 + 版心锁 180mm +
 boot 同步全量渲染），页面 load 前即渲染完成，不依赖 headless 下触发不可靠的
 beforeprint 事件，也无需 --virtual-time-budget（其与新 headless 组合在部分
 Chromium 版本会挂起）。
@@ -86,7 +86,7 @@ def export_pdf_from_html(html_path: str, pdf_path: str,
                          html_text: str | None = None) -> str:
     """把单文件 HTML 报告打印为 PDF，成功返回 pdf_path。
 
-    ``html_text`` 提供时（打印变体，见 report._to_print_variant）先落临时
+    ``html_text`` 提供时（打印变体，见 report/api.py ``_to_print_variant``）先落临时
     文件再打印（数据全内联无相对资源依赖），结束后删除。
 
     Raises:

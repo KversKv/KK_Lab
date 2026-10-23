@@ -35,6 +35,7 @@
 - **数据落盘**：结果写 `Results/`，文件名 `<功能>_<型号>_<YYYYMMDD_HHMMSS>.csv`，写前 `os.makedirs(..., exist_ok=True)`。
 - **芯片配置**：从 [chips/bes_chip_configs/](../chips/bes_chip_configs/) 读取，不在 core 硬编码寄存器 / 电压表。
 - `pmu_test/dcdc/dcdc_analysis.generate_current_points` Linear/Log 模式必含 `end_current_a` 终点（2026-09，步进/网格不足时自动补点，相对 1e-9 近重去重）；Custom 模式取 `custom_points`（A 列表），abs/剔 0/去重/升序，空表回退 `[start_a, end_a]`。
+- `module_test/report/` 为包（原 report.py 拆分）：`data.py`（REPORT_DATA 构建）/ `template.py`（HTML 模板）/ `api.py`（生成+落盘）；对外只经 `__init__.py` 再导出，引用侧一律 `from core.module_test.report import ...`，禁直导子模块。
 
 ## 局部坑点
 

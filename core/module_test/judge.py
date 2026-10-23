@@ -1,7 +1,7 @@
 """Module Test 判定标准（PASS/FAIL Criteria）——指标注册表 + 判定引擎。
 
 纯函数模块（无 Qt），供 runner 在测试项完成后按用户标准判定
-``ItemResult.passed``。与报告里的**异常点标红**（report.py ``table.rules``
+``ItemResult.passed``。与报告里的**异常点标红**（report/data.py ``table.rules``
 前端规则引擎）是两套独立机制：本模块决定测试项 verdict（PASS/FAIL/N/A），
 异常标红仅视觉提示、不参与判定。
 

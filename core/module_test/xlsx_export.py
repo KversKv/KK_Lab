@@ -43,7 +43,7 @@ def _sheet_title(name: str, used: set[str]) -> str:
 
 
 def _csv_rows(path: str | None) -> list[list[str]]:
-    """读取原始数据 CSV（utf-8-sig，与 report._csv_to_rows 同语义）。"""
+    """读取原始数据 CSV（utf-8-sig，与 report/data.py ``_csv_to_rows`` 同语义）。"""
     if not path or not os.path.isfile(path):
         return []
     try:
