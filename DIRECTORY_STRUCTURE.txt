@@ -498,7 +498,9 @@ ui/
 │   │   ├── NEW_CHIP_JSON_1701.txt    # BES1701 已填写示例（json_example/，对照 chips/gpio_configs/bes1701.json）
 │   │   ├── NEW_CHIP_JSON_TEMPLATE.md # 新芯片 GPIO JSON 配置信息采集模板（json_example/，填后交 AI 生成 chips/gpio_configs/<chip>.json）
 │   │   ├── NEW_CHIP_JSON_TEMPLATE.txt# 同上纯文本版（json_example/，notepad 直接编辑用）
-│   │   └── gpio_control_ui.py        # Detect DUT→GPIO 网格→单脚 模式/电平/drv 控制（业务走 core/gpio）
+│   │   ├── gpio_control/             # 拆分子包：style(QSS)/utils(纯函数)/pin_card(引脚卡片)
+│   │   │                             # + view_build/state_refresh/ops_mixin/features_mixin(职责 Mixin)
+│   │   └── gpio_control_ui.py        # 瘦壳入口：Mixin 装配 GpioControlUI（Detect DUT→GPIO 网格→单脚控制，业务走 core/gpio）
 │   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）
 │       ├── AGENTS.md                 # 页级局部 AI 协作指引
