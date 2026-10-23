@@ -117,7 +117,7 @@ except Exception as e:
   - `min_log_height` —— LOG 区最小高度，可选。
 - **禁止**直接 `layout.addWidget(self.execution_logs)` 而不经过 `QSplitter` / 工厂。
 - **禁止**对 `execution_logs` 设置 `setMaximumHeight` / `setFixedHeight` 来限制高度，改用工厂的 `stretch` / `sizes` 控制默认比例。
-- 工厂实现见 [ExecutionLogsFrame.wrap_with](../../ui/modules/execution_logs_module_frame.py)；参考正例：[gpadc_test_ui.py](../../ui/pages/pmu_test/gpadc_test_ui.py)。
+- 工厂实现见 [ExecutionLogsFrame.wrap_with](../../ui/modules/execution_logs_module_frame.py)；参考正例：[layout_mixin.py](../../ui/pages/pmu_test/gpadc_test/mixins/layout_mixin.py)（`_create_layout`）。
 
 ## 7. 仪器层规范
 

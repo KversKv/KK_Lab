@@ -31,6 +31,7 @@
 - **Output Voltage 扫描逻辑与 Module Test 双向同步**（2026-09 起，硬规则）：本页 `pmu_output_voltage.py` 的扫描行为（前置校验/尾部饱和确认弹窗及文案、`_PRECHECK_*` / `_TAIL_STOP_*` 阈值常量、异常前缀剔除语义、寄存器 finally 兜底恢复）与 [core/module_test/_common.py](../../core/module_test/_common.py) 的 `run_vout_scan` 保持一致。任一侧改动上述逻辑，必须在同一次变更内同步另一侧（阈值/文案/判定语义对齐），并同步更新两侧 AGENTS.md（另一侧为 ui/pages/module_test/AGENTS.md）。
 - 结果落 `Results/`，文件名带时间戳 + 芯片型号。
 - 新增子测试：UI 在 `ui/pages/pmu_test/`、analysis+worker 在 `core/pmu_test/<name>/`，并注册进 `TEST_TAB_MAP`。
+- **GPADC 页拆分布局**（2026-10，ADR 005 Mixin 范式）：`gpadc_test_ui.py` 为薄壳（`GPADCTestUI` 装配 + 信号/类常量 + 状态日志方法 + `__main__`，对外 import 路径不变）；方法按职责平移到 `gpadc_test/` 子包——`toggle_switch.py`（`_ToggleSwitch`）+ `mixins/`（layout 布局构建 / execution 启停编排 / acquisition UART·IIC 采样 / plotting 曲线悬浮 / recent_tests 记录命名对比 / export Excel / config_ai 配置与 AI 契约，7 个 `_XxxMixin`）；方法名零变更，跨 Mixin 互访走 `self`，改功能先按职责定位 Mixin 文件。
 - GPADC 最近测试管理（本会话内存记录，`_recent_test_records`，上限 `RECENT_TEST_LIMIT`）：
   - 管理栏位于 Curve 右侧 `recent_curve_splitter`（水平 QSplitter），chart 头部 `toggle_recent_btn` 可折叠/展开（记住宽度），默认折叠；
   - 每条记录按 `id % 8` 稳定分配专属曲线色（`_record_color`），列表项前景色 / 图例 / 曲线三处一致；显示名经 `_record_display_name`（优先用户 Rename 的 label）贯通列表/对比图图例/单次图图例；
