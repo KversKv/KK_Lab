@@ -3,7 +3,7 @@
   "config": {
     "n6705c_connected": true,
     "chamber_connected": false,
-    "test_item": "1000CNT TEST",
+    "test_item": "Multi-Ch Temp Test",
     "data_acquisition_mode": "IIC",
     "iic_device_address": "0x27",
     "iic_data_address": "0x57",
