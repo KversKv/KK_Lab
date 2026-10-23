@@ -46,7 +46,7 @@ _APP_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "ai", "sparkles.svg"
 )
 _CAPTURE_ICON_SVG = os.path.join(
-    get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
+    get_resource_base(), "resources", "icons_svg", "window", "scissors.svg"
 )
 _LABELS_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "tag.svg"

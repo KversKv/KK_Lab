@@ -31,7 +31,7 @@ _COMPACT_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "compact_view.svg"
 )
 _CAPTURE_ICON_SVG = os.path.join(
-    get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
+    get_resource_base(), "resources", "icons_svg", "window", "scissors.svg"
 )
 _PIN_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "pin.svg"

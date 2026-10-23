@@ -8874,7 +8874,7 @@ if sys.platform == "win32":
 # 32px 内容区 + 1px 底部分隔线（QSS 盒模型：border 计入总高）
 _TITLE_BAR_HEIGHT = 33
 _CAPTURE_ICON_SVG = os.path.join(
-    get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
+    get_resource_base(), "resources", "icons_svg", "window", "scissors.svg"
 )
 
 # 控件高度单一权威：标题栏内按钮用 ID 选择器钉死尺寸，不写裸 QPushButton 规则

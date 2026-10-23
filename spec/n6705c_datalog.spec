@@ -29,7 +29,7 @@ a = Analysis(
             os.path.join(PROJECT_ROOT, 'resources', 'pages', 'n6705c_power_analyzer_SVGs'),
             os.path.join('resources', 'pages', 'n6705c_power_analyzer_SVGs'),
         ),
-        # 独立窗口标题栏一键截图图标（capture.svg）
+        # 独立窗口标题栏图标（scissors.svg 一键截图等）
         (
             os.path.join(PROJECT_ROOT, 'resources', 'icons_svg', 'window'),
             os.path.join('resources', 'icons_svg', 'window'),
