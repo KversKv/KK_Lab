@@ -34,6 +34,8 @@ a = Analysis(
             os.path.join(PROJECT_ROOT, 'resources', 'icons_svg', 'window'),
             os.path.join('resources', 'icons_svg', 'window'),
         ),
+        # 帮助手册（datalog.html，页面右下角帮助按钮弹出）
+        (os.path.join(PROJECT_ROOT, 'helps'), 'helps'),
         # ui/styles/__init__.py 连带 import ui.widgets.start_sequence,
         # 其模块级 load_qss("start_button") 依赖 ui/theme/qss/,
         # 缺失则打包后启动即 FileNotFoundError (与 kk_lab.spec 保持一致)

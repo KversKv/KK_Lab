@@ -1,22 +1,112 @@
-<h2>N6705C Datalog</h2>
-<h3>页面介绍</h3>
-<p>Datalog 页面用于通过 Keysight N6705C 进行长时间数据采集（Datalog），可记录各通道的电压、电流和功率随时间变化的波形数据。</p>
+<h2>N6705C Datalog 帮助手册</h2>
 
-<h3>测试项</h3>
+<h3>页面介绍</h3>
+<p>Datalog 页面用于通过 Keysight N6705C 直流电源分析仪进行长时间数据采集（Datalog），实时记录各通道电压、电流、功率随时间变化的波形，并提供 Marker 区间分析、测量统计、自定义标注、数据导入导出与一键截图等完整分析能力。支持双仪器（最多 8 通道）同步采集。</p>
+
+<h3>快速上手（基础流程）</h3>
+<ol>
+  <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B / C / D。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP 或 USB）。</li>
+  <li><b>配置采集参数</b> — 点击左侧 <b>Settings</b> 图标，在 <b>DATALOG CONFIG</b> 中设置 <b>Sampling Period (μs)</b> 采样周期与 <b>Monitoring Time (s)</b> 监控时长；勾选 Minimum 可自动使用最小采样周期。</li>
+  <li><b>选择测量项</b> — 在 <b>Measurement Settings</b> 中勾选需要统计的指标（Minimum / Average / Maximum / Peak to Peak / Charge / Energy）。</li>
+  <li><b>勾选采集通道</b> — 在下方 <b>Channel Config</b> 的 Active 页签中，为每个通道勾选 <b>I</b>（电流）/ <b>V</b>（电压）/ <b>P</b>（功率），必要时调整 Scale / Offset。</li>
+  <li><b>开始采集</b> — 点击底部 <b>Start Recording</b>，采集过程显示进度条，完成后波形自动绘制到图表中。</li>
+  <li><b>分析数据</b> — 使用图表工具栏的 Marker A / B 圈选区间，测量表自动统计区间内数据；悬停波形可查看各通道瞬时值。</li>
+  <li><b>导出数据</b> — 点击底部 <b>Export Datalog</b> 导出 CSV 或 DLOG 文件。</li>
+</ol>
+<p>提示：点击右下角帮助按钮（问号图标）打开本手册，并使用「一键引导」跟随高亮提示逐步完成上述流程。</p>
+
+<h3>界面布局</h3>
 <ul>
-  <li><b>数据采集</b> — 以设定的采样率连续记录电压/电流数据</li>
-  <li><b>波形显示</b> — 实时或离线查看采集的波形图</li>
-  <li><b>数据导入/导出</b> — 支持 CSV、DLOG、EDLG 格式的数据导入与导出</li>
-  <li><b>功率计算</b> — 根据采集的电压和电流自动计算各通道功率</li>
+  <li><b>左侧图标栏</b> — Settings（采集/测量设置）与 Instrument Connection（仪器连接）两个面板互斥单开；未连接仪器时默认展开连接面板，已连接时全部收起。</li>
+  <li><b>Datalog Viewer</b> — 中央波形区，多通道纵向分带（band）显示；左侧通道名标签可双击重命名。</li>
+  <li><b>MEASUREMENT</b> — 波形下方的测量统计表，显示 Measurement Settings 中勾选的指标；放置 Marker 后统计范围限定在标记区间内。</li>
+  <li><b>Channel Config</b> — 底部通道配置区，Active 页签管理已连接仪器的通道，导入的文件各有独立页签（可关闭）。</li>
+  <li><b>底部控制栏</b> — Start Recording / Export / Import 靠左；设置齿轮（五标签设置对话框）与帮助按钮靠右。</li>
 </ul>
 
-<h3>测试方法</h3>
+<h3>图表工具栏</h3>
+<ul>
+  <li><b>Box Zoom</b> — 框选缩放模式（开启 4 秒后自动关闭）</li>
+  <li><b>Fit View</b> — 自动适配视图，显示全部数据</li>
+  <li><b>Marker A / Marker B</b> — 进入放置模式后在图表上点击放置标记线</li>
+  <li><b>Add Markers</b> — 将当前 A/B 标记保存为一组命名标记</li>
+  <li><b>Clear Markers</b> — 清除所有标记线</li>
+  <li><b>Time Offset</b> — 仪器 B 波形时间偏移对齐（仅双仪器模式可见）</li>
+</ul>
+
+<h3>波形交互</h3>
+<ul>
+  <li><b>点击通道区域</b> — 选中该通道（高亮其 band 区域）</li>
+  <li><b>上下拖拽</b> — 调整选中通道的纵向偏移</li>
+  <li><b>鼠标滚轮</b> — 缩放选中通道的纵向比例</li>
+  <li><b>悬停</b> — 显示十字线与各通道当前时间点的数值 Tooltip</li>
+  <li><b>拖拽标记线</b> — 直接移动 Marker A / B</li>
+  <li><b>Reset View</b> — 见 <i>Fit View</i>，一键恢复全览</li>
+</ul>
+
+<h3>Marker 区间分析</h3>
 <ol>
-  <li>确保 N6705C 已在 Power Analyser 页面完成连接</li>
-  <li>配置采样率和采集时间等参数</li>
-  <li>点击开始按钮进行数据采集</li>
-  <li>采集完成后可查看波形图，并将数据导出为文件</li>
+  <li>点击 <b>Marker A</b> 后在图表上点击放置标记线 A，同法放置 Marker B。</li>
+  <li>A/B 之间区域高亮显示，测量表自动统计区间内的各项指标。</li>
+  <li>标记线可拖拽微调；右键 Marker 按钮可快捷操作。</li>
+  <li>双仪器模式下，可用 Marker 自动计算两台仪器之间的时间偏移量。</li>
 </ol>
 
-<h3>一键截图</h3>
-<p>主窗口右上角截图按钮（独立运行时位于自建标题栏右侧）将 Datalog 波形 + MEASUREMENT 区域截取为图片并复制到系统剪贴板。</p>
+<h3>双仪器模式（8 通道）</h3>
+<ul>
+  <li>连接两台 N6705C（分别占用插槽 A 和 B）即可同步采集 8 个通道。</li>
+  <li>通道名自动加 <b>A-</b> / <b>B-</b> 前缀区分来源。</li>
+  <li>使用 <b>Time Offset</b> 对齐两台仪器的时间基准。</li>
+</ul>
+
+<h3>数据导入 / 导出</h3>
+<p><b>Import Datalog</b> 支持以下格式，导入数据以 F1-、F2- 等前缀与实时数据区分：</p>
+<ul>
+  <li><b>.csv</b> — 首列为时间，后续列为各通道数据；支持附带 [CUSTOM_LABELS] 与 [CH_NAME_RENAMES] 段</li>
+  <li><b>.dlog</b> — Keysight 原始二进制 Datalog 格式</li>
+  <li><b>.edlg</b> — Keysight 扩展 Datalog 格式</li>
+</ul>
+<p><b>Export Datalog</b> 支持导出：</p>
+<ul>
+  <li><b>.csv</b> — 时间列 + 全部通道数据；双仪器分 Time_A(s) / Time_B(s) 两组时间列；同时导出自定义标注与通道重命名信息</li>
+  <li><b>.dlog</b> — 原始二进制 Datalog 数据（需先有采集或导入的原始数据）</li>
+</ul>
+
+<h3>自动保存（DLog Save）</h3>
+<p>在设置对话框的 <b>DLog Save</b> 页签中可开启录制正常结束后的自动写盘（.dlog），支持命名模板占位符 {date} / {time} / {datetime} / {seq}（递增序号）。录制出错时自动跳过保存。</p>
+
+<h3>设置对话框（底部齿轮）</h3>
+<ul>
+  <li><b>Instruments</b> — 管理默认仪器（增/改/删）与每台/全局自动连接</li>
+  <li><b>Network Scan</b> — 配置设备搜索的额外网段</li>
+  <li><b>DLog Save</b> — 自动保存目录与命名模板</li>
+  <li><b>Waveform Summary</b> — 波形摘要事件检测算法参数</li>
+  <li><b>About</b> — 版本信息、配置目录、还原默认设置</li>
+</ul>
+
+<h3>一键截图与波形摘要</h3>
+<ul>
+  <li><b>一键截图</b> — 标题栏截图按钮将 Datalog 波形 + MEASUREMENT 区域截取为图片并复制到剪贴板。</li>
+  <li><b>波形摘要</b> — 标题栏摘要按钮将波形压缩为平直线段示意图（标注 S1..Sn）+ 阶段汇总表，复制到剪贴板，便于粘贴给 AI 分析。</li>
+</ul>
+
+<h3>自定义标注（Custom Labels）</h3>
+<p>通过标题栏的标签按钮展开 CUSTOM LABELS 面板：选择通道、输入时间点与文字，点击「+」在波形上添加文字标注；标注随 CSV 一同导出。</p>
+
+<h3>常见问题</h3>
+<ul>
+  <li><b>搜索不到设备？</b> — 确认仪器与电脑在同一局域网；在设置对话框 Network Scan 页签中添加仪器所在网段后重新搜索；或改用「⋯」→ Add Instrument Manually 手动添加。</li>
+  <li><b>Start Recording 不可点？</b> — 需至少连接一台仪器且在 Channel Config 中勾选了至少一个通道的测量类型（I / V / P）。</li>
+  <li><b>波形超出显示范围？</b> — 在 Channel Config 中调整对应通道的 Scale / Offset，或点击 Fit View 自动适配。</li>
+  <li><b>没有仪器也想体验？</b> — 调试模式（DEBUG_MOCK）下自动生成模拟设备与随机数据，可无仪器体验完整流程。</li>
+</ul>
+
+<h3>快捷操作一览</h3>
+<ul>
+  <li>点击波形区域 — 选中通道</li>
+  <li>拖拽（选中通道）— 纵向偏移波形</li>
+  <li>滚轮（选中通道）— 缩放纵向比例</li>
+  <li>双击通道名 — 重命名通道</li>
+  <li>右键插槽 — 断开连接菜单</li>
+  <li>Esc — 退出一键引导</li>
+</ul>

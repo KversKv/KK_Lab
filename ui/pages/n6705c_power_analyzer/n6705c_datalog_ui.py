@@ -71,6 +71,10 @@ from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import (
     save_datalog_app_settings,
     waveform_summary_params,
 )
+from ui.pages.n6705c_power_analyzer.n6705c_datalog_help import (
+    DatalogHelpDialog,
+    GuideTourOverlay,
+)
 from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
 from ui.widgets.config_memory import ConfigMemory
 from ui.utils.icon_utils import tinted_svg_icon
@@ -1384,6 +1388,8 @@ class N6705CDatalogUI(QWidget):
 
         self._record_thread = None
         self._record_worker = None
+        # 一键引导覆盖层（GuideTourOverlay），None 表示未在引导中
+        self._guide_tour = None
 
         self.datalog_data = {}
         self._raw_dlog_list = []
@@ -2502,6 +2508,13 @@ class N6705CDatalogUI(QWidget):
         self.bottom_settings_btn.setToolTip("Settings")
         self.bottom_settings_btn.clicked.connect(self._on_open_settings_dialog)
         bottom_bar_layout.addWidget(self.bottom_settings_btn)
+
+        self.bottom_help_btn = QPushButton()
+        self.bottom_help_btn.setObjectName("bottomSettingsBtn")
+        self.bottom_help_btn.setIcon(_make_svg_icon("help-circle.svg", "#8eb0e3", 16))
+        self.bottom_help_btn.setToolTip("Help / Guided Tour")
+        self.bottom_help_btn.clicked.connect(self._on_open_help_dialog)
+        bottom_bar_layout.addWidget(self.bottom_help_btn)
 
         main_area.addWidget(self.bottom_bar)
 
@@ -4710,6 +4723,86 @@ class N6705CDatalogUI(QWidget):
         dialog = N6705CSettingsDialog(self)
         dialog.exec()
 
+    def _on_open_help_dialog(self):
+        """底部控制栏帮助按钮：弹出帮助手册对话框；点「一键引导」则启动逐步引导。"""
+        dialog = DatalogHelpDialog(self)
+        if dialog.exec() == DatalogHelpDialog.GUIDE_REQUESTED:
+            self._start_guide_tour()
+
+    def _start_guide_tour(self):
+        """一键引导：高亮关键控件，逐步讲解 连接仪器→配置→采集→分析→导出 基础流程。"""
+        if self._guide_tour is not None:
+            return
+        show_panel = self._show_left_panel
+        prev_panel = ("settings" if not self.settings_panel.isHidden()
+                      else "instrument" if not self.instrument_panel.isHidden() else None)
+        steps = [
+            {
+                "target": None,
+                "title": "欢迎使用 N6705C Datalog",
+                "text": "本引导将带你完成一次完整的数据采集流程：\n连接仪器 → 配置采集参数 → 勾选通道 → 开始记录 → 分析波形 → 导出数据。\n\n点击「下一步」继续，随时可按 Esc 或「跳过引导」退出。",
+            },
+            {
+                "target": self.rail_instrument_btn,
+                "title": "第 1 步：打开仪器连接面板",
+                "text": "点击左侧边栏的链接图标，打开 Instrument Connection 面板。\n（引导已为你自动展开）",
+                "on_enter": lambda: show_panel("instrument"),
+            },
+            {
+                "target": self.instrument_panel,
+                "title": "第 2 步：搜索并连接仪器",
+                "text": "点击左上角搜索按钮扫描局域网内的 N6705C；在设备卡片上点击 Connect 完成连接，设备自动分配到插槽 A / B / C / D。\n\n搜索不到时，可通过右上角「⋯」→ Add Instrument Manually 手动添加（TCP/IP 或 USB）。",
+                "on_enter": lambda: show_panel("instrument"),
+            },
+            {
+                "target": self.config_card,
+                "title": "第 3 步：配置采集参数",
+                "text": "打开 Settings 面板，在 DATALOG CONFIG 中设置：\n· Sampling Period (μs)：采样周期，默认 20；勾选 Minimum 自动使用最小周期\n· Monitoring Time (s)：监控时长，到时自动停止采集",
+                "on_enter": lambda: show_panel("settings"),
+            },
+            {
+                "target": self.meas_settings_card,
+                "title": "第 4 步：选择测量项",
+                "text": "在 Measurement Settings 中勾选需要统计的指标（Average / Maximum / Minimum / Peak to Peak / Charge / Energy），采集完成后显示在波形下方的测量表中。",
+                "on_enter": lambda: show_panel("settings"),
+            },
+            {
+                "target": self.channel_config_outer,
+                "title": "第 5 步：勾选采集通道",
+                "text": "在 Channel Config 的 Active 页签中，为每个通道勾选需要采集的类型：I（电流）/ V（电压）/ P（功率）。\n波形显示超出范围时可调整各通道的 Scale / Offset。",
+                "on_enter": lambda: show_panel(None),
+            },
+            {
+                "target": self.start_btn,
+                "title": "第 6 步：开始采集",
+                "text": "点击 Start Recording 开始记录，进度条显示采集进度；到达监控时长后自动停止，波形立即绘制到图表中。",
+            },
+            {
+                "target": self.chart_frame,
+                "title": "第 7 步：分析波形",
+                "text": "· 点击通道区域选中，拖拽调整偏移、滚轮缩放比例\n· 悬停查看各通道在当前时间点的数值\n· 工具栏 Marker A / B 放置标记线，圈选区间做统计分析\n· Box Zoom 框选放大，Fit View 一键全览",
+            },
+            {
+                "target": self.measurement_card,
+                "title": "第 8 步：查看测量结果",
+                "text": "测量表实时显示各通道的统计值（第 4 步勾选的指标）；放置 Marker A / B 后，统计范围自动限定在标记区间内。",
+            },
+            {
+                "target": self.export_btn,
+                "title": "第 9 步：导出数据",
+                "text": "点击 Export Datalog 将数据导出为 CSV 或 DLOG 文件；旁边的 Import 按钮可导入外部数据文件进行对比分析。",
+            },
+            {
+                "target": None,
+                "title": "引导完成",
+                "text": "你已经掌握了 Datalog 的基础流程！\n\n· 底部齿轮按钮：打开设置对话框（默认仪器 / 网段 / 自动保存 / 摘要算法）\n· 底部问号按钮：随时重新打开帮助手册与一键引导",
+            },
+        ]
+        tour = GuideTourOverlay(self.window(), steps)
+        self._guide_tour = tour
+        tour.finished.connect(lambda: self._show_left_panel(prev_panel))
+        tour.destroyed.connect(lambda: setattr(self, "_guide_tour", None))
+
     def _on_add_instrument_manually(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add Instrument Manually")
@@ -5156,6 +5249,13 @@ class N6705CDatalogUI(QWidget):
                 if snap_marker:
                     screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
                     self._show_marker_context_menu_at(snap_marker, screen_pos)
+                    return True
+                vb = self.plot_widget.getPlotItem().getViewBox()
+                if (self._find_annotation_at_scene(scene_pos) is None
+                        and vb.sceneBoundingRect().contains(scene_pos)):
+                    screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
+                    x_val = vb.mapSceneToView(scene_pos).x()
+                    self._show_marker_move_here_menu(x_val, screen_pos)
                     return True
         vb = self.plot_widget.getPlotItem().getViewBox()
         if obj is not vb:
@@ -6773,6 +6873,8 @@ class N6705CDatalogUI(QWidget):
             line = em.get(f"line{w}")
             if line is not None:
                 line.setValue(x)
+            else:
+                self._place_extra_marker_line(em, w)
 
     def _set_marker_position_dialog(self, which):
         """弹窗直接输入横坐标（单位 s）来设置 Marker 位置。"""
@@ -7498,6 +7600,27 @@ class N6705CDatalogUI(QWidget):
                 self._delete_ab_markers()
             elif pair_type == "EXTRA" and pair_idx >= 0:
                 self._delete_marker_pair(pair_idx)
+
+    def _show_marker_move_here_menu(self, x_val, screen_pos):
+        """图表空白处右键：列出全部 Marker（A/B 及额外标记对，随新增自动拓展），由用户选择移动到此处。"""
+        tags = ["A", "B"]
+        for i in range(len(self._extra_markers)):
+            tags.append(f"X{i}_1")
+            tags.append(f"X{i}_2")
+
+        menu = QMenu(self)
+        menu.setStyleSheet(dss.menu_style())
+        actions = {}
+        for tag in tags:
+            label = self._marker_display_label(tag)
+            actions[menu.addAction(f"将 Marker {label} 移动到此处")] = tag
+
+        chosen = menu.exec(screen_pos)
+        if chosen is None:
+            return
+        self._set_marker_pos(actions[chosen], x_val)
+        self._update_marker_region()
+        self._update_marker_analysis()
 
     def _is_b_label(self, label):
         _, _, is_b = _parse_ch_label(label)

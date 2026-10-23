@@ -397,6 +397,7 @@ ui/
 │   │   ├── analyser_view_batch.py    # 批量操作视图 Mixin (通道选择/批量设值/Auto Set)
 │   │   ├── analyser_view_consumption.py # 功耗测试视图 Mixin (测试配置/结果卡片/采集编排)
 │   │   ├── n6705c_datalog_ui.py      # N6705C 数据记录界面
+│   │   ├── n6705c_datalog_help.py    # Datalog 帮助系统 (手册对话框/一键引导覆盖层)
 │   │   ├── n6705c_analyser_ui_updata_log.txt  # 界面迭代日志
 │   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明
 │   │

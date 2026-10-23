@@ -21,7 +21,7 @@
 - 页面类多继承：`QWidget` + 对应 `ui/modules/` 连接 Mixin + `ExecutionLogsModuleFrame`（如需日志区）。
 - 业务执行路径：读取参数 → 构造 `core/<feature>/` 测试 / controller → 订阅 `progress / point_ready / finished` → `start()`。
 - 结果刷新只通过 Signal/Slot；不直接操作仪器对象。
-- 页面帮助：每个页面在 [helps/](../../helps/) 有对应 HTML，"?"按钮经 `QDesktopServices.openUrl` 打开。
+- 页面帮助：每个页面在 [helps/](../../helps/) 有对应 HTML，"?"按钮经 `QDesktopServices.openUrl` 打开（datalog 页为页面内嵌 `DatalogHelpDialog` + `GuideTourOverlay` 一键引导）。**新增 / 改动页面功能必须主动维护对应帮助手册**（页面含引导的，引导步骤同步更新）。
 
 ## 局部约定
 
