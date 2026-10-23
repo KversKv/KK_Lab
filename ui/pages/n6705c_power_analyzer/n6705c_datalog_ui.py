@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QStackedWidget, QMessageBox, QApplication,
     QStyle, QStyleOptionTab, QStylePainter,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSize, QRect, QEvent, QPoint
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSize, QRect, QEvent, QPoint, QPointF
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon, QTransform, QCursor
 from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
@@ -2618,12 +2618,12 @@ class N6705CDatalogUI(QWidget):
         hi.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     def get_capture_pixmap(self):
-        """一键截图目标：Datalog 波形卡（chart_frame）+ MEASUREMENT 卡纵向合成。
+        """一键截图目标：Datalog 波形卡（chart_frame）+ MEASUREMENT 卡 + Channel Config 纵向合成。
 
         MainWindow 顶栏截图按钮的最高优先级钩子；返回 None 时降级为整页截图。
         """
         pieces = []
-        for widget in (self.chart_frame, self.measurement_card):
+        for widget in (self.chart_frame, self.measurement_card, self.channel_config_outer):
             if not isinstance(widget, QWidget) or not widget.isVisibleTo(self):
                 continue
             pm = widget.grab()
@@ -2634,17 +2634,20 @@ class N6705CDatalogUI(QWidget):
         if len(pieces) == 1:
             return pieces[0]
 
-        gap = 6  # 与 chart_and_meas_layout 行间距一致
+        gap = 6  # 与 chart_and_meas_layout 行间距一致（逻辑像素）
+        # grab() 返回带 devicePixelRatio 的物理像素图，合成图必须同 DPR，QPainter 按逻辑坐标绘制才不留空白
+        dpr = pieces[0].devicePixelRatio()
         width = max(pm.width() for pm in pieces)
-        height = sum(pm.height() for pm in pieces) + gap * (len(pieces) - 1)
+        height = sum(pm.height() for pm in pieces) + round(gap * dpr) * (len(pieces) - 1)
         merged = QPixmap(width, height)
+        merged.setDevicePixelRatio(dpr)
         merged.fill(QColor("#020817"))  # 与 _setup_style 页面背景一致
         painter = QPainter(merged)
         try:
-            y = 0
+            y = 0.0
             for pm in pieces:
-                painter.drawPixmap(0, y, pm)
-                y += pm.height() + gap
+                painter.drawPixmap(QPointF(0, y), pm)
+                y += pm.height() / dpr + gap
         finally:
             painter.end()
         return merged
@@ -9533,12 +9536,12 @@ class _StandaloneTitleBar(QWidget):
 
         layout.addStretch(1)
 
-        # 一键截图按钮：Datalog + MEASUREMENT 区域 → 系统剪贴板（宿主窗口连接处理槽）
+        # 一键截图按钮：Datalog + MEASUREMENT + Channel Config 区域 → 系统剪贴板（宿主窗口连接处理槽）
         self.capture_button = QPushButton(self)
         self.capture_button.setObjectName("captureChartBtn")
         self.capture_button.setCursor(QCursor(Qt.PointingHandCursor))
         self.capture_button.setFocusPolicy(Qt.NoFocus)
-        self.capture_button.setToolTip("截图当前页图表区域并复制到剪贴板")
+        self.capture_button.setToolTip("截图图表/测量/通道配置区域并复制到剪贴板")
         if os.path.isfile(_CAPTURE_ICON_SVG):
             self.capture_button.setIcon(tinted_svg_icon(_CAPTURE_ICON_SVG, "#c6d4f2", 16))
             self.capture_button.setIconSize(QSize(16, 16))
