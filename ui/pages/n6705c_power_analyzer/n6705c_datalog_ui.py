@@ -148,8 +148,6 @@ EXTRA_MARKER_COLORS = [
 ]
 
 _BAND_CEILING = 0.88
-# 通道 band 纵向最小占比：拖拽分隔线时单个 band 高度下限，防止被压到不可见
-_BAND_MIN_FRAC = 0.05
 
 # 成对 Marker 区间注释（Δt/avg 文本框）：默认字号与可选字号
 _ANN_DEFAULT_FONT = 10
@@ -1121,12 +1119,8 @@ class N6705CDatalogUI(QWidget):
         self.ch_power_cbs_b = []
 
         self._band_info = {}
-        self._sep_lines = []
         self._band_grid_lines = []
         self._band_zero_lines = {}
-        # 各 band 纵向高度占比（和为 1，默认均分）；分隔线拖拽时逐对调整
-        self._band_fractions = []
-        self._sep_drag_index = None
         self._selected_ch_key = None
         self._selected_orig_pen = None
         self._selected_highlight = None
@@ -4813,11 +4807,6 @@ class N6705CDatalogUI(QWidget):
                 mouse_point = vb.mapSceneToView(scene_pos)
                 x = mouse_point.x()
                 y = mouse_point.y()
-                sep_idx = self._find_separator_at_y(y)
-                if sep_idx is not None:
-                    # 命中 band 分隔线：进入高度分配拖拽（优先于通道选中/偏移拖拽）
-                    self._sep_drag_index = sep_idx
-                    return True
                 clicked_key = self._find_band_at_y(y, x)
                 if clicked_key:
                     self._select_channel(clicked_key)
@@ -4850,11 +4839,6 @@ class N6705CDatalogUI(QWidget):
                 self._update_marker_analysis()
                 return True
 
-            if self._sep_drag_index is not None:
-                mouse_point = vb.mapSceneToView(scene_pos)
-                self._drag_separator_to(mouse_point.y())
-                return True
-
             if self._ch_drag_active and self._selected_ch_key:
                 mouse_point = vb.mapSceneToView(scene_pos)
                 y = mouse_point.y()
@@ -4863,19 +4847,13 @@ class N6705CDatalogUI(QWidget):
 
             snap_marker = self._find_nearest_marker_at_scene(scene_pos)
             widget = self.plot_widget.viewport() if hasattr(self.plot_widget, 'viewport') else self.plot_widget
-            mouse_point = vb.mapSceneToView(scene_pos)
-            if self._find_separator_at_y(mouse_point.y()) is not None:
-                widget.setCursor(Qt.SizeVerCursor)
-            elif snap_marker:
+            if snap_marker:
                 widget.setCursor(Qt.SizeHorCursor)
             else:
                 widget.unsetCursor()
 
         if event.type() == QEvent.GraphicsSceneMouseRelease:
             if event.button() == Qt.LeftButton:
-                if self._sep_drag_index is not None:
-                    self._sep_drag_index = None
-                    return True
                 if self._marker_drag_target:
                     self._marker_drag_target = None
                     return True
@@ -4887,126 +4865,44 @@ class N6705CDatalogUI(QWidget):
         return super().eventFilter(obj, event)
 
     def _compute_band_edges(self, n):
-        """按当前各 band 高度占比计算 (band_top, band_bottom) 列表（自顶向下累计）。
-
-        占比数量与可见通道数不一致（通道增删/显隐切换）时重置为均分。
-        """
+        """计算 n 个均分 band 的 (band_top, band_bottom) 列表（自顶向下累计）。"""
         if n <= 0:
             return []
-        fracs = self._band_fractions
-        total = sum(fracs)
-        if len(fracs) != n or total <= 0:
-            fracs = [1.0 / n] * n
-        elif abs(total - 1.0) > 1e-6:
-            fracs = [f / total for f in fracs]
-        self._band_fractions = fracs
         edges = []
         top = _BAND_CEILING
-        for f in fracs:
-            bottom = top - f * _BAND_CEILING
+        frac = _BAND_CEILING / n
+        for _ in range(n):
+            bottom = top - frac
             edges.append((top, bottom))
             top = bottom
         return edges
 
-    def _find_separator_at_y(self, y):
-        """命中检测：y 是否落在某条 band 分隔线的拖拽容差内，返回线索引或 None。"""
-        if not self._sep_lines:
-            return None
-        vb = self.plot_widget.getPlotItem().getViewBox()
-        view_height_px = vb.screenGeometry().height() or 1
-        y_min, y_max = vb.viewRange()[1]
-        y_range = (y_max - y_min) if y_max > y_min else 1.0
-        tol = y_range / view_height_px * 6
-        best = None
-        best_dist = tol
-        for i, sep in enumerate(self._sep_lines):
-            d = abs(sep.value() - y)
-            if d <= best_dist:
-                best_dist = d
-                best = i
-        return best
-
-    def _drag_separator_to(self, y):
-        """拖拽分隔线到 y：仅调整相邻两个 band 的占比（和不变），夹紧最小高度后重排。"""
-        idx = self._sep_drag_index
-        if idx is None:
-            return
-        keys = list(self._band_info.keys())
-        if idx < 0 or idx >= len(keys) - 1:
-            return
-        self._compute_band_edges(len(keys))  # 确保占比与当前通道数同步
-        band_above = self._band_info[keys[idx]]
-        band_below = self._band_info[keys[idx + 1]]
-        top = band_above["band_top"]
-        bottom = band_below["band_bottom"]
-        min_h = _BAND_CEILING * _BAND_MIN_FRAC
-        y = max(bottom + min_h, min(top - min_h, y))
-        self._band_fractions[idx] = (top - y) / _BAND_CEILING
-        self._band_fractions[idx + 1] = (y - bottom) / _BAND_CEILING
-        self._apply_band_layout()
-
-    def _apply_band_layout(self):
-        """按 _band_fractions 重算各 band 几何，重排曲线/分隔线/网格/零线/通道标签。"""
-        keys = list(self._band_info.keys())
-        if not keys:
-            return
-        edges = self._compute_band_edges(len(keys))
-        for (band_top, band_bottom), key in zip(edges, keys):
-            band = self._band_info[key]
-            margin = (band_top - band_bottom) * 0.08
-            plot_top = band_top - margin
-            plot_bottom = band_bottom + margin
-            plot_range = plot_top - plot_bottom
-            band["band_top"] = band_top
-            band["band_bottom"] = band_bottom
-            band["plot_top"] = plot_top
-            band["plot_bottom"] = plot_bottom
-            band["plot_range"] = plot_range
-
-            curve = self.plot_curves.get(key)
-            ch_data = self.datalog_data.get(key)
-            if curve is None or not ch_data or not ch_data["values"]:
-                continue
-            init_min = band.get("init_raw_min", band["raw_min"])
-            init_range = band.get("init_raw_range", band["raw_range"]) or 1.0
-            raw_vals = np.asarray(ch_data["values"], dtype=np.float64)
-            norm_vals = plot_bottom + (raw_vals - init_min) * (plot_range / init_range)
-            times = self._get_effective_times(key, ch_data["time"])
-            curve.setData(times, norm_vals)
-            curve.resetTransform()
-            self._redraw_single_channel(key)
-
-        # 分隔线 i 对应 band i 的下边界（与 _rebuild_ch_name_panel 的创建顺序一致）
-        for i, sep in enumerate(self._sep_lines):
-            if i < len(keys):
-                sep.setPos(self._band_info[keys[i]]["band_bottom"])
-        self._rebuild_band_grid_lines()
-        for item in self._ch_label_items:
-            band = self._band_info.get(item.property("ch_key"))
-            if band:
-                item.setProperty("y_center", (band["plot_top"] + band["plot_bottom"]) / 2)
-        self._update_ch_label_positions()
-        self._update_band_zero_lines()
-
     def _rebuild_band_grid_lines(self):
-        """纵轴点线网格：每个 band 内部 5 等分（按各 band 实际上下界），band 交界处不叠线。"""
+        """纵轴点线网格：8 格均分整个图表区域纵向高度（与通道 band 划分无关）。"""
         for line in self._band_grid_lines:
             try:
                 self.plot_widget.removeItem(line)
             except Exception:
                 pass
         self._band_grid_lines.clear()
-        for band in self._band_info.values():
-            band_h = band["band_top"] - band["band_bottom"]
-            for k in range(1, 5):
-                gy = band["band_bottom"] + k * band_h / 5
-                grid_line = pg.InfiniteLine(
-                    pos=gy, angle=0, movable=False,
-                    pen=pg.mkPen(color=(142, 176, 227, 100), width=1, style=Qt.DotLine),
-                )
-                grid_line.setZValue(-11)
-                self.plot_widget.addItem(grid_line, ignoreBounds=True)
-                self._band_grid_lines.append(grid_line)
+        for _ in range(7):
+            grid_line = pg.InfiniteLine(
+                pos=0, angle=0, movable=False,
+                pen=pg.mkPen(color=(142, 176, 227, 100), width=1, style=Qt.DotLine),
+            )
+            grid_line.setZValue(-11)
+            self.plot_widget.addItem(grid_line, ignoreBounds=True)
+            self._band_grid_lines.append(grid_line)
+        self._update_grid_line_positions()
+
+    def _update_grid_line_positions(self):
+        """按当前可见 Y 范围 8 格均分重定位网格线（挂入 _on_range_changed 实时跟随）。"""
+        if not self._band_grid_lines:
+            return
+        y_min, y_max = self.plot_widget.getPlotItem().getViewBox().viewRange()[1]
+        step = (y_max - y_min) / 8
+        for k, line in enumerate(self._band_grid_lines, start=1):
+            line.setPos(y_min + k * step)
 
     def _find_band_at_y(self, y, x=None):
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -5181,7 +5077,12 @@ class N6705CDatalogUI(QWidget):
     def _on_mouse_moved(self, evt):
         pos = evt[0]
         vb = self.plot_widget.getPlotItem().getViewBox()
-        if not self.plot_widget.sceneBoundingRect().contains(pos):
+        # SignalProxy(rateLimit=30) 会延迟投递最后一个 sigMouseMoved（慢速移出时），
+        # 在 Leave 隐藏之后才触发导致预览线残留，须以真实光标位置为准
+        cursor_inside = self.plot_widget.rect().contains(
+            self.plot_widget.mapFromGlobal(QCursor.pos())
+        )
+        if not cursor_inside or not self.plot_widget.sceneBoundingRect().contains(pos):
             self._hide_crosshair()
             return
 
@@ -5458,12 +5359,6 @@ class N6705CDatalogUI(QWidget):
         for key, curve in self.plot_curves.items():
             curve.setVisible(key in visible_keys)
 
-        for line in self._sep_lines:
-            try:
-                self.plot_widget.removeItem(line)
-            except Exception:
-                pass
-        self._sep_lines.clear()
         for line in self._band_grid_lines:
             try:
                 self.plot_widget.removeItem(line)
@@ -5478,7 +5373,6 @@ class N6705CDatalogUI(QWidget):
         self._band_zero_lines.clear()
 
         self._band_info = {}
-        self._sep_drag_index = None
 
         if n == 0:
             for item in self._ch_label_items:
@@ -6145,10 +6039,8 @@ class N6705CDatalogUI(QWidget):
         self._extra_marker_text_items = []
         self._marker_ab_text_item = None
         self._band_info = {}
-        self._sep_lines = []
         self._band_grid_lines = []
         self._band_zero_lines = {}
-        self._sep_drag_index = None
         self._selected_ch_key = None
         self._selected_orig_pen = None
         self._selected_highlight = None
@@ -7460,12 +7352,6 @@ class N6705CDatalogUI(QWidget):
             except Exception:
                 pass
         self._ch_label_items.clear()
-        for line in self._sep_lines:
-            try:
-                self.plot_widget.removeItem(line)
-            except Exception:
-                pass
-        self._sep_lines.clear()
         for line in self._band_grid_lines:
             try:
                 self.plot_widget.removeItem(line)
@@ -7486,7 +7372,6 @@ class N6705CDatalogUI(QWidget):
         if not entries:
             return
 
-        band_boundaries = []
         for key, color in entries:
             display = self.ch_name_renames.get(key, _display_label(key))
             band = self._band_info.get(key)
@@ -7507,19 +7392,7 @@ class N6705CDatalogUI(QWidget):
             text_item.setProperty("ch_key", key)
             self._ch_label_items.append(text_item)
 
-            if band:
-                band_boundaries.append(band["band_bottom"])
-
-        for boundary_y in band_boundaries[:-1]:
-            sep = pg.InfiniteLine(
-                pos=boundary_y, angle=0, movable=False,
-                pen=pg.mkPen(color="#3d5a94", width=1, style=Qt.DashLine),
-            )
-            sep.setZValue(-10)
-            self.plot_widget.addItem(sep, ignoreBounds=True)
-            self._sep_lines.append(sep)
-
-        # 纵轴 scale 网格：每个 band 内部 5 等分点线（band 交界处由分隔虚线表达，不叠点线）
+        # 纵轴 scale 网格：8 格均分点线
         self._rebuild_band_grid_lines()
 
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -7825,6 +7698,7 @@ class N6705CDatalogUI(QWidget):
     def _on_range_changed(self):
         self._update_ch_label_positions()
         self._update_custom_label_positions()
+        self._update_grid_line_positions()
         self._update_scale_offset_from_view()
         if self.box_zoom_enabled and self._box_zoom_auto_off_timer.isActive():
             self._box_zoom_auto_off_timer.start()

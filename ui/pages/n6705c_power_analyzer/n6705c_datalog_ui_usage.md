@@ -74,7 +74,7 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 
 ### 4. 中央区域 —— Datalog Viewer（波形图表）
 - 使用 pyqtgraph 绘制多通道叠加波形。
-- 每个通道显示在独立的纵向分区（band）中，通道之间以虚线分隔。
+- 每个通道显示在独立的纵向分区（band）中。
 - 左侧显示通道名称标签（可双击重命名）。
 - X 轴为时间轴（秒），支持鼠标拖拽缩放。
 
