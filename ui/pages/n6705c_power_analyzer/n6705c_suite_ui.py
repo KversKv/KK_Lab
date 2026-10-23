@@ -20,7 +20,7 @@ sys.path.append(get_resource_base())
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QStackedWidget, QButtonGroup, QApplication,
+    QStackedWidget, QButtonGroup, QApplication, QFrame,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QEvent, QCoreApplication
 from PySide6.QtGui import QPixmap, QCursor, QCloseEvent
@@ -47,6 +47,9 @@ _APP_ICON_SVG = os.path.join(
 )
 _CAPTURE_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
+)
+_LABELS_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "tag.svg"
 )
 
 # 控件高度单一权威：标题栏内按钮用 ID 选择器钉死尺寸，不写裸 QPushButton 规则；
@@ -106,6 +109,26 @@ QPushButton#captureChartBtn:hover {
     background-color: #1b2640;
 }
 QPushButton#captureChartBtn:pressed {
+    background-color: #2563eb;
+}
+QFrame#titleBarSeparator {
+    background-color: #2a3a5f;
+    border: none;
+}
+QPushButton#labelsToggleBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#labelsToggleBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#labelsToggleBtn:checked {
     background-color: #2563eb;
 }
 QPushButton#winCtrlBtn,
@@ -193,6 +216,23 @@ class _SuiteTitleBar(QWidget):
             self.capture_button.setIconSize(QSize(16, 16))
         layout.addWidget(self.capture_button, 0, Qt.AlignVCenter)
 
+        # 分割线 + Custom Labels 展开/折叠按钮（仅 standalone 且 Datalog 页签激活时可见）
+        self.labels_separator = QFrame(self)
+        self.labels_separator.setObjectName("titleBarSeparator")
+        self.labels_separator.setFixedSize(1, 16)
+        layout.addWidget(self.labels_separator, 0, Qt.AlignVCenter)
+
+        self.labels_button = QPushButton(self)
+        self.labels_button.setObjectName("labelsToggleBtn")
+        self.labels_button.setCheckable(True)
+        self.labels_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.labels_button.setFocusPolicy(Qt.NoFocus)
+        self.labels_button.setToolTip("Custom Labels")
+        if os.path.isfile(_LABELS_ICON_SVG):
+            self.labels_button.setIcon(tinted_svg_icon(_LABELS_ICON_SVG, "#c6d4f2", 16))
+            self.labels_button.setIconSize(QSize(16, 16))
+        layout.addWidget(self.labels_button, 0, Qt.AlignVCenter)
+
         layout.addSpacing(6)
 
         self._min_btn = self._make_caption_button("winCtrlBtn", "min", "最小化", self._on_minimize)
@@ -206,12 +246,13 @@ class _SuiteTitleBar(QWidget):
 
         if not standalone:
             for w in (self._icon_label, self._title_label,
-                      self.capture_button,
+                      self.capture_button, self.labels_separator, self.labels_button,
                       self._min_btn, self._max_btn, self._close_btn):
                 w.hide()
 
         self._interactive_widgets = list(self._tab_buttons.values()) + [
             self.capture_button,
+            self.labels_button,
             self._min_btn,
             self._max_btn,
             self._close_btn,
@@ -458,6 +499,13 @@ class N6705CSuiteWindow(QWidget):
         self._stack.setCurrentWidget(self._pages[first_key])
         self._title_bar.set_current_page(first_key)
 
+        # Custom Labels 按钮 ↔ Datalog 子页面板联动
+        self._title_bar.labels_button.clicked.connect(self._on_labels_button_toggled)
+        datalog = self.datalog_page
+        if datalog is not None:
+            datalog.labels_panel_toggled.connect(self._on_datalog_labels_toggled)
+        self._sync_labels_button()
+
     # ---- 页面访问 ----
     def page(self, key):
         return self._pages.get(key)
@@ -478,10 +526,29 @@ class N6705CSuiteWindow(QWidget):
             return
         if page is self._stack.currentWidget():
             self._title_bar.set_current_page(key)
+            self._sync_labels_button()
             return
         self._stack.setCurrentWidget(page)
         self._title_bar.set_current_page(key)
+        self._sync_labels_button()
         self.page_changed.emit(key)
+
+    def _sync_labels_button(self):
+        """Custom Labels 按钮仅 standalone 且 Datalog 页签激活时可见，并同步面板展开态。"""
+        visible = self._standalone and self.current_page_key() == "datalog"
+        self._title_bar.labels_separator.setVisible(visible)
+        self._title_bar.labels_button.setVisible(visible)
+        page = self.datalog_page
+        if visible and page is not None:
+            self._title_bar.labels_button.setChecked(page.is_labels_panel_visible())
+
+    def _on_labels_button_toggled(self, checked):
+        page = self.datalog_page
+        if page is not None:
+            page.set_labels_panel_visible(checked)
+
+    def _on_datalog_labels_toggled(self, visible):
+        self._title_bar.labels_button.setChecked(visible)
 
     def current_page_key(self):
         for key, page in self._pages.items():

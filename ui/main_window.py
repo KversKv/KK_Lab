@@ -627,10 +627,12 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.top_bar.compact_view_button.toggled.connect(self._on_compact_view_toggled)
         self.top_bar.pin_button.toggled.connect(self._on_pin_toggled)
         self.top_bar.capture_chart_button.clicked.connect(self._on_capture_chart)
+        self.top_bar.labels_button.clicked.connect(self._on_labels_button_toggled)
         self.main_layout.addWidget(self.top_bar)
         # 默认首页（N6705C）装载早于 top_bar 创建，_fade_in_widget 时
         # top_bar 尚不存在会跳过同步，此处补一次让缩略按钮正确显示
         self._sync_compact_view_button()
+        self._sync_labels_toggle_button()
 
         self._setup_ai_panel(main_splitter)
         _cmc_tick("_setup_ai_panel")
@@ -1587,6 +1589,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             # 子页引用：compact / AI 回调 / 截图链 / 功耗更新等既有代码直连
             self.n6705c_analyser_ui = self.n6705c_suite_ui.analyser_page
             self.n6705c_datalog_ui = self.n6705c_suite_ui.datalog_page
+            self.n6705c_datalog_ui.labels_panel_toggled.connect(self._on_datalog_labels_toggled)
             self.n6705c_analyser_ui._sync_from_top()
             self.n6705c_datalog_ui._sync_from_top()
         else:
@@ -1602,6 +1605,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if key == "analyser" and hasattr(self.n6705c_analyser_ui, 'channels'):
             self.channels = self.n6705c_analyser_ui.channels
         self._sync_compact_view_button()
+        self._sync_labels_toggle_button()
         if getattr(self, "ai_service", None) is not None:
             self.ai_service.set_page_context(self._get_current_help_key())
             self._update_ai_apply_callbacks()
@@ -1880,6 +1884,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if widget is None:
             return
         self._sync_compact_view_button()
+        self._sync_labels_toggle_button()
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
         effect.setOpacity(0.0)
@@ -1910,6 +1915,28 @@ class MainWindow(CleanupMixin, QMainWindow):
         btn.setVisible(self.current_instrument_ui == "power_analyser")
         if not btn.isVisible() and btn.isChecked():
             btn.setChecked(False)
+
+    def _sync_labels_toggle_button(self):
+        """Custom Labels 按钮仅在 N6705C Datalog 页可见，并同步面板展开态。"""
+        top_bar = getattr(self, "top_bar", None)
+        if top_bar is None:
+            return
+        visible = self.current_instrument_ui == "datalog"
+        top_bar.labels_separator.setVisible(visible)
+        top_bar.labels_button.setVisible(visible)
+        page = getattr(self, "n6705c_datalog_ui", None)
+        if visible and page is not None:
+            top_bar.labels_button.setChecked(page.is_labels_panel_visible())
+
+    def _on_labels_button_toggled(self, checked):
+        page = getattr(self, "n6705c_datalog_ui", None)
+        if page is not None:
+            page.set_labels_panel_visible(checked)
+
+    def _on_datalog_labels_toggled(self, visible):
+        top_bar = getattr(self, "top_bar", None)
+        if top_bar is not None:
+            top_bar.labels_button.setChecked(visible)
 
     def _on_compact_view_toggled(self, checked):
         if checked == self._compact_view:

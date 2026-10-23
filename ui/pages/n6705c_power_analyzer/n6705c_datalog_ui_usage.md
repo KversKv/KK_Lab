@@ -37,14 +37,18 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 ### 1. 标题栏
 页面内不再显示大标题（由套件 / 独立窗口标题栏承载），仅保留副标题说明。
 
-### 2. 左侧侧边栏 —— Instrument Connection（仪器连接面板）
-- 点击左侧 **"Instrument Connection"** 垂直文字按钮展开/折叠。
+### 2. 左侧窄边栏 —— 图标栏（Settings / Instrument Connection）
+- 左侧为窄图标栏，含两个图标按钮：**Settings**（齿轮）与 **Instrument Connection**（链接）。
+- 两个面板**互斥单开**：点击图标展开对应面板，点击另一图标直接切换，再次点击当前图标（或面板标题）收起。
+- 默认状态：无仪器连接时自动展开仪器连接面板；已有仪器连接时全部收起。
+
+#### Instrument Connection（仪器连接面板）
 - **设备搜索**：点击搜索按钮自动扫描局域网内的 N6705C 设备。
 - **手动添加仪器**：点击 "⋯" 菜单 → "Add Instrument Manually"，支持 TCPIP 和 GPIB 两种连接方式。
 - **设备卡片**：扫描到的设备以卡片形式显示，包含型号、序列号、IP 地址。每张卡片有 Connect / Disconnect 按钮。
 - **设备插槽 (A/B/C/D)**：已连接的设备会被分配到插槽。右键插槽可执行断开操作。
 
-### 3. 左侧面板 —— 配置区域
+### 3. 左侧面板 —— Settings（设置区域，DATALOG CONFIG + Measurement Settings 合并）
 
 #### DATALOG CONFIG（采集配置）
 | 参数 | 说明 | 默认值 |
@@ -62,10 +66,11 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 - Charge (Ah) / Energy (Wh)（电荷/能量，Ah/Wh 单位）
 - Charge (C) / Energy (J)（电荷/能量，C/J 单位）
 
-#### 操作按钮
+### 3.1 底部控制栏
 - **Start Recording / Stop Recording**：开始或停止数据采集。
 - **Export Datalog**：导出已采集的数据。
 - **Import Datalog**：导入外部数据文件。
+- **Settings 齿轮**（靠右）：弹出设置对话框（内容预留）。
 
 ### 4. 中央区域 —— Datalog Viewer（波形图表）
 - 使用 pyqtgraph 绘制多通道叠加波形。
@@ -100,6 +105,7 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 放置 Marker A 和 Marker B 后，分析结果限定在标记区间内。
 
 #### Label 标注
+CUSTOM LABELS 面板的展开/折叠入口在**标题栏一键截图按钮右侧**（中间有分割线；独立运行窗口 / 套件窗口 / MainWindow 宿主顶栏均有，套件与宿主顶栏仅 Datalog 页激活时显示）。
 可在波形上添加自定义文字标注：
 - 选择通道
 - 输入时间点
@@ -196,7 +202,6 @@ widget = N6705CDatalogUI(n6705c_top=top_instance)
 | `_ScanWorker` | 后台线程 Worker，用于扫描局域网内的 N6705C 设备 |
 | `_ConnectWorker` | 后台线程 Worker，用于连接指定仪器 |
 | `_DatalogWorker` | 后台线程 Worker，执行数据采集（配置、启动、等待、读取数据） |
-| `VerticalTextButton` | 可折叠面板的垂直文字按钮控件 |
 | `CardFrame` | 带标题和图标的卡片式容器 |
 | `ChannelNameLabel` | 可编辑的通道名称标签（双击重命名） |
 | `ToggleLabel` | 可点击切换的标签控件 |

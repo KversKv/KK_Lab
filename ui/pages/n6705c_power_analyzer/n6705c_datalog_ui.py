@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QSizePolicy, QFileDialog,
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
-    QToolButton, QDialog, QTabWidget, QTabBar,
+    QToolButton, QDialog, QTabWidget, QTabBar, QDialogButtonBox,
     QProgressBar, QStackedWidget, QMessageBox, QApplication,
     QStyle, QStyleOptionTab, QStylePainter,
 )
@@ -944,112 +944,6 @@ class ChannelConfigTabBar(QTabBar):
             self.tabIcon(index).paint(painter, icon_rect, Qt.AlignCenter, mode)
 
 
-class VerticalTextButton(QWidget):
-    clicked = Signal(bool)
-
-    def __init__(self, text="", icon_collapsed="", icon_expanded="", parent=None):
-        super().__init__(parent)
-        self._text = text
-        self._checked = False
-        self._hovered = False
-        self._icon_collapsed_svg = ""
-        self._icon_expanded_svg = ""
-        self.setFixedWidth(28)
-        self.setMinimumHeight(180)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setAttribute(Qt.WA_Hover)
-
-        if icon_collapsed:
-            self._icon_collapsed_svg = self._load_svg(icon_collapsed)
-        if icon_expanded:
-            self._icon_expanded_svg = self._load_svg(icon_expanded)
-
-    @staticmethod
-    def _load_svg(svg_file):
-        svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
-        with open(svg_path, "r", encoding="utf-8") as f:
-            return f.read()
-
-    def isChecked(self):
-        return self._checked
-
-    def setChecked(self, val):
-        self._checked = val
-        self.update()
-
-    def enterEvent(self, event):
-        self._hovered = True
-        self.update()
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        self.update()
-
-    def mousePressEvent(self, event):
-        self._checked = not self._checked
-        self.update()
-        self.clicked.emit(self._checked)
-
-    def _render_icon(self, color_hex):
-        svg_raw = self._icon_expanded_svg if self._checked else self._icon_collapsed_svg
-        if not svg_raw:
-            return None
-        svg_data = svg_raw.replace("currentColor", color_hex)
-        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-        icon_size = 16
-        pixmap = QPixmap(icon_size, icon_size)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return pixmap
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-
-        if self._checked:
-            bg = QColor("#1a3260")
-            border = QColor("#3a6fd4")
-        elif self._hovered:
-            bg = QColor("#1a3260")
-            border = QColor("#27406f")
-        else:
-            bg = QColor("#13254b")
-            border = QColor("#27406f")
-
-        p.setBrush(bg)
-        p.setPen(QPen(border, 1))
-        p.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6)
-
-        text_color = QColor("#dce7ff") if (self._checked or self._hovered) else QColor("#8eb0e3")
-
-        icon_pixmap = self._render_icon(text_color.name())
-        icon_offset = 0
-        if icon_pixmap:
-            icon_x = (w - icon_pixmap.width()) // 2
-            icon_y = 8
-            p.drawPixmap(icon_x, icon_y, icon_pixmap)
-            icon_offset = icon_pixmap.height() + 4
-
-        p.setPen(text_color)
-        font = QFont()
-        font.setWeight(QFont.DemiBold)
-        font.setPixelSize(12)
-        p.setFont(font)
-
-        text_area_top = icon_offset
-        text_area_height = h - text_area_top
-        p.save()
-        p.translate(w / 2, text_area_top + text_area_height / 2)
-        p.rotate(90)
-        p.drawText(-text_area_height // 2, -w // 2, text_area_height, w, Qt.AlignCenter, self._text)
-        p.restore()
-
-        p.end()
-
-
 class CardFrame(QFrame):
     header_clicked = Signal()
 
@@ -1175,6 +1069,7 @@ class FixedPopupComboBox(DarkComboBox):
 
 class N6705CDatalogUI(QWidget):
     connection_status_changed = Signal(bool)
+    labels_panel_toggled = Signal(bool)
 
     def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
@@ -1295,8 +1190,7 @@ class N6705CDatalogUI(QWidget):
         self._auto_connect_enabled_cards()
 
         if not (self.is_connected_a or self.is_connected_b):
-            self.instrument_toggle_btn.setChecked(True)
-            self._toggle_instrument_panel(True)
+            self._show_left_panel("instrument")
         # §5b：登记本页无专用接口的按钮（Auto Fit / 导出 / 导入）为具名 UI 动作
         self._register_ai_ui_actions()
 
@@ -1875,6 +1769,55 @@ class N6705CDatalogUI(QWidget):
             QCheckBox::indicator:checked {
                 image: url("__CHECKED__");
             }
+
+            QPushButton#railIconBtn {
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+                padding: 0px;
+                border-radius: 6px;
+                border: 1px solid transparent;
+                background-color: transparent;
+            }
+
+            QPushButton#railIconBtn:hover {
+                background-color: #16294f;
+                border: 1px solid transparent;
+            }
+
+            QPushButton#railIconBtn:checked {
+                background-color: #1a3260;
+                border: 1px solid #3a6fd4;
+            }
+
+            QPushButton#primaryActionBtn {
+                min-height: 34px;
+                max-height: 34px;
+                padding: 0px 18px;
+            }
+
+            QPushButton#exportBtn {
+                min-height: 34px;
+                max-height: 34px;
+                padding: 0px 12px;
+            }
+
+            QPushButton#bottomSettingsBtn {
+                min-width: 34px;
+                max-width: 34px;
+                min-height: 34px;
+                max-height: 34px;
+                padding: 0px;
+                border-radius: 8px;
+                border: 1px solid #2a4272;
+                background-color: #13254b;
+            }
+
+            QPushButton#bottomSettingsBtn:hover {
+                background-color: #1a3260;
+                border: 1px solid #3c5fa1;
+            }
         """ + SCROLL_AREA_STYLE).replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
         self.setStyleSheet(full_style)
 
@@ -1915,19 +1858,82 @@ class N6705CDatalogUI(QWidget):
         content_layout.setSpacing(6)
         root_layout.addLayout(content_layout, 1)
 
-        instr_sidebar = QWidget()
-        instr_sidebar.setStyleSheet("QWidget { background: transparent; }")
-        instr_sidebar_layout = QHBoxLayout(instr_sidebar)
-        instr_sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        instr_sidebar_layout.setSpacing(0)
+        # --- 左侧窄边栏（单图标 rail：Settings / Instrument Connection 互斥单开）---
+        self.left_rail = QWidget()
+        self.left_rail.setObjectName("leftRail")
+        self.left_rail.setStyleSheet("QWidget#leftRail { background: transparent; }")
+        rail_layout = QVBoxLayout(self.left_rail)
+        rail_layout.setContentsMargins(0, 0, 0, 0)
+        rail_layout.setSpacing(6)
 
-        self.instrument_toggle_btn = VerticalTextButton(
-            "Instrument Connection",
-            icon_collapsed="panel-left.svg",
-            icon_expanded="panel-left-close.svg",
+        self._rail_icon_normal = "#8eb0e3"
+        self._rail_icon_active = "#dce7ff"
+
+        self.rail_settings_btn = QPushButton()
+        self.rail_settings_btn.setObjectName("railIconBtn")
+        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", self._rail_icon_normal, 14))
+        self.rail_settings_btn.setCheckable(True)
+        self.rail_settings_btn.setToolTip("Settings")
+        self.rail_settings_btn.clicked.connect(self._toggle_settings_panel)
+        rail_layout.addWidget(self.rail_settings_btn, 0, Qt.AlignTop)
+
+        self.rail_instrument_btn = QPushButton()
+        self.rail_instrument_btn.setObjectName("railIconBtn")
+        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", self._rail_icon_normal, 14))
+        self.rail_instrument_btn.setCheckable(True)
+        self.rail_instrument_btn.setToolTip("Instrument Connection")
+        self.rail_instrument_btn.clicked.connect(self._toggle_instrument_panel)
+        rail_layout.addWidget(self.rail_instrument_btn, 0, Qt.AlignTop)
+
+        rail_layout.addStretch()
+        content_layout.addWidget(self.left_rail)
+
+        # --- 左侧面板宿主：设置面板与仪器面板互斥单开，全收起时仅剩窄边栏 ---
+        self.left_panel_host = QWidget()
+        self.left_panel_host.setStyleSheet("QWidget { background: transparent; }")
+        host_layout = QHBoxLayout(self.left_panel_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(0)
+
+        self.settings_panel = QFrame()
+        self.settings_panel.setObjectName("topControlsFrame")
+        self.settings_panel.setFixedWidth(240)
+        self.settings_panel.hide()
+        settings_inner = QVBoxLayout(self.settings_panel)
+        settings_inner.setContentsMargins(8, 8, 8, 8)
+        settings_inner.setSpacing(8)
+
+        self.settings_panel_header = ClickableHeader(
+            "SETTINGS", svg_icon="settings.svg", svg_color="#8eb0e3"
         )
-        self.instrument_toggle_btn.clicked.connect(self._toggle_instrument_panel)
-        instr_sidebar_layout.addWidget(self.instrument_toggle_btn, 0, Qt.AlignTop)
+        self.settings_panel_header.setToolTip("Collapse")
+        self.settings_panel_header.clicked.connect(self._collapse_settings_panel)
+        settings_inner.addWidget(self.settings_panel_header)
+
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        settings_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }" + SCROLL_AREA_STYLE
+        )
+        settings_container = QWidget()
+        settings_container.setStyleSheet("background: transparent;")
+        settings_panel_layout = QVBoxLayout(settings_container)
+        settings_panel_layout.setContentsMargins(0, 0, 4, 0)
+        settings_panel_layout.setSpacing(12)
+
+        self.config_card = CardFrame("DATALOG CONFIG", svg_icon="settings.svg", svg_color="#8eb0e3")
+        self._build_config_card()
+        settings_panel_layout.addWidget(self.config_card)
+
+        self.meas_settings_card = CardFrame("Measurement Settings", svg_icon="crosshair.svg", svg_color="#8eb0e3")
+        self._build_meas_settings_card()
+        settings_panel_layout.addWidget(self.meas_settings_card)
+        settings_panel_layout.addStretch()
+
+        settings_scroll.setWidget(settings_container)
+        settings_inner.addWidget(settings_scroll, 1)
+        host_layout.addWidget(self.settings_panel)
 
         self.instrument_panel = QFrame()
         self.instrument_panel.setObjectName("topControlsFrame")
@@ -2012,9 +2018,9 @@ class N6705CDatalogUI(QWidget):
 
         instr_inner.addLayout(slot_grid)
 
-        instr_sidebar_layout.addWidget(self.instrument_panel)
+        host_layout.addWidget(self.instrument_panel)
 
-        content_layout.addWidget(instr_sidebar)
+        content_layout.addWidget(self.left_panel_host)
 
         main_area = QVBoxLayout()
         main_area.setSpacing(6)
@@ -2022,46 +2028,6 @@ class N6705CDatalogUI(QWidget):
 
         mid_layout = QHBoxLayout()
         mid_layout.setSpacing(6)
-
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setFixedWidth(240)
-
-        left_container = QWidget()
-        left_container.setStyleSheet("background: transparent;")
-        self.left_layout = QVBoxLayout(left_container)
-        self.left_layout.setContentsMargins(0, 6, 4, 0)
-        self.left_layout.setSpacing(12)
-
-        self.config_card = CardFrame("DATALOG CONFIG", svg_icon="settings.svg", svg_color="#8eb0e3")
-        self._build_config_card()
-        self.left_layout.addWidget(self.config_card)
-
-        self.meas_settings_card = CardFrame("Measurement Settings", svg_icon="crosshair.svg", svg_color="#8eb0e3")
-        self._build_meas_settings_card()
-        self.left_layout.addWidget(self.meas_settings_card)
-
-        self.left_layout.addStretch()
-
-        self.start_btn = QPushButton("Start Recording")
-        self.start_btn.setIcon(_make_svg_icon("play.svg", "#ffffff", 16))
-        self.start_btn.setObjectName("primaryActionBtn")
-        self.start_btn.setProperty("running", "false")
-        self.left_layout.addWidget(self.start_btn)
-
-        self.export_btn = QPushButton("Export Datalog")
-        self.export_btn.setIcon(_make_svg_icon("download.svg"))
-        self.export_btn.setObjectName("exportBtn")
-        self.left_layout.addWidget(self.export_btn)
-
-        self.import_btn = QPushButton("Import Datalog")
-        self.import_btn.setIcon(_make_svg_icon("upload.svg"))
-        self.import_btn.setObjectName("exportBtn")
-        self.left_layout.addWidget(self.import_btn)
-
-        left_scroll.setWidget(left_container)
-        mid_layout.addWidget(left_scroll)
 
         # 中列：Datalog Viewer + MEASUREMENT（上）与 Channel Config（下）同宽对齐
         center_col_layout = QVBoxLayout()
@@ -2187,31 +2153,54 @@ class N6705CDatalogUI(QWidget):
 
         center_col_layout.addLayout(chart_and_meas_layout, 1)
 
-        label_sidebar = QWidget()
-        label_sidebar.setStyleSheet("QWidget { background: transparent; }")
-        label_sidebar_layout = QHBoxLayout(label_sidebar)
-        label_sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        label_sidebar_layout.setSpacing(0)
-
+        # Custom Labels 展开/折叠入口在标题栏（一键截图右侧），页面内不再放切换按钮
         self.label_card = CardFrame("CUSTOM LABELS", svg_icon="tag.svg", svg_color="#8eb0e3")
         self.label_card.setFixedWidth(240)
         self.label_card.set_header_clickable("Collapse")
         self.label_card.header_clicked.connect(self._collapse_label_card_panel)
         self._build_label_card()
         self.label_card.hide()
-        label_sidebar_layout.addWidget(self.label_card)
-
-        self.label_toggle_btn = VerticalTextButton(
-            "Custom Labels",
-            icon_collapsed="panel-right.svg",
-            icon_expanded="panel-right-close.svg",
-        )
-        self.label_toggle_btn.clicked.connect(self._toggle_label_card_panel)
-        label_sidebar_layout.addWidget(self.label_toggle_btn, 0, Qt.AlignTop)
 
         mid_layout.addLayout(center_col_layout, 1)
-        mid_layout.addWidget(label_sidebar)
+        mid_layout.addWidget(self.label_card)
         main_area.addLayout(mid_layout, 1)
+
+        # --- 底部控制栏：Start/Export/Import 靠左（统一高度），设置齿轮靠右 ---
+        self.bottom_bar = QWidget()
+        self.bottom_bar.setObjectName("bottomBar")
+        self.bottom_bar.setStyleSheet("QWidget#bottomBar { background: transparent; }")
+        bottom_bar_layout = QHBoxLayout(self.bottom_bar)
+        bottom_bar_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_bar_layout.setSpacing(8)
+
+        self.start_btn = QPushButton("Start Recording")
+        self.start_btn.setIcon(_make_svg_icon("play.svg", "#ffffff", 16))
+        self.start_btn.setObjectName("primaryActionBtn")
+        self.start_btn.setProperty("running", "false")
+        bottom_bar_layout.addWidget(self.start_btn)
+
+        self.export_btn = QPushButton("Export Datalog")
+        self.export_btn.setIcon(_make_svg_icon("download.svg"))
+        self.export_btn.setObjectName("exportBtn")
+        self.export_btn.setFixedWidth(120)
+        bottom_bar_layout.addWidget(self.export_btn)
+
+        self.import_btn = QPushButton("Import Datalog")
+        self.import_btn.setIcon(_make_svg_icon("upload.svg"))
+        self.import_btn.setObjectName("exportBtn")
+        self.import_btn.setFixedWidth(120)
+        bottom_bar_layout.addWidget(self.import_btn)
+
+        bottom_bar_layout.addStretch()
+
+        self.bottom_settings_btn = QPushButton()
+        self.bottom_settings_btn.setObjectName("bottomSettingsBtn")
+        self.bottom_settings_btn.setIcon(_make_svg_icon("settings.svg", "#8eb0e3", 16))
+        self.bottom_settings_btn.setToolTip("Settings")
+        self.bottom_settings_btn.clicked.connect(self._on_open_settings_dialog)
+        bottom_bar_layout.addWidget(self.bottom_settings_btn)
+
+        main_area.addWidget(self.bottom_bar)
 
         self.channel_config_collapsed = False
 
@@ -3180,14 +3169,17 @@ class N6705CDatalogUI(QWidget):
             self.channel_config_toggle_btn.setIcon(self._ch_config_icon_expanded)
             self.channel_config_toggle_btn.setStyleSheet(dss.CH_CFG_TOGGLE_BTN_EXPANDED)
 
-    def _toggle_label_card_panel(self, checked):
-        self.label_card.setVisible(checked)
-        self.label_toggle_btn.setVisible(not checked)
+    def set_labels_panel_visible(self, visible):
+        """Custom Labels 面板显隐唯一入口（页面卡片头与三种标题栏按钮共用）。"""
+        self.label_card.setVisible(visible)
+        self.labels_panel_toggled.emit(visible)
+
+    def is_labels_panel_visible(self):
+        # 用 isHidden 反向判定（显式显隐标志），父链暂隐（如 suite 切页）时不丢状态
+        return not self.label_card.isHidden()
 
     def _collapse_label_card_panel(self):
-        self.label_card.hide()
-        self.label_toggle_btn.setChecked(False)
-        self.label_toggle_btn.show()
+        self.set_labels_panel_visible(False)
 
     def _refresh_channel_config(self, force=False):
         connected_slots = []
@@ -4252,14 +4244,62 @@ class N6705CDatalogUI(QWidget):
 
         self._update_marker_analysis()
 
+    def _show_left_panel(self, which):
+        """左侧面板互斥单开：which ∈ {"settings", "instrument", None}。"""
+        self.settings_panel.setVisible(which == "settings")
+        self.instrument_panel.setVisible(which == "instrument")
+        self.rail_settings_btn.blockSignals(True)
+        self.rail_settings_btn.setChecked(which == "settings")
+        self.rail_settings_btn.blockSignals(False)
+        self.rail_instrument_btn.blockSignals(True)
+        self.rail_instrument_btn.setChecked(which == "instrument")
+        self.rail_instrument_btn.blockSignals(False)
+        settings_color = self._rail_icon_active if which == "settings" else self._rail_icon_normal
+        self.rail_settings_btn.setIcon(_make_svg_icon("settings.svg", settings_color, 14))
+        instr_color = self._rail_icon_active if which == "instrument" else self._rail_icon_normal
+        self.rail_instrument_btn.setIcon(_make_svg_icon("link-connect.svg", instr_color, 14))
+
+    def _toggle_settings_panel(self, checked):
+        self._show_left_panel("settings" if checked else None)
+
+    def _collapse_settings_panel(self):
+        self._show_left_panel(None)
+
     def _toggle_instrument_panel(self, checked):
-        self.instrument_panel.setVisible(checked)
-        self.instrument_toggle_btn.setVisible(not checked)
+        self._show_left_panel("instrument" if checked else None)
 
     def _collapse_instrument_panel(self):
-        self.instrument_panel.hide()
-        self.instrument_toggle_btn.setChecked(False)
-        self.instrument_toggle_btn.show()
+        self._show_left_panel(None)
+
+    def _on_open_settings_dialog(self):
+        """底部控制栏设置齿轮：弹出设置对话框（内容预留）。"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog.setMinimumWidth(360)
+        dialog.setStyleSheet(dss.dlg_style())
+
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(16, 16, 16, 16)
+        dialog_layout.setSpacing(12)
+
+        placeholder = QLabel("Settings content will be added here.")
+        placeholder.setAlignment(Qt.AlignCenter)
+        dialog_layout.addWidget(placeholder, 1)
+
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog
+        )
+        ok_btn = btn_box.button(QDialogButtonBox.Ok)
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = btn_box.button(QDialogButtonBox.Cancel)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(btn_box)
+
+        dialog.exec()
 
     def _on_add_instrument_manually(self):
         dialog = QDialog(self)
@@ -8740,6 +8780,26 @@ QPushButton#captureChartBtn:hover {
 QPushButton#captureChartBtn:pressed {
     background-color: #2563eb;
 }
+QFrame#titleBarSeparator {
+    background-color: #2a3a5f;
+    border: none;
+}
+QPushButton#labelsToggleBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#labelsToggleBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#labelsToggleBtn:checked {
+    background-color: #2563eb;
+}
 QPushButton#winCtrlBtn,
 QPushButton#winCloseBtn {
     min-width: 46px;
@@ -8801,6 +8861,22 @@ class _StandaloneTitleBar(QWidget):
             self.capture_button.setIconSize(QSize(16, 16))
         layout.addWidget(self.capture_button, 0, Qt.AlignVCenter)
 
+        # 分割线 + Custom Labels 展开/折叠按钮（宿主窗口连接处理槽）
+        self.labels_separator = QFrame(self)
+        self.labels_separator.setObjectName("titleBarSeparator")
+        self.labels_separator.setFixedSize(1, 16)
+        layout.addWidget(self.labels_separator, 0, Qt.AlignVCenter)
+
+        self.labels_button = QPushButton(self)
+        self.labels_button.setObjectName("labelsToggleBtn")
+        self.labels_button.setCheckable(True)
+        self.labels_button.setCursor(QCursor(Qt.PointingHandCursor))
+        self.labels_button.setFocusPolicy(Qt.NoFocus)
+        self.labels_button.setToolTip("Custom Labels")
+        self.labels_button.setIcon(_make_svg_icon("tag.svg", "#c6d4f2", 16))
+        self.labels_button.setIconSize(QSize(16, 16))
+        layout.addWidget(self.labels_button, 0, Qt.AlignVCenter)
+
         layout.addSpacing(6)
 
         self._min_btn = self._make_caption_button("winCtrlBtn", "min", "最小化", self._on_minimize)
@@ -8814,6 +8890,7 @@ class _StandaloneTitleBar(QWidget):
 
         self._interactive_widgets = [
             self.capture_button,
+            self.labels_button,
             self._min_btn,
             self._max_btn,
             self._close_btn,
@@ -8929,6 +9006,8 @@ class _StandaloneDatalogWindow(N6705CDatalogUI):
 
         self._title_bar = _StandaloneTitleBar(self)
         self._title_bar.capture_button.clicked.connect(self._on_capture_chart)
+        self._title_bar.labels_button.clicked.connect(self.set_labels_panel_visible)
+        self.labels_panel_toggled.connect(self._title_bar.labels_button.setChecked)
         # 标题栏全宽顶格（去掉 root_layout 8px 边距在标题栏四周造成的空隙）；
         # 原 8px 页面边距移交内容子布局，页面内容视觉保持不变
         root_layout = self.layout()

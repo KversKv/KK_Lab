@@ -13,6 +13,7 @@ import os
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -34,6 +35,9 @@ _CAPTURE_ICON_SVG = os.path.join(
 )
 _PIN_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "pin.svg"
+)
+_LABELS_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "tag.svg"
 )
 
 _BAR_STYLE = """
@@ -98,6 +102,26 @@ QPushButton#captureChartBtn:hover {
     background-color: #1b2640;
 }
 QPushButton#captureChartBtn:pressed {
+    background-color: #2563eb;
+}
+QFrame#titleBarSeparator {
+    background-color: #2a3a5f;
+    border: none;
+}
+QPushButton#labelsToggleBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#labelsToggleBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#labelsToggleBtn:checked {
     background-color: #2563eb;
 }
 QPushButton#winCtrlBtn,
@@ -207,6 +231,17 @@ class AppTopBar(QWidget):
         self.capture_chart_button = self._make_capture_chart_button()
         layout.addWidget(self.capture_chart_button, 0, Qt.AlignVCenter)
 
+        # 分割线 + Custom Labels 展开/折叠按钮：仅 N6705C Datalog 页显示
+        #（MainWindow 控制可见性与 checked 同步），默认隐藏
+        self.labels_separator = QFrame(self)
+        self.labels_separator.setObjectName("titleBarSeparator")
+        self.labels_separator.setFixedSize(1, 16)
+        self.labels_separator.setVisible(False)
+        layout.addWidget(self.labels_separator, 0, Qt.AlignVCenter)
+
+        self.labels_button = self._make_labels_button()
+        layout.addWidget(self.labels_button, 0, Qt.AlignVCenter)
+
         self.ai_panel_button = AIPanelButton(self)
         layout.addWidget(self.ai_panel_button, 0, Qt.AlignVCenter)
 
@@ -225,6 +260,7 @@ class AppTopBar(QWidget):
             self.compact_view_button,
             self.pin_button,
             self.capture_chart_button,
+            self.labels_button,
             self.ai_panel_button,
             self._min_btn,
             self._max_btn,
@@ -240,6 +276,19 @@ class AppTopBar(QWidget):
         if os.path.isfile(_CAPTURE_ICON_SVG):
             btn.setIcon(tinted_svg_icon(_CAPTURE_ICON_SVG, "#c6d4f2", 16))
             btn.setIconSize(QSize(16, 16))
+        return btn
+
+    def _make_labels_button(self):
+        btn = QPushButton(self)
+        btn.setObjectName("labelsToggleBtn")
+        btn.setCheckable(True)
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setToolTip("Custom Labels")
+        if os.path.isfile(_LABELS_ICON_SVG):
+            btn.setIcon(tinted_svg_icon(_LABELS_ICON_SVG, "#c6d4f2", 16))
+            btn.setIconSize(QSize(16, 16))
+        btn.setVisible(False)
         return btn
 
     def _make_compact_view_button(self):
