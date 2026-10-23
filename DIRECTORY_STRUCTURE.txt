@@ -396,7 +396,22 @@ ui/
 │   │   ├── analyser_view_setting.py  # 设置面板视图 Mixin (电压/电流输入/模式按钮)
 │   │   ├── analyser_view_batch.py    # 批量操作视图 Mixin (通道选择/批量设值/Auto Set)
 │   │   ├── analyser_view_consumption.py # 功耗测试视图 Mixin (测试配置/结果卡片/采集编排)
-│   │   ├── n6705c_datalog_ui.py      # N6705C 数据记录界面
+│   │   ├── n6705c_datalog_ui.py      # Datalog 兼容入口 (re-export datalog/ 子包; 独立运行/打包入口)
+│   │   ├── datalog/                  # N6705C Datalog 子包 (原 n6705c_datalog_ui.py 拆分)
+│   │   │   ├── datalog_ui.py         # 主壳 N6705CDatalogUI (信号/状态/初始化 + 装配视图 Mixin)
+│   │   │   ├── helpers.py            # 模块级助手 (SVG 图标/标签解析/格式化/波形摘要分段与渲染)
+│   │   │   ├── widgets.py            # 页面控件 (CardFrame/ToggleLabel/ScaleOffsetEdit/ChannelConfigTabBar 等)
+│   │   │   ├── workers.py            # 后台 Worker (_ScanWorker/_ConnectWorker/_DatalogWorker)
+│   │   │   ├── view_connection.py    # 连接管理 Mixin (设备卡片/槽位/扫描/默认设备)
+│   │   │   ├── view_layout.py        # 布局 Mixin (样式/布局/卡片构建/面板/设置与帮助入口/窗口几何)
+│   │   │   ├── view_channel_config.py # 通道配置 Mixin (Active/导入页签/通道开关/Scale-Offset)
+│   │   │   ├── view_plot.py          # 波形视图 Mixin (band 网格/十字线/缩放/零线)
+│   │   │   ├── view_recording.py     # 录制 Mixin (启停/Worker 接线/通道可见性/波形数据访问)
+│   │   │   ├── view_markers.py       # Marker Mixin (A/B 与成对 Marker/区间注释/Measurement 表)
+│   │   │   ├── view_labels.py        # 自定义标签 Mixin (添加/绘制/定位/列表)
+│   │   │   ├── view_time_offset.py   # 时间对齐 Mixin (B 机/导入文件时间偏移)
+│   │   │   ├── view_import_export.py # 导入导出 Mixin (CSV/eDlog/Dlog)
+│   │   │   └── standalone.py         # 独立运行 (_StandaloneTitleBar/_StandaloneDatalogWindow/Win32 无边框)
 │   │   ├── n6705c_datalog_help.py    # Datalog 帮助系统 (手册对话框/一键引导覆盖层)
 │   │   ├── n6705c_analyser_ui_updata_log.txt  # 界面迭代日志
 │   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明

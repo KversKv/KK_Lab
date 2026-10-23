@@ -15,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from core.ai.providers.waveform_provider import build_digest
-from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import (
+from ui.pages.n6705c_power_analyzer.datalog.helpers import (
     _build_summary_stages,
     _render_waveform_summary_image,
     _summary_fmt_time,

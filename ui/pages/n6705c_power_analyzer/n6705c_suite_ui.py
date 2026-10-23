@@ -30,7 +30,7 @@ from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.toast_notification import ToastNotification
 from ui.pages.n6705c_power_analyzer.n6705c_top import N6705CTop
 from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
-from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import N6705CDatalogUI
+from ui.pages.n6705c_power_analyzer.datalog import N6705CDatalogUI
 
 logger = get_logger(__name__)
 
