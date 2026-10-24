@@ -20,7 +20,7 @@ _download_to_dut / _export_bin_results_to_excel / _save_datalog 等）与其它 
 
 import os
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox

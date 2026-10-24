@@ -18,7 +18,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 import os as _os
-from ui.resource_path import get_resource_base as _get_resource_base
+from resource_path import get_resource_base as _get_resource_base
 _CHECK_ICON = _os.path.join(
     _get_resource_base(),
     "resources", "pages", "orchestrator_SVGs", "check.svg"

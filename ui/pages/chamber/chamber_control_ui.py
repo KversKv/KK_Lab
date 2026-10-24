@@ -12,7 +12,7 @@ if not getattr(sys, "frozen", False):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 
 # 添加项目根目录到sys.path，解决模块导入问题

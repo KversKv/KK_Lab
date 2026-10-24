@@ -16,7 +16,7 @@ VminHunter UI 页面
 import os
 import json
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,

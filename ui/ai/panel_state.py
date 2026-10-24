@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from log_config import get_logger
 
 logger = get_logger(__name__)

@@ -29,7 +29,7 @@ if not getattr(sys, "frozen", False):
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtGui import QIcon
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from core.gpio.gpio_config import (
     MODE_OUT_HIGH, MODE_OUT_LOW, MODE_IN_PULL_UP,
     MODE_IN_PULL_DOWN, OFFSET_OUT_SET, OFFSET_DIR_SET,

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, QRectF, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 
 # Apple-inspired light theme for the serial console.

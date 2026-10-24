@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from debug_config import DEBUG_MOCK
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
 from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import load_datalog_app_settings
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.widgets.button import update_connect_button_state
 from ui.pages.n6705c_power_analyzer.datalog.helpers import _make_svg_icon
 from ui.pages.n6705c_power_analyzer.datalog.workers import _ConnectWorker, _ScanWorker
@@ -933,7 +933,7 @@ class ConnectionViewMixin:
 
     # ---- 默认设备持久化（Save to Default）----
     def _default_devices_path(self):
-        from ui.resource_path import get_user_data_dir
+        from resource_path import get_user_data_dir
         return os.path.join(get_user_data_dir("n6705c"), "default_devices.json")
 
     def _load_default_devices(self):

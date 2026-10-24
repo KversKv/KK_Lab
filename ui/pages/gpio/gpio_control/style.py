@@ -3,7 +3,7 @@
 
 import os
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 _ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
 _MONO = "Consolas, 'Courier New', monospace"

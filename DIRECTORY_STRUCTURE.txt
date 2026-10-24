@@ -17,6 +17,8 @@ KK_Lab/
 ├── version.py               # 版本号唯一事实源 (__version__ / __build__ / APP_NAME)
 ├── log_config.py            # 日志配置模块，提供 setup_logging() 和 get_logger()
 ├── debug_config.py          # 调试配置，DEBUG_MOCK 开关控制是否使用模拟仪器
+├── resource_path.py         # 资源/用户数据路径工具 (get_resource_base/get_user_data_dir)，
+│                            # 根级共享：ui/ 与 core/ 共用，避免 core→ui 反向依赖
 ├── requirements.txt         # Python 依赖包清单 (PySide6, pyqtgraph, pyvisa 等)
 ├── pyproject.toml           # 项目元数据与依赖声明 (PEP 621)
 ├── .gitignore               # Git 忽略规则
@@ -300,8 +302,6 @@ ui/
 ├── nav_controller.py        # 导航控制器: 侧边栏创建、SubMenu管理、eventFilter、快捷键
 ├── instrument_status.py     # 仪器状态面板: 左下角连接状态显示 + Toast通知
 ├── cleanup_mixin.py         # 关闭清理混入: closeEvent资源释放逻辑
-├── resource_path.py         # 资源路径工具：get_resource_base()，兼容源码运行
-│                            # 与 PyInstaller 冻结环境 (sys._MEIPASS)
 ├── standalone.py            # 独立页面窗口启动工具 (QApplication / Fusion / Qt warning过滤)
 │
 ├── ai/                      # AI 助手 UI（右侧面板 / 聊天视图 / 设置对话框）
@@ -425,7 +425,6 @@ ui/
 │   │   │   ├── view_import_export.py # 导入导出 Mixin (CSV/eDlog/Dlog)
 │   │   │   └── standalone.py         # 独立运行 (_StandaloneTitleBar/_StandaloneDatalogWindow/Win32 无边框)
 │   │   ├── n6705c_datalog_help.py    # Datalog 帮助系统 (手册对话框/一键引导覆盖层)
-│   │   ├── n6705c_analyser_ui_updata_log.txt  # 界面迭代日志
 │   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明
 │   │
 │   ├── oscilloscope/            # 示波器相关页面
@@ -521,14 +520,6 @@ ui/
 │       ├── sequence_io.py            # 序列 JSON 读写兼容 shim，实际走 core.orchestrator.serialization
 │       ├── template_gallery.py       # 模板库 / 最近序列选择对话框
 │       ├── validation_panel.py       # 运行前校验问题对话框
-│       ├── executor.py               # 旧路径兼容 shim，实际导出 core.orchestrator.executor
-│       ├── context.py                # 旧路径兼容 shim，实际导出 core.orchestrator.context
-│       ├── nodes/                    # 旧路径兼容 shim，实际节点实现位于 core/orchestrator/nodes/
-│       │   ├── base_node.py
-│       │   ├── instrument_nodes.py
-│       │   ├── io_nodes.py
-│       │   ├── logic_nodes.py
-│       │   └── value_nodes.py
 │
 └── dialogs/                 # 对话框 (预留)
 
@@ -543,7 +534,6 @@ lib/
 │   ├── dldtool.exe          # BES 芯片 UART 下载命令行工具
 │   ├── dld_cfg.json         # 下载工具运行时配置
 │   ├── dld_cfg - demo.json  # 配置示例
-│   ├── dldtool_log.txt      # 下载工具日志
 │   ├── noapp_test_*.bin     # 测试用裸固件
 │   ├── programmer*.bin      # 各型号芯片对应的 Programmer 固件 (bes1000 ~ bes3601p)
 │   └── readme.txt           # 下载工具使用说明
@@ -826,7 +816,7 @@ Results/
   user_data/ - 用户配置 (开发态自动生成, 不进入打包资源)
 ================================================================================
 
-user_data/                   # 仅开发态存在; 打包后由 ui/resource_path.get_user_data_dir
+user_data/                   # 仅开发态存在; 打包后由 resource_path.get_user_data_dir
                              # 重定向到 %APPDATA%\KK_Lab\
 ├── ai/                      # AI Assist 运行时数据 (本机)
 │   ├── config.json             # AISettings 持久化
@@ -860,14 +850,14 @@ Temp_Docs/                    # CSV/XLSX/PDT/PDF 收容（Git 不跟踪，DLP �
 
     main.py → ui/ ←→ core/ → instruments/ → lib/
                    ↑
-             log_config / debug_config / chips
+             log_config / debug_config / resource_path / chips
 
 - ui/          禁止阻塞 IO，必须通过 core/ 或 QThread 调用仪器
 - instruments/ 禁止依赖 PySide6 Qt Widget / UI 模块
 - 日志统一使用 log_config.get_logger(__name__)，禁止 print()
 - 仪器统一通过 instruments/factory.py 创建，禁止直接 new 具体仪器
 - 新仪器必须同时提供 Mock 实现（instruments/mock/mock_instruments.py）
-- 资源路径统一通过 ui/resource_path.py::get_resource_base() 获取，
+- 资源路径统一通过 resource_path.py::get_resource_base() 获取，
   兼容源码运行与 PyInstaller 冻结环境
 
 ================================================================================

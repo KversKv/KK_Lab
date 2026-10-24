@@ -1,5 +1,5 @@
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from PySide6.QtWidgets import QPushButton
 from PySide6.QtGui import QIcon, QPainter, QPixmap, QTransform
 from PySide6.QtCore import QSize, QTimer, Qt, QRectF

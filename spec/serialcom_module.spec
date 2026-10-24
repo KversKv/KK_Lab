@@ -140,7 +140,7 @@ a = Analysis(
         'pyqtgraph',
         'ui.modules.serialCom_module.serial_chart_dialog',
         'ui',
-        'ui.resource_path',
+        'resource_path',
         'ui.widgets',
         'ui.widgets.dark_combobox',
         'ui.widgets.scrollbar',

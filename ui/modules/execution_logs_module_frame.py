@@ -1,6 +1,6 @@
 #python -m ui.modules.execution_logs_module_frame
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 import time
 from datetime import datetime
 

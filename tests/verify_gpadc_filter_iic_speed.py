@@ -54,7 +54,7 @@ def _check(name, cond):
 
 def _clear_config_memory():
     """清除页面 ConfigMemory 持久化文件，避免历史配置干扰默认值断言（测试前后各调一次）。"""
-    from ui.resource_path import get_user_data_dir
+    from resource_path import get_user_data_dir
     cfg_path = Path(get_user_data_dir("page_configs")) / "pmu_test" / "gpadc.json"
     if cfg_path.is_file():
         cfg_path.unlink()

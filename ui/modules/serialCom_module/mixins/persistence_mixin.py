@@ -15,7 +15,7 @@ from PySide6.QtCore import (
     QTimer,
 )
 from log_config import get_logger
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from core.auto_baud_detector import AUTO_BAUD_CONFIG
 
 logger = get_logger(__name__)

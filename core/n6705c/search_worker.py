@@ -147,7 +147,7 @@ _LAST_SCAN_HAD_EXTRA = False  # 记录本次是否配置了额外网段（供 UI
 
 
 def _discovery_config_path() -> str:
-    from ui.resource_path import get_user_data_dir
+    from resource_path import get_user_data_dir
     import os
     return os.path.join(get_user_data_dir("n6705c"), "discovery.json")
 

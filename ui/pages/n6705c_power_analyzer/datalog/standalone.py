@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QWidget,
 )
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.toast_notification import ToastNotification
 from ui.pages.n6705c_power_analyzer.datalog.datalog_ui import N6705CDatalogUI

@@ -37,7 +37,7 @@ _BASE_HIDDENIMPORTS = [
     'log_config',
     'debug_config',
     'ui',
-    'ui.resource_path',
+    'resource_path',
     'ui.standalone',
     'ui.theme',
     'ui.widgets',

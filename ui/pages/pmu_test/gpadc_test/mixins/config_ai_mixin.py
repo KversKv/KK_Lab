@@ -11,7 +11,7 @@ from typing import Any
 from pathlib import Path
 from log_config import get_logger
 from core.pmu_test.gpadc import parse_raw_lsb_value, ALGORITHM_REGISTRY
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
     CAP_GET_CONFIG,

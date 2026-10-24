@@ -27,7 +27,7 @@ Consumption Test 配置面板视图构建（Mixin）。
 
 import os
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.pages.consumption_test.widgets import (
     ControlMethodToggle, PolarityToggle, BinaryTextToggle,

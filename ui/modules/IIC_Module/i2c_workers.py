@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal, QObject
 
 from log_config import get_logger
 
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from ui.modules.IIC_Module.i2c_constants import (
     _fmt_hex, _reg_addr_bits, _data_bits, _width_label,
 )

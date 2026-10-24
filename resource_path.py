@@ -1,3 +1,7 @@
+"""资源/用户数据路径工具（根级共享，与 log_config / debug_config 同级）。
+
+供 ui/ 与 core/ 共同使用，避免 core -> ui 反向依赖。
+"""
 import sys
 import os
 
@@ -7,7 +11,7 @@ APP_NAME = "KK_Lab"
 def get_resource_base():
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def is_frozen() -> bool:
@@ -36,7 +40,7 @@ def get_user_data_dir(*subpaths: str) -> str:
             base = os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
         root = os.path.join(base, APP_NAME)
     else:
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project_root = os.path.dirname(os.path.abspath(__file__))
         root = os.path.join(project_root, "user_data")
 
     target = os.path.join(root, *subpaths) if subpaths else root

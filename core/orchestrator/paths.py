@@ -6,7 +6,7 @@ import json
 import os
 from typing import Any, Iterable, List
 
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 
 
 def project_root() -> str:

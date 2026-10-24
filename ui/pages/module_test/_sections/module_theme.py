@@ -36,7 +36,7 @@ _OVERRIDES = {
 
 
 def _icon_overrides() -> dict[str, str]:
-    from ui.resource_path import get_resource_base
+    from resource_path import get_resource_base
     icons = os.path.join(get_resource_base(), "resources", "icons")
     names = ("combo_chevron", "branch_open", "branch_closed", "clear_circle",
              "switch_on", "switch_off", "module_check_on", "module_check_off",
@@ -174,7 +174,7 @@ def _set_card_arrow(card, expanded: bool) -> None:
 
 
 def _icons_dir() -> str:
-    from ui.resource_path import get_resource_base
+    from resource_path import get_resource_base
     return os.path.join(get_resource_base(), "resources", "icons")
 
 

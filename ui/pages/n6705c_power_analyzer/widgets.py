@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.widgets.wheel_line_edit import WheelLineEdit
 from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, Property, QRectF, QEasingCurve

@@ -8,7 +8,7 @@ Orchestrator 是**节点式可视化测试序列编辑器与执行器**：通过
 
 - 导航栏 → `ORCHESTRATION` → `Orchestrator`
 - 对应源码：`ui/pages/orchestrator/orchestrator_ui.py`
-- 节点定义：`ui/pages/orchestrator/nodes/`（`base_node.py` / `instrument_nodes.py` / `io_nodes.py` / `logic_nodes.py` / `value_nodes.py`）
+- 节点定义：`core/orchestrator/nodes/`（`base.py` / `instrument_nodes.py` / `io_nodes.py` / `logic_nodes.py` / `value_nodes.py`）
 - 执行引擎：`core/orchestrator/executor.py`
 
 ## 界面布局

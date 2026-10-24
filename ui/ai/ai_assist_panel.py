@@ -52,7 +52,7 @@ from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
 from ui.ai.dialog_theme import apply_ai_dialog_theme
 from ui.ai.transcript_exporter import build_export_markdown
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from log_config import get_logger
 

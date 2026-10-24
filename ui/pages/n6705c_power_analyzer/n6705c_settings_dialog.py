@@ -48,7 +48,7 @@ from PySide6.QtWidgets import (
 
 from core.ai.config import AISettings
 from log_config import get_logger
-from ui.resource_path import get_user_data_dir, is_frozen
+from resource_path import get_user_data_dir, is_frozen
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
 
 logger = get_logger(__name__)

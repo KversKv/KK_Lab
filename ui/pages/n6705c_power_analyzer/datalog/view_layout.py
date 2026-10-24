@@ -41,7 +41,7 @@ from ui.pages.n6705c_power_analyzer import datalog_style as dss
 from ui.pages.n6705c_power_analyzer.n6705c_datalog_help import DatalogHelpDialog, GuideTourOverlay
 from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import N6705CSettingsDialog
 from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton
 from ui.pages.n6705c_power_analyzer.datalog.helpers import _build_summary_stages, _make_svg_icon, _render_waveform_summary_image
@@ -1481,7 +1481,7 @@ class LayoutViewMixin:
         tour.destroyed.connect(lambda: setattr(self, "_guide_tour", None))
 
     def _window_geometry_path(self):
-        from ui.resource_path import get_user_data_dir
+        from resource_path import get_user_data_dir
         return os.path.join(get_user_data_dir("n6705c"), "window_geometry.json")
 
     def _screen_available_geometry_for(self, point=None):

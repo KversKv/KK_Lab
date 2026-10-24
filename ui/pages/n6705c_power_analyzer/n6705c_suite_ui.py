@@ -14,7 +14,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
 

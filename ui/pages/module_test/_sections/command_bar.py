@@ -16,7 +16,7 @@ import os
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.theme import current_theme
 from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.segmented import Segmented

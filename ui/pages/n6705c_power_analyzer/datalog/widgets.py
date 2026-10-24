@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.pages.n6705c_power_analyzer.datalog.helpers import _auto_format, _parse_value_with_unit
 

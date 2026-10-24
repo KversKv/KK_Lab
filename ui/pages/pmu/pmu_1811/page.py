@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from log_config import get_logger
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import svg_pixmap
 
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame

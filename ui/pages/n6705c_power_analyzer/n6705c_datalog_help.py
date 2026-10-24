@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal, QRect, QPoint, QEvent
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QFont
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from log_config import get_logger
 
 logger = get_logger(__name__)

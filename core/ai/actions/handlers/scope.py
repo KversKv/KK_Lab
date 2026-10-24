@@ -30,7 +30,7 @@ from core.ai.actions.handlers.deps import ActionDeps
 from core.ai.actions.handlers.instrument import _run_read_action, _run_write_action
 from core.ai.actions.registry import CATEGORY_SCOPE, ActionSpec
 from log_config import get_logger
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 
 logger = get_logger(__name__)
 

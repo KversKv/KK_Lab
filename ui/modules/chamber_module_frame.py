@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy
 
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.widgets.dark_combobox import DarkComboBox
 
 logger = get_logger(__name__)

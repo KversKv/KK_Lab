@@ -143,7 +143,7 @@ a = Analysis(
         'PySide6.QtSvg',
         'PySide6.QtWidgets',
         'ui',
-        'ui.resource_path',
+        'resource_path',
         'ui.widgets',
         'ui.widgets.button',
         'ui.widgets.dark_combobox',

@@ -7,8 +7,8 @@ import sys as _sys
 _PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
-from ui.resource_path import get_resource_base as _get_resource_base
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base as _get_resource_base
+from resource_path import get_resource_base
 _PROJECT_ROOT = _get_resource_base()
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)

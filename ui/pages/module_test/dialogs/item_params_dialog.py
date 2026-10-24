@@ -43,7 +43,7 @@ from ui.widgets.groups_editor import GroupColumn, GroupsTableEditor
 
 def _switch_icon_overrides() -> dict[str, str]:
     """注入滑动开关 SVG 路径供 dialog.qss ``$switch_on_svg`` / ``$switch_off_svg``。"""
-    from ui.resource_path import get_resource_base
+    from resource_path import get_resource_base
     icons = os.path.join(get_resource_base(), "resources", "icons")
     return {f"{n}_svg": os.path.join(icons, f"{n}.svg").replace(os.sep, "/")
             for n in ("switch_on", "switch_off")}

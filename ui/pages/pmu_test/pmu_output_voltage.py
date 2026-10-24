@@ -11,7 +11,7 @@ import sys
 import os
 import threading
 from typing import Any
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 import time
 
 sys.path.append(get_resource_base())

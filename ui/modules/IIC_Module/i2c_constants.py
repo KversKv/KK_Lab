@@ -3,7 +3,7 @@
 import os
 import re
 
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 
 # ---------------------------------------------------------------------------
 # 常量

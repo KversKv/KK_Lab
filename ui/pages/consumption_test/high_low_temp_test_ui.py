@@ -3,7 +3,7 @@
 
 import math
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 import time
 import csv
 

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QColor
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 
 SERIAL_BTN_HEIGHT = 26

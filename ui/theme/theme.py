@@ -24,7 +24,7 @@ from ui.theme.tokens import Tokens, dark_tokens, light_tokens
 
 def _qss_dir() -> Path:
     """qss 资源目录：打包态走 sys._MEIPASS，开发态走包内路径。"""
-    from ui.resource_path import get_resource_base
+    from resource_path import get_resource_base
     return Path(get_resource_base()) / "ui" / "theme" / "qss"
 
 _current: Tokens = dark_tokens()
@@ -143,7 +143,7 @@ _CHECK_ICON_FILES = ("5d45ff", "4f46e5", "d14b72", "2f6fed", "18b67a", "d4a514")
 
 def _checkbox_icon_map(theme: Tokens) -> dict[str, str]:
     """按主题 accent 匹配 resources/icons 下勾选 SVG（绝对路径，QSS url() 用）。"""
-    from ui.resource_path import get_resource_base
+    from resource_path import get_resource_base
     icons = Path(get_resource_base()) / "resources" / "icons"
     accent = theme.accent_default.lstrip("#").lower()
     # 就近取已知资源里与 accent 同色系者；无匹配用 accent 自身（约定命名）

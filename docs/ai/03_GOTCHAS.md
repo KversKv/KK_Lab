@@ -169,7 +169,7 @@ File ".../pyvisa_py/protocols/usbtmc.py", line 199, in __init__
 python ui\modules\keysight_53230a_module_frame.py
 ```
 
-启动，Python 把 `sys.path[0]` 设为脚本所在目录 `ui/modules/`，导致顶层包 `ui.resource_path` / `instruments.*` / `debug_config` 全部无法解析：
+启动，Python 把 `sys.path[0]` 设为脚本所在目录 `ui/modules/`，导致顶层包 `resource_path` / `ui.*` / `instruments.*` / `debug_config` 全部无法解析：
 
 ```
 ModuleNotFoundError: No module named 'ui'
@@ -191,7 +191,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 # ... 其余顶层 import 照常
 ```
 

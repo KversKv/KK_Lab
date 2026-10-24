@@ -16,7 +16,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from log_config import get_logger
 
 logger = get_logger(__name__)

@@ -14,7 +14,7 @@ import sys as _sys
 
 from PySide6.QtCore import Qt
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 
 def _is_serialcom_frame_main() -> bool:

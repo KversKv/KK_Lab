@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 app = QApplication([])
 
 from ui.widgets.config_memory import ConfigMemory
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 
 failures = []
 

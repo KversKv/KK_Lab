@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (

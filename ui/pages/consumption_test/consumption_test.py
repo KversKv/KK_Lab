@@ -11,7 +11,7 @@ MCU 后台 Worker 下沉 core/consumption_test/workers/mcu_workers.py。
 """
 
 import sys
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin

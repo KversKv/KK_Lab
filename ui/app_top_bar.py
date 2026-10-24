@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.ai.ai_panel_button import AIPanelButton
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 
 _TITLE_BAR_HEIGHT = 32

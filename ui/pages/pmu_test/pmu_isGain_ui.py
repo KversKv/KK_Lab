@@ -16,7 +16,7 @@ from PySide6.QtGui import QFont, QColor
 import os
 import threading
 from typing import Any
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 import base64
 import csv
 from datetime import datetime

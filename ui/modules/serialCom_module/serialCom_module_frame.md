@@ -287,7 +287,7 @@ SerialSession (QObject)
 | `log_config.get_logger` | 统一日志（禁 `print`）|
 | `debug_config.DEBUG_MOCK` | Mock 调试开关 |
 | `ui.utils.icon_utils` | SVG 着色图标 |
-| `ui.resource_path.get_resource_base` | 资源根路径（兼容打包）|
+| `resource_path.get_resource_base` | 资源根路径（兼容打包）|
 
 资源目录：`resources/modules/SVG_Common`、`SVG_Serial`、`SVG_Logs`。
 

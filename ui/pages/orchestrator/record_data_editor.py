@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import os as _os
-from ui.resource_path import get_resource_base as _get_resource_base
+from resource_path import get_resource_base as _get_resource_base
 import re
 from typing import Any, Dict, List, Optional, Tuple
 

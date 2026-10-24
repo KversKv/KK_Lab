@@ -1,6 +1,6 @@
 #python -m ui.modules.oscilloscope_module_frame
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 import pyvisa
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy

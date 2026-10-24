@@ -41,7 +41,7 @@ DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
 
 import os as _os
-from ui.resource_path import get_resource_base as _get_resource_base
+from resource_path import get_resource_base as _get_resource_base
 _PAGE_SVGS_DIR = _os.path.join(
     _get_resource_base(),
     "resources", "pages", "oscilloscope_SVGs"

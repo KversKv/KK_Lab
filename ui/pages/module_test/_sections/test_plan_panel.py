@@ -30,7 +30,7 @@ from ui.models.test_plan_model import (
     ST_FAIL, ST_IDLE, ST_NA, ST_PASS, ST_RUNNING, ST_SCOPE_MISSING,
     ST_UNSELECTED, ST_WAITING, StatusRole, TestPlanModel,
 )
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.theme import current_theme, dp, refresh_style
 from ui.theme.tokens import module_dark_tokens
 from ui.utils.icon_utils import tinted_svg_icon

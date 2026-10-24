@@ -19,7 +19,7 @@ from core.ai.profiles import (
     get_user_prompt,
 )
 from core.ai.providers.base import ContextProvider
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 
 _LOCAL_PROJECT_RULES_NAME = "project_rules.local.md"
 

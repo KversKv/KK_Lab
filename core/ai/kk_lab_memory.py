@@ -23,7 +23,7 @@ from core.ai import context_budget
 from core.ai.config import AISettings
 from core.ai.newapi_client import AIClientError, NewAPIClient
 from core.ai.prompt_manager import mask_sensitive
-from ui.resource_path import get_resource_base, get_user_data_dir
+from resource_path import get_resource_base, get_user_data_dir
 from log_config import get_logger
 
 logger = get_logger(__name__)

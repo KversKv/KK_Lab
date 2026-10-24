@@ -25,7 +25,7 @@ try:
     import yaml
 except ImportError:
     yaml = None
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from PySide6.QtCore import (
     Qt,
     QThread,

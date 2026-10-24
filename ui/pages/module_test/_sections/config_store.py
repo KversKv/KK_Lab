@@ -19,7 +19,7 @@ from typing import Any
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from log_config import get_logger
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from ui.theme import apply_qss
 
 _logger = get_logger(__name__)

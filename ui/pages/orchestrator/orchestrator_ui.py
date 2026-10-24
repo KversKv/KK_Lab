@@ -7,7 +7,7 @@ import json
 import threading
 import time
 from datetime import datetime
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (

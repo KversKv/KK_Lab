@@ -11,7 +11,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QPushButton
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon
 
 _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")

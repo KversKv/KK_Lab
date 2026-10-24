@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from log_config import get_logger
-from ui.resource_path import get_user_data_dir
+from resource_path import get_user_data_dir
 from core.ai.ui_action_registry import UIActionSpec
 from core.gpio.gpio_config import (
     load_gpio_config, MODE_OUT_HIGH, MODE_OUT_LOW,

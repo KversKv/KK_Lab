@@ -11,7 +11,7 @@ Consumption Test 专属自定义控件（Toggle 系列）。
 
 import os
 
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QEasingCurve, Property, QSize,

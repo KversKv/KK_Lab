@@ -3,7 +3,7 @@
 
 import sys
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
 

@@ -143,7 +143,7 @@ a = Analysis(
         'chips.bes_chip_configs.main_chips',
         'chips.bes_chip_configs.pmu_chips',
         'ui',
-        'ui.resource_path',
+        'resource_path',
         'ui.main_window',
         'ui.widgets',
         'ui.widgets.plot_widget',

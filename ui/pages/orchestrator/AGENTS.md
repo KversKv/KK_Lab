@@ -12,7 +12,7 @@
 
 - **职责**：可视化自定义测试序列编辑器（三栏：节点面板 / 画布 / 属性）。
 - **上游**：`ui/main_window.py`；**下游**：`core/orchestrator/` 引擎、`core/instruments/InstrumentManager`。
-- **铁律**：UI 节点（`ui/pages/orchestrator/nodes/`）是**视图层**；节点执行逻辑在 `core/orchestrator/nodes/`（无 QtWidgets）。
+- **铁律**：节点视图 / 元数据在 `node_metadata.py` 与 `sequence_canvas.py`；节点执行逻辑在 `core/orchestrator/nodes/`（无 QtWidgets）。
 
 ## 接口契约（对外不可破坏）
 
@@ -22,7 +22,7 @@
 
 ## 局部约定
 
-- 新增节点：`core/orchestrator/nodes/` 加 `BaseNode` 子类并注册 `NODE_REGISTRY`；UI 侧 `nodes/` 加对应视图 + `node_metadata`。
+- 新增节点：`core/orchestrator/nodes/` 加 `BaseNode` 子类并注册 `NODE_REGISTRY`；UI 侧在 `node_metadata.py` 登记元数据 / 视图映射。
 - 仪器节点 capability 经 `InstrumentResolver` 解析 adapter / lease，不直接持仪器。
 - 运行产物（manifest / snapshot / report / logs）经 `RunHistoryWriter` 落 run folder。
 

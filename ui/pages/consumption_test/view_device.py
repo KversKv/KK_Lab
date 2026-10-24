@@ -18,7 +18,7 @@ Consumption Test 设备连接与通道管理（Mixin）。
 """
 
 import os
-from ui.resource_path import get_resource_base
+from resource_path import get_resource_base
 from PySide6.QtCore import QThread
 
 
