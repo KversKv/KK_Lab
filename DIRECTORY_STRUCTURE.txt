@@ -122,6 +122,7 @@ core/
 │   │                        # UI 预填经 get_address_preset 获取，驱动层强制传参无默认)
 │   ├── profiles.py          # InstrumentProfile 数据类定义
 │   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
+│   ├── visa_scan.py         # 通用 VISA *IDN? 关键词扫描 (discover_visa_by_idn + VisaIdnScanWorker，串行探测禁并发)
 │   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
 ├── ai/                      # AI Assist 内核（New API 接入 / Profile / Prompt，无 QtWidgets）
 │   ├── AGENTS.md            # core/ai 局部 AI 协作指引（就近加载）
@@ -198,6 +199,13 @@ core/
 │   ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
 │   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
+├── serial_io/               # 串口收发与会话管理内核（pyserial 唯一入口，UI 禁直接 import serial）
+│   ├── __init__.py          # 导出 SerialReadWorker / NtpSyncWorker / SerialSession / SerialSessionManager
+│   ├── serial_backend.py    # pyserial 薄封装（无 Qt）：端口枚举 list_serial_ports / open_serial / 参数文本映射
+│   ├── serial_session.py    # 独立串口会话对象 (SerialSession，QObject+QThread 读泵)
+│   ├── serial_session_manager.py # 多串口会话管理器 (SerialSessionManager)
+│   ├── read_worker.py       # 通用读线程 Worker (SerialReadWorker)
+│   └── ntp_worker.py        # NTP 对时 Worker
 ├── serial_script/           # 串口脚本执行引擎纯逻辑（无 Qt / 无 IO，可单测）
 │   ├── __init__.py          # 导出 ordered_steps / match_wait_keyword / decide_loop_next
 │   └── script_engine.py     # 步骤排序 / 等待关键字匹配 / 循环与下一步判定
@@ -366,9 +374,8 @@ ui/
 │       │   ├── chart_mixin.py          # RX 可视化图表配置接入
 │       │   ├── script_mixin.py         # 脚本编辑/运行/循环/超时/导入导出 (委托 core.serial_script)
 │       │   └── persistence_mixin.py    # 持久化/窗口几何/配置迁移/About
-│       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
 │       ├── serial_log_panel.py         # 统一串口日志面板组件 (SerialLogPanel：主面板/额外面板/独立浮窗三处共用)
-│       ├── serial_session_manager.py   # 多串口会话管理器 (SerialSessionManager)
+│       │                               # （SerialSession/SerialSessionManager 已下沉 core/serial_io/，__init__ 再导出兼容）
 │       ├── serial_hotplug.py           # 串口热插拔监控单例 (WM_DEVICECHANGE 事件+后台重扫)
 │       ├── serial_chart_model.py       # RX 可视化数据模型 (ChartConfig/Rule/Series/FieldSpec)
 │       ├── serial_chart_parser.py      # RX 可视化规则引擎 (SerialChartParser/缓存)
@@ -531,6 +538,7 @@ ui/
 ================================================================================
 
 lib/
+├── __init__.py              # 常规包标记（lib.i2c.xxx / lib.download_tools.xxx 包式导入）
 ├── download_tools/          # DUT UART 下载工具
 │   ├── download_script.py   # 下载工具 Python 封装，提供 DldTool 类与 download_bin()
 │   │                        # 接口 (支持 Flash/Ramrun/擦除/eFuse 读写等操作)
@@ -542,6 +550,7 @@ lib/
 │   └── readme.txt           # 下载工具使用说明
 │
 └── i2c/                     # I2C 通信相关模块
+    ├── __init__.py              # 常规包标记（统一 from lib.i2c.xxx import 包式导入，禁 sys.path 魔法）
     ├── AGENTS.md                # lib/i2c 局部 AI 协作指引（就近加载）
     ├── Bes_I2CIO_Interface.py   # BES I2C IO 接口封装 (支持 CH341/USBIO 适配器,
     │                            # 含速度模式/位宽/状态码枚举定义)

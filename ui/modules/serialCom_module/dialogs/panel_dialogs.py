@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """日志面板相关对话框：_AddLogPanelDialog / _PanelSettingsDialog（原 serialCom_module_frame.py 拆出）。"""
 
-import serial.tools.list_ports
-
 from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -13,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from debug_config import DEBUG_MOCK
+from core.serial_io.serial_backend import list_serial_ports
 from ui.modules.serialCom_module.serial_style import (
     SerialDarkComboBox,
     _DLG_STYLE,
@@ -51,7 +50,7 @@ class _AddLogPanelDialog(_FramelessChromeDialog):
         self._port_combo.setFixedHeight(26)
         self._port_combo.setEditable(True)
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             for p in ports:
                 add_serial_port_item(self._port_combo, f"{p.device} - {p.description}")
         except Exception:
@@ -194,7 +193,7 @@ class _PanelSettingsDialog(_FramelessChromeDialog):
         self._port_combo.setFixedHeight(26)
         self._port_combo.setEditable(True)
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             for p in ports:
                 add_serial_port_item(self._port_combo, f"{p.device} - {p.description}")
         except Exception:

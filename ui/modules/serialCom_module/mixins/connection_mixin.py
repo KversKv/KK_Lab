@@ -7,9 +7,6 @@
 import os
 import time
 
-import serial
-import serial.tools.list_ports
-
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget,
 )
@@ -19,6 +16,14 @@ from debug_config import DEBUG_MOCK
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudScanWorker, AutoBaudState,
+)
+from core.serial_io.serial_backend import (
+    DEFAULT_PARITY,
+    DEFAULT_STOPBITS,
+    list_serial_ports,
+    open_serial,
+    parity_from_text,
+    stopbits_from_text,
 )
 from ui.modules.serialCom_module.widgets import (
     _MixinSerialSettingsDialog,
@@ -52,12 +57,12 @@ class ConnectionMixin:
     """连接相关方法：端口搜索、连接/断开、自动波特率、读线程、会话管理。"""
 
     def init_serial_connection(self, mode=MODE_FULL, baudrate=115200, prefix="Serial"):
-        from ui.modules.serialCom_module.serial_session_manager import SerialSessionManager
+        from core.serial_io.serial_session_manager import SerialSessionManager
         self._serial_mode = mode
         self._serial_baudrate = baudrate
         self._serial_bytesize = 8
-        self._serial_stopbits = serial.STOPBITS_ONE
-        self._serial_parity = serial.PARITY_NONE
+        self._serial_stopbits = DEFAULT_STOPBITS
+        self._serial_parity = DEFAULT_PARITY
         self._serial_xonxoff = False
         self._serial_rtscts = False
         self._serial_prefix = prefix
@@ -299,7 +304,7 @@ class ConnectionMixin:
             return None
         br = baudrate if baudrate is not None else self._serial_baudrate
         try:
-            conn = serial.Serial(port, br, timeout=1)
+            conn = open_serial(port, br, timeout=1)
             self._serial_conn = conn
             self._serial_port = port
             self._serial_connected = True
@@ -362,7 +367,7 @@ class ConnectionMixin:
 
         self._set_serial_status("Connecting")
         try:
-            conn = serial.Serial(
+            conn = open_serial(
                 port,
                 self._serial_baudrate,
                 bytesize=self._serial_bytesize,
@@ -624,11 +629,8 @@ class ConnectionMixin:
             return
 
         databit = int(self._sc_databit_combo.currentText())
-        stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
-        stopbits = stopbit_map.get(self._sc_stopbit_combo.currentText(), serial.STOPBITS_ONE)
-        parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
-                       "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
-        parity = parity_map.get(self._sc_parity_combo.currentText(), serial.PARITY_NONE)
+        stopbits = stopbits_from_text(self._sc_stopbit_combo.currentText())
+        parity = parity_from_text(self._sc_parity_combo.currentText())
         flow = self._sc_flow_combo.currentText()
         xonxoff = flow == "XON/XOFF"
         rtscts = flow == "RTS/CTS"
@@ -660,7 +662,7 @@ class ConnectionMixin:
             return
 
         try:
-            conn = serial.Serial(
+            conn = open_serial(
                 port=port, baudrate=baudrate, bytesize=databit,
                 stopbits=stopbits, parity=parity, xonxoff=xonxoff,
                 rtscts=rtscts, timeout=0.1,
@@ -996,7 +998,7 @@ class ConnectionMixin:
             self._sc_try_restore_last_port()
             return
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             if ports:
                 for p in ports:
                     add_serial_port_item(self._sc_port_combo, f"{p.device} - {p.description}")

@@ -11,14 +11,12 @@
 
 import sys
 
-import serial
-import serial.tools.list_ports
-
 from PySide6.QtCore import (
     QAbstractEventDispatcher, QAbstractNativeEventFilter, QObject,
     QThread, QTimer, Signal,
 )
 
+from core.serial_io.serial_backend import list_serial_ports
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +57,7 @@ class _PortScanWorker(QObject):
 
     def run(self):
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             self.finished.emit([(p.device, p.description) for p in ports])
         except Exception as e:
             self.failed.emit(str(e))

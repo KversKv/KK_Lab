@@ -8,7 +8,6 @@ from typing import Any
 from resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
-sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
@@ -23,14 +22,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins
 from PySide6.QtGui import QFont
 import time
-import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from i2c_interface_x64 import I2CInterface
-from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from lib.i2c.i2c_interface_x64 import I2CInterface
+from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
     CAP_GET_CONFIG,

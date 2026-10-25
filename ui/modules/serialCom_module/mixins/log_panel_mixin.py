@@ -8,9 +8,6 @@ import time
 import uuid as _uuid
 from datetime import datetime
 
-import serial
-import serial.tools.list_ports
-
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QFileDialog, QFrame, QGridLayout, QGraphicsBlurEffect,
@@ -36,6 +33,11 @@ from version import __version__ as _APP_VERSION
 from ui.utils.icon_utils import (
     tinted_svg_icon as _tinted_svg_icon,
     tinted_svg_pixmap as _tinted_svg_pixmap,
+)
+from core.serial_io.serial_backend import (
+    open_serial,
+    parity_from_text,
+    stopbits_from_text,
 )
 from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudMonitor, AutoBaudScanWorker, AutoBaudState,
@@ -757,13 +759,8 @@ class LogPanelMixin:
         session.configure(
             port=port, baudrate=baudrate,
             bytesize=int(config.get("databit", 8)),
-            stopbits={"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}.get(
-                config.get("stopbit", "1"), serial.STOPBITS_ONE
-            ),
-            parity={"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
-                    "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}.get(
-                config.get("parity", "None"), serial.PARITY_NONE
-            ),
+            stopbits=str(config.get("stopbit", "1")),
+            parity=config.get("parity", "None"),
             xonxoff=(config.get("flow", "None") == "XON/XOFF"),
             rtscts=(config.get("flow", "None") == "RTS/CTS"),
         )
@@ -779,16 +776,12 @@ class LogPanelMixin:
 
         try:
             databit = int(config.get("databit", 8))
-            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
-            stopbits = stopbit_map.get(config.get("stopbit", "1"), serial.STOPBITS_ONE)
-            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
-                          "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
-            parity = parity_map.get(config.get("parity", "None"), serial.PARITY_NONE)
             flow = config.get("flow", "None")
 
-            conn = serial.Serial(
+            conn = open_serial(
                 port=port, baudrate=baudrate, bytesize=databit,
-                stopbits=stopbits, parity=parity,
+                stopbits=str(config.get("stopbit", "1")),
+                parity=config.get("parity", "None"),
                 xonxoff=(flow == "XON/XOFF"), rtscts=(flow == "RTS/CTS"),
                 timeout=0.1,
             )
@@ -1042,15 +1035,11 @@ class LogPanelMixin:
             if databit_txt.isdigit() and int(databit_txt) != getattr(conn, "bytesize", None):
                 conn.bytesize = int(databit_txt)
                 changed.append(f"databit={databit_txt}")
-            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE,
-                           "2": serial.STOPBITS_TWO}
-            new_stopbits = stopbit_map.get(self._sc_stopbit_combo.currentText(), serial.STOPBITS_ONE)
+            new_stopbits = stopbits_from_text(self._sc_stopbit_combo.currentText())
             if new_stopbits != getattr(conn, "stopbits", None):
                 conn.stopbits = new_stopbits
                 changed.append(f"stopbits={self._sc_stopbit_combo.currentText()}")
-            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
-                          "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
-            new_parity = parity_map.get(self._sc_parity_combo.currentText(), serial.PARITY_NONE)
+            new_parity = parity_from_text(self._sc_parity_combo.currentText())
             if new_parity != getattr(conn, "parity", None):
                 conn.parity = new_parity
                 changed.append(f"parity={self._sc_parity_combo.currentText()}")

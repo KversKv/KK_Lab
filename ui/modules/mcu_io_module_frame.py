@@ -26,6 +26,7 @@ from PySide6.QtSvg import QSvgRenderer
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
+from core.serial_io.serial_backend import list_serial_ports
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 
@@ -323,20 +324,17 @@ class _SearchMcuIoWorker(QObject):
                 from instruments.MCU_IO.ch9114f import (
                     list_ch9114f_ports, CH9114_USB_VID, CH9114_USB_PID,
                 )
-                import serial.tools.list_ports
                 ports = list_ch9114f_ports() or []
                 # 构建 device -> description 映射，补全下拉显示的完整端口名
                 desc_map = {}
-                for info in serial.tools.list_ports.comports():
+                for info in list_serial_ports():
                     if info.vid == CH9114_USB_VID and info.pid == CH9114_USB_PID:
                         desc_map[info.device] = info.description or info.device
                 labels = [f"{p} - {desc_map.get(p, p)}" for p in ports]
                 self.finished.emit(labels)
             else:
-                import serial.tools.list_ports
-                ports = serial.tools.list_ports.comports()
                 self.finished.emit(
-                    [f"{p.device} - {p.description}" for p in ports]
+                    [f"{p.device} - {p.description}" for p in list_serial_ports()]
                 )
         except Exception as e:
             logger.error("MCU IO port scan failed: %s", e, exc_info=True)

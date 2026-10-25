@@ -15,7 +15,6 @@ from resource_path import get_resource_base
 import time
 
 sys.path.append(get_resource_base())
-sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
@@ -27,10 +26,9 @@ from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.widgets.config_memory import ConfigMemory
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
 from PySide6.QtGui import QFont
-import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
-from i2c_interface_x64 import I2CInterface
+from lib.i2c.i2c_interface_x64 import I2CInterface
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin

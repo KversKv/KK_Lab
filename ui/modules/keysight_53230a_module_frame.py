@@ -10,8 +10,8 @@ if __name__ == "__main__" and __package__ in (None, ""):
         sys.path.insert(0, _PROJECT_ROOT)
 
 from resource_path import get_resource_base
-import pyvisa
 from core.instruments.address_presets import get_address_preset
+from core.instruments.visa_scan import VisaIdnScanWorker
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
@@ -195,43 +195,7 @@ def _update_cnt_btn_state(btn, connected,
             btn.setIcon(QIcon())
 
 
-class _SearchCounterWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        rm = None
-        try:
-            rm = pyvisa.ResourceManager()
-            all_resources = list(rm.list_resources()) or []
-            counter_devices = []
-            for dev in all_resources:
-                instr = None
-                try:
-                    instr = rm.open_resource(dev, timeout=2000)
-                    idn = instr.query('*IDN?').strip()
-                    idn_up = idn.upper()
-                    if ("53230" in idn_up) or ("53220" in idn_up) or \
-                       ("COUNTER" in idn_up) or ("FREQUENCY" in idn_up):
-                        counter_devices.append(dev)
-                except Exception:
-                    pass
-                finally:
-                    if instr is not None:
-                        try:
-                            instr.close()
-                        except Exception:
-                            pass
-            self.finished.emit(counter_devices)
-        except Exception as e:
-            self.error.emit(str(e))
-            self.finished.emit([])
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
+_COUNTER_IDN_KEYWORDS = ("53230", "53220", "COUNTER", "FREQUENCY")
 
 
 class _CounterInstrumentWorker(QObject):
@@ -434,7 +398,7 @@ class Keysight53230AConnectionMixin:
         if self._counter_search_thread is not None and self._counter_search_thread.isRunning():
             return
 
-        worker = _SearchCounterWorker()
+        worker = VisaIdnScanWorker(_COUNTER_IDN_KEYWORDS)
         thread = QThread()
         worker.moveToThread(thread)
 

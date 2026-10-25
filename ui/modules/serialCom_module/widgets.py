@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import serial
-import serial.tools.list_ports
 
 from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -16,6 +14,13 @@ from PySide6.QtGui import QPixmap, QPainter, QIcon, QColor
 from PySide6.QtSvg import QSvgRenderer
 
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from core.serial_io.serial_backend import (
+    DEFAULT_PARITY,
+    DEFAULT_STOPBITS,
+    PARITY_CHOICES,
+    STOPBITS_CHOICES,
+    list_serial_ports,
+)
 from ui.modules.serialCom_module.serial_style import (
     _SERIAL_BTN_ICON_SIZE, _SERIAL_BTN_HEIGHT, _SERIAL_BTN_RADIUS,
     _SEARCH_ICON_PATH, _UNLINK_ICON_PATH, _LINK_ICON_PATH,
@@ -124,7 +129,7 @@ class _SearchSerialPortWorker(QObject):
 
     def run(self):
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             result = [f"{p.device} - {p.description}" for p in ports]
             self.finished.emit(result)
         except Exception as e:
@@ -282,18 +287,8 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
     _BYTESIZES = [
         ("5", 5), ("6", 6), ("7", 7), ("8", 8),
     ]
-    _STOPBITS = [
-        ("1", serial.STOPBITS_ONE),
-        ("1.5", serial.STOPBITS_ONE_POINT_FIVE),
-        ("2", serial.STOPBITS_TWO),
-    ]
-    _PARITIES = [
-        ("None", serial.PARITY_NONE),
-        ("Even", serial.PARITY_EVEN),
-        ("Odd", serial.PARITY_ODD),
-        ("Mark", serial.PARITY_MARK),
-        ("Space", serial.PARITY_SPACE),
-    ]
+    _STOPBITS = STOPBITS_CHOICES
+    _PARITIES = PARITY_CHOICES
     _FLOWS = [
         ("None", (False, False)),
         ("XON/XOFF (Software)", (True, False)),
@@ -303,8 +298,8 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
     def __init__(self, parent=None, *,
                  baudrate=921600,
                  bytesize=8,
-                 stopbits=serial.STOPBITS_ONE,
-                 parity=serial.PARITY_NONE,
+                 stopbits=DEFAULT_STOPBITS,
+                 parity=DEFAULT_PARITY,
                  xonxoff=False,
                  rtscts=False,
                  connected=False,

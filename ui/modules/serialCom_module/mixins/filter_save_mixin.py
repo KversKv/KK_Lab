@@ -8,9 +8,6 @@ import time
 import uuid as _uuid
 from datetime import datetime
 
-import serial
-import serial.tools.list_ports
-
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QFileDialog, QFrame, QGridLayout, QGraphicsBlurEffect,

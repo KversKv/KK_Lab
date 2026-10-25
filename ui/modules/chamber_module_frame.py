@@ -9,7 +9,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-import serial.tools.list_ports
+from core.serial_io.serial_backend import list_serial_ports
 from PySide6.QtCore import QObject, QThread, QTimer, QRectF, Signal
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
@@ -249,7 +249,7 @@ class _SearchSerialWorker(QObject):
 
     def run(self):
         try:
-            ports = serial.tools.list_ports.comports()
+            ports = list_serial_ports()
             result = [f"{p.device} - {p.description}" for p in ports]
             self.finished.emit(result)
         except Exception as e:

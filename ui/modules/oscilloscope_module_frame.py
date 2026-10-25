@@ -1,8 +1,8 @@
 #python -m ui.modules.oscilloscope_module_frame
 import os
 from resource_path import get_resource_base
-import pyvisa
 from core.instruments.address_presets import get_address_preset
+from core.instruments.visa_scan import VisaIdnScanWorker
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
@@ -192,41 +192,7 @@ def _update_scope_btn_state(btn, connected,
             btn.setIcon(QIcon())
 
 
-class _SearchScopeWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        rm = None
-        try:
-            rm = pyvisa.ResourceManager()
-            all_resources = list(rm.list_resources()) or []
-            scope_devices = []
-            for dev in all_resources:
-                instr = None
-                try:
-                    instr = rm.open_resource(dev, timeout=2000)
-                    idn = instr.query('*IDN?').strip()
-                    if any(kw in idn.upper() for kw in ["MSO", "DSO", "SCOPE", "OSCILLOSCOPE", "DSOX", "MSOX"]):
-                        scope_devices.append(dev)
-                except Exception:
-                    pass
-                finally:
-                    if instr is not None:
-                        try:
-                            instr.close()
-                        except Exception:
-                            pass
-            self.finished.emit(scope_devices)
-        except Exception as e:
-            self.error.emit(str(e))
-            self.finished.emit([])
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
+_SCOPE_IDN_KEYWORDS = ("MSO", "DSO", "SCOPE", "OSCILLOSCOPE", "DSOX", "MSOX")
 
 
 class _ScopeInstrumentWorker(QObject):
@@ -435,7 +401,7 @@ class OscilloscopeConnectionMixin:
         if self._scope_search_thread is not None and self._scope_search_thread.isRunning():
             return
 
-        worker = _SearchScopeWorker()
+        worker = VisaIdnScanWorker(_SCOPE_IDN_KEYWORDS)
         thread = QThread()
         worker.moveToThread(thread)
 

@@ -20,7 +20,9 @@
 
 - 测试类统一信号：`progress(int)` / `point_ready(object)` / `finished(bool, str)`，并提供 `start()` / `stop()`。
 - 线程模型：`QObject + moveToThread`，禁止继承 `QThread` 再 override `run`。
+- `serial_io/` 为 pyserial 唯一入口：UI 禁直接 `import serial`；端口枚举 / 打开连接 / 参数文本映射走 `serial_backend`（无 Qt）；会话与多会话管理为 `serial_session.py` / `serial_session_manager.py`（仅 QtCore），UI 经 `core.serial_io` 导入。
 - `serial_io/read_worker.SerialReadWorker` 的 `run()` 结束（含异常 break）必发 `finished`；连接侧必须据此 `thread.quit` + `worker.deleteLater` 并复位线程引用，否则异常退出后无法重建读线程。
+- `instruments/visa_scan.py`：通用 VISA *IDN? 关键词扫描（`discover_visa_by_idn` + `VisaIdnScanWorker`），UI 连接 Mixin 的 Search 统一走它；探测串行执行，禁并发。
 - `stop()` 只置 `self._abort = True`，子线程循环检测软停止；`finally` 里必须 `thread.quit(); thread.wait()`。
 - 连接状态共享经 [instruments/connection_hub.py](./instruments/connection_hub.py) 的 `ConnectionHub` 单点订阅。
 

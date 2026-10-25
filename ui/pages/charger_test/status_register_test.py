@@ -8,7 +8,6 @@ from typing import Any
 from resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
-sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
@@ -31,8 +30,8 @@ from instruments.mock.mock_instruments import MockN6705C
 from instruments.chambers import TemperatureStabilizer
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
-from i2c_interface_x64 import I2CInterface
-from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from lib.i2c.i2c_interface_x64 import I2CInterface
+from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
     CAP_GET_CONFIG,

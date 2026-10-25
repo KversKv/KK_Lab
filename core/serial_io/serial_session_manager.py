@@ -3,7 +3,7 @@ import uuid
 from PySide6.QtCore import QObject, Signal
 
 from log_config import get_logger
-from ui.modules.serialCom_module.serial_session import SerialSession
+from core.serial_io.serial_session import SerialSession
 
 logger = get_logger(__name__)
 

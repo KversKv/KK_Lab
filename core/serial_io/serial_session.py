@@ -1,9 +1,14 @@
-import time
-import serial
-import serial.tools.list_ports
-
 from PySide6.QtCore import QObject, QThread, Signal
 
+from core.serial_io.serial_backend import (
+    DEFAULT_PARITY,
+    DEFAULT_STOPBITS,
+    open_serial,
+    parity_from_text,
+    parity_to_text,
+    stopbits_from_text,
+    stopbits_to_text,
+)
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 
@@ -24,8 +29,8 @@ class SerialSession(QObject):
         self._port = ""
         self._baudrate = 921600
         self._bytesize = 8
-        self._stopbits = serial.STOPBITS_ONE
-        self._parity = serial.PARITY_NONE
+        self._stopbits = DEFAULT_STOPBITS
+        self._parity = DEFAULT_PARITY
         self._xonxoff = False
         self._rtscts = False
 
@@ -87,14 +92,15 @@ class SerialSession(QObject):
         return self._tx_bytes
 
     def configure(self, *, port: str = "", baudrate: int = 921600,
-                  bytesize: int = 8, stopbits=serial.STOPBITS_ONE,
-                  parity=serial.PARITY_NONE, xonxoff: bool = False,
+                  bytesize: int = 8, stopbits=None,
+                  parity=None, xonxoff: bool = False,
                   rtscts: bool = False):
+        """stopbits/parity 接受文本（"1"/"None"）或 pyserial 常量，None 用默认值。"""
         self._port = port
         self._baudrate = baudrate
         self._bytesize = bytesize
-        self._stopbits = stopbits
-        self._parity = parity
+        self._stopbits = stopbits_from_text(stopbits)
+        self._parity = parity_from_text(parity)
         self._xonxoff = xonxoff
         self._rtscts = rtscts
 
@@ -115,7 +121,7 @@ class SerialSession(QObject):
             return True
 
         try:
-            conn = serial.Serial(
+            conn = open_serial(
                 port=self._port,
                 baudrate=self._baudrate,
                 bytesize=self._bytesize,
@@ -214,18 +220,6 @@ class SerialSession(QObject):
         self.error_occurred.emit(session_id, f"Read error: {err}")
 
     def to_config(self) -> dict:
-        stopbit_rmap = {
-            serial.STOPBITS_ONE: "1",
-            serial.STOPBITS_ONE_POINT_FIVE: "1.5",
-            serial.STOPBITS_TWO: "2",
-        }
-        parity_rmap = {
-            serial.PARITY_NONE: "None",
-            serial.PARITY_EVEN: "Even",
-            serial.PARITY_ODD: "Odd",
-            serial.PARITY_MARK: "Mark",
-            serial.PARITY_SPACE: "Space",
-        }
         flow = "None"
         if self._rtscts:
             flow = "RTS/CTS"
@@ -238,8 +232,8 @@ class SerialSession(QObject):
             "port": self._port,
             "baudrate": self._baudrate,
             "databit": self._bytesize,
-            "stopbit": stopbit_rmap.get(self._stopbits, "1"),
-            "parity": parity_rmap.get(self._parity, "None"),
+            "stopbit": stopbits_to_text(self._stopbits),
+            "parity": parity_to_text(self._parity),
             "flow": flow,
         }
 
@@ -249,33 +243,15 @@ class SerialSession(QObject):
         display_name = config.get("display_name", session_id)
         session = cls(session_id, display_name, parent)
 
-        port = config.get("port", "")
-        baudrate = int(config.get("baudrate", 921600))
-        bytesize = int(config.get("databit", 8))
-
-        stopbit_map = {
-            "1": serial.STOPBITS_ONE,
-            "1.5": serial.STOPBITS_ONE_POINT_FIVE,
-            "2": serial.STOPBITS_TWO,
-        }
-        stopbits = stopbit_map.get(str(config.get("stopbit", "1")), serial.STOPBITS_ONE)
-
-        parity_map = {
-            "None": serial.PARITY_NONE,
-            "Even": serial.PARITY_EVEN,
-            "Odd": serial.PARITY_ODD,
-            "Mark": serial.PARITY_MARK,
-            "Space": serial.PARITY_SPACE,
-        }
-        parity = parity_map.get(config.get("parity", "None"), serial.PARITY_NONE)
-
         flow = config.get("flow", "None")
-        xonxoff = flow == "XON/XOFF"
-        rtscts = flow == "RTS/CTS"
-
         session.configure(
-            port=port, baudrate=baudrate, bytesize=bytesize,
-            stopbits=stopbits, parity=parity, xonxoff=xonxoff, rtscts=rtscts,
+            port=config.get("port", ""),
+            baudrate=int(config.get("baudrate", 921600)),
+            bytesize=int(config.get("databit", 8)),
+            stopbits=str(config.get("stopbit", "1")),
+            parity=config.get("parity", "None"),
+            xonxoff=flow == "XON/XOFF",
+            rtscts=flow == "RTS/CTS",
         )
         return session
 

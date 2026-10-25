@@ -47,7 +47,7 @@ from core.vmin_hunter import (
     SleepVminRunner,
     SleepWakeLogStrategy,
 )
-from Bes_I2CIO_Interface import I2CWidthFlag
+from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -1237,7 +1237,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                     self.mcu_io.in_pull(p, "none")
 
         def init_internal_supply():
-            from i2c_interface_x64 import I2CInterface
+            from lib.i2c.i2c_interface_x64 import I2CInterface
             i2c = I2CInterface()
             ui_logs = []
             for w in writes:

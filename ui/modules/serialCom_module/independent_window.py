@@ -3,7 +3,6 @@
 
 import os
 import re
-import serial.tools.list_ports
 
 from datetime import datetime
 from PySide6.QtWidgets import (
@@ -24,6 +23,7 @@ from PySide6.QtCore import (
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from core.serial_io import SerialReadWorker as _SerialReadWorker
+from core.serial_io.serial_backend import open_serial
 from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 from ui.modules.serialCom_module.serial_style import (
     _CLR_BG_LOG,
@@ -138,14 +138,11 @@ class _IndependentSerialWindow(QWidget):
 
         try:
             databit = int(self._config.get("databit", 8))
-            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
-            stopbits = stopbit_map.get(str(self._config.get("stopbit", "1")), serial.STOPBITS_ONE)
-            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD}
-            parity = parity_map.get(self._config.get("parity", "None"), serial.PARITY_NONE)
             flow = self._config.get("flow", "None")
-            conn = serial.Serial(
+            conn = open_serial(
                 port=port, baudrate=baudrate, bytesize=databit,
-                stopbits=stopbits, parity=parity,
+                stopbits=str(self._config.get("stopbit", "1")),
+                parity=self._config.get("parity", "None"),
                 xonxoff=(flow == "XON/XOFF"), rtscts=(flow == "RTS/CTS"),
                 timeout=0.1,
             )

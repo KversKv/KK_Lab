@@ -1045,20 +1045,18 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _ai_serial_list_ports(self):
         """枚举系统可用串口（供 AI list_serial_ports 动作调用）。
 
-        经 pyserial 的 list_ports.comports() 本地枚举，返回设备名/描述/硬件 ID。
-        UI 层负责实际 IO 枚举，core handler 不直连 serial 库。
+        经 core.serial_io.serial_backend 本地枚举，返回设备名/描述/硬件 ID。
         """
         try:
-            import serial.tools.list_ports as list_ports
+            from core.serial_io.serial_backend import list_serial_ports
 
-            ports = list_ports.comports()
             return [
                 {
                     "device": p.device,
-                    "description": getattr(p, "description", "") or "",
-                    "hwid": getattr(p, "hwid", "") or "",
+                    "description": p.description or "",
+                    "hwid": p.hwid or "",
                 }
-                for p in ports
+                for p in list_serial_ports()
             ]
         except Exception:  # noqa: BLE001 - 枚举失败回空列表，不致命
             logger.error("AI 枚举串口失败", exc_info=True)

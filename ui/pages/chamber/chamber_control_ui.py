@@ -1580,9 +1580,9 @@ class ChamberControlUI(QWidget):
             self.port_combo.addItem(chamber_default_resource(chamber_type))
             return
         try:
-            from serial.tools.list_ports import comports
+            from core.serial_io.serial_backend import list_serial_ports
             ports = []
-            for port in comports():
+            for port in list_serial_ports():
                 ports.append(f"{port.device} ({port.description})")
 
             self.port_combo.clear()
