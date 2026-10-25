@@ -1,12 +1,10 @@
 import pyvisa
 import struct
 import sys
+import os
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-#TCPIP0::10.31.30.181::inst0::INSTR
 
 # Global variables
 input_channel = "CHANnel2"
@@ -104,9 +102,13 @@ def check_instrument_errors(command):
 
 # Main function to run the program
 def main():
+    resource_addr = os.environ.get("KK_LAB_DSOX_RESOURCE", "")
+    if not resource_addr:
+        logger.error("请先设 KK_LAB_DSOX_RESOURCE 环境变量（如 TCPIP0::<ip>::inst0::INSTR）")
+        return
     rm = pyvisa.ResourceManager()
     global InfiniiVision
-    InfiniiVision = rm.open_resource("TCPIP0::10.31.30.181::inst0::INSTR")
+    InfiniiVision = rm.open_resource(resource_addr)
     InfiniiVision.timeout = 15000
     InfiniiVision.clear()
 

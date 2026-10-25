@@ -635,7 +635,10 @@ class DSOX4034A:
 def main():
     import os
 
-    resource_addr = 'TCPIP0::10.31.30.181::inst0::INSTR'
+    resource_addr = os.environ.get('KK_LAB_DSOX_RESOURCE', '')
+    if not resource_addr:
+        logger.error('请先设 KK_LAB_DSOX_RESOURCE 环境变量（如 TCPIP0::<ip>::inst0::INSTR）')
+        return
     visa_lib = None
     output_dir = os.path.join(os.path.dirname(__file__), 'screenshot_test')
     os.makedirs(output_dir, exist_ok=True)

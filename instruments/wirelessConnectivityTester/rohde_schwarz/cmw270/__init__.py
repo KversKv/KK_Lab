@@ -19,7 +19,7 @@ class CMW270(BluetoothMixin, BluetoothLEMixin, LTEMixin, WifiMixin, CMW270Base):
 
     用法::
 
-        cmw = CMW270("TCPIP0::10.31.31.236::hislip0::INSTR")
+        cmw = CMW270("TCPIP0::<ip>::hislip0::INSTR")
         print(cmw.identify())
         cmw.bt_set_channel(0)
         cmw.bt_init_meval()

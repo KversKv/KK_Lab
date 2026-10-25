@@ -23,7 +23,7 @@ from log_config import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
-DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"
+DEFAULT_RESOURCE = os.environ.get("KK_LAB_CMW_RESOURCE", "")
 
 
 def test_base(cmw):
@@ -209,6 +209,9 @@ def test_lte(cmw):
 def main():
     setup_logging()
 
+    if not DEFAULT_RESOURCE:
+        logger.error("请先设 KK_LAB_CMW_RESOURCE 环境变量（如 TCPIP0::<ip>::hislip0::INSTR）")
+        return
     cmw = CMW500(DEFAULT_RESOURCE)
     try:
         test_base(cmw)

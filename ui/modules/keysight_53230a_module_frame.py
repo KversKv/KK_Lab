@@ -11,6 +11,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
 
 from resource_path import get_resource_base
 import pyvisa
+from core.instruments.address_presets import get_address_preset
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
@@ -299,7 +300,7 @@ class Keysight53230AConnectionMixin:
         self.counter_resource_combo.setMinimumContentsLength(10)
         self.counter_resource_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.counter_resource_combo.setEditable(True)
-        self.counter_resource_combo.addItem("USB0::0x0957::0x1907::MY62340214::INSTR")
+        self.counter_resource_combo.addItem(get_address_preset("frequency_counter", "keysight_53230a"))
         self.counter_resource_combo.lineEdit().setCursorPosition(0)
         self.counter_resource_combo.currentIndexChanged.connect(
             lambda: QTimer.singleShot(0, lambda: self.counter_resource_combo.lineEdit().setCursorPosition(0))

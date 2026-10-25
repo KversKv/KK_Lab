@@ -50,6 +50,6 @@
 - **§6.4 ExecutionLogsFrame**：必须与主内容一起放入 `QSplitter(Qt.Vertical)`，手柄用隐式样式；统一走 `wrap_with` 工厂，禁止绕过。
 - **§24 高度级联**：嵌入页面时，父页面 QSS 的裸 `QComboBox { min-height }` 会穿透进模块内部；模块自身控件须用 ID 选择器自洽（见 §24.1）。
 - **§23 SVG 渲染**：模块内 SVG 图标禁止 `setDevicePixelRatio`，直接用逻辑大小渲染。
-- **§5 VISA 地址**：搜索按钮扫描 → 下拉框选择 → 传给 `factory.create_*`，禁止硬编码地址。
+- **§5 VISA 地址**：搜索按钮扫描 → 下拉框选择 → 传给 `factory.create_*`，禁止硬编码地址；扫描前预填项统一经 `core.instruments.address_presets.get_address_preset` 读 `resources/instrument_addresses.json`（缺失为空串，禁在 UI 写字面地址）。
 - **连接按钮 enable 状态必须成对恢复**：manager 异步路径在 `connect_async` 前 `setEnabled(False)` 后，所有状态同步出口（`sync_*_from_top` / `*_top_changed` / `connection_failed` 处理器）都必须 `setEnabled(True)`；否则按钮停在 disabled，`_xxx_disconnect_style` 里的 `QPushButton:disabled` 规则生效，Disconnect 红底被灰底覆盖（示波器在 module_test 页曾因此不变红，N6705C 因有 `_on_mixin_manager_connected` 恢复而正常）。
 - **manager 断开失败也要恢复按钮**：`disconnect_async` 失败时 manager 发 `disconnect_failed(session_id, error)` 而非 `session_disconnected`，会话仍 connected；MCU 家族 Mixin 的 `_on_*_manager_disconnect_failed` 需把按钮恢复为已连接态（search 禁用、connect 可点），否则按钮永久卡 disabled。

@@ -152,6 +152,7 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
         (os.path.join(PROJECT_ROOT, 'resources', 'pages'), os.path.join('resources', 'pages')),
         (os.path.join(PROJECT_ROOT, 'resources', 'modules'), os.path.join('resources', 'modules')),
+        (os.path.join(PROJECT_ROOT, 'resources', 'instrument_addresses.json'), os.path.join('resources')),
         (os.path.join(PROJECT_ROOT, 'lib', 'i2c'), os.path.join('lib', 'i2c')),
         (os.path.join(PROJECT_ROOT, 'lib', 'download_tools'), os.path.join('lib', 'download_tools')),
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),

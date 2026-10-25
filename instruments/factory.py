@@ -22,7 +22,7 @@ _INSTRUMENT_CREATORS = {
     "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
     "mt3065": lambda **kw: MT3065(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 19200)),
     "wt2040": lambda **kw: WT2040(
-        kw.get("host") or kw.get("resource") or kw.get("port") or WT2040.DEFAULT_HOST,
+        kw.get("host") or kw.get("resource") or kw.get("port") or "",
         tcp_port=kw.get("tcp_port", WT2040.DEFAULT_PORT),
         timeout=kw.get("timeout", 5.0),
     ),
@@ -77,7 +77,7 @@ def create_chamber(chamber_type: str = "vt6002", port: str = "", baudrate: int |
             return MockMT3065()
         return MockVT6002()
     if key == "wt2040":
-        host = port or resource or WT2040.DEFAULT_HOST
+        host = port or resource
         logger.debug("create_chamber: type=%s, host=%s", key, host)
         return create_instrument(key, host=host, resource=host)
     default_baudrate = 19200 if key == "mt3065" else 9600
@@ -112,16 +112,20 @@ def create_wireless_tester(tester_type: str = "cmw270", resource: str = ""):
     from debug_config import DEBUG_MOCK
     logger.debug("create_wireless_tester: type=%s, resource=%s", tester_type, resource)
     key = str(tester_type).strip().lower()
-    addr = resource or "TCPIP0::10.31.31.236::hislip0::INSTR"
+    addr = (resource or "").strip()
     if key in ("cmw270", "cmw-270"):
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockCMW270
             return MockCMW270(addr)
+        if not addr:
+            raise ValueError("create_wireless_tester: resource 必填（地址禁硬编码，无默认地址）")
         return CMW270(addr)
     if key in ("cmw500", "cmw-500"):
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockCMW500
             return MockCMW500(addr)
+        if not addr:
+            raise ValueError("create_wireless_tester: resource 必填（地址禁硬编码，无默认地址）")
         return CMW500(addr)
     raise ValueError(f"Unknown wireless tester type: {tester_type}")
 

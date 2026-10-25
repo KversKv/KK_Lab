@@ -2,6 +2,7 @@
 import os
 from resource_path import get_resource_base
 import pyvisa
+from core.instruments.address_presets import get_address_preset
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
@@ -317,7 +318,7 @@ class OscilloscopeConnectionMixin:
         self.scope_resource_combo.setMinimumContentsLength(10)
         self.scope_resource_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.scope_resource_combo.setEditable(True)
-        self.scope_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
+        self.scope_resource_combo.addItem(get_address_preset("oscilloscope", "dsox4034a"))
         self.scope_resource_combo.lineEdit().setCursorPosition(0)
         self.scope_resource_combo.currentIndexChanged.connect(
             lambda: QTimer.singleShot(0, lambda: self.scope_resource_combo.lineEdit().setCursorPosition(0))
@@ -468,7 +469,7 @@ class OscilloscopeConnectionMixin:
                 self.append_log(f"[SYSTEM] Found {len(scope_devices)} oscilloscope(s).")
             self.set_scope_status(f"Found {len(scope_devices)} scope(s)")
         else:
-            self.scope_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
+            self.scope_resource_combo.addItem(get_address_preset("oscilloscope", "dsox4034a"))
             self.set_scope_status("No oscilloscope found", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log("[SYSTEM] No oscilloscope found. Default resource restored.")

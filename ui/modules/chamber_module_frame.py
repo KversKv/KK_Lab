@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from resource_path import get_resource_base
+from core.instruments.address_presets import get_address_preset
 from ui.widgets.dark_combobox import DarkComboBox
 
 logger = get_logger(__name__)
@@ -40,7 +41,7 @@ CHAMBER_TYPES = {
         "label": "WT2040",
         "display_name": "WT2040 Chamber",
         "connection_kind": "tcp_hmi",
-        "default_resource": "192.168.1.66",
+        "default_resource": get_address_preset("chamber", "wt2040"),
     },
 }
 

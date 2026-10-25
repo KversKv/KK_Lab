@@ -1,3 +1,4 @@
+import os
 import time
 import pyvisa
 from log_config import get_logger
@@ -380,7 +381,10 @@ class MSO64B:
 
 
 if __name__ == '__main__':
-    ip_address = '10.31.31.202'
+    ip_address = os.environ.get('KK_LAB_MSO64B_RESOURCE', '')
+    if not ip_address:
+        logger.error('请先设 KK_LAB_MSO64B_RESOURCE 环境变量（如 10.0.0.2 或 TCPIP0::<ip>::inst0::INSTR）')
+        raise SystemExit(1)
     mso64b = MSO64B(ip_address)
 
     try:

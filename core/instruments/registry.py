@@ -439,14 +439,17 @@ def _scan_wt2040() -> list[InstrumentCandidate]:
                 display_name="Mock WT2040",
             ),
         ]
-    from instruments.chambers.wt2040_chamber import WT2040
+    from core.instruments.address_presets import get_address_preset
+    host = get_address_preset("chamber", "wt2040")
+    if not host:
+        return []
     return [
         InstrumentCandidate(
             instrument_type="wt2040",
             connection_kind="tcp_hmi",
-            resource=WT2040.DEFAULT_HOST,
+            resource=host,
             model_hint="WT2040",
-            display_name=f"WT2040 - {WT2040.DEFAULT_HOST}",
+            display_name=f"WT2040 - {host}",
         ),
     ]
 

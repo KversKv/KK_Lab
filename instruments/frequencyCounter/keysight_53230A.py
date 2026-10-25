@@ -601,7 +601,10 @@ class Keysight53230A:
 if __name__ == "__main__":
     from log_config import setup_logging
     setup_logging()
-    resource_addr = 'USB0::0x0957::0x1907::MY62340214::INSTR'
+    resource_addr = os.environ.get("KK_LAB_53230A_RESOURCE", "")
+    if not resource_addr:
+        logger.error("请先设 KK_LAB_53230A_RESOURCE 环境变量（如 USB0::0x0957::0x1907::<序列号>::INSTR）")
+        raise SystemExit(1)
     CHANNEL = 1
 
     counter = Keysight53230A(resource_addr)

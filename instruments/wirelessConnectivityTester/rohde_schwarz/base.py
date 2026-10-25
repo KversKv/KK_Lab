@@ -22,15 +22,15 @@ class CMWBase:
     CMW270 / CMW500 共享同一套 SCPI 指令集（同平台固件），仅射频硬件 / 选件
     支持范围不同。本基类封装 VISA 通信、IEEE 488.2 公共指令、系统/RF 通用配置，
     各无线制式（BT / BLE / LTE / WIFI）的指令通过 Mixin 组合到具体型号类中。
-
-    默认连接地址: TCPIP0::10.31.31.236::hislip0::INSTR
     """
 
-    DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"
     MODEL = "CMW"
 
-    def __init__(self, resource=None, visa_library=None, timeout_ms=10000):
-        resource = resource or self.DEFAULT_RESOURCE
+    def __init__(self, resource, visa_library=None, timeout_ms=10000):
+        if not resource or not str(resource).strip():
+            raise ValueError(
+                f"{self.MODEL}: resource 必填（地址禁硬编码，由调用方扫描/选择后传入）"
+            )
         logger.debug("%s __init__: resource=%s", self.MODEL, resource)
         try:
             if visa_library:

@@ -35,7 +35,6 @@ EVENT_CLICKUP = 1
 EVENT_SCRINIT = 2
 EVENT_SCRDESTROY = 3
 EVENT_DATATRANS = 4
-DEFAULT_WT2040_HOST = "192.168.1.66"
 DEFAULT_WT2040_PORT = 80
 
 
@@ -575,7 +574,7 @@ class MinimalWebSocket:
 
 @dataclass
 class HMIChamber:
-    host: str = "192.168.1.66"
+    host: str
     scrno: int = 7171
     port: int = 80
     path: str = "/"
@@ -678,13 +677,15 @@ class Chamber:
 
     def __init__(
         self,
-        host: str = "192.168.1.66",
+        host: str = "",
         config: ChamberControlConfig | None = None,
         *,
         port: int = 80,
         timeout: float = 5.0,
         delay_s: float = 0.2,
     ):
+        if not host or not str(host).strip():
+            raise ValueError("Chamber: host 必填（地址禁硬编码，由调用方传入）")
         self.config = config or ChamberControlConfig.bt107c_default()
         self._part_cache: dict[str, HmiPart] = {}
         self._part_index: dict[tuple[int, int], str] = {}
@@ -1129,21 +1130,22 @@ class Chamber:
 
 
 def _normalize_endpoint(host: str | None, tcp_port: int) -> tuple[str, int]:
-    endpoint = (host or DEFAULT_WT2040_HOST).strip()
+    endpoint = (host or "").strip()
+    if not endpoint:
+        raise ValueError("WT2040: host 必填（地址禁硬编码，由调用方传入）")
     if endpoint.count(":") == 1:
         host_part, port_part = endpoint.rsplit(":", 1)
         if host_part and port_part.isdigit():
             return host_part, int(port_part)
-    return endpoint or DEFAULT_WT2040_HOST, tcp_port
+    return endpoint, tcp_port
 
 
 class WT2040(ChamberBase):
-    DEFAULT_HOST = DEFAULT_WT2040_HOST
     DEFAULT_PORT = DEFAULT_WT2040_PORT
 
     def __init__(
         self,
-        host: str = DEFAULT_WT2040_HOST,
+        host: str = "",
         *,
         tcp_port: int = DEFAULT_WT2040_PORT,
         timeout: float = 5.0,
@@ -1272,7 +1274,7 @@ def main() -> None:
     import time
 
     parser = argparse.ArgumentParser(description="Run a WT2040 chamber control verification sequence.")
-    parser.add_argument("--host", default="192.168.1.66", help="Chamber HMI IP address")
+    parser.add_argument("--host", required=True, help="Chamber HMI IP address")
     parser.add_argument("--port", type=int, default=80, help="Chamber HMI TCP port")
     parser.add_argument("--timeout", type=float, default=5.0, help="Socket timeout in seconds")
     args = parser.parse_args()

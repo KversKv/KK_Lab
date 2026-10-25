@@ -14,4 +14,3 @@ class CMW270Base(CMWBase):
     """
 
     MODEL = "CMW270"
-    DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"

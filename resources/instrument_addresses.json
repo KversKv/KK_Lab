@@ -1,0 +1,17 @@
+{
+  "n6705c": {
+    "A": "TCPIP0::10.31.71.98::hislip0::INSTR",
+    "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
+    "debug": "TCPIP0::192.168.3.99::hislip0::INSTR"
+  },
+  "oscilloscope": {
+    "dsox4034a": "TCPIP0::10.31.30.181::inst0::INSTR",
+    "mso64b": "10.31.31.202"
+  },
+  "frequency_counter": {
+    "keysight_53230a": "USB0::0x0957::0x1907::MY62340214::INSTR"
+  },
+  "chamber": {
+    "wt2040": "192.168.1.66"
+  }
+}

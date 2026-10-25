@@ -21,6 +21,7 @@ _download_to_dut / _export_bin_results_to_excel / _save_datalog 等）与其它 
 import os
 
 from resource_path import get_resource_base
+from core.instruments.address_presets import get_address_preset
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox
@@ -181,7 +182,7 @@ class ConsumptionTestViewPanelsMixin:
 
         self._n6705c_conn_widgets = {}
         _default_resources = {
-            "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
+            "B": get_address_preset("n6705c", "B"),
         }
         _tag_colors = {"A": "#00f5c4", "B": "#f2994a"}
         _border_colors = {"A": "#18284d", "B": "#18284d"}
@@ -232,7 +233,7 @@ class ConsumptionTestViewPanelsMixin:
             font = visa_combo.font()
             font.setPixelSize(10)
             visa_combo.setFont(font)
-            visa_combo.addItem(default_res if default_res else "TCPIP0::10.31.71.98::hislip0::INSTR")
+            visa_combo.addItem(default_res if default_res else get_address_preset("n6705c", "A"))
             sub_layout.addWidget(visa_combo)
 
             btn_row = QHBoxLayout()

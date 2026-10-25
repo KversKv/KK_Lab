@@ -22,7 +22,8 @@ from log_config import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
-DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"
+# 地址禁硬编码：运行前设环境变量，如 $env:KK_LAB_CMW_RESOURCE="TCPIP0::<ip>::hislip0::INSTR"
+RESOURCE = os.environ.get("KK_LAB_CMW_RESOURCE", "")
 
 
 def test_base(cmw):
@@ -175,7 +176,10 @@ def test_lte(cmw):
 def main():
     setup_logging()
 
-    cmw = CMW270(DEFAULT_RESOURCE)
+    if not RESOURCE:
+        logger.error("请先设 KK_LAB_CMW_RESOURCE 环境变量（如 TCPIP0::<ip>::hislip0::INSTR）")
+        return
+    cmw = CMW270(RESOURCE)
     try:
         test_base(cmw)
         test_bt(cmw)

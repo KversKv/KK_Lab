@@ -13,7 +13,7 @@ if _ROOT not in sys.path:
 
 import pyvisa
 
-RES = "TCPIP0::10.31.31.236::hislip0::INSTR"
+RES = os.environ.get("KK_LAB_CMW_RESOURCE", "")
 
 # 每个制式取 main 中会触发的关键指令 (write 类), 末尾各放一条 STATe? query
 PROBE = {
@@ -51,6 +51,9 @@ PROBE = {
 
 
 def main():
+    if not RES:
+        print("请先设 KK_LAB_CMW_RESOURCE 环境变量（如 TCPIP0::<ip>::hislip0::INSTR）", flush=True)
+        return
     rm = pyvisa.ResourceManager()
     instr = rm.open_resource(RES)
     instr.timeout = 4000  # 4s, 让不识别的 query 快速超时

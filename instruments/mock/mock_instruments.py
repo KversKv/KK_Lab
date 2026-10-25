@@ -1552,7 +1552,6 @@ class _MockCMWBase:
     """R&S CMW 系列 (CMW270 / CMW500) 无线综测仪 Mock 基类。"""
 
     MODEL = "MOCK CMW"
-    DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"
 
     BT_MEAS = "BLUetooth:MEASurement"
     BT_SIGN = "BLUetooth:SIGNaling"
@@ -1564,7 +1563,7 @@ class _MockCMWBase:
     WIFI_SIGN = "WLAN:SIGNaling"
 
     def __init__(self, resource=None, visa_library=None, timeout_ms=10000):
-        self.resource = resource or self.DEFAULT_RESOURCE
+        self.resource = resource or "MOCK_CMW"
         self._rng = random.Random(0)
         self._connected = True
         self.instr = MockInstr()

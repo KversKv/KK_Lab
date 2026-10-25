@@ -19,7 +19,7 @@ class CMW500(BluetoothMixin, BluetoothLEMixin, LTEMixin, WifiMixin, CMW500Base):
 
     用法::
 
-        cmw = CMW500("TCPIP0::10.31.31.236::hislip0::INSTR")
+        cmw = CMW500("TCPIP0::<ip>::hislip0::INSTR")
         print(cmw.identify())
         cmw.lte_set_band("OB1")
         cmw.lte_cell_on()

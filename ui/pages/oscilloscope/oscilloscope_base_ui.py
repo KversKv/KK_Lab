@@ -23,6 +23,7 @@ from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from instruments.scopes.base import OscilloscopeController
 from core.controllers import OscilloscopeControllerEx
 from core.controllers import MeasurementPollingWorker
+from core.instruments.address_presets import get_address_preset
 from ui.pages.oscilloscope.widgets import (
     CaptureLoadingOverlay,
     TruncatedComboBox,
@@ -668,11 +669,11 @@ class OscilloscopeBaseUI(QWidget):
         self.visa_resource_combo.setFixedHeight(36)
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MOCK:
-            self.visa_resource_combo.addItem("10.31.31.202")
+            self.visa_resource_combo.addItem(get_address_preset("oscilloscope", "mso64b"))
         if DEBUG_MSO64B_FLAG:
-            self.visa_resource_combo.addItem("10.31.31.202")
+            self.visa_resource_combo.addItem(get_address_preset("oscilloscope", "mso64b"))
         if DEBUG_DSOX4034A_FLAG:
-            self.visa_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
+            self.visa_resource_combo.addItem(get_address_preset("oscilloscope", "dsox4034a"))
         if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():
             self.visa_resource_combo.lineEdit().setToolTip(self.visa_resource_combo.currentText())
             self.visa_resource_combo.currentTextChanged.connect(

@@ -1078,15 +1078,18 @@ class N6705C:
 
 
 if __name__ == "__main__":
-    RESOURCE = "TCPIP0::10.31.71.98::hislip0::INSTR"
+    RESOURCE = os.environ.get("KK_LAB_N6705C_RESOURCE", "")
     CHANNEL = 3
 
-    n6705c = N6705C(RESOURCE)
-    try:
-        idn = n6705c.instr.query("*IDN?").strip()
-        logger.info("已连接: %s", idn)
-        n6705c.test_load_transient_arb(CHANNEL)
-    finally:
-        n6705c.disconnect()
-        logger.info("已断开连接")
+    if not RESOURCE:
+        logger.error("请先设 KK_LAB_N6705C_RESOURCE 环境变量（如 TCPIP0::<ip>::hislip0::INSTR）")
+    else:
+        n6705c = N6705C(RESOURCE)
+        try:
+            idn = n6705c.instr.query("*IDN?").strip()
+            logger.info("已连接: %s", idn)
+            n6705c.test_load_transient_arb(CHANNEL)
+        finally:
+            n6705c.disconnect()
+            logger.info("已断开连接")
 

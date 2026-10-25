@@ -22,6 +22,7 @@ from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
 from instruments.power.keysight.n6705c import N6705C
+from core.instruments.address_presets import get_address_preset
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from debug_config import DEBUG_MOCK
@@ -36,7 +37,8 @@ _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
 _LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
 _UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
 
-DEFAULT_VISA_RESOURCE = "TCPIP0::10.31.71.98::hislip0::INSTR"
+# 实验室预填地址（单一事实源 resources/instrument_addresses.json，缺失为空串）
+DEFAULT_VISA_RESOURCE = get_address_preset("n6705c", "A")
 
 N6705C_BTN_HEIGHT = 24
 N6705C_BTN_ICON_SIZE = 14
@@ -451,7 +453,7 @@ class N6705CConnectionMixin:
             self.set_system_status(f"● Found {count} device(s)")
             if hasattr(self, 'append_log'):
                 self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
-            if DEFAULT_VISA_RESOURCE in n6705c_devices:
+            if DEFAULT_VISA_RESOURCE and DEFAULT_VISA_RESOURCE in n6705c_devices:
                 self.visa_resource_combo.setCurrentText(DEFAULT_VISA_RESOURCE)
             else:
                 self.visa_resource_combo.setCurrentIndex(0)

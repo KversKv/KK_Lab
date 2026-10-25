@@ -27,6 +27,7 @@ from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 from ui.theme import FONT_MONO
 from core.n6705c import SearchThread as _SearchThread
+from core.instruments.address_presets import get_address_preset
 from ui.pages.n6705c_power_analyzer.widgets import (
     ChannelTabBar, SlideToggle, _ZAP_ICON_PATH,
     CHANNEL_THEMES, CONTENT_BG, ROOT_BG, PANEL_BG, PANEL_BORDER,
@@ -610,9 +611,10 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         content_layout.setContentsMargins(16, 4, 16, 10)
         content_layout.setSpacing(2)
 
+        # 实验室预填地址（resources/instrument_addresses.json，缺失为空串）
         default_addresses = {
-            "A": "TCPIP0::10.31.71.98::hislip0::INSTR",
-            "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
+            "A": get_address_preset("n6705c", "A"),
+            "B": get_address_preset("n6705c", "B"),
         }
 
         self.conn_widgets = {}

@@ -27,6 +27,7 @@ from debug_config import DEBUG_MOCK
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
 from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import load_datalog_app_settings
 from resource_path import get_resource_base
+from core.instruments.address_presets import get_address_preset
 from ui.widgets.button import update_connect_button_state
 from ui.pages.n6705c_power_analyzer.datalog.helpers import _make_svg_icon
 from ui.pages.n6705c_power_analyzer.datalog.workers import _ConnectWorker, _ScanWorker
@@ -924,9 +925,12 @@ class ConnectionViewMixin:
     def _add_default_debug_device(self):
         existing_serials = {c.property("serial") for c in self.device_cards}
         if "MY56006098" not in existing_serials:
+            visa_res = get_address_preset("n6705c", "debug")
+            if not visa_res:
+                return
+            display_ip = visa_res.split("::")[1] if "::" in visa_res else visa_res
             card = self._create_device_card(
-                "MY56006098", "N6705C", "192.168.3.99",
-                "TCPIP0::192.168.3.99::hislip0::INSTR"
+                "MY56006098", "N6705C", display_ip, visa_res
             )
             self.device_list_layout.insertWidget(self.device_list_layout.count() - 1, card)
             self.device_cards.append(card)
