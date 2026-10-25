@@ -24,6 +24,7 @@ KK_Lab/
 ├── .gitignore               # Git 忽略规则
 ├── DIRECTORY_STRUCTURE.txt  # 本文件 - 工程目录结构说明
 ├── AGENTS.md                # 通用 AI Agent 协作指引 (主入口)
+├── README.md                # 项目说明 (简介/功能/仪器/快速开始/打包/结构)
 │
 ├── .trae/                   # TRAE IDE 专用配置
 │   └── rules/
