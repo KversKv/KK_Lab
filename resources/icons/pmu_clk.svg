@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="36" y1="24" x2="220" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#251F47"/><stop offset="0.52" stop-color="#15132D"/><stop offset="1" stop-color="#0C0B1B"/></linearGradient>
+    <radialGradient id="halo" cx="204" cy="52" r="142" gradientUnits="userSpaceOnUse"><stop stop-color="#A78BFA" stop-opacity="0.3"/><stop offset="1" stop-color="#7C3AED" stop-opacity="0"/></radialGradient>
+    <linearGradient id="accent" x1="48" y1="86" x2="206" y2="190" gradientUnits="userSpaceOnUse"><stop stop-color="#C4B5FD"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient>
+  </defs>
+  <rect x="6" y="6" width="244" height="244" rx="56" fill="#080714"/>
+  <rect x="10" y="10" width="236" height="236" rx="52" fill="url(#bg)" stroke="#463B6C" stroke-width="2"/>
+  <rect x="12" y="12" width="232" height="232" rx="50" fill="url(#halo)"/>
+  <path d="M44 15h168c17 0 29 12 29 29" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 140h30V88h40v52h40V88h40v52h18" stroke="url(#accent)" stroke-width="11"/>
+    <circle cx="174" cy="172" r="35" fill="#17142F" stroke="#F4F7FF" stroke-width="8"/>
+    <path d="M174 151v23l15 9" stroke="#C4B5FD" stroke-width="8"/>
+    <path d="M50 184h54" stroke="#A79FC4" stroke-width="8"/>
+  </g>
+  <path d="M40 219h34" stroke="#A78BFA" stroke-width="5" stroke-linecap="round"/><circle cx="82" cy="219" r="3" fill="#C4B5FD"/>
+</svg>
