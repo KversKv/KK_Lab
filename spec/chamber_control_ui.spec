@@ -227,7 +227,7 @@ _EXE_COMMON_KWARGS = dict(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'chamber_thermometer.ico'),
+    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'chamber_control_ui.ico'),
 )
 
 if BUILD_MODE == 'onedir':

@@ -2,9 +2,11 @@ import os
 import sys
 
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from log_config import get_logger
+from resource_path import get_resource_base
 
 logger = get_logger(__name__)
 
@@ -38,7 +40,24 @@ def resize_and_center_window(window, size=DEFAULT_STANDALONE_WINDOW_SIZE):
     window.setGeometry(x, y, width, height)
 
 
-def run_standalone_widget(widget_factory, title, size=DEFAULT_STANDALONE_WINDOW_SIZE):
+def apply_window_icon(window, icon_name):
+    icon_path = os.path.join(
+        get_resource_base(), "resources", "icons", f"{icon_name}.ico"
+    )
+    if not os.path.isfile(icon_path):
+        logger.warning("Window icon not found: %s", icon_path)
+        return
+
+    icon = QIcon(icon_path)
+    window.setWindowIcon(icon)
+    app = QApplication.instance()
+    if app is not None:
+        app.setWindowIcon(icon)
+
+
+def run_standalone_widget(
+    widget_factory, title, size=DEFAULT_STANDALONE_WINDOW_SIZE, icon_name=None
+):
     _ensure_streams()
     qInstallMessageHandler(_qt_message_handler)
 
@@ -47,6 +66,8 @@ def run_standalone_widget(widget_factory, title, size=DEFAULT_STANDALONE_WINDOW_
 
     window = widget_factory()
     window.setWindowTitle(title)
+    if icon_name is not None:
+        apply_window_icon(window, icon_name)
     resize_and_center_window(window, size)
     window.show()
 

@@ -1272,6 +1272,7 @@ def main():
     return run_standalone_widget(
         lambda: StatusRegisterTestUI(),
         "Status Register Test",
+        icon_name="charger_status_register",
     )
 
 

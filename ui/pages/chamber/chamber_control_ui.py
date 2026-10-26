@@ -2021,7 +2021,7 @@ if __name__ == "__main__":
     """测试温箱界面"""
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     def custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
@@ -2033,12 +2033,9 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    chamber_icon = _build_thermometer_icon()
-    app.setWindowIcon(chamber_icon)
-
     window = ChamberControlUI()
-    window.setWindowIcon(chamber_icon)
     window.setWindowTitle("Chamber Test")
+    apply_window_icon(window, "chamber_control_ui")
     resize_and_center_window(window, size=(1400, 970))
     window.show()
 

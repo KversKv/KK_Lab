@@ -1605,7 +1605,7 @@ if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
     from log_config import setup_logging, get_logger
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
     setup_logging()
     _logger = get_logger(__name__)
 
@@ -1621,6 +1621,7 @@ if __name__ == "__main__":
 
     window = PMUOutputVoltageUI()
     window.setWindowTitle("PMU Output Voltage Linearity Test")
+    apply_window_icon(window, "pmu_output_voltage")
     resize_and_center_window(window)
     window.show()
 

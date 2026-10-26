@@ -1171,12 +1171,13 @@ def _to_hex(val) -> str:
 
 
 if __name__ == "__main__":
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = ConfigTraverseTestUI()
     window.setWindowTitle("Config Traverse Test")
+    apply_window_icon(window, "charger_config_traverse")
     resize_and_center_window(window)
     window.show()
     sys.exit(app.exec())

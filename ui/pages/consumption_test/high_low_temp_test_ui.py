@@ -1138,6 +1138,7 @@ def main():
     return run_standalone_widget(
         lambda: HighLowTempConsumptionTestUI(),
         "High-Low Temperature Test",
+        icon_name="consumption_high_low_temp",
     )
 
 

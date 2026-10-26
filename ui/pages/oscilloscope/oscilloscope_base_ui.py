@@ -2706,6 +2706,7 @@ def main():
     return run_standalone_widget(
         lambda: OscilloscopeBaseUI(),
         "Oscilloscope",
+        icon_name="oscilloscope",
     )
 
 

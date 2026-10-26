@@ -252,13 +252,14 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
 
 if __name__ == "__main__":
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     win = ConsumptionTestUI()
     win.setWindowTitle("Consumption Test")
+    apply_window_icon(win, "consumption_auto_test")
     resize_and_center_window(win)
     win.show()
 

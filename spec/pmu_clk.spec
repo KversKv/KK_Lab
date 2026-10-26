@@ -4,7 +4,7 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
 ENTRY_SCRIPT = os.path.join(PROJECT_ROOT, 'ui', 'pages', 'pmu_test', 'clk_test_ui.py')
 APP_NAME = 'PMU_CLK'
-ICON_PATH = os.path.join(PROJECT_ROOT, 'resources', 'icons', 'pmu_test.ico')
+ICON_PATH = os.path.join(PROJECT_ROOT, 'resources', 'icons', 'pmu_clk.ico')
 
 _COMMON_SPEC = os.path.join(PROJECT_ROOT, 'spec', '_standalone_ui_common.py')
 exec(compile(open(_COMMON_SPEC, encoding='utf-8').read(), _COMMON_SPEC, 'exec'))

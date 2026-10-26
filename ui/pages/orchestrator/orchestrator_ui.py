@@ -1484,6 +1484,7 @@ def main():
     return run_standalone_widget(
         lambda: OrchestratorUI(),
         "Orchestrator",
+        icon_name="orchestrator",
     )
 
 

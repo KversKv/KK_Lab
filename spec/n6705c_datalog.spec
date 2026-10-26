@@ -107,5 +107,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'n6705c.ico'),
+    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'n6705c_datalog.ico'),
 )

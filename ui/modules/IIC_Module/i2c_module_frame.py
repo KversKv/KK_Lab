@@ -480,12 +480,13 @@ class _DemoI2cWidget(I2cMixin, QWidget):
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     w = _DemoI2cWidget()
     w.setWindowTitle("I2C 控制台")
+    apply_window_icon(w, "i2c_module")
     resize_and_center_window(w, size=(960, 760))
     w.show()
     sys.exit(app.exec())

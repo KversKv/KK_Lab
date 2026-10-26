@@ -146,13 +146,14 @@ class ChargerTestUI(QWidget):
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     window = ChargerTestUI()
     window.setWindowTitle("Charger Test")
+    apply_window_icon(window, "charger_test")
     resize_and_center_window(window)
     window.show()
 

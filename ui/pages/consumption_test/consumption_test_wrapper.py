@@ -116,6 +116,7 @@ def main():
     return run_standalone_widget(
         lambda: ConsumptionTestWrapper(),
         "Consumption Test",
+        icon_name="consumption_test",
     )
 
 

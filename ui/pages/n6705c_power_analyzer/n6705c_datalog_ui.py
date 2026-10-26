@@ -85,7 +85,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # Set application icon for taskbar and window
-    _icon_path = os.path.join(get_resource_base(), "resources", "icons", "n6705c.ico")
+    _icon_path = os.path.join(get_resource_base(), "resources", "icons", "n6705c_datalog.ico")
     if os.path.exists(_icon_path):
         app.setWindowIcon(QIcon(_icon_path))
 

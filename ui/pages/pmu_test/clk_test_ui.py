@@ -1734,6 +1734,7 @@ def main():
     return run_standalone_widget(
         lambda: CLKTestUI(),
         "CLK Test",
+        icon_name="pmu_clk",
     )
 
 

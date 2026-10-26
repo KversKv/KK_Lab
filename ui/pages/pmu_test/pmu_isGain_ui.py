@@ -1600,6 +1600,7 @@ def main():
     return run_standalone_widget(
         lambda: PMUIsGainUI(),
         "PMU Is_gain",
+        icon_name="pmu_is_gain",
     )
 
 

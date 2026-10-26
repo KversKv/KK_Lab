@@ -370,13 +370,14 @@ class PMUTestUI(QWidget):
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     pmu_test_ui = PMUTestUI()
     pmu_test_ui.setWindowTitle("PMU测试系统")
+    apply_window_icon(pmu_test_ui, "pmu_test")
     resize_and_center_window(pmu_test_ui)
     pmu_test_ui.show()
 

@@ -124,5 +124,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'kk_lab.ico'),
+    icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'i2c_module.ico'),
 )

@@ -1338,13 +1338,14 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
 
 if __name__ == '__main__':
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     pmu_test_ui = PMUOSCPUI()
     pmu_test_ui.setWindowTitle("PMU OSCP Automated Test")
+    apply_window_icon(pmu_test_ui, "pmu_oscp")
     resize_and_center_window(pmu_test_ui)
     pmu_test_ui.show()
 

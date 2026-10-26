@@ -1204,12 +1204,13 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
 
 
 if __name__ == "__main__":
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = RegulationVoltageTestUI()
     window.setWindowTitle("Regulation Voltage Test")
+    apply_window_icon(window, "charger_regulation_voltage")
     resize_and_center_window(window)
     window.show()
     sys.exit(app.exec())

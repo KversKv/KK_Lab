@@ -1385,13 +1385,14 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 """)
 
 if __name__ == "__main__":
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     win = N6705CAnalyserUI()
     win.setWindowTitle("N6705C DC Power Analyzer")
+    apply_window_icon(win, "n6705c_analyser")
     resize_and_center_window(win)
     win.show()
 

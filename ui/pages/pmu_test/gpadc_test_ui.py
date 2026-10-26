@@ -200,7 +200,7 @@ if __name__ == "__main__":
     import logging
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
     from log_config import setup_logging
-    from ui.standalone import resize_and_center_window
+    from ui.standalone import apply_window_icon, resize_and_center_window
     setup_logging()
 
     app = QApplication(sys.argv)
@@ -214,6 +214,7 @@ if __name__ == "__main__":
 
     gpadc_test_ui = GPADCTestUI()
     gpadc_test_ui.setWindowTitle("GPADC Test System")
+    apply_window_icon(gpadc_test_ui, "pmu_gpadc")
     resize_and_center_window(gpadc_test_ui)
     gpadc_test_ui.show()
 
