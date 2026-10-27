@@ -73,7 +73,7 @@ Top Bar（品牌 + DUT 副标题 / 5 大视图 Tab / Speed / i2c.bes_chip_check(
 
 ### 6.1 引脚卡片矩阵
 
-- 当前 bank 全部有效引脚按 BIT 降序排成**两列**（左列 BIT31~16、右列 BIT15~0），行距 0 斑马纹，行间 1px 分隔线。
+- 当前 bank 按 BIT 降序排成**两列固定各 16 槽**（左列 BIT31~16、右列 BIT15~0），无效高位使用透明空槽，有效卡片不会因 bank 引脚数减少而拉高；行距 0 斑马纹，行间 1px 分隔线。
 - 每张卡片（`_PinCard`）：`BITnn` + GPIO 名 + 别名/功能名 + `OUT/IN` 方向钮 + `H/L/0/1/-` 电平钮 + `Z/PU/PD` 上拉循环钮 + LED。
   - **方向钮**：Toggle 方向（Dir Set +0x04 / Dir Clr +0x10），写后回读 0x50。
   - **电平钮**：输出态 Toggle HIGH/LOW（Out Set +0x00 / Out Clr +0x0C）；**输入态禁用置灰**（INPUT 时 Inspector HIGH/LOW 同步禁用），输入态点击卡片电平钮改为触发本 bank 0x50 回读。

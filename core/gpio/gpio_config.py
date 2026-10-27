@@ -37,6 +37,7 @@ pull_ohm.up / down 为输入上下拉阻抗（可选，UI 取整显示）。
 func_sel（pin function 复用选择，可选）：控制 GPIO 状态前须先把对应脚的
 sel 位域写为 func_sel.gpio_value（BES1701 = 0xF 选为 GPIO 功能）。
 地址 = base + (linear // per_reg) * 4，位域排布同 drv 线性模式；
+func_sel.base 也可为逐寄存器地址列表（null=无 func_sel），支持地址区不连续；
 func_sel.groups 限制有效 group 数（0 = 不限制）。
 func_sel.functions 为 iomux 复用功能表（可选）：键 "GPIO_P{G}_{P}"，
 值为 [Func_0..Func_N] 名字列表，list index = sel 位域值，null = 该值未用；
@@ -111,6 +112,7 @@ class GpioChipConfig:
     pull_up_bases: list = field(default_factory=list)   # list[int|None] 与 banks 平行
     pull_down_bases: list = field(default_factory=list)
     func_sel_base: int = None
+    func_sel_base_list: list = field(default_factory=list)  # list[int|None] 线性区逐寄存器显式地址
     func_sel_bits_per_gpio: int = 4
     func_sel_gpio_value: int = 0xF
     func_sel_groups: int = 0     # 有效 group 数上限；0 = 不限制
@@ -248,30 +250,44 @@ class GpioChipConfig:
 
     @property
     def func_sel_supported(self):
-        return self.func_sel_base is not None
+        return (self.func_sel_base is not None
+                or any(a is not None for a in self.func_sel_base_list))
 
     def func_sel_reg_group(self, addr):
         """由寄存器地址反查 group；未命中返回 None。"""
-        if self.func_sel_base is None:
-            return None
-        delta = addr - self.func_sel_base
-        if delta < 0 or delta % 4 != 0:
-            return None
         per_reg = 32 // self.func_sel_bits_per_gpio
-        group = (delta // 4) * per_reg // PINS_PER_GROUP
+        if self.func_sel_base_list:
+            if addr not in self.func_sel_base_list:
+                return None
+            reg_idx = self.func_sel_base_list.index(addr)
+            group = reg_idx * per_reg // PINS_PER_GROUP
+        else:
+            if self.func_sel_base is None:
+                return None
+            delta = addr - self.func_sel_base
+            if delta < 0 or delta % 4 != 0:
+                return None
+            group = (delta // 4) * per_reg // PINS_PER_GROUP
         if self.func_sel_groups and group >= self.func_sel_groups:
             return None
         return group
 
     def func_sel_field(self, group, pin):
         """返回 (addr, high_bit, low_bit)；未配置或超出范围返回 None。"""
-        if self.func_sel_base is None:
+        if not self.func_sel_supported:
             return None
         if self.func_sel_groups and group >= self.func_sel_groups:
             return None
         per_reg = 32 // self.func_sel_bits_per_gpio
         idx = self.linear_index(group, pin)
-        addr = self.func_sel_base + (idx // per_reg) * 4
+        reg_idx = idx // per_reg
+        if self.func_sel_base_list:
+            if reg_idx >= len(self.func_sel_base_list) \
+                    or self.func_sel_base_list[reg_idx] is None:
+                return None
+            addr = self.func_sel_base_list[reg_idx]
+        else:
+            addr = self.func_sel_base + reg_idx * 4
         low = (idx % per_reg) * self.func_sel_bits_per_gpio
         return addr, low + self.func_sel_bits_per_gpio - 1, low
 
@@ -285,7 +301,7 @@ class GpioChipConfig:
 
     def func_name(self, group, pin, value):
         """该脚某 sel 值对应的功能名；gpio_value → "GPIO"，未配置/未命名 → None。"""
-        if self.func_sel_base is None:
+        if not self.func_sel_supported:
             return None
         if value == self.func_sel_gpio_value:
             return "GPIO"
@@ -447,6 +463,9 @@ def load_gpio_config(chip_name):
                          if isinstance(drv_base_raw, list) else [])
         pull_ohm = raw.get("pull_ohm") or {}
         fsel = raw.get("func_sel") or {}
+        fsel_base_raw = fsel.get("base")
+        fsel_base_list = ([_parse_int(v) for v in fsel_base_raw]
+                          if isinstance(fsel_base_raw, list) else [])
         cfg = GpioChipConfig(
             chip=str(raw.get("chip") or chip_name),
             banks=banks,
@@ -469,7 +488,8 @@ def load_gpio_config(chip_name):
                            for v in raw.get("pull_up_bases", [])],
             pull_down_bases=[_parse_int(v)
                              for v in raw.get("pull_down_bases", [])],
-            func_sel_base=_parse_int(fsel.get("base")),
+            func_sel_base=(None if fsel_base_list else _parse_int(fsel_base_raw)),
+            func_sel_base_list=fsel_base_list,
             func_sel_bits_per_gpio=int(fsel.get("bits_per_gpio", 4) or 4),
             func_sel_gpio_value=int(fsel.get("gpio_value", 0xF)),
             func_sel_groups=int(fsel.get("groups", 0) or 0),

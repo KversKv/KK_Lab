@@ -597,17 +597,20 @@ class FeaturesMixin:
             self._set_note_status(4, "To Confirm", False)
         else:
             per_reg = 32 // cfg.func_sel_bits_per_gpio
-            n = cfg.func_sel_groups or cfg.group_count
+            n = min(cfg.func_sel_groups or cfg.group_count, cfg.group_count)
+            base_txt = (_fmt32(cfg.func_sel_base)
+                        if cfg.func_sel_base is not None else
+                        ", ".join(_fmt32(addr) if addr is not None else "--"
+                                  for addr in cfg.func_sel_base_list))
             self._note_bodies[4].setText(
-                "Pin function mux select: base {0}, each register holds "
-                "{1} pins x {2}bit, valid Group0~{3}; before controlling "
-                "GPIO state (direction/level/pull/drv/batch/mask), the page "
-                "automatically writes the pin field to 0x{4:X} to select "
-                "GPIO function, skipped when shadow is already 0x{4:X}.\n"
+                "Pin function mux select: base/register addresses {0}, each "
+                "register holds {1} pins x {2}bit, valid Group0~{3}; before "
+                "controlling GPIO state (direction/level/pull/drv/batch/mask), "
+                "the page automatically writes the pin field to 0x{4:X} to "
+                "select GPIO function, skipped when shadow is already 0x{4:X}.\n"
                 "Note: RegMap bit flip / Raw are low-level debug entries "
                 "without automatic func sel."
-                .format(_fmt32(cfg.func_sel_base), per_reg,
-                        cfg.func_sel_bits_per_gpio, n - 1,
+                .format(base_txt, per_reg, cfg.func_sel_bits_per_gpio, n - 1,
                         cfg.func_sel_gpio_value))
             self._set_note_status(4, "Confirmed", True)
 

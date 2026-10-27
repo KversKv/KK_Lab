@@ -246,6 +246,11 @@ QFrame#pinCard {
     min-height: 24px;
 }
 QFrame#pinCard[alt="1"] { background-color: #141D30; }
+QFrame#matrixBitEmpty {
+    background-color: transparent;
+    border: 1px solid transparent;
+    min-height: 24px;
+}
 QFrame#pinCard:hover { border-color: #334155; }
 QFrame#pinCard[sel="1"] { border: 1px solid #06B6D4; }
 QFrame#pinCard[lvl="h"] { border: 1px solid #155E75; }

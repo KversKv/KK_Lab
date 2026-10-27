@@ -2,7 +2,7 @@
 """GPIO 页会话影子状态派生与视图刷新 Mixin。"""
 
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame
+    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt
 
@@ -229,7 +229,19 @@ class StateRefreshMixin:
             return
         base_group = self._cur_bank * GROUPS_PER_BANK
         n_bits = self._cfg.bank_group_count(self._cur_bank) * PINS_PER_GROUP
-        for bit in range(n_bits - 1, -1, -1):
+        for bit in range(31, -1, -1):
+            # 两列固定各 16 槽：左列 BIT31~16，右列 BIT15~0；
+            # 高位 group 不存在时保留透明空槽，避免有效卡片被纵向拉伸。
+            if bit >= 16:
+                row, col = 31 - bit, self._matrix_col_l
+            else:
+                row, col = 15 - bit, self._matrix_col_r
+            if bit >= n_bits:
+                empty = QFrame()
+                empty.setObjectName("matrixBitEmpty")
+                empty.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                col.addWidget(empty)
+                continue
             group = base_group + bit // PINS_PER_GROUP
             pin = bit % PINS_PER_GROUP
             card = _PinCard(
@@ -239,12 +251,7 @@ class StateRefreshMixin:
                 on_level=self._on_card_level,
                 on_pull=self._on_card_pull,
                 on_menu=self._on_pin_context_menu)
-            # 两列排布：左列 BIT31~16 自上往下，右列 BIT15~0 自上往下
             # 行距 0，相邻行以 alt 斑马纹背景区分
-            if bit >= 16:
-                row, col = 31 - bit, self._matrix_col_l
-            else:
-                row, col = 15 - bit, self._matrix_col_r
             card.setProperty("alt", str(row % 2))
             col.addWidget(card)
             self._pin_cards[(group, pin)] = card
