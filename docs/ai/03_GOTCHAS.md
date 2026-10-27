@@ -490,7 +490,7 @@ app.installEventFilter(_WinFilter())
 
 **修复**：用 `setFixedSize(w, h)` **同步钉死**目标尺寸（显式 min/max 优先于布局计算值，立即生效）；退出紧凑视图时 `setMinimumSize(*_MIN_WINDOW_SIZE)`（原为 `(0, 0)`，现还原全局最小约束 966×640）+ `setMaximumSize(16777215, 16777215)`（`QWIDGETSIZE_MAX`）解除固定尺寸，再 `restoreGeometry`。
 
-**固定尺寸 → 自适应**：钉死的过渡尺寸若偏大（如固定 460 但内容只需 331）会留底部空白；在 posted LayoutRequest 处理完后再 `_fit_compact_size()`：`layout().activate()` 后取 `sizeHint()` / `minimumSizeHint()` 的 max 做高度、保持宽度下限，重新 `setFixedSize`（实测 80ms 延迟足够，冒烟 22 断言全绿）。
+**固定尺寸 → 自适应**：钉死的过渡尺寸若偏大（如固定 460 但内容只需 331）会留底部空白；在 posted LayoutRequest 处理完后再 `_fit_compact_size()`（实测 80ms 延迟足够）。Suite 场景的 `QStackedWidget` 会把隐藏 Datalog 页计入窗口级 hint，且旧 `sizeHint()` 可能保持切换前尺寸，故不能直接用窗口 `sizeHint()` / `minimumSizeHint()` 决定紧凑尺寸；应按当前可见 Analyser 的 `minimumSizeHint()` 与实际尺寸的差值修正窗口（`new = current + hint - actual`），宽度保留紧凑下限。这样只按可见 Quick Setup 收缩（约 220～230px），且当前页不被裁切。
 
 **要点**：
 

@@ -9,7 +9,7 @@
     "batch_a_ch2_voltage": "1.5",
     "batch_a_ch3_voltage": "0.6",
     "batch_a_ch4_voltage": "0.6",
-    "batch_a_ch1_current": "0.2000",
+    "batch_a_ch1_current": "0.02",
     "batch_a_ch2_current": "0.02",
     "batch_a_ch3_current": "0.02",
     "batch_a_ch4_current": "0.02",

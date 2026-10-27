@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "config": {
+    "device_addr": 26,
+    "reg_addr": 5,
+    "iic_width": 1,
+    "measure_channel": 3,
+    "msb": 3,
+    "lsb": 2,
+    "min_code": 0,
+    "max_code": 3
+  }
+}

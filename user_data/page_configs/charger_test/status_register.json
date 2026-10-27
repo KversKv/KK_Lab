@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "config": {
+    "test_item": "Voltage Sweep",
+    "device_addr": 106,
+    "reg_addr": 11,
+    "reg_bit": "6",
+    "iic_width": 1,
+    "test_channel": 1,
+    "start_voltage": 3.0,
+    "end_voltage": 5.0,
+    "step_voltage": 0.1,
+    "step_delay_ms": 10
+  }
+}

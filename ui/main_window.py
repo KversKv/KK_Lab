@@ -1960,7 +1960,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 self.showNormal()
             # 直接 resize 会被旧布局 minimum（≈原窗口高）顶回（缓存要等
             # posted 布局事件才刷新），先 setFixedSize 钉住过渡尺寸；
-            # 布局缓存刷新后按内容 hint 二次自适应（_fit_compact_size），
+            # 布局缓存刷新后按可见页面内容二次自适应（_fit_compact_size），
             # 消除固定高度多出的底部空白。
             self.setFixedSize(*_COMPACT_VIEW_SIZE)
             QTimer.singleShot(80, self._fit_compact_size)
@@ -2010,19 +2010,22 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.show()
 
     def _fit_compact_size(self):
-        """紧凑视图尺寸自适应：按内容 hint 收缩高度，消除底部空白。
+        """紧凑视图尺寸自适应：按当前可见页面内容收缩窗口。
 
         须在布局 minimum 缓存刷新后（posted LayoutRequest 已处理，进入
-        紧凑后 ≥80ms）调用；宽度保持过渡尺寸下限（双设备 Quick Setup 列
-        较宽，hint 宽度不足以无压缩显示）。
+        紧凑后 ≥80ms）调用。窗口级 hint 会包含 Suite 内隐藏的 Datalog 页，
+        因此按 Analyser 当前尺寸与其 minimumSizeHint 的差值调整窗口。
         """
         if not self._compact_view:
             return
         self.layout().activate()
-        hint = self.sizeHint()
-        min_hint = self.minimumSizeHint()
-        width = max(_COMPACT_VIEW_SIZE[0], hint.width(), min_hint.width())
-        height = max(hint.height(), min_hint.height())
+        page = self.n6705c_analyser_ui
+        page_min_hint = page.minimumSizeHint()
+        width = max(
+            _COMPACT_VIEW_SIZE[0],
+            self.width() + page_min_hint.width() - page.width(),
+        )
+        height = self.height() + page_min_hint.height() - page.height()
         self.setFixedSize(width, height)
 
     def _update_instrument_status(self):

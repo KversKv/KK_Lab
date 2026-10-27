@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "config": {
+    "vmeter_channel": "CH 1",
+    "test_mode": "Current",
+    "device_addr": 26,
+    "reg_addr": 9,
+    "msb": 9,
+    "lsb": 5,
+    "min_code": 0,
+    "max_code": 255,
+    "iic_width": 1
+  }
+}
