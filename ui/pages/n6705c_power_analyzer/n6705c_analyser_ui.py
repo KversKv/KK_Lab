@@ -70,7 +70,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._dirty_current = False
         self.channels = []
         self._prev_dual_mode = None
-        self._polling_enabled = True
+        self._polling_enabled = False
 
         self._state_poller = InstrumentStatePoller(
             read_state_fn=self._read_channel_snapshot,
@@ -587,7 +587,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         self.polling_switch = SlideToggle(self)
         self.polling_switch.setFixedSize(52, 22)
-        self.polling_switch.setChecked(True)
+        self.polling_switch.setChecked(False)
         self.polling_switch.setToolTip("启用后轮询当前 N6705C 通道状态；关闭可避免窗口切换时的状态读取竞态")
         self.polling_switch.clicked.connect(self._on_polling_toggle_clicked)
         header_layout.addWidget(self.polling_switch)
