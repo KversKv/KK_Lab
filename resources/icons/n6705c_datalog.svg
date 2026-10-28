@@ -1,23 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
   <defs>
-    <linearGradient id="bg" x1="36" y1="24" x2="220" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#182B45"/><stop offset="0.52" stop-color="#0C192D"/><stop offset="1" stop-color="#07101D"/></linearGradient>
-    <radialGradient id="halo" cx="204" cy="52" r="142" gradientUnits="userSpaceOnUse"><stop stop-color="#38BDF8" stop-opacity="0.29"/><stop offset="1" stop-color="#2563EB" stop-opacity="0"/></radialGradient>
-    <linearGradient id="accent" x1="64" y1="106" x2="192" y2="182" gradientUnits="userSpaceOnUse"><stop stop-color="#7DD3FC"/><stop offset="1" stop-color="#3B82F6"/></linearGradient>
-    <linearGradient id="waveform" x1="64" y1="106" x2="192" y2="182" gradientUnits="userSpaceOnUse"><stop stop-color="#86EFAC"/><stop offset="1" stop-color="#22C55E"/></linearGradient>
+    <!-- Anodized Instrument Chassis Background -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#111C24"/>
+      <stop offset="100%" stop-color="#070C10"/>
+    </linearGradient>
+    <!-- Metallic Rim Bevel -->
+    <linearGradient id="rimGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#244254"/>
+      <stop offset="50%" stop-color="#101E26"/>
+      <stop offset="100%" stop-color="#07090D"/>
+    </linearGradient>
+    <!-- Primary Waveform Gradient -->
+    <linearGradient id="waveGrad" x1="20" y1="40" x2="236" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10F59B"/>
+      <stop offset="45%" stop-color="#8AFBD0"/>
+      <stop offset="100%" stop-color="#10F59B"/>
+    </linearGradient>
+    <!-- Area Under Curve Integration Fill (Q = ∫I dt) -->
+    <linearGradient id="areaFill" x1="0" y1="45" x2="0" y2="215" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10F59B" stop-opacity="0.42"/>
+      <stop offset="75%" stop-color="#10F59B" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#10F59B" stop-opacity="0.0"/>
+    </linearGradient>
+    <!-- Keysight Red Ribbon / Trigger Gradient -->
+    <linearGradient id="accentGrad" x1="0" y1="20" x2="220" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7DD3FC"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+    <!-- Ambient Center Glow -->
+    <radialGradient id="ambientGlow" cx="118" cy="115" r="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10F59B" stop-opacity="0.14"/>
+      <stop offset="60%" stop-color="#38BDF8" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="6" y="6" width="244" height="244" rx="28" fill="#050A15"/>
-  <rect x="10" y="10" width="236" height="236" rx="26" fill="url(#bg)" stroke="#2E496A" stroke-width="2"/>
-  <rect x="12" y="12" width="232" height="232" rx="25" fill="url(#halo)"/>
-  <path d="M44 15h168c17 0 29 12 29 29" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="3" stroke-linecap="round"/>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="40" y="54" width="176" height="132" rx="11" fill="#101E33" stroke="#F4F7FF" stroke-width="9"/>
-    <path d="M56 130h20l12-36 18 62 20-84 18 70 14-28h58" stroke="url(#waveform)" stroke-width="9"/>
-    <path d="M96 70v96M150 70v96" stroke="#F4F7FF" stroke-opacity="0.62" stroke-width="5" stroke-dasharray="8 8"/>
-    <path d="M60 170h128M72 164v12M100 164v12M128 164v12M156 164v12M184 164v12" stroke="#94A3B8" stroke-width="5"/>
-    <circle cx="176" cy="156" r="29" fill="#102039" stroke="#F4F7FF" stroke-width="8"/>
-    <path d="M194 177l19 19" stroke="url(#accent)" stroke-width="10"/>
-    <path d="M158 158h10l6-13 9 23 7-14h9" stroke="#22C55E" stroke-width="6"/>
-    <circle cx="61" cy="73" r="6" fill="#7DD3FC" stroke="none"/>
+  <!-- Outer Titanium Squircle Chassis -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bgGrad)" stroke="url(#rimGrad)" stroke-width="5"/>
+  <rect x="11" y="11" width="234" height="234" rx="49" fill="url(#ambientGlow)"/>
+  <!-- Subtle Instrument Graticule Grid -->
+  <g stroke="#263248" stroke-width="1.5" opacity="0.45">
+    <line x1="24" y1="76" x2="232" y2="76" stroke-dasharray="4 6"/>
+    <line x1="24" y1="128" x2="232" y2="128" stroke-dasharray="4 6"/>
+    <line x1="24" y1="180" x2="232" y2="180" stroke-dasharray="4 6"/>
+    <line x1="76" y1="28" x2="76" y2="228" stroke-dasharray="4 6"/>
+    <line x1="128" y1="28" x2="128" y2="228" stroke-dasharray="4 6"/>
+    <line x1="180" y1="28" x2="180" y2="228" stroke-dasharray="4 6"/>
   </g>
-  <path d="M40 219h34" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/><circle cx="82" cy="219" r="3" fill="#7DD3FC"/>
-</svg>
+  <!-- Top Keysight Instrument Accent Bar -->
+  <path d="M 76 10.5 L 180 10.5" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+  <path d="M 24 176 L 56 176 L 68 140 L 86 190 L 114 46 L 146 154 L 166 112 L 230 112 L 230 212 L 24 212 Z" fill="url(#areaFill)"/>
+
+  <!-- Keysight Crimson Trigger Marker Line (M1) -->
+  <line x1="114" y1="24" x2="114" y2="226" stroke="#38BDF8" stroke-width="5" stroke-dasharray="10 7" stroke-linecap="round"/>
+  <!-- Top & Bottom Trigger Triangles -->
+  <polygon points="103,20 125,20 114,35" fill="#38BDF8"/>
+  <polygon points="103,234 125,234 114,219" fill="#38BDF8"/>
+  <!-- Main CH1 Current Pulse Waveform -->
+  <path d="M 24 176 L 56 176 L 68 140 L 86 190 L 114 46 L 146 154 L 166 112 L 230 112" fill="none" stroke="url(#waveGrad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" filter="url(#neonGlow)"/>
+
+  <!-- Peak Current Capture Node -->
+  <circle cx="114" cy="46" r="10" fill="#38BDF8" stroke="#FFFFFF" stroke-width="4.5"/></svg>
