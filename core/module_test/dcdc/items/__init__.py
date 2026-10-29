@@ -13,7 +13,7 @@ from core.module_test._common import (
     ItemContext, apply_load_current, linspace, load_reg_summary, measure_avg,
     measure_vout, mock_jitter, parse_channel, restore_vin, run_line_transient,
     run_load_capability_ripple, run_load_transient, run_vout_scan,
-    safe_measure, set_load_current, settle, setup_load_channel,
+    set_load_current, settle, setup_load_channel,
     setup_scope_timebase, setup_source_channel, setup_vout_meter, teardown_load,
     vbat_channel, vin_current_limit_a, write_csv,
 )
@@ -187,22 +187,19 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vbat_ch = vbat_channel(cfg)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
-
-    def _scan_vout() -> float:
-        # 与 Output Voltage Scan 一致：Vout 直接读 Iload 负载通道电压（CCLoad 通道并接 DUT 输出）
-        return safe_measure(ctx.n6705c, "measure_voltage", iload_ch, 0.0)
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
 
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list] = []
-    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vbat_ch, vin_start, current_limit=vin_current_limit_a(cfg))
+        setup_vout_meter(ctx)
         # 本项全程挂 1mA 轻载（先写电流再开通道，结束后关断）
         setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
         # 轻载开启后等待建立稳态，再开始扫描
         settle(ctx, 0.2)
-        ctx.log_fn(f"[{item_key}] [TEST] Vout readback via Iload channel CH{iload_ch}.")
     for i, vin in enumerate(points):
         if ctx.stop_flag_fn():
             break
@@ -215,7 +212,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
             except Exception:  # noqa: BLE001
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
-            v = _scan_vout() * 1000.0
+            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
+                             default=nominal_mv / 1000.0) * 1000.0
         rows.append([vin, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
     if not ctx.is_mock:
