@@ -15,8 +15,9 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QPoint, Signal
 
+from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 from ui.modules.serialCom_module.serialCom_module_frame import (
     SerialComMixin, MODE_FULL,
 )
@@ -184,6 +185,29 @@ def main():
     # --- B17: 未连接时即时应用为空操作（不崩） ---
     w2._sc_apply_serial_cfg_to_live_connection()
     check("B17 未连接空操作", True)
+
+    # --- B18: 达到最大行数后，关闭自动滚动仍冻结首个可见行 ---
+    log_panel = SerialLogPanel(max_lines=100, show_timestamp=False)
+    log_panel.resize(600, 180)
+    log_panel.show()
+    log_panel._append_html_batch([f"line {i:03d}" for i in range(100)])
+    app.processEvents()
+    sb = log_panel.log_edit.verticalScrollBar()
+    sb.setValue(max(0, sb.maximum() // 2))
+    app.processEvents()
+    top_cursor = log_panel.log_edit.cursorForPosition(QPoint(5, 5))
+    top_text_before = top_cursor.block().text()
+    top_y_before = log_panel.log_edit.cursorRect(top_cursor).y()
+    log_panel._append_html_batch([f"line {i:03d}" for i in range(100, 110)])
+    app.processEvents()
+    top_cursor = log_panel.log_edit.cursorForPosition(QPoint(5, 5))
+    check("B18 大日志冻结可见内容",
+          top_cursor.block().text() == top_text_before
+          and log_panel.log_edit.cursorRect(top_cursor).y() == top_y_before,
+          f"before={top_text_before}/{top_y_before}, "
+          f"after={top_cursor.block().text()}/{log_panel.log_edit.cursorRect(top_cursor).y()}")
+    check("B18 大日志保持自动滚动关闭", log_panel.auto_scroll is False)
+    log_panel.close()
 
     app.processEvents()
 

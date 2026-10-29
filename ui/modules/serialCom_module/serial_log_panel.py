@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSpinBox, QTextEdit,
     QVBoxLayout, QWidget,
 )
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QTextCursor
 
 from log_config import get_logger
@@ -647,6 +647,11 @@ class SerialLogPanel(QFrame):
             return
         sb = self.log_edit.verticalScrollBar()
         prev_value = sb.value() if sb else 0
+        anchor_cursor = None
+        anchor_y = 0
+        if sb and not self.auto_scroll:
+            anchor_cursor = self.log_edit.cursorForPosition(QPoint(0, 0))
+            anchor_y = self.log_edit.cursorRect(anchor_cursor).y()
         self.appending = True
         try:
             self.log_edit.setUpdatesEnabled(False)
@@ -660,6 +665,10 @@ class SerialLogPanel(QFrame):
                 self.scroll_to_bottom()
             elif sb:
                 sb.setValue(prev_value)
+                if anchor_cursor is not None:
+                    anchor_delta = self.log_edit.cursorRect(anchor_cursor).y() - anchor_y
+                    if anchor_delta:
+                        sb.setValue(sb.value() + anchor_delta)
         finally:
             self.appending = False
 
