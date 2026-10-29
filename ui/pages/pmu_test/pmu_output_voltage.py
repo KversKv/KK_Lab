@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.widgets.config_memory import ConfigMemory
+from ui.pages.consumption_test.widgets import BinaryTextToggle
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
 from PySide6.QtGui import QFont
 
@@ -65,6 +66,8 @@ _TAIL_STOP_SPAN = 0.002  # V
 # 连续 N 点压差低于参考步进的指定比例即判为死区/饱和段（软饱和缓变与平坦段同覆盖）
 _VALID_STEP_RATIO = 0.85
 _VALID_STEP_CONSEC = 2
+
+_CC_LOAD_CURRENT_A = 0.001
 
 try:
     from PySide6.QtCharts import (
@@ -221,6 +224,7 @@ class OutputVoltageTestThread(QThread):
 
     def run(self):
         restore_ctx = None  # (i2c, device_addr, reg_addr, default_reg, width_flag)
+        cc_load_ch = None
         try:
             device_addr = int(self._cfg["device_addr"], 16)
             reg_addr = int(self._cfg["reg_addr"], 16)
@@ -230,6 +234,7 @@ class OutputVoltageTestThread(QThread):
             min_code = int(self._cfg["min_code"], 16)
             max_code = int(self._cfg["max_code"], 16)
             vmeter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
+            vmeter_mode = self._cfg.get("vmeter_mode", "VMETer")
 
             if self._debug:
                 i2c = MockI2C()
@@ -237,7 +242,17 @@ class OutputVoltageTestThread(QThread):
             else:
                 i2c = I2CInterface()
 
-            self._n6705c.set_mode(vmeter_ch, "VMETer")
+            if vmeter_mode == "CCLoad":
+                cc_load_ch = vmeter_ch
+                self._n6705c.channel_off(vmeter_ch)
+                self._n6705c.set_mode(vmeter_ch, "CCLoad")
+                self._n6705c.set_current(vmeter_ch, -_CC_LOAD_CURRENT_A)
+                self._n6705c.channel_on(vmeter_ch)
+                self.log_message.emit(f"[TEST] CH{vmeter_ch}=CCLoad, load current=1mA")
+            else:
+                self._n6705c.set_mode(vmeter_ch, "VMETer")
+                self._n6705c.channel_on(vmeter_ch)
+                self.log_message.emit(f"[TEST] CH{vmeter_ch}=VMETer (voltage only), channel ON")
 
             bit_count = msb - lsb + 1
             mask = (1 << bit_count) - 1
@@ -490,6 +505,13 @@ class OutputVoltageTestThread(QThread):
         except Exception as e:
             self.log_message.emit(f"[ERROR] Test failed: {e}")
         finally:
+            if cc_load_ch is not None:
+                try:
+                    self._n6705c.channel_off(cc_load_ch)
+                    self.log_message.emit(f"[TEST] CH{cc_load_ch} CC Load turned off.")
+                except Exception as e:
+                    self.log_message.emit(f"[ERROR] Failed to turn off CC Load: {e}")
+                    _logger.error("Failed to turn off CC Load", exc_info=True)
             # 兜底恢复寄存器默认值：覆盖正常完成 / 用户停止 / 异常全部路径
             if restore_ctx is not None:
                 try:
@@ -929,8 +951,21 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         self.vmeter_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
         self.vmeter_channel_combo.setCurrentIndex(1)
 
+        mode_label = QLabel("Channel Mode")
+        mode_label.setObjectName("fieldLabel")
+        self.vmeter_mode_toggle = BinaryTextToggle(
+            "VMETer", "VMeter", "CCLoad", "CC Load",
+            fixed_width=160,
+        )
+        self.vmeter_mode_toggle.setToolTip(
+            "VMeter: voltage measurement only\n"
+            "CC Load: voltage measurement with a fixed 1 mA discharge load"
+        )
+
         grid.addWidget(vmeter_label, 0, 0)
         grid.addWidget(self.vmeter_channel_combo, 0, 1)
+        grid.addWidget(mode_label, 1, 0)
+        grid.addWidget(self.vmeter_mode_toggle, 1, 1)
 
         layout.addLayout(grid)
 
@@ -1214,6 +1249,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
             'ovp_value': self.ovp_spin.value(),
 
             'vmeter_channel': self.vmeter_channel_combo.currentText(),
+            'vmeter_mode': self.vmeter_mode_toggle.value(),
             'device_addr': self.device_addr_edit.text().strip(),
             'reg_addr': self.reg_addr_edit.text().strip(),
             'msb': self.msb_spin.value(),
@@ -1234,6 +1270,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
         widgets = [
             self.vmeter_channel_combo,
+            self.vmeter_mode_toggle,
             self.device_addr_edit,
             self.reg_addr_edit,
             self.msb_spin,
@@ -1299,6 +1336,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
         config = {
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
+            "vmeter_mode": self.vmeter_mode_toggle.value(),
             "device_addr": self.device_addr_edit.text().strip(),
             "reg_addr": self.reg_addr_edit.text().strip(),
             "msb": self.msb_spin.value(),
@@ -1539,6 +1577,10 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
                     break
             return f"CH {digits}" if digits else None
 
+        def _normalize_vmeter_mode(val) -> str | None:
+            key = "".join(ch for ch in str(val).upper() if ch.isalnum())
+            return {"VMETER": "VMETer", "CCLOAD": "CCLoad"}.get(key)
+
         # 通道与扫描参数（键名与 get_test_config 对齐）
         _set_combo(self.output_channel_combo, "output_channel",
                    normalize=_normalize_channel)
@@ -1555,6 +1597,13 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         # I2C / 电压计配置
         _set_combo(self.vmeter_channel_combo, "vmeter_channel",
                    normalize=_normalize_channel)
+        vmeter_mode = cfg.get("vmeter_mode")
+        if vmeter_mode is not None:
+            normalized_mode = _normalize_vmeter_mode(vmeter_mode)
+            if normalized_mode is not None:
+                self.vmeter_mode_toggle.setValue(normalized_mode)
+                applied.append("vmeter_mode")
+                touched.append(self.vmeter_mode_toggle)
         _set_text(self.device_addr_edit, "device_addr")
         _set_text(self.reg_addr_edit, "reg_addr")
         _set_int_spin(self.msb_spin, "msb")
