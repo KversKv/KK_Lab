@@ -296,6 +296,15 @@ class MarkersViewMixin:
             if snap_marker:
                 self._show_marker_context_menu(snap_marker, event)
                 event.accept()
+                return
+            vb = self.plot_widget.getPlotItem().getViewBox()
+            if (self._find_annotation_at_scene(scene_pos) is None
+                    and vb.sceneBoundingRect().contains(scene_pos)):
+                screen_pos = event.screenPos()
+                screen_pos = QPoint(int(screen_pos.x()), int(screen_pos.y()))
+                x_val = vb.mapSceneToView(scene_pos).x()
+                self._show_marker_move_here_menu(x_val, screen_pos)
+                event.accept()
             return
 
         if self._pending_marker is None:
