@@ -19,7 +19,7 @@ sys.path.append(get_resource_base())
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
-    QSizePolicy, QProgressBar, QScrollArea, QMessageBox
+    QSizePolicy, QProgressBar, QScrollArea, QMessageBox, QCheckBox
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.wheel_line_edit import HexWheelLineEdit
@@ -224,7 +224,7 @@ class OutputVoltageTestThread(QThread):
 
     def run(self):
         restore_ctx = None  # (i2c, device_addr, reg_addr, default_reg, width_flag)
-        cc_load_ch = None
+        close_channel_ch = None
         try:
             device_addr = int(self._cfg["device_addr"], 16)
             reg_addr = int(self._cfg["reg_addr"], 16)
@@ -235,6 +235,8 @@ class OutputVoltageTestThread(QThread):
             max_code = int(self._cfg["max_code"], 16)
             vmeter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
             vmeter_mode = self._cfg.get("vmeter_mode", "VMETer")
+            if self._cfg.get("close_channel_after", False):
+                close_channel_ch = vmeter_ch
 
             if self._debug:
                 i2c = MockI2C()
@@ -243,7 +245,6 @@ class OutputVoltageTestThread(QThread):
                 i2c = I2CInterface()
 
             if vmeter_mode == "CCLoad":
-                cc_load_ch = vmeter_ch
                 self._n6705c.channel_off(vmeter_ch)
                 self._n6705c.set_mode(vmeter_ch, "CCLoad")
                 self._n6705c.set_current(vmeter_ch, -_CC_LOAD_CURRENT_A)
@@ -505,13 +506,13 @@ class OutputVoltageTestThread(QThread):
         except Exception as e:
             self.log_message.emit(f"[ERROR] Test failed: {e}")
         finally:
-            if cc_load_ch is not None:
+            if close_channel_ch is not None:
                 try:
-                    self._n6705c.channel_off(cc_load_ch)
-                    self.log_message.emit(f"[TEST] CH{cc_load_ch} CC Load turned off.")
+                    self._n6705c.channel_off(close_channel_ch)
+                    self.log_message.emit(f"[TEST] CH{close_channel_ch} turned off after test.")
                 except Exception as e:
-                    self.log_message.emit(f"[ERROR] Failed to turn off CC Load: {e}")
-                    _logger.error("Failed to turn off CC Load", exc_info=True)
+                    self.log_message.emit(f"[ERROR] Failed to turn off channel: {e}")
+                    _logger.error("Failed to turn off channel", exc_info=True)
             # 兜底恢复寄存器默认值：覆盖正常完成 / 用户停止 / 异常全部路径
             if restore_ctx is not None:
                 try:
@@ -582,7 +583,11 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         font = QFont("Segoe UI", 9)
         self.setFont(font)
 
-        self.setStyleSheet("""
+        icons_dir = os.path.join(get_resource_base(), "resources", "icons")
+        checkbox_checked = os.path.join(icons_dir, "checked_4f46e5.svg").replace("\\", "/")
+        checkbox_unchecked = os.path.join(icons_dir, "unchecked_4f46e5.svg").replace("\\", "/")
+
+        page_qss = ("""
             QWidget {
                 background-color: #020817;
                 color: #dbe7ff;
@@ -638,6 +643,21 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
                 color: #8eb0e3;
                 font-size: 11px;
                 background-color: transparent;
+            }
+
+            QCheckBox#closeChannelAfterCheckbox {
+                background-color: transparent;
+                border: none;
+            }
+
+            QCheckBox#closeChannelAfterCheckbox::indicator {
+                width: 16px;
+                height: 16px;
+                image: url("__UNCHECKED__");
+            }
+
+            QCheckBox#closeChannelAfterCheckbox::indicator:checked {
+                image: url("__CHECKED__");
             }
 
             QLabel#statusOk {
@@ -800,7 +820,8 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
                 background-color: #5b5cf6;
                 border-radius: 4px;
             }
-        """ + SCROLLBAR_STYLE)
+        """).replace("__UNCHECKED__", checkbox_unchecked).replace("__CHECKED__", checkbox_checked)
+        self.setStyleSheet(page_qss + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
@@ -961,11 +982,29 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
             "VMeter: voltage measurement only\n"
             "CC Load: voltage measurement with a fixed 1 mA discharge load"
         )
+        close_channel_after_label = QLabel("Turn off channel after completion")
+        close_channel_after_label.setObjectName("fieldLabel")
+        close_channel_after_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.close_channel_after_checkbox = QCheckBox()
+        self.close_channel_after_checkbox.setObjectName("closeChannelAfterCheckbox")
+        self.close_channel_after_checkbox.setFixedSize(22, 22)
+        self.close_channel_after_checkbox.setCursor(Qt.PointingHandCursor)
+        self.close_channel_after_checkbox.setChecked(False)
+        self.close_channel_after_checkbox.setToolTip(
+            "When checked, turn off the selected VMeter channel after the test finishes, stops, or fails."
+        )
+        close_channel_after_row = QHBoxLayout()
+        close_channel_after_row.setContentsMargins(0, 0, 0, 0)
+        close_channel_after_row.setSpacing(8)
+        close_channel_after_row.addWidget(close_channel_after_label)
+        close_channel_after_row.addStretch()
+        close_channel_after_row.addWidget(self.close_channel_after_checkbox)
 
         grid.addWidget(vmeter_label, 0, 0)
         grid.addWidget(self.vmeter_channel_combo, 0, 1)
         grid.addWidget(mode_label, 1, 0)
         grid.addWidget(self.vmeter_mode_toggle, 1, 1)
+        grid.addLayout(close_channel_after_row, 2, 0, 1, 2)
 
         layout.addLayout(grid)
 
@@ -1250,6 +1289,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
             'vmeter_channel': self.vmeter_channel_combo.currentText(),
             'vmeter_mode': self.vmeter_mode_toggle.value(),
+            'close_channel_after': self.close_channel_after_checkbox.isChecked(),
             'device_addr': self.device_addr_edit.text().strip(),
             'reg_addr': self.reg_addr_edit.text().strip(),
             'msb': self.msb_spin.value(),
@@ -1271,6 +1311,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         widgets = [
             self.vmeter_channel_combo,
             self.vmeter_mode_toggle,
+            self.close_channel_after_checkbox,
             self.device_addr_edit,
             self.reg_addr_edit,
             self.msb_spin,
@@ -1337,6 +1378,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         config = {
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
             "vmeter_mode": self.vmeter_mode_toggle.value(),
+            "close_channel_after": self.close_channel_after_checkbox.isChecked(),
             "device_addr": self.device_addr_edit.text().strip(),
             "reg_addr": self.reg_addr_edit.text().strip(),
             "msb": self.msb_spin.value(),
@@ -1604,6 +1646,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
                 self.vmeter_mode_toggle.setValue(normalized_mode)
                 applied.append("vmeter_mode")
                 touched.append(self.vmeter_mode_toggle)
+        _set_check(self.close_channel_after_checkbox, "close_channel_after")
         _set_text(self.device_addr_edit, "device_addr")
         _set_text(self.reg_addr_edit, "reg_addr")
         _set_int_spin(self.msb_spin, "msb")
