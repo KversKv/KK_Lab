@@ -3,7 +3,6 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_vout_scan",
       "ldo_load_reg",
       "ldo_line_reg",
       "ldo_quiescent",
@@ -21,13 +20,14 @@
     "temp_soak_s": 300,
     "temp_tolerance_c": 2,
     "temp_wait_s": 1800,
+    "vbat_channel": "CH 1",
     "vin_channel": "CH 1",
     "vout_channel": "CH 2",
-    "iload_channel": "CH 3",
-    "force_channel": "CH 3",
+    "iload_channel": "CH 2",
+    "force_channel": "CH 2",
     "volt_method": "scope",
     "vout_nominal_mv": 800,
-    "max_iload_ma": 400,
+    "max_iload_ma": 200,
     "device_addr": "0x17",
     "width_flag": 1,
     "scope_vout_channel": 1,
@@ -69,7 +69,7 @@
         "vin_start_v": 2.7,
         "vin_end_v": 5.0,
         "vin_step_v": 0.2,
-        "settle_time_s": 0.05,
+        "settle_time_s": 0.1,
         "average_cnt": 3
       },
       "ldo_ripple": {
