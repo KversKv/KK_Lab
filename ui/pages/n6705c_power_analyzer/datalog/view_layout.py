@@ -1457,7 +1457,7 @@ class LayoutViewMixin:
             {
                 "target": self.chart_frame,
                 "title": "第 7 步：分析波形",
-                "text": "· 点击通道区域选中，拖拽调整偏移、滚轮缩放比例\n· 悬停查看各通道在当前时间点的数值\n· 工具栏 Marker A / B 放置标记线，圈选区间做统计分析\n· Box Zoom 框选放大，Fit View 一键全览",
+                "text": "· 点击通道区域选中，拖拽调整偏移、滚轮缩放比例\n· 悬停查看各通道在当前时间点的数值\n· 工具栏 Marker A / B 放置标记线，空白处右键可移动 Marker\n· Box Zoom 框选放大，Fit View 一键全览",
             },
             {
                 "target": self.measurement_card,
