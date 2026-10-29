@@ -1,0 +1,3150 @@
+{
+  "name": "CPS5215",
+  "device_addr": "0x75",
+  "speed_mode": 2,
+  "data_bits": 8,
+  "reg_bits": 8,
+  "registers": [
+    {
+      "name": "Product_ID",
+      "reg_addr": "0x00",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x24; Access: RO",
+      "bit_fields": [
+        {
+          "name": "product_id",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x24; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "Device_ID",
+      "reg_addr": "0x01",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: RO",
+      "bit_fields": [
+        {
+          "name": "device_id",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "TRIM_LOAD",
+      "reg_addr": "0x02",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x01; Access: RO",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 1,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "trim_load_done",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "reload efuse data, back to trim register 1: trim data done 0: reloading efuse, back to trim register; Default: 0x1; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "SYSTEM",
+      "reg_addr": "0x10",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x20; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EN_Constant_Current",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Enable of the output constant current function. 0: disable 1: enable; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "VOUT RESET",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Write 1, reset the power stage, VOUT; Default: 0x0; Access: RWc",
+          "access": "RWc"
+        },
+        {
+          "name": "DIS_WATCHDOG",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Watchdog timer disable 0: watchdog is enabled 1: watchdog is disabled; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_ULTRA-SONIC",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Enable of the ultra-sonic mode function. 0: disable 1: enable; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_FPWM",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Enable of the forced-PWM mode function. 0: disable 1: enable; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_LOOP_INT",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "enable loop interrupt when interrupt status is not cleared (cycle = 100ms) 0: Enable 1: Disable; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_SHIPMODE",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Ship Mode Enable 0: disable 1: Enable Ship Mode; Default: 0x0; Access: RWc",
+          "access": "RWc"
+        },
+        {
+          "name": "Sys_reset",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Write 1, reset the whole digital system; Default: 0x0; Access: RWc",
+          "access": "RWc"
+        }
+      ]
+    },
+    {
+      "name": "VOUT_CFG0",
+      "reg_addr": "0x11",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xDC; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "VOUT[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "5.2Vdefault, VO=3.0V+0.01V*VOUT_CFG), 0.01V/step; Default: 0xDC; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "VOUT_CFG1",
+      "reg_addr": "0x12",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 3,
+          "low_bit": 1,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "TX_Busy",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "BB is sending analog communication message 0: Not busy 1: Busy; Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "IOUT_CFG",
+      "reg_addr": "0x13",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x08; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "IOUT_CC[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Output constant current setting,10mA/step, 20mA+IOUT_CC[7:0]*10mA; Default: 0x08; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "OTHER_CFG",
+      "reg_addr": "0x14",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x03; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "PRE_SET_INSITE",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Preset insite bit 0: no effect 1: status change to 01; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "VOUT_OVP_SEL",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "VOUT OVP rising threshold and falling threshold selection 0: VOUT_OVP_R=VOUT_SET*110%, VOUT_OVP_F=VOUT_SET*105% 1: VOUT_OVP_R=VOUT_SET*115%, VOUT_OVP_F=VOUT_SET*110%; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "PWR_RESTART_TIME",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Select the VOUT power down duration after watchdog timer is triggered 0: 2S 1: 4S; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "WATCHDOG_TIMER[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Watchdog timer counter value selection 00: 40S 01: 80S 10: 120S 11: 160S; Default: 0x3; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "UART_CTRL",
+      "reg_addr": "0x15",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "FORCE_UART_MODE_OFF",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "force exit uart communication mode 0: no effect 1: effective; Default: 0x0; Access: RWc",
+          "access": "RWc"
+        },
+        {
+          "name": "FORCE_UART_MODE_ON",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "force Entry uart communication mode 0: no effect 1: effective; Default: 0x0; Access: RWc",
+          "access": "RWc"
+        }
+      ]
+    },
+    {
+      "name": "PHY_COMM_TX",
+      "reg_addr": "0x16",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Reserved; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "TX_MESSAGE[3:0]",
+          "high_bit": 3,
+          "low_bit": 0,
+          "description": "Message code will be sent to packet encoder for analog communication 0000: Reserved Package 0100: Ship Mode Package 0101: Restart Package 0110: UART Request Package 0001,0010,,0011,0111 - 1111: Customize Package; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "PHY_COMM_RX",
+      "reg_addr": "0x17",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: RO",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "UART_COMM_MODE",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "1: UART communication mode; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "CHARGER_MODE",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "1: Charging mode (Power transmission mode); Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "RX_MESSAGE[2:0]",
+          "high_bit": 3,
+          "low_bit": 0,
+          "description": "Message code recieved from packet decoder for analog communication 0000: Reserved Package 0100: Handshak received, the battery of slave device is normal 0101: Handshak received, the battery of slave device is critically low 0110: UART Request Package 0001,0010,0011,0111 - 1111: Custimize Package; Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "VOUT_CFG2",
+      "reg_addr": "0x18",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x04; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 3,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "DACVOUT_LOW_LEVEL",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: 4.5V 0: 4.0V; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "SLEWRATE[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "VOUT voltage slew rate function control (2.69 mV/Code) 00: 5mV/uS 01: 10mV/uS 10: 20mV/uS 11: 40mV/uS; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "OUT_PROT",
+      "reg_addr": "0x19",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x03; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "SCP_DEGLITCH[1:0]",
+          "high_bit": 3,
+          "low_bit": 2,
+          "description": "OUTPUT SCP deglitch timer selection 00: 10uS 01: 20uS 10: 40uS 11: 80uS; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "HICCUP_CYC_SEL",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Select the cycle number of current limiting before hiccup mode active 0: 16 1: 32; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "HICCUP_TIME_SEL",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Hiccup mode recovery delay time selection 0: 80 mS 1: 160 mS; Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "IO_CFG",
+      "reg_addr": "0x1A",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x02; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 3,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "UART_HZ_TIME",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "UART High-Z states lasts time length 1:50mS 0: 5mS; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "IO_Width",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "select the pulse width of IO ACK response signal 1:1.50mS 0: 0.25 ms; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "INT_Width",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "select the pulse width of Interrupt singal 1:1.5mS 0: 0.25 ms; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "PHY_HANDSHAKE_CFG",
+      "reg_addr": "0x1B",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x0F; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Reserved; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_WATCHDOG_RST",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Watchdog Rst Enable 0: enable 1: disable the whole protocol module; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_ACK_CUSTOMIZE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Enable responds an ACK handshake after received a CUSTOMIZE handshake 0: disable 1: enable; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_ACK_TRICKLE_CHG",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Enable responds an ACK handshake after received a TRICKLE_CHG handshake 0: disable 1: enable; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_RETRY",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "enable retry to send new request when handshake fail 1: Enable 0: disable; Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BYPASS",
+      "reg_addr": "0x1C",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 1,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_BYPASS",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Enable of BYPASS mode function. 0: disable 1: enable; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "RSVD0",
+      "reg_addr": "0x1D",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x04; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ANA_COMM_MODE",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "1: Analog communication mode; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "PSM_MODE",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "1: Power save mode; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 5,
+          "low_bit": 0,
+          "description": "Reserved"
+        }
+      ]
+    },
+    {
+      "name": "RSVD1",
+      "reg_addr": "0x1E",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "STATUS",
+      "reg_addr": "0x20",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: RO",
+      "bit_fields": [
+        {
+          "name": "INSITE_STATUS[1:0]",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "2'b11: CPS5214 In Site 2'b10：Others in site 2'b00/01: Out Site; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "OTP",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "1: Thermal shutdown event happens; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "OUT_OVP",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "1: Output OVP event happens; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "IN_OVP",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "1: Output short circuit event happens; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "SCP",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: Input OVP event happens; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "OUT_CC",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "1: Output average current limit event happens; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "IL_OCP",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: Inductor peak current limit or valley current limit event happens; Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "INT0",
+      "reg_addr": "0x30",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W1c",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "Reserved; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "OTP",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "1: Thermal shutdown event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "OUT_OVP",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "1: Output OVP event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "IN_OVP",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "1: Output short circuit event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "SCP",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: Input OVP event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Reserved; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "IL_OCP",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: Inductor peak current limit or valley current limit event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        }
+      ]
+    },
+    {
+      "name": "INT1",
+      "reg_addr": "0x31",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W1c",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Reserved; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "WD_TIMER",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "1: Watchdog timer interrupt happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "VOUT_TIMEOUT",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "1: when set en_uart=1, wait a2d_uart_sw_success over 500us; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "COMM_2_PWR",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "1: UART communication path is open and the load switch is ON; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "PWR_2_COMM",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "1: UART communication path is enabled and the load switch is OFF; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "LOAD_REMOVE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: Detected a load remove event; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "LOAD_INSERT",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "1: Detected a load insert event; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "Unknow device insert",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: Detected a unknow device insert event happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        }
+      ]
+    },
+    {
+      "name": "INT2",
+      "reg_addr": "0x32",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W1c",
+      "bit_fields": [
+        {
+          "name": "BPS_OK",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "1:Enter direct charge when EN_CONSTANT_CURRENT=1; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "BPS_FAIL",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "1: Exit from direct charge; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "NO_ACK",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "1: retry 2 times fail, interrupt happens; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "ACK",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "1: Received an ACK Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "CUSTMIZE_HDSHAKE",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "1: Received a Customize Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "RX_NORMAL_HDSHAKE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: Recived a Normal Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "TRICKLE_CHG",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "1: Received a Trickle Charge Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "COMM_REQUEST",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: Received an Request UART Communication Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        }
+      ]
+    },
+    {
+      "name": "INT3",
+      "reg_addr": "0x33",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W1c",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 3,
+          "description": "Reserved; Default: 0x00; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "RX_RSVD_HDSHAKE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: Recived a Reserved Handshake; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "UART_HZ_TIMEOUT",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "1: uart communication timeout a2d_uart_hz=0, over 5ms; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        },
+        {
+          "name": "UART_OVP",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: a2d_vout_ovp2v=1 vout over 2 v; Default: 0x0; Access: R/W1c",
+          "access": "R/W1c"
+        }
+      ]
+    },
+    {
+      "name": "MASK_INT0",
+      "reg_addr": "0x40",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "OTP",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "OUT_OVP",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "IN_OVP",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "SCP",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "IL_OCP",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "MASK_INT1",
+      "reg_addr": "0x41",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "WD_TIMER",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "VOUT_TIMEOUT",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "COMM_2_PWR",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "PWR_2_COMM",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "LOAD_REMOVE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "LOAD_INSERT",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Unknow device insert",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "MASK_INT2",
+      "reg_addr": "0x42",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "BPS_OK",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "BPS_FAIL",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "0: not-mask, 2: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "NO_ACK",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ACK",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "CUSTMIZE_HDSHAKE",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "RX_NORMAL_HDSHAKE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "TRICKLE_CHG",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "COMM_REQUEST",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "0: not-mask, 1: mask; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "MASK_INT3",
+      "reg_addr": "0x43",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xFF; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 3,
+          "description": "Reserved; Default: 0x1F; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "RX_RSVD_HDSHAKE",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "0: not-mask, 1: mask; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "UART_HZ_TIMEOUT",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "0: not-mask, 1: mask; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "UART_OVP",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "0: not-mask, 1: mask; Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "WATCHDOG_RESET",
+      "reg_addr": "0x5A",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 1,
+          "description": "Reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "WATCHDOG_FLUSH",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Watchdog counter reload 0: Invalid 1: Reload watchdog timer length to counter; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "KEY",
+      "reg_addr": "0x80",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: RW",
+      "bit_fields": [
+        {
+          "name": "BLOCK_CFG_KEY",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "The four registers 0x15-0x18 would not be modified, if the KEY is not matched. KEY = 0xA5; Default: 0x00; Access: WR",
+          "access": "WR"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_EN0",
+      "reg_addr": "0x81",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xFB; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "en_system",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "???; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_ramp",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_pwm_cmp",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_ea",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_detector",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_rtx_lsb",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "1: rx/tx lsb first for protocol package 0: rx/tx msb first for protocol package; Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_clk",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "enable clk1m disable clk1m when EN=0; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_driver",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_EN1",
+      "reg_addr": "0x82",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xFB; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "en_zcd_bck",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_zcd_bst",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_ldo2p8v",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_stb_comp",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_short_prot",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "en_i2cbuf",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "enable i2c buffer disbale i2c port when SHIP MODE enable; Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_iobuf",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "enable IO buffer disable when SHIP mode enable; Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "PROTECT0",
+      "reg_addr": "0x83",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xFF; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "en_fb_prot",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_peak_ocp",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_valley_ocp",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_peakocp_16cycle",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_valleyocp_16cycle",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_scp",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_ovp",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "en_absovp",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "PROTECT1",
+      "reg_addr": "0x84",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "en_thermal",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "socp_32cycle",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 5,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG0",
+      "reg_addr": "0x85",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0xA1; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "sdet_vin[1:0]",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "Default: 0x2; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sdet_vout[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x2; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "slpf_ea",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "shys_pwmcmp",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scp5usdeg",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scomp_clamph",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG1",
+      "reg_addr": "0x86",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x10; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "sramp_1meg",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sbck_minton",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sbck_mintoff",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sactimerx2",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sfsw_1meg",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sbckbst_rampx2",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG2",
+      "reg_addr": "0x87",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x50; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "scc_20to90ma_colevel[1:0]",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scc_100to700ma_colevel[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sforce_above1ma",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sforce_above5ma",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sforce_above95ma",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG3",
+      "reg_addr": "0x88",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x05; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "Reserved",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Busy",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "1'b0: Idle State 1'b1: Tx state / Wait Ack response; Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "EN_DISCH",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_UART",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "EN_LOADSWITCH",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG4",
+      "reg_addr": "0x89",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x50; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "scompr[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x2; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scompc[2:0]",
+          "high_bit": 4,
+          "low_bit": 2,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scompcapx16",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "scomp_discap",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG5",
+      "reg_addr": "0x8A",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x5F; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ssel_iref_zcd1[1:0]",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ssel_iref_zcd2[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ssel_iref_ea[1:0]",
+          "high_bit": 3,
+          "low_bit": 2,
+          "description": "Default: 0x3; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ssel_iref_pwmcmp[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Default: 0x3; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG6",
+      "reg_addr": "0x8B",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x10; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "sldo2p8v_disr",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "sbckbst_fswdiv2",
+          "high_bit": 4,
+          "low_bit": 4,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sbst_pfm_hys",
+          "high_bit": 3,
+          "low_bit": 3,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sea_gmx2",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "sbckbst_fsw1p5",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG7",
+      "reg_addr": "0x8C",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "szcd_bck_blank[1:0]",
+          "high_bit": 7,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "szcd_bst_blank[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 3,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG8",
+      "reg_addr": "0x8D",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x30; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "sinkvcap_on",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        },
+        {
+          "name": "sinkvcap_res[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x3; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 3,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG9",
+      "reg_addr": "0x8E",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ddis_fb_ab",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddis_fb_cd",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_dt_ab[1:0]",
+          "high_bit": 5,
+          "low_bit": 4,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_dt_cd[1:0]",
+          "high_bit": 3,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "bypass_ana",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG10",
+      "reg_addr": "0x8F",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x90; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ddrv_hs_a[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_ls_a[2:0]",
+          "high_bit": 4,
+          "low_bit": 2,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG11",
+      "reg_addr": "0x90",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x91; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ddrv_hs_b[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_ls_b[2:0]",
+          "high_bit": 4,
+          "low_bit": 2,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "d2a_sdis_32kclk",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "d2a_lowiq_ton",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG12",
+      "reg_addr": "0x91",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x92; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ddrv_hs_c[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_ls_c[2:0]",
+          "high_bit": 4,
+          "low_bit": 2,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "block12_rsvd",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Default: 0x2; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "BLOCK_RG13",
+      "reg_addr": "0x92",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x90; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "ddrv_hs_d[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ddrv_ls_d[2:0]",
+          "high_bit": 4,
+          "low_bit": 2,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "d2a_sbuck_rcomp_auto",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "bypass_ss",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE",
+      "reg_addr": "0xA0",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "tst_dig_sel[3:0]",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        },
+        {
+          "name": "tst_sys_i2c_sel",
+          "high_bit": 3,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        },
+        {
+          "name": "dft_comp_mode",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        },
+        {
+          "name": "dft_scan_mode",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE0",
+      "reg_addr": "0xA1",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "stm_en",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        },
+        {
+          "name": "solt",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: R/W",
+          "access": "R/W"
+        },
+        {
+          "name": "Reserved",
+          "high_bit": 5,
+          "low_bit": 0,
+          "description": "Reserved for future use.; Default: 0x00; Access: R",
+          "access": "R"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE1",
+      "reg_addr": "0xA2",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "stm[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: R/W",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE2",
+      "reg_addr": "0xA3",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "stm[15:8]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: R/W",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE3",
+      "reg_addr": "0xA4",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "stm[23:16]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: R/W",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "TESTMODE4",
+      "reg_addr": "0xA5",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "stm[31:24]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: R/W",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0",
+      "reg_addr": "0xC0",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_ea[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM1",
+      "reg_addr": "0xC1",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_fb_prot_vref[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM2",
+      "reg_addr": "0xC2",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x81; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_ton[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x81; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_stb_cs_1ma_level[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM3",
+      "reg_addr": "0xC3",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x82; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_toff[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x82; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_ldo2p8v_level[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM4",
+      "reg_addr": "0xC4",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_peak_ocp[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM5",
+      "reg_addr": "0xC5",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_valley_ocp[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM6",
+      "reg_addr": "0xC6",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_95ma[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM7",
+      "reg_addr": "0xC7",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_g2_out[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM8",
+      "reg_addr": "0xC8",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_g3_out[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM9",
+      "reg_addr": "0xC9",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_cs3_ofst[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x00; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0A",
+      "reg_addr": "0xCA",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_vref[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0B",
+      "reg_addr": "0xCB",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_iref[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x20; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "ENB_PROTOCOL_enb",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_dev_addr_bit3",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "1: i2c device address bit[3] = 1'b1 0: i2c device address bit[3] = 1'b0; Default: 0x0; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0C",
+      "reg_addr": "0xCC",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x90; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_stb[2:0]",
+          "high_bit": 7,
+          "low_bit": 5,
+          "description": "Default: 0x4; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_comp_cap[4:0]",
+          "high_bit": 4,
+          "low_bit": 0,
+          "description": "Default: 0x10; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0D",
+      "reg_addr": "0xCD",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x20; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_cs3_gain0",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_mintoff_lowiq",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_shortocp[5:0]",
+          "high_bit": 5,
+          "low_bit": 0,
+          "description": "Default: 0x20; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0E",
+      "reg_addr": "0xCE",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x81; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_osc[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x81"
+        },
+        {
+          "name": "strim_bit_width",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "2'b11: +/- 30% 2’b10: +/- 25% 2'b01: +/- 20% 2'b00: +/- 10%; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM0F",
+      "reg_addr": "0xCF",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x82; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_cs1_ofst<5:0>",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x82; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_ldo_comm_level[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM10",
+      "reg_addr": "0xD0",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_ea_cc_20to90ma[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM11",
+      "reg_addr": "0xD1",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_ea_cc_100to750ma[7:0]",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM12",
+      "reg_addr": "0xD2",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x82; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_cs2_ofst[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x82; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_osc32k<3:2>",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM13",
+      "reg_addr": "0xD3",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_lowiq_vout[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_osc32k<1:0>",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM14",
+      "reg_addr": "0xD4",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x70; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_14_rsvd",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x70; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM15",
+      "reg_addr": "0xD5",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x20; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "sgain_ramp[3:0]",
+          "high_bit": 7,
+          "low_bit": 4,
+          "description": "Default: 0x2; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_dreg2_fstsns[1:0]",
+          "high_bit": 3,
+          "low_bit": 2,
+          "description": "Default: 0x0; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_zcd_capsns2x_bst",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_zcd_capsns2x_bck",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM16",
+      "reg_addr": "0xD6",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_dacbuff[5:0]",
+          "high_bit": 7,
+          "low_bit": 2,
+          "description": "Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_zcd_trim_bst[1:0]",
+          "high_bit": 1,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM17",
+      "reg_addr": "0xD7",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_bg[4:0]",
+          "high_bit": 7,
+          "low_bit": 3,
+          "description": "Default: 0x00; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_zcd_trim_bck[2:0]",
+          "high_bit": 2,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM18",
+      "reg_addr": "0xD8",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_cc_cs3_ofst[8]",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_2xwindow",
+          "high_bit": 6,
+          "low_bit": 6,
+          "description": "Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_cc_cs2_ibias",
+          "high_bit": 5,
+          "low_bit": 5,
+          "description": "Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_exceed5ma_100us_cfg",
+          "high_bit": 4,
+          "low_bit": 3,
+          "description": "filter of a2d_exceed5ma_ori falling edge 00:500 us；01：1 ms 10-11：0us; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_scplevel_sel",
+          "high_bit": 2,
+          "low_bit": 2,
+          "description": "Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim_vinbelow3v_dis",
+          "high_bit": 1,
+          "low_bit": 1,
+          "description": "Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "d2a_strim_cc_cs1_vref",
+          "high_bit": 0,
+          "low_bit": 0,
+          "description": "Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM19",
+      "reg_addr": "0xD9",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_60ma_cc",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "Default: 0x80; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "TRIM20",
+      "reg_addr": "0xDA",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x80; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "strim_clk1m_stable_en",
+          "high_bit": 7,
+          "low_bit": 7,
+          "description": "Default: 0x1; Access: RW",
+          "access": "RW"
+        },
+        {
+          "name": "strim20_rsvd",
+          "high_bit": 6,
+          "low_bit": 0,
+          "description": "reserved; Default: 0x00; Access: RW",
+          "access": "RW"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE00",
+      "reg_addr": "0xE0",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE00_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; bit[7]: 用于表示efuse memory是否被buring trim过.",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE01",
+      "reg_addr": "0xE1",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE01_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC0",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE02",
+      "reg_addr": "0xE2",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE02_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC1",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE03",
+      "reg_addr": "0xE3",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE03_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE04",
+      "reg_addr": "0xE4",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE04_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC2",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE05",
+      "reg_addr": "0xE5",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE05_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE06",
+      "reg_addr": "0xE6",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE06_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC3",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE07",
+      "reg_addr": "0xE7",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE07_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE08",
+      "reg_addr": "0xE8",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE08_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC4",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE09",
+      "reg_addr": "0xE9",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE09_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0A",
+      "reg_addr": "0xEA",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0A_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD5",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0B",
+      "reg_addr": "0xEB",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0B_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC5",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0C",
+      "reg_addr": "0xEC",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0C_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD6",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0D",
+      "reg_addr": "0xED",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0D_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC6",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0E",
+      "reg_addr": "0xEE",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0E_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD7",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE0F",
+      "reg_addr": "0xEF",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE0F_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC7",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE10",
+      "reg_addr": "0xF0",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE10_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD8",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE11",
+      "reg_addr": "0xF1",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE11_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC8",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE12",
+      "reg_addr": "0xF2",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE12_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD9",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE13",
+      "reg_addr": "0xF3",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE13_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xC9",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE14",
+      "reg_addr": "0xF4",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE14_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xDA",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE15",
+      "reg_addr": "0xF5",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE15_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCA",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE16",
+      "reg_addr": "0xF6",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE16_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCB",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE17",
+      "reg_addr": "0xF7",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE17_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCC",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE18",
+      "reg_addr": "0xF8",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE18_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCD",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE19",
+      "reg_addr": "0xF9",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE19_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCE",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1A",
+      "reg_addr": "0xFA",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1A_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xCF",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1B",
+      "reg_addr": "0xFB",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1B_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD0",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1C",
+      "reg_addr": "0xFC",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1C_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD1",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1D",
+      "reg_addr": "0xFD",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1D_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD2",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1E",
+      "reg_addr": "0xFE",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1E_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD3",
+          "access": "R/W"
+        }
+      ]
+    },
+    {
+      "name": "EFFUSE1F",
+      "reg_addr": "0xFF",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "Reset: 0x00; Access: R/W",
+      "bit_fields": [
+        {
+          "name": "EFFUSE1F_DATA",
+          "high_bit": 7,
+          "low_bit": 0,
+          "description": "EFUSE memory data; Maps to TRIM register 0xD4",
+          "access": "R/W"
+        }
+      ]
+    }
+  ]
+}

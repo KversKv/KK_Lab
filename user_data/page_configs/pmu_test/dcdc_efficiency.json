@@ -3,7 +3,7 @@
   "config": {
     "test_item": "Efficiency Curve",
     "vin_channel": "CH 1",
-    "vout_channel": "CH 2",
+    "vout_channel": "CH 4",
     "cc_load_channel": "CH 3",
     "vin_current_limit_a": 1.5,
     "sweep_mode": "Log",
@@ -16,7 +16,7 @@
       0.1,
       1.0
     ],
-    "average_cnt": 3,
+    "average_cnt": 2,
     "settle_time_ms": 3,
     "sampling_method": "Instant MEAS",
     "dlog_duration_s": 1.0,

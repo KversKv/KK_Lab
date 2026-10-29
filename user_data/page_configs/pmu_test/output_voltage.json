@@ -12,12 +12,14 @@
     "enable_ovp": true,
     "ovp_value": 4.0,
     "vmeter_channel": "CH 2",
-    "device_addr": "0x27",
-    "reg_addr": "0x0135",
-    "msb": 7,
+    "vmeter_mode": "CCLoad",
+    "close_channel_after": false,
+    "device_addr": "0x17",
+    "reg_addr": "0x0088",
+    "msb": 5,
     "lsb": 0,
     "width_flag": 1,
     "min_code": "0x0",
-    "max_code": "0xFF"
+    "max_code": "0x1F"
   }
 }
