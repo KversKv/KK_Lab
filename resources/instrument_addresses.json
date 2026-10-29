@@ -5,7 +5,7 @@
     "debug": "TCPIP0::192.168.3.99::hislip0::INSTR"
   },
   "oscilloscope": {
-    "dsox4034a": "TCPIP0::10.31.30.181::inst0::INSTR",
+    "dsox4034a": "TCPIP0::10.31.70.176::inst0::INSTR",
     "mso64b": "10.31.31.202"
   },
   "frequency_counter": {

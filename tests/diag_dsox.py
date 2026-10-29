@@ -8,7 +8,7 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-DSOX4034A_ADDR = "TCPIP0::10.31.30.181::inst0::INSTR"
+DSOX4034A_ADDR = "TCPIP0::10.31.70.176::inst0::INSTR"
 
 
 def main():
