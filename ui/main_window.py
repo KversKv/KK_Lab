@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import (
-    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent, QEventLoop
+    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent, QEventLoop,
+    QSettings, QRect,
 )
 
 if sys.platform == "win32":
@@ -353,6 +354,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.setMouseTracking(True)
         resize_and_center_window(self)
         self.setMinimumSize(*_MIN_WINDOW_SIZE)
+        self._restore_window_geometry()
 
         _init_tick("窗口标志/几何初始化")
 
@@ -1943,7 +1945,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         page = self.n6705c_analyser_ui
         if checked:
             # 记忆原窗口状态（是否最大化 + geometry），退出时还原
-            self._pre_compact_state = (self.isMaximized(), self.saveGeometry())
+            self._pre_compact_state = (
+                self.isMaximized(), self.saveGeometry(), self._collect_window_state()
+            )
             self.left_nav.setVisible(False)
             self._compact_ai_was_open = False
             ai_btn = getattr(self.top_bar, "ai_panel_button", None)
@@ -1981,7 +1985,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             # 紧凑还原的 geometry 优先于切页时的 geometry 记忆
             # （紧凑态下切页会在 _hide_all_instrument_uis 记录紧凑尺寸）
             self._page_switch_geometry = None
-            maximized, geometry = self._pre_compact_state or (False, None)
+            maximized, geometry = (self._pre_compact_state or (False, None, None))[:2]
             if geometry is not None:
                 self.restoreGeometry(geometry)
             if maximized:
@@ -2467,8 +2471,91 @@ class MainWindow(CleanupMixin, QMainWindow):
             logger.debug("Snap 状态检测失败", exc_info=True)
             return False
 
+    def _main_window_settings(self):
+        return QSettings("KK_Lab", "MainWindow")
+
+    def _screen_available_geometry_for(self, point=None):
+        app = QApplication.instance()
+        screen = app.screenAt(point) if app is not None and point is not None else None
+        if screen is None and app is not None:
+            screen = app.primaryScreen()
+        if screen is not None:
+            return screen.availableGeometry()
+        return QRect(0, 0, 1280, 720)
+
+    def _clamped_window_geometry(self, window_cfg):
+        saved = QRect(
+            int(window_cfg.get("x", 0)),
+            int(window_cfg.get("y", 0)),
+            int(window_cfg.get("width", 0)),
+            int(window_cfg.get("height", 0)),
+        )
+        if saved.width() <= 0 or saved.height() <= 0:
+            return self.geometry()
+
+        available = self._screen_available_geometry_for(saved.center())
+        width = min(saved.width(), available.width())
+        height = min(saved.height(), available.height())
+        x = min(max(saved.x(), available.x()), available.right() - width + 1)
+        y = min(max(saved.y(), available.y()), available.bottom() - height + 1)
+        return QRect(x, y, width, height)
+
+    def _load_window_geometry(self):
+        settings = self._main_window_settings()
+        if not settings.contains("geometry/x"):
+            return None
+        return {
+            "x": settings.value("geometry/x", type=int),
+            "y": settings.value("geometry/y", type=int),
+            "width": settings.value("geometry/width", type=int),
+            "height": settings.value("geometry/height", type=int),
+            "maximized": settings.value("geometry/maximized", False, type=bool),
+        }
+
+    def _collect_window_state(self):
+        if not self.isWindow() or not self.isVisible() or self.isMinimized():
+            return {}
+        geom = self.normalGeometry() if self.isMaximized() else self.geometry()
+        if geom.width() <= 0 or geom.height() <= 0:
+            return {}
+        return {
+            "x": int(geom.x()),
+            "y": int(geom.y()),
+            "width": int(geom.width()),
+            "height": int(geom.height()),
+            "maximized": bool(self.isMaximized()),
+        }
+
+    def _restore_window_geometry(self):
+        self._restore_maximized = False
+        try:
+            window_cfg = self._load_window_geometry()
+            if window_cfg is None:
+                return
+            self.setGeometry(self._clamped_window_geometry(window_cfg))
+            self._restore_maximized = bool(window_cfg.get("maximized", False))
+        except Exception:
+            logger.warning("Restore main window geometry failed", exc_info=True)
+
+    def _save_window_geometry(self):
+        try:
+            state = self._collect_window_state()
+            pre_compact = getattr(self, "_pre_compact_state", None)
+            if getattr(self, "_compact_view", False) and pre_compact is not None:
+                state = pre_compact[2]
+            if not state:
+                return
+            settings = self._main_window_settings()
+            settings.remove("geometry")
+            for key, value in state.items():
+                settings.setValue(f"geometry/{key}", value)
+            settings.sync()
+        except Exception:
+            logger.warning("Save main window geometry failed", exc_info=True)
+
     def closeEvent(self, event):
         self.status_panel.suppress_toasts()
+        self._save_window_geometry()
         self._save_ai_panel_state()
         # 关闭即清理调度定时器（§5.4）
         for timer in list(getattr(self, "_scheduled_timers", {}).values()):

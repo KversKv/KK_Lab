@@ -149,7 +149,10 @@ def main():
     logger.info("WITH_AI_ASSISTANT=%s", WITH_AI_ASSISTANT)
     main_window = MainWindow(with_ai=WITH_AI_ASSISTANT)
     _startup_tick("MainWindow 构造")
-    main_window.show()
+    if getattr(main_window, "_restore_maximized", False):
+        main_window.showMaximized()
+    else:
+        main_window.show()
     _startup_tick("main_window.show()")
     logger.debug("MainWindow shown, entering event loop")
     # 事件循环首轮迭代 ≈ 窗口完成首帧绘制
