@@ -44,8 +44,11 @@ logger = get_logger(__name__)
 class ConsumptionTestViewTestExecMixin:
 
     def _browse_firmware(self):
+        start_dir = os.path.dirname(self.firmware_path)
+        if not os.path.isdir(start_dir):
+            start_dir = ""
         file_paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select Firmware File(s)", "",
+            self, "Select Firmware File(s)", start_dir,
             "Firmware Files (*.bin *.hex);;All Files (*)"
         )
         if file_paths:
