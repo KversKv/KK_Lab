@@ -1317,6 +1317,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list[Any]] = []
+    vout_start_mv: float | None = None
     screenshots: list[dict[str, Any]] = []
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
     # DEBUG：MODULE_TEST_DEBUG 开启时逐节点落盘示波器屏幕 + 记事件日志，
@@ -1384,22 +1385,29 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                 _debug_scope_shot(ctx, dbg_dir,
                                   f"{item_key}_p{i:02d}_{il:g}mA_30_vout")
             shot = _capture_scope_png(ctx, item_key, il, shot_dir)
-        rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4)])
+        if vout_start_mv is None:
+            vout_start_mv = vout
+        vout_drop_mv = vout - vout_start_mv
+        rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4),
+                     round(vout_drop_mv, 4)])
         if shot:
             screenshots.append({"Iload (mA)": il, "png": shot})
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
         _debug_event(ctx, dbg_dir,
                      f"p{i:02d} {il:g}mA 测量: Vout={vout:.4f}mV "
-                     f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV"
+                     f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV "
+                     f"Vout Drop@{i_start:g}mA={vout_drop_mv:.4f}mV"
                      + (f" 截图={os.path.basename(shot)}" if shot else " 截图=失败/未生成"))
         ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Vout={vout:.4f} mV, "
-                   f"Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
+                   f"Vpp={vpp:.3f} mV, RMS={rms:.3f} mV, "
+                   f"Vout Drop@{i_start:g}mA={vout_drop_mv:.4f} mV")
     if not ctx.is_mock and load_state.get("on"):
         # 仅在仍开启时关断（0mA 收尾点通道已被 apply_load_current 关掉）
         teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)"], rows)
+    write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)",
+                         f"Vout Drop @{i_start:g}mA (mV)"], rows)
     _debug_event(ctx, dbg_dir,
                  f"item 完成: {name}（{item_key}），有效点 {len(rows)}，"
                  f"CSV={os.path.basename(csv_path)}")

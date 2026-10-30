@@ -7,8 +7,9 @@
      Drop，Max Load=240mA；measured 带 collapse_vout_threshold_mv；
   B. 崩溃点 Vpp 异常放大（50mV）：Max Vpp 仍取有效段（修复前会取崩溃点）；
   C. 无崩溃线性场景：Max Load=末点，无 collapse_vout_threshold_mv 键；
-  D. 报告侧：_build_rules 生成 Vout 列 lt/fail 规则且崩溃行全命中（前端
-     整行标红）、有效行不误伤；_build_metrics 含 Max Load 标签。
+  D. 报告侧：表格含相对 0mA 的 Vout Drop 列；_build_rules 生成 Vout 列
+     lt/fail 规则且崩溃行全命中（前端整行标红）、有效行不误伤；
+     _build_metrics 含 Max Load 标签。
 
 用法：.venv\\Scripts\\python.exe tests\\check_ripple_collapse.py
 """
@@ -84,6 +85,10 @@ check("A 崩溃阈值=拐点前后中点", m.get("collapse_vout_threshold_mv") =
       f"threshold={m.get('collapse_vout_threshold_mv')}")
 check("A 日志提示崩溃剔除",
       any("Max Load=240mA" in s and "无效" in s for s in LOGS))
+check("A 逐点日志含相对 0mA 的 Vout Drop",
+      any("Iload=0mA" in s and "Vout Drop@0mA=0.0000 mV" in s for s in LOGS)
+      and any("Iload=20mA" in s and "Vout Drop@0mA=-9.1420 mV" in s
+              for s in LOGS))
 
 # ---- 用例 B：崩溃点 Vpp 异常放大也不污染 Max Vpp ----
 vpps_bad = list(VPPS)
@@ -108,10 +113,18 @@ check("C 全部点有效", mc.get("valid_points") == 18,
 out_dir = tempfile.mkdtemp(prefix="kk_ripple_check_")
 try:
     res.raw_csv_path = os.path.join(out_dir, "ldo_ripple.csv")
+    drops = [round(v - VOUTS[0], 4) for v in VOUTS]
     common.write_csv(res.raw_csv_path,
-                     ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)"],
-                     [list(r) for r in zip(ILOADS, VOUTS, VPPS, RMSS)])
+                     ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)",
+                      "Vout Drop @0mA (mV)"],
+                     [list(r) for r in zip(ILOADS, VOUTS, VPPS, RMSS, drops)])
     table = _build_table(res)
+    drop_col = next((i for i, c in enumerate(table["columns"])
+                     if c["label"] == "Vout Drop @0mA"), None) if table else None
+    check("D 报告表含相对 0mA 的 Vout Drop 列",
+          drop_col is not None and table["columns"][drop_col]["unit"] == "mV"
+          and [row[drop_col] for row in table["data"][:2]] == [0.0, -9.142],
+          f"drop_col={drop_col}")
     rules = _build_rules(res, table)
     lt_rules = [r for r in rules if r.get("op") == "lt"]
     check("D 生成 Vout 列 lt/fail 标红规则", len(lt_rules) == 1
