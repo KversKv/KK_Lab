@@ -40,6 +40,7 @@
     "item_overrides": {},
     "module_config_enabled": false,
     "module_config_yaml": "",
+    "judge_enabled": true,
     "judge_criteria": {}
   }
 }
