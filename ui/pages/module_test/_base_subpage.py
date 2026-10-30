@@ -493,7 +493,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             ripple_key = item_key.replace("_load_reg", "_ripple")
             follow = {
                 "key": "use_ripple_sweep",
-                "label": "直接使用 Load Capability&Ripple 测试值",
+                "label": "直接使用 Load Capability&&Ripple 测试值",
                 "available": ripple_key in self.test_plan.selected_keys(),
                 "unavailable_tip": "需先勾选 Load Capability&Ripple 测试项后才能启用",
                 "note": "启用后跳过本项测量，直接以 Load Capability&Ripple 的实测"

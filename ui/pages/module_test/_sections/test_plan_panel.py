@@ -1,6 +1,6 @@
 """TestPlanPanel — 测试项面板（工具行 + TestPlanView + 委托）。
 
-- 工具行：搜索框 / 全选(切换) / 仅失败(切换) / Save All / 已选计数；
+- 工具行：搜索框 / 全选(切换) / 仅失败(切换) / 判断标准总开关 / Save All / 已选计数；
 - 视图：``QTreeView`` + ``TestPlanModel`` + ``QSortFilterProxyModel``（名称过滤、
   仅失败过滤），分组默认展开；
 - 委托：``_StatusBadgeDelegate``（状态徽章着色 + running 呼吸点）、
@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit,
+    QAbstractItemView, QCheckBox, QHBoxLayout, QHeaderView, QLineEdit,
     QPushButton, QStyledItemDelegate, QTreeView, QVBoxLayout, QWidget,
 )
 
@@ -273,6 +273,12 @@ class TestPlanPanel(QWidget):
         bar.addWidget(self.only_failed_btn)
 
         bar.addStretch()
+        self.judge_enabled_check = QCheckBox("启用判断标准")
+        self.judge_enabled_check.setProperty("switch", "true")
+        self.judge_enabled_check.setChecked(True)
+        self.judge_enabled_check.setToolTip(
+            "顶层启用/关闭各测试项的判断标准；关闭后保留规则，跳过 PASS/FAIL 判定")
+        bar.addWidget(self.judge_enabled_check)
         self.save_all_btn = QPushButton("Save All")
         self.save_all_btn.setProperty("variant", "ghost")
         self.save_all_btn.setToolTip("一键保存当前已勾选且有结果的测试项")
@@ -366,12 +372,14 @@ class TestPlanPanel(QWidget):
 
     def enter_run_state(self, selected_keys) -> None:
         self._model.enter_run_state(selected_keys)
+        self.judge_enabled_check.setEnabled(False)
         self.view.expandAll()
         self._pulse_timer.start()
 
     def exit_run_state(self) -> None:
         self._pulse_timer.stop()
         self._model.exit_run_state()
+        self.judge_enabled_check.setEnabled(True)
         self.view.expandAll()
 
     def mark_item_running(self, item_key: str) -> None:
@@ -388,6 +396,12 @@ class TestPlanPanel(QWidget):
 
     def is_running_locked(self) -> bool:
         return self._model.is_running_locked()
+
+    def judge_enabled(self) -> bool:
+        return self.judge_enabled_check.isChecked()
+
+    def set_judge_enabled(self, enabled: bool) -> None:
+        self.judge_enabled_check.setChecked(bool(enabled))
 
     def focus_search(self) -> None:
         self.search_edit.setFocus()

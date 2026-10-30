@@ -53,6 +53,12 @@ class _FakePlan:
     def set_item_customized(self, _k, _v):
         pass
 
+    def judge_enabled(self):
+        return True
+
+    def set_judge_enabled(self, _enabled):
+        pass
+
 
 class _FakeModCfg:
     def is_enabled(self):

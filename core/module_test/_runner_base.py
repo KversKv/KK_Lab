@@ -147,9 +147,10 @@ class ModuleTestRunner(QThread):
         """按用户判定标准（cfg["judge_criteria"]）判定 PASS/FAIL。
 
         仅对项本身未判定的结果（passed=None）生效；执行异常的 FAIL 不覆盖。
+        顶层 cfg["judge_enabled"] 为 False 时跳过所有用户判定标准。
         与报告异常点标红（table.rules）相互独立：此处决定项 verdict。
         """
-        if result.passed is not None:
+        if not self._cfg.get("judge_enabled", True) or result.passed is not None:
             return
         criteria = (self._cfg.get("judge_criteria") or {}).get(item_key)
         if not criteria:
@@ -333,16 +334,27 @@ class ModuleTestRunner(QThread):
             name, run_fn, needs_scope, _default_checked, _params = self._items_registry[item_key]
 
             # Load Regulation「直接使用 Load Capability&Ripple 测试值」：
-            # 开关开启且 ripple 项已勾选时直接跳过本项（不进入运行态展示），
-            # 待 ripple 完成后以其实测数据回填本项结果；ripple 未勾选则回退自身参数
+            # 开关开启且 ripple 项已勾选时直接跳过本项（不进入运行态展示）。
+            # ripple 已执行则立即回填；尚未执行则登记待回填，兼容两种注册表顺序。
             if (item_key.endswith("_load_reg")
                     and (self._item_overrides.get(item_key) or {}).get("use_ripple_sweep")):
                 ripple_key = item_key.replace("_load_reg", "_ripple")
                 if ripple_key in selected:
-                    self._log(f"[{idx + 1}/{total}] [SKIP] {name} 已启用「直接使用 Load "
-                              "Capability&Ripple 测试值」，跳过本项测量，"
-                              "结果将在 Load Capability&Ripple 完成后生成。")
-                    pending_follow[ripple_key] = item_key
+                    ripple_result = next(
+                        (r for r in self._result.items if r.item_key == ripple_key), None)
+                    if ripple_result is not None:
+                        self._log(f"[{idx + 1}/{total}] [FOLLOW] {name} 直接使用 Load "
+                                  "Capability&Ripple 实测结果，跳过本项测量。")
+                        lr_result = self._build_follow_load_reg_result(item_key, ripple_result)
+                        self._apply_judge(item_key, lr_result)
+                        self._result.items.append(lr_result)
+                        self.item_finished.emit(item_key, lr_result.to_summary())
+                        self._progress(int((idx + 1) / total * 100), name)
+                    else:
+                        self._log(f"[{idx + 1}/{total}] [SKIP] {name} 已启用「直接使用 Load "
+                                  "Capability&Ripple 测试值」，跳过本项测量，"
+                                  "结果将在 Load Capability&Ripple 完成后生成。")
+                        pending_follow[ripple_key] = item_key
                     continue
                 self._log("[WARN] Load Regulation 已开启「直接使用 Load "
                           "Capability&Ripple 测试值」，但该测试项本次未勾选，"

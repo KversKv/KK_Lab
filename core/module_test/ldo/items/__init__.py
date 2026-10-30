@@ -523,6 +523,11 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         *reg_scan_params(),
         vin_bias(), settle_time(), average_cnt(),
     )),
+    "ldo_ripple": ("Load Capability&Ripple", ripple, True, False, (
+        vin_bias(),
+        *load_sweep(0.0, 200.0, 20.0),
+        settle_time(), average_cnt(),
+    )),
     "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
         *load_sweep(1.0, 200.0, 10.0),
         load_knee(),
@@ -548,11 +553,6 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
         vin_bias(), average_cnt(1), settle_time(), *quiescent_params(),
-    )),
-    "ldo_ripple": ("Load Capability&Ripple", ripple, True, False, (
-        vin_bias(),
-        *load_sweep(0.0, 200.0, 20.0),
-        settle_time(), average_cnt(),
     )),
     "ldo_psrr": ("PSRR", psrr, True, False, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",

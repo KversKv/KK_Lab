@@ -53,6 +53,8 @@ def test_class_attr_differentiation():
         "ldo_psrr", "ldo_protection", "ldo_dropout", "ldo_current_limit")
     assert LDOTestUI.RUNNER_CLS is not None and DCDCTestUI.RUNNER_CLS is not None
     assert LDOTestUI.ITEMS_REGISTRY and DCDCTestUI.ITEMS_REGISTRY
+    keys = list(LDOTestUI.ITEMS_REGISTRY)
+    assert keys.index("ldo_ripple") == keys.index("ldo_load_reg") - 1
 
 
 def test_get_test_config_keys_and_defaults():
@@ -66,9 +68,15 @@ def test_get_test_config_keys_and_defaults():
                 "iload_channel", "vout_nominal_mv", "max_iload_ma",
                 "device_addr", "width_flag",
                 "scope_vout_channel", "item_overrides",
-                "module_config_enabled", "module_config_yaml", "judge_criteria"}
+                "module_config_enabled", "module_config_yaml", "judge_enabled",
+                "judge_criteria"}
     assert set(cfg.keys()) == expected
     assert cfg["vout_nominal_mv"] == 1800
+    assert cfg["judge_enabled"] is True
+    ui.ldo_test_ui.test_plan.set_judge_enabled(False)
+    assert ui.ldo_test_ui.get_test_config()["judge_enabled"] is False
+    ui.ldo_test_ui._store.restore({"judge_enabled": True})
+    assert ui.ldo_test_ui.test_plan.judge_enabled() is True
     assert ui.dcdc_test_ui.get_test_config()["vout_nominal_mv"] == 1200
 
 
@@ -101,6 +109,14 @@ def test_run_state_machine_toggle():
     sub._apply_run_state(RunState.IDLE)
     assert not sub.is_test_running
     assert sub.left_rail.config_card.isEnabled()
+
+
+def test_judge_switch_run_lock():
+    sub = _make().ldo_test_ui
+    sub.test_plan.enter_run_state(["ldo_vout_scan"])
+    assert not sub.test_plan.judge_enabled_check.isEnabled()
+    sub.test_plan.exit_run_state()
+    assert sub.test_plan.judge_enabled_check.isEnabled()
 
 
 def test_precheck_rules():

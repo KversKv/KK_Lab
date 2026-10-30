@@ -2,7 +2,7 @@
 
 职责：
 - ``collect()``：从 ``DutConfigPanel`` + ``TestPlanPanel`` + ``_item_overrides``
-  收集完整 cfg（键集合与旧 ``get_test_config`` 完全一致，schema 不变）；
+  收集完整 cfg；
 - ``restore(cfg)``：把完整配置回填到控件（含勾选 / 参数覆写）；
 - 配置文件读写（schema_version 包装）与命名弹窗（另存为）。
 
@@ -81,6 +81,7 @@ class ModuleConfigStore:
             "module_config_yaml": (
                 self._modcfg.config_text() if self._modcfg is not None else ""),
             # 判定标准（PASS/FAIL Criteria）随模块配置一并保存
+            "judge_enabled": self._plan.judge_enabled(),
             "judge_criteria": (
                 {k: {"enabled": v.get("enabled", True),
                      "rules": [dict(r) for r in v.get("rules", ())]}
@@ -171,6 +172,8 @@ class ModuleConfigStore:
                 self._modcfg.set_config_text(str(cfg["module_config_yaml"]))
 
         # 判定标准（PASS/FAIL Criteria）
+        if "judge_enabled" in cfg:
+            self._plan.set_judge_enabled(bool(cfg["judge_enabled"]))
         criteria = cfg.get("judge_criteria")
         if self._judge is not None and isinstance(criteria, dict):
             self._judge.clear()
