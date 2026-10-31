@@ -588,6 +588,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         if cfg is None:
             self._show_alert("配置文件无效或损坏，详见日志。", "error")
             return
+        identity = dlg.selected_identity()
+        if identity is not None:
+            cfg["chip_name"], cfg["chip_version"] = identity
         self._store.restore(cfg)
         self._current_config_path = path
         self.detail_dock.log_panel.append_log(

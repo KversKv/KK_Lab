@@ -53,6 +53,9 @@ class ModuleTestAIContract:
             if "chip_name" in payload:
                 dut.chip_name_edit.setText(str(payload["chip_name"]))
                 changed.append("chip_name")
+            if "chip_version" in payload:
+                dut.chip_version_edit.setText(str(payload["chip_version"]))
+                changed.append("chip_version")
             if "module_name" in payload:
                 dut.module_name_edit.setText(str(payload["module_name"]))
                 changed.append("module_name")

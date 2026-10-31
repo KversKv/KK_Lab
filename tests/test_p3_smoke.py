@@ -5,8 +5,10 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import QApplication
 from ui.pages.module_test.module_test_ui import ModuleTestUI
 from ui.pages.module_test.ldo_test_ui import LDOTestUI
 from ui.pages.module_test.dcdc_test_ui import DCDCTestUI
+from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
 from ui.widgets.run_control_bar import RunState
 
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -59,8 +62,11 @@ def test_class_attr_differentiation():
 
 def test_get_test_config_keys_and_defaults():
     ui = _make()
+    ui.ldo_test_ui._store.restore(
+        {"chip_name": "BES1307", "chip_version": "", "vout_nominal_mv": 1800,
+         "judge_enabled": True})
     cfg = ui.ldo_test_ui.get_test_config()
-    expected = {"selected_items", "chip_name", "module_name", "test_condition",
+    expected = {"selected_items", "chip_name", "chip_version", "module_name", "test_condition",
                 "operator",
                 "temp_test_enabled", "temperature", "temp_soak_s",
                 "temp_tolerance_c", "temp_wait_s", "vbat_channel", "vin_channel",
@@ -71,6 +77,7 @@ def test_get_test_config_keys_and_defaults():
                 "module_config_enabled", "module_config_yaml", "judge_enabled",
                 "judge_criteria"}
     assert set(cfg.keys()) == expected
+    assert cfg["chip_version"] == ""
     assert cfg["vout_nominal_mv"] == 1800
     assert cfg["judge_enabled"] is True
     ui.ldo_test_ui.test_plan.set_judge_enabled(False)
@@ -80,13 +87,53 @@ def test_get_test_config_keys_and_defaults():
     assert ui.dcdc_test_ui.get_test_config()["vout_nominal_mv"] == 1200
 
 
+def test_legacy_1860_chip_version_restore():
+    sub = _make().ldo_test_ui
+    dut = sub.left_rail.dut_panel
+    sub._store.restore({"chip_name": "BES1860verB"})
+    assert dut.chip_name_edit.text() == "BES1860"
+    assert dut.chip_version_edit.text() == "B版"
+    sub._store.restore({"chip_name": "BES1860"})
+    assert dut.chip_version_edit.text() == "A版"
+    sub._store.restore({"chip_name": "BES1310"})
+    assert dut.chip_version_edit.text() == ""
+
+
+def test_config_manager_groups_1860_versions():
+    with tempfile.TemporaryDirectory() as root:
+        for directory, chip in (("BES1860", "BES1860"),
+                                ("BES1860verB", "BES1860verB")):
+            target_dir = os.path.join(root, directory)
+            os.makedirs(target_dir)
+            payload = {"schema_version": 1, "module_type": "ldo",
+                       "config": {"chip_name": chip, "module_name": "LDO_01"}}
+            with open(os.path.join(target_dir, "LDO_01.json"), "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+        dlg = ConfigManagerDialog(root, "ldo")
+        chip_node = next(dlg.tree.topLevelItem(i) for i in range(dlg.tree.topLevelItemCount())
+                         if dlg.tree.topLevelItem(i).text(0) == "BES1860")
+        assert chip_node.childCount() == 2
+        assert [chip_node.child(i).text(0) for i in range(2)] == ["A版", "B版"]
+        for i, version in enumerate(("A版", "B版")):
+            path = os.path.join(root, "BES1860", version, "LDO_01.json")
+            assert os.path.isfile(path)
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)["config"]
+            assert cfg["chip_name"] == "BES1860"
+            assert cfg["chip_version"] == version
+        assert not os.path.exists(os.path.join(root, "BES1860verB"))
+        dlg.close()
+
+
 def test_ai_contract_behaviour():
     sub = _make().ldo_test_ui
     assert len(sub.ai_capabilities()) == 5
-    ok, _msg = sub.ai_apply_config({"chip_name": "BES1307"})
+    ok, _msg = sub.ai_apply_config({"chip_name": "BES1307", "chip_version": "A版"})
     assert ok
     assert sub.left_rail.dut_panel.chip_name_edit.text() == "BES1307"
+    assert sub.left_rail.dut_panel.chip_version_edit.text() == "A版"
     # LDO 注册表默认全不勾选 → 未勾选拦截
+    sub.test_plan.set_checked_keys(set())
     ok2, msg2 = sub.ai_start_test()
     assert ok2 is False and "勾选" in msg2
     # 无结果时返回最小摘要（available=False），而非 None——让 AI 能区分"未跑过"

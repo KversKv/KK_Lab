@@ -1,12 +1,11 @@
-"""ConfigManagerDialog — 按芯片分类管理配置（打开 / 新增 / 重命名 / 移动 / 删除）。
+"""ConfigManagerDialog — 按芯片与版本分类管理配置（打开 / 新增 / 重命名 / 移动 / 删除）。
 
-目录结构：``<root>/<芯片名>/<配置名>.json``；树顶层为芯片分类，子节点为配置。
-由 ``_base_subpage._ConfigManagerDialog`` 原样迁出（行为零变更），样式改走
+目录结构：``<root>/<芯片名>/[版本/]<配置名>.json``；无版本配置仍直接放在芯片目录。
+由 ``_base_subpage._ConfigManagerDialog`` 拆出，样式走
 ``apply_qss(self, "dialog")``（token 化，视觉与旧 DIALOG_QSS 一致）。
 
-为什么这样拆：~340 行的配置管理 UI 与子页基类的"装配/契约"职责无关，
 独立文件后子页基类只面对 ``ConfigManagerDialog(root, module_type, parent)``
-+ ``selected_path()`` 两个接口。
++ ``selected_path()`` / ``selected_identity()`` 接口。
 """
 from __future__ import annotations
 
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from log_config import get_logger
+from ui.pages.module_test._sections.config_store import migrate_legacy_chip_versions
 from ui.theme import apply_qss
 
 from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
@@ -32,7 +32,7 @@ _CONFIG_SCHEMA_VERSION = 1
 
 
 class ConfigManagerDialog(QDialog):
-    """配置管理器：按芯片分类管理（打开 / 新增 / 重命名 / 移动归属 / 删除）配置。"""
+    """配置管理器：按芯片与版本管理（打开 / 新增 / 重命名 / 移动归属 / 删除）配置。"""
 
     def __init__(self, root: str, module_type: str, parent=None):
         super().__init__(parent)
@@ -42,18 +42,20 @@ class ConfigManagerDialog(QDialog):
         self.setMinimumSize(520, 480)
         apply_qss(self, "dialog")
         self._selected_path: str | None = None
+        self._selected_identity: tuple[str, str] | None = None
+        migrate_legacy_chip_versions(self._root)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        layout.addWidget(QLabel("按芯片分类管理配置，双击打开；右侧按钮进行管理："))
+        layout.addWidget(QLabel("按芯片与版本分类管理配置，双击打开；右侧按钮进行管理："))
 
         body = QHBoxLayout()
         body.setSpacing(8)
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["名称", "归属芯片"])
+        self.tree.setHeaderLabels(["名称", "归属芯片", "芯片版本"])
         self.tree.setColumnWidth(0, 220)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.currentItemChanged.connect(self._on_current_changed)
@@ -112,52 +114,81 @@ class ConfigManagerDialog(QDialog):
             if os.path.isdir(os.path.join(self._root, d))
         )
 
+    def _config_entries(self) -> list[tuple[str, str, str]]:
+        entries: list[tuple[str, str, str]] = []
+        for chip in self._chip_names():
+            chip_path = os.path.join(self._root, chip)
+            for filename in sorted(f for f in os.listdir(chip_path)
+                                   if f.lower().endswith(".json")):
+                entries.append((chip, "", os.path.join(chip_path, filename)))
+            for version in sorted(d for d in os.listdir(chip_path)
+                                  if os.path.isdir(os.path.join(chip_path, d))):
+                version_path = os.path.join(chip_path, version)
+                for filename in sorted(f for f in os.listdir(version_path)
+                                       if f.lower().endswith(".json")):
+                    entries.append((chip, version, os.path.join(version_path, filename)))
+        return entries
+
+    def _version_names(self, chip: str) -> list[str]:
+        return sorted({version for entry_chip, version, _path in self._config_entries()
+                       if entry_chip == chip and version})
+
     def _populate(self, select_path: str | None = None) -> None:
         self.tree.clear()
-        chip_dirs = self._chip_names()
-        has_any = False
+        entries = self._config_entries()
         select_item: QTreeWidgetItem | None = None
-        for chip in chip_dirs:
-            chip_path = os.path.join(self._root, chip)
-            files = sorted(
-                f for f in os.listdir(chip_path)
-                if f.lower().endswith(".json")
-            )
-            if not files:
-                continue
-            chip_node = QTreeWidgetItem([chip, ""])
-            chip_node.setFlags(Qt.ItemIsEnabled)
-            chip_node.setData(0, Qt.UserRole, None)
-            chip_node.setData(1, Qt.UserRole, chip)
-            self.tree.addTopLevelItem(chip_node)
-            for f in files:
-                cfg_path = os.path.join(chip_path, f)
-                cfg_node = QTreeWidgetItem([os.path.splitext(f)[0], chip])
-                cfg_node.setData(0, Qt.UserRole, cfg_path)
-                cfg_node.setData(1, Qt.UserRole, chip)
-                chip_node.addChild(cfg_node)
-                if select_path and os.path.normpath(cfg_path) == os.path.normpath(select_path):
-                    select_item = cfg_node
-            chip_node.setExpanded(True)
-            has_any = True
-        if not has_any:
-            placeholder = QTreeWidgetItem(["（暂无已保存的配置）", ""])
+        chip_nodes: dict[str, QTreeWidgetItem] = {}
+        version_nodes: dict[tuple[str, str], QTreeWidgetItem] = {}
+        for chip, version, cfg_path in entries:
+            chip_node = chip_nodes.get(chip)
+            if chip_node is None:
+                chip_node = QTreeWidgetItem([chip, "", ""])
+                chip_node.setFlags(Qt.ItemIsEnabled)
+                chip_node.setData(0, Qt.UserRole, None)
+                self.tree.addTopLevelItem(chip_node)
+                chip_nodes[chip] = chip_node
+            parent_node = chip_node
+            if version:
+                version_key = (chip, version)
+                version_node = version_nodes.get(version_key)
+                if version_node is None:
+                    version_node = QTreeWidgetItem([version, "", ""])
+                    version_node.setFlags(Qt.ItemIsEnabled)
+                    version_node.setData(0, Qt.UserRole, None)
+                    chip_node.addChild(version_node)
+                    version_nodes[version_key] = version_node
+                parent_node = version_node
+            name = os.path.splitext(os.path.basename(cfg_path))[0]
+            cfg_node = QTreeWidgetItem([name, chip, version or "—"])
+            cfg_node.setData(0, Qt.UserRole, cfg_path)
+            cfg_node.setData(1, Qt.UserRole, chip)
+            cfg_node.setData(2, Qt.UserRole, version)
+            parent_node.addChild(cfg_node)
+            if select_path and os.path.normpath(cfg_path) == os.path.normpath(select_path):
+                select_item = cfg_node
+        for node in chip_nodes.values():
+            node.setExpanded(True)
+        for node in version_nodes.values():
+            node.setExpanded(True)
+        if not entries:
+            placeholder = QTreeWidgetItem(["（暂无已保存的配置）", "", ""])
             placeholder.setFlags(Qt.ItemIsEnabled)
             placeholder.setData(0, Qt.UserRole, None)
             self.tree.addTopLevelItem(placeholder)
         if select_item is not None:
             self.tree.setCurrentItem(select_item)
 
-    def _current_cfg(self) -> tuple[str | None, str | None]:
-        """返回 (配置路径, 归属芯片)，未选中配置返回 (None, None)。"""
+    def _current_cfg(self) -> tuple[str | None, str | None, str | None]:
+        """返回 (配置路径, 归属芯片, 芯片版本)，未选中配置返回空三元组。"""
         item = self.tree.currentItem()
         if not item:
-            return None, None
+            return None, None, None
         path = item.data(0, Qt.UserRole)
         chip = item.data(1, Qt.UserRole)
+        version = item.data(2, Qt.UserRole)
         if not path:
-            return None, None
-        return path, chip
+            return None, None, None
+        return path, chip, version
 
     def _on_current_changed(self, current: QTreeWidgetItem, _prev) -> None:
         is_cfg = bool(current and current.data(0, Qt.UserRole))
@@ -170,16 +201,22 @@ class ConfigManagerDialog(QDialog):
     def _on_item_double_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
         if item and item.data(0, Qt.UserRole):
             self._selected_path = item.data(0, Qt.UserRole)
+            self._selected_identity = (
+                item.data(1, Qt.UserRole), item.data(2, Qt.UserRole) or "")
             self.accept()
 
     def _accept_selection(self) -> None:
-        path, _chip = self._current_cfg()
+        path, chip, version = self._current_cfg()
         if path:
             self._selected_path = path
+            self._selected_identity = (chip, version or "")
             self.accept()
 
     def selected_path(self) -> str | None:
         return self._selected_path
+
+    def selected_identity(self) -> tuple[str, str] | None:
+        return self._selected_identity
 
     # ------------------------------------------------------------------ manage
     def _on_new_config(self) -> None:
@@ -190,18 +227,27 @@ class ConfigManagerDialog(QDialog):
         if not ok or not chip.strip():
             return
         chip = self._safe(chip, "未分类芯片")
+        version, ok = QInputDialog.getItem(
+            self, "新增配置", "芯片版本（无版本可留空）：",
+            self._version_names(chip), 0, True)
+        if not ok:
+            return
+        version = self._safe(version, "")
+        category = f"{chip} / {version}" if version else chip
         name, ok = QInputDialog.getText(
-            self, "新增配置", f"配置名称（归入芯片「{chip}」）：",
+            self, "新增配置", f"配置名称（归入「{category}」）：",
             text=self._module_type)
         if not ok:
             return
         name = self._safe(name, self._module_type)
         target_dir = os.path.join(self._root, chip)
+        if version:
+            target_dir = os.path.join(target_dir, version)
         path = os.path.join(target_dir, f"{name}.json")
         if os.path.exists(path):
             QMessageBox.warning(self, "新增失败", f"配置「{name}」已存在。")
             return
-        default_cfg = self._default_config(chip)
+        default_cfg = self._default_config(chip, version)
         payload = {
             "schema_version": _CONFIG_SCHEMA_VERSION,
             "module_type": self._module_type,
@@ -217,10 +263,11 @@ class ConfigManagerDialog(QDialog):
             return
         self._populate(select_path=path)
 
-    def _default_config(self, chip: str) -> dict:
+    def _default_config(self, chip: str, version: str = "") -> dict:
         return {
             "selected_items": [],
             "chip_name": chip,
+            "chip_version": version,
             "module_name": "",
             "operator": "",
             "temp_test_enabled": False,
@@ -241,7 +288,7 @@ class ConfigManagerDialog(QDialog):
         }
 
     def _on_rename(self) -> None:
-        path, chip = self._current_cfg()
+        path, _chip, _version = self._current_cfg()
         if not path:
             return
         old_name = os.path.splitext(os.path.basename(path))[0]
@@ -265,26 +312,37 @@ class ConfigManagerDialog(QDialog):
         self._populate(select_path=new_path)
 
     def _on_move(self) -> None:
-        path, chip = self._current_cfg()
+        path, chip, version = self._current_cfg()
         if not path:
             return
         chips = self._chip_names()
         current_idx = chips.index(chip) if chip in chips else 0
         target, ok = QInputDialog.getItem(
-            self, "移动归属", f"将配置移到哪个芯片分类（可输入新名称）：",
+            self, "移动归属", "将配置移到哪个芯片分类（可输入新名称）：",
             chips, current_idx, True)
         if not ok or not target.strip():
             return
         target = self._safe(target, chip)
-        if target == chip:
+        versions = self._version_names(target)
+        version_idx = versions.index(version) if version in versions else 0
+        target_version, ok = QInputDialog.getItem(
+            self, "移动归属", "目标芯片版本（无版本可留空）：",
+            versions, version_idx, True)
+        if not ok:
+            return
+        target_version = self._safe(target_version, "")
+        if target == chip and target_version == (version or ""):
             return
         fname = os.path.basename(path)
         target_dir = os.path.join(self._root, target)
+        if target_version:
+            target_dir = os.path.join(target_dir, target_version)
         new_path = os.path.join(target_dir, fname)
         if os.path.exists(new_path):
+            category = f"{target} / {target_version}" if target_version else target
             QMessageBox.warning(
                 self, "移动失败",
-                f"芯片「{target}」下已存在同名配置「{os.path.splitext(fname)[0]}」。")
+                f"「{category}」下已存在同名配置「{os.path.splitext(fname)[0]}」。")
             return
         try:
             os.makedirs(target_dir, exist_ok=True)
@@ -296,13 +354,14 @@ class ConfigManagerDialog(QDialog):
         self._populate(select_path=new_path)
 
     def _on_delete(self) -> None:
-        path, chip = self._current_cfg()
+        path, chip, version = self._current_cfg()
         if not path:
             return
         name = os.path.splitext(os.path.basename(path))[0]
+        category = f"{chip} / {version}" if version else chip
         resp = QMessageBox.question(
             self, "删除确认",
-            f"确定删除配置「{name}」（芯片「{chip}」）？此操作不可恢复。",
+            f"确定删除配置「{name}」（「{category}」）？此操作不可恢复。",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return

@@ -51,6 +51,10 @@ class DutConfigPanel(QWidget):
         self.chip_name_edit.setPlaceholderText("如 BES1307")
         self._row_chip = grid.add_row("芯片名称", self.chip_name_edit, required=True)
 
+        self.chip_version_edit = QLineEdit()
+        self.chip_version_edit.setPlaceholderText("如 A版 / B版（无版本可留空）")
+        grid.add_row("芯片版本", self.chip_version_edit)
+
         self.module_name_edit = QLineEdit()
         self.module_name_edit.setPlaceholderText("如 LDO1 / DCDC_CORE")
         grid.add_row("模块名称", self.module_name_edit)
@@ -229,8 +233,12 @@ class DutConfigPanel(QWidget):
         """运行摘要 chips 数据（芯片/模块/Vout/温度）。"""
         temp = (self.temperature_edit.text().strip()
                 if self.temp_test_check.isChecked() else "常温")
+        chip = self.chip_name_edit.text().strip() or "—"
+        version = self.chip_version_edit.text().strip()
+        if version:
+            chip = f"{chip} ({version})"
         return {
-            "芯片": self.chip_name_edit.text().strip() or "—",
+            "芯片": chip,
             "模块": self.module_name_edit.text().strip() or "—",
             "Vout": f"{self.vout_nominal_spin.value()} mV",
             "温度": temp or "常温",

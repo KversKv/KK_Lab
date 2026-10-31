@@ -11,7 +11,8 @@
       "ldo_load_transient",
       "ldo_line_transient"
     ],
-    "chip_name": "BES1860verB",
+    "chip_name": "BES1860",
+    "chip_version": "A版",
     "module_name": "LDO_01",
     "test_condition": "Normal_Bias010",
     "operator": "KK",
@@ -27,7 +28,7 @@
     "force_channel": "CH 2",
     "volt_method": "scope",
     "vout_nominal_mv": 800,
-    "max_iload_ma": 250,
+    "max_iload_ma": 200,
     "device_addr": "0x17",
     "width_flag": 1,
     "scope_vout_channel": 1,

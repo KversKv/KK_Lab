@@ -25,6 +25,66 @@ from ui.theme import apply_qss
 _logger = get_logger(__name__)
 
 _CONFIG_SCHEMA_VERSION = 1
+_LEGACY_1860_VERSIONS = {"BES1860": "A版", "BES1860verB": "B版"}
+
+
+def normalize_chip_identity(chip_name: str, chip_version: str = "") -> tuple[str, str]:
+    """归一化芯片归属；兼容 1860 旧版以芯片名区分 A/B 版的配置。"""
+    name = (chip_name or "").strip()
+    version = (chip_version or "").strip()
+    legacy_version = _LEGACY_1860_VERSIONS.get(name)
+    if legacy_version is not None:
+        return "BES1860", version or legacy_version
+    return name, version
+
+
+def _set_payload_identity(payload: dict, chip_name: str, chip_version: str) -> None:
+    cfg = payload.get("config")
+    if not isinstance(cfg, dict):
+        raise ValueError("配置文件缺少 config 对象")
+    cfg["chip_name"] = chip_name
+    if "chip_version" in cfg:
+        cfg["chip_version"] = chip_version
+        return
+    updated = {}
+    for key, value in cfg.items():
+        updated[key] = value
+        if key == "chip_name":
+            updated["chip_version"] = chip_version
+    payload["config"] = updated
+
+
+def migrate_legacy_chip_versions(root: str) -> None:
+    """把旧 BES1860/BES1860verB 目录迁移为 BES1860/A版、B版。"""
+    for legacy_name, version in _LEGACY_1860_VERSIONS.items():
+        source_dir = os.path.join(root, legacy_name)
+        if not os.path.isdir(source_dir):
+            continue
+        target_dir = os.path.join(root, "BES1860", version)
+        for filename in sorted(f for f in os.listdir(source_dir)
+                               if f.lower().endswith(".json")):
+            source_path = os.path.join(source_dir, filename)
+            target_path = os.path.join(target_dir, filename)
+            if os.path.exists(target_path):
+                _logger.warning("跳过版本迁移，目标配置已存在：%s", target_path)
+                continue
+            try:
+                with open(source_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                if not isinstance(payload, dict):
+                    raise ValueError("配置文件根节点不是对象")
+                _set_payload_identity(payload, "BES1860", version)
+                with open(source_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+                os.makedirs(target_dir, exist_ok=True)
+                os.replace(source_path, target_path)
+            except (OSError, json.JSONDecodeError, ValueError):
+                _logger.error("迁移芯片版本配置失败：%s", source_path, exc_info=True)
+        if legacy_name != "BES1860":
+            try:
+                os.rmdir(source_dir)
+            except OSError:
+                _logger.debug("旧芯片目录非空或无法移除：%s", source_dir, exc_info=True)
 
 
 class ModuleConfigStore:
@@ -46,9 +106,12 @@ class ModuleConfigStore:
         """收集完整配置（键集合与旧 get_test_config 一致）。"""
         dut = self._dut
         temp_enabled = dut.temp_test_check.isChecked()
+        chip_name, chip_version = normalize_chip_identity(
+            dut.chip_name_edit.text(), dut.chip_version_edit.text())
         return {
             "selected_items": self._plan.selected_keys(),
-            "chip_name": dut.chip_name_edit.text().strip(),
+            "chip_name": chip_name,
+            "chip_version": chip_version,
             "module_name": dut.module_name_edit.text().strip(),
             "test_condition": dut.test_condition_edit.text().strip(),
             "operator": dut.operator_edit.text().strip(),
@@ -101,8 +164,12 @@ class ModuleConfigStore:
             if idx >= 0:
                 combo.setCurrentIndex(idx)
 
-        if "chip_name" in cfg:
-            dut.chip_name_edit.setText(str(cfg["chip_name"]))
+        if "chip_name" in cfg or "chip_version" in cfg:
+            chip_name, chip_version = normalize_chip_identity(
+                str(cfg.get("chip_name", dut.chip_name_edit.text())),
+                str(cfg.get("chip_version", "")))
+            dut.chip_name_edit.setText(chip_name)
+            dut.chip_version_edit.setText(chip_version)
         if "module_name" in cfg:
             dut.module_name_edit.setText(str(cfg["module_name"]))
         if "test_condition" in cfg:
@@ -223,9 +290,12 @@ class ModuleConfigStore:
         return cfg if isinstance(cfg, dict) else None
 
     def prompt_save_path(self, parent) -> str | None:
-        """弹出命名对话框，按芯片名分类到子目录，返回目标路径。"""
+        """弹出命名对话框，按芯片与版本分类到子目录，返回目标路径。"""
         cfg = self.collect()
-        chip = self.safe_name(cfg.get("chip_name", ""), "未分类芯片")
+        chip_name, chip_version = normalize_chip_identity(
+            cfg.get("chip_name", ""), cfg.get("chip_version", ""))
+        chip = self.safe_name(chip_name, "未分类芯片")
+        version = self.safe_name(chip_version, "")
         default_name = self.safe_name(
             cfg.get("module_name", "") or self._module_type, self._module_type)
 
@@ -233,7 +303,8 @@ class ModuleConfigStore:
         # QSS，会回落系统浅色主题（与页面暗色不一致）。实例化后显式套 dialog.qss。
         dlg = QInputDialog(parent)
         dlg.setWindowTitle("另存配置")
-        dlg.setLabelText(f"配置名称（将归入芯片「{chip}」分类）：")
+        category = f"{chip} / {version}" if version else chip
+        dlg.setLabelText(f"配置名称（将归入「{category}」分类）：")
         dlg.setTextValue(default_name)
         apply_qss(dlg, "dialog")
         if dlg.exec() != QInputDialog.Accepted:
@@ -241,6 +312,8 @@ class ModuleConfigStore:
         name = self.safe_name(dlg.textValue(), default_name)
 
         target_dir = os.path.join(self.configs_root(), chip)
+        if version:
+            target_dir = os.path.join(target_dir, version)
         path = os.path.join(target_dir, f"{name}.json")
         if os.path.exists(path):
             # 覆盖确认同样用实例化 QMessageBox + apply_qss，保持暗色一致
