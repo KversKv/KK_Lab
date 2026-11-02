@@ -16,7 +16,10 @@ import os
 import re
 from typing import Any
 
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import (
+    QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QMessageBox,
+    QVBoxLayout,
+)
 
 from log_config import get_logger
 from resource_path import get_user_data_dir
@@ -85,6 +88,40 @@ def migrate_legacy_chip_versions(root: str) -> None:
                 os.rmdir(source_dir)
             except OSError:
                 _logger.debug("旧芯片目录非空或无法移除：%s", source_dir, exc_info=True)
+
+
+class _SaveConfigDialog(QDialog):
+    """另存配置对话框，显式展示并允许调整芯片版本。"""
+
+    def __init__(self, parent, chip_name: str, chip_version: str,
+                 default_name: str):
+        super().__init__(parent)
+        self.setWindowTitle("另存配置")
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+        form.addRow("芯片名称：", QLabel(chip_name))
+        self.version_edit = QLineEdit(chip_version)
+        self.version_edit.setPlaceholderText("无版本可留空")
+        form.addRow("芯片版本：", self.version_edit)
+        self.name_edit = QLineEdit(default_name)
+        form.addRow("配置名称：", self.name_edit)
+        root.addLayout(form)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_btn = btns.button(QDialogButtonBox.Ok)
+        ok_btn.setText("保存")
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = btns.button(QDialogButtonBox.Cancel)
+        cancel_btn.setText("取消")
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+        apply_qss(self, "dialog")
+        self.name_edit.setFocus()
+        self.name_edit.selectAll()
 
 
 class ModuleConfigStore:
@@ -289,27 +326,23 @@ class ModuleConfigStore:
         cfg = payload.get("config")
         return cfg if isinstance(cfg, dict) else None
 
-    def prompt_save_path(self, parent) -> str | None:
-        """弹出命名对话框，按芯片与版本分类到子目录，返回目标路径。"""
+    def prompt_save_path(self, parent) -> tuple[str, str] | None:
+        """弹出另存对话框，返回目标路径与确认后的芯片版本。"""
         cfg = self.collect()
         chip_name, chip_version = normalize_chip_identity(
             cfg.get("chip_name", ""), cfg.get("chip_version", ""))
         chip = self.safe_name(chip_name, "未分类芯片")
-        version = self.safe_name(chip_version, "")
         default_name = self.safe_name(
             cfg.get("module_name", "") or self._module_type, self._module_type)
 
-        # 用实例化 QInputDialog 而非静态 getText：静态弹窗不经 apply_qss 注入
-        # QSS，会回落系统浅色主题（与页面暗色不一致）。实例化后显式套 dialog.qss。
-        dlg = QInputDialog(parent)
-        dlg.setWindowTitle("另存配置")
-        category = f"{chip} / {version}" if version else chip
-        dlg.setLabelText(f"配置名称（将归入「{category}」分类）：")
-        dlg.setTextValue(default_name)
-        apply_qss(dlg, "dialog")
-        if dlg.exec() != QInputDialog.Accepted:
+        dlg = _SaveConfigDialog(parent, chip_name or "未分类芯片",
+                                chip_version, default_name)
+        if dlg.exec() != QDialog.Accepted:
             return None
-        name = self.safe_name(dlg.textValue(), default_name)
+        name = self.safe_name(dlg.name_edit.text(), default_name)
+        _, chip_version = normalize_chip_identity(
+            chip_name, dlg.version_edit.text())
+        version = self.safe_name(chip_version, "")
 
         target_dir = os.path.join(self.configs_root(), chip)
         if version:
@@ -324,4 +357,4 @@ class ModuleConfigStore:
             apply_qss(confirm, "dialog")
             if confirm.exec() != QMessageBox.Yes:
                 return None
-        return path
+        return path, version

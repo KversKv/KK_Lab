@@ -14,21 +14,24 @@ import os
 import re
 import shutil
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from log_config import get_logger
+from resource_path import get_resource_base
 from ui.pages.module_test._sections.config_store import migrate_legacy_chip_versions
-from ui.theme import apply_qss
+from ui.theme import apply_qss, current_theme
+from ui.utils.icon_utils import tinted_svg_icon
 
 from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
 
 _logger = get_logger(__name__)
 
 _CONFIG_SCHEMA_VERSION = 1
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
 
 
 class ConfigManagerDialog(QDialog):
@@ -43,6 +46,7 @@ class ConfigManagerDialog(QDialog):
         apply_qss(self, "dialog")
         self._selected_path: str | None = None
         self._selected_identity: tuple[str, str] | None = None
+        self._all_expanded = False
         migrate_legacy_chip_versions(self._root)
 
         layout = QVBoxLayout(self)
@@ -56,9 +60,23 @@ class ConfigManagerDialog(QDialog):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["名称", "归属芯片", "芯片版本"])
-        self.tree.setColumnWidth(0, 220)
+        self.tree.setColumnWidth(0, 180)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.currentItemChanged.connect(self._on_current_changed)
+
+        self.expand_btn = QToolButton(self.tree.header())
+        self.expand_btn.setObjectName("configExpandAllBtn")
+        self.expand_btn.setAutoRaise(True)
+        self.expand_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.expand_btn.setFocusPolicy(Qt.NoFocus)
+        self.expand_btn.setCursor(Qt.PointingHandCursor)
+        self.expand_btn.setFixedWidth(24)
+        self.expand_btn.setIconSize(QSize(16, 16))
+        self.expand_btn.clicked.connect(self._on_toggle_expand_all)
+        header = self.tree.header()
+        header.sectionResized.connect(self._position_expand_button)
+        header.sectionMoved.connect(self._position_expand_button)
+        self.tree.horizontalScrollBar().valueChanged.connect(self._position_expand_button)
         body.addWidget(self.tree, 1)
 
         btn_col = QVBoxLayout()
@@ -98,6 +116,8 @@ class ConfigManagerDialog(QDialog):
         layout.addLayout(close_row)
 
         self._populate()
+        self._position_expand_button()
+        QTimer.singleShot(0, self._position_expand_button)
         self._on_current_changed(self.tree.currentItem(), None)
 
     # ------------------------------------------------------------------ data
@@ -166,10 +186,6 @@ class ConfigManagerDialog(QDialog):
             parent_node.addChild(cfg_node)
             if select_path and os.path.normpath(cfg_path) == os.path.normpath(select_path):
                 select_item = cfg_node
-        for node in chip_nodes.values():
-            node.setExpanded(True)
-        for node in version_nodes.values():
-            node.setExpanded(True)
         if not entries:
             placeholder = QTreeWidgetItem(["（暂无已保存的配置）", "", ""])
             placeholder.setFlags(Qt.ItemIsEnabled)
@@ -177,6 +193,34 @@ class ConfigManagerDialog(QDialog):
             self.tree.addTopLevelItem(placeholder)
         if select_item is not None:
             self.tree.setCurrentItem(select_item)
+        self._set_all_expanded(self._all_expanded)
+
+    def _position_expand_button(self, *_args) -> None:
+        header = self.tree.header()
+        section = 2
+        section_size = header.sectionSize(section)
+        x = (header.sectionViewportPosition(section) + section_size
+             - self.expand_btn.width() - 4)
+        y = max(0, (header.height() - self.expand_btn.height()) // 2)
+        self.expand_btn.move(x, y)
+        self.expand_btn.setVisible(section_size >= self.expand_btn.width() + 24)
+        self.expand_btn.raise_()
+
+    def _set_all_expanded(self, expanded: bool) -> None:
+        self._all_expanded = expanded
+        if expanded:
+            self.tree.expandAll()
+        else:
+            self.tree.collapseAll()
+        action_text = "全部折叠" if expanded else "全部展开"
+        icon_name = "tree-collapse-all.svg" if expanded else "tree-expand-all.svg"
+        self.expand_btn.setIcon(tinted_svg_icon(
+            os.path.join(_ICONS_DIR, icon_name), current_theme().text_secondary, 16))
+        self.expand_btn.setToolTip(action_text)
+        self.expand_btn.setAccessibleName(action_text)
+
+    def _on_toggle_expand_all(self) -> None:
+        self._set_all_expanded(not self._all_expanded)
 
     def _current_cfg(self) -> tuple[str | None, str | None, str | None]:
         """返回 (配置路径, 归属芯片, 芯片版本)，未选中配置返回空三元组。"""

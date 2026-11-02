@@ -552,9 +552,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             self._on_open_config()
         self._config_banner.hide()
 
-    def _save_config_to(self, path: str) -> None:
+    def _save_config_to(self, path: str, *, chip_version: str | None = None) -> None:
         cfg = self.get_test_config()
+        if chip_version is not None:
+            cfg["chip_version"] = chip_version
         if self._store.write_file(path, cfg):
+            if chip_version is not None:
+                self.left_rail.dut_panel.chip_version_edit.setText(chip_version)
             self._current_config_path = path
             self.detail_dock.log_panel.append_log(
                 f"[INFO] 配置已保存：{os.path.basename(path)}")
@@ -570,9 +574,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             self._on_save_config_as()
 
     def _on_save_config_as(self) -> None:
-        path = self._store.prompt_save_path(self)
-        if path:
-            self._save_config_to(path)
+        result = self._store.prompt_save_path(self)
+        if result:
+            path, chip_version = result
+            self._save_config_to(path, chip_version=chip_version)
 
     def _on_open_config(self) -> None:
         dlg = ConfigManagerDialog(self._store.configs_root(), self.MODULE_TYPE, parent=self)

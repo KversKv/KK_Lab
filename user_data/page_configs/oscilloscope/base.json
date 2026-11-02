@@ -4,9 +4,9 @@
     "visa_resource": "TCPIP0::10.31.70.176::inst0::INSTR",
     "meas_type": "PK2PK",
     "meas_source": "CH1",
-    "trigger_source": "CH1",
+    "trigger_source": "CH2",
     "trigger_slope": "POS",
-    "trigger_level_v": "0.7692",
-    "quick_channel": "CH1"
+    "trigger_level_v": "0.865",
+    "quick_channel": "CH2"
   }
 }

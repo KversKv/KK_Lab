@@ -18,6 +18,7 @@
       "dcdc_topology"
     ],
     "chip_name": "",
+    "chip_version": "",
     "module_name": "",
     "test_condition": "",
     "operator": "",

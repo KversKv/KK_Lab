@@ -114,6 +114,21 @@ def test_config_manager_groups_1860_versions():
                          if dlg.tree.topLevelItem(i).text(0) == "BES1860")
         assert chip_node.childCount() == 2
         assert [chip_node.child(i).text(0) for i in range(2)] == ["A版", "B版"]
+        assert not chip_node.isExpanded()
+        assert not dlg.expand_btn.text()
+        assert dlg.expand_btn.parentWidget() is dlg.tree.header()
+        assert not dlg.expand_btn.icon().isNull()
+        assert dlg.expand_btn.toolTip() == "全部展开"
+        dlg.expand_btn.click()
+        assert chip_node.isExpanded()
+        assert all(chip_node.child(i).isExpanded() for i in range(2))
+        assert dlg.expand_btn.toolTip() == "全部折叠"
+        dlg._populate()
+        chip_node = next(dlg.tree.topLevelItem(i) for i in range(dlg.tree.topLevelItemCount())
+                         if dlg.tree.topLevelItem(i).text(0) == "BES1860")
+        assert chip_node.isExpanded()
+        dlg.expand_btn.click()
+        assert not chip_node.isExpanded()
         for i, version in enumerate(("A版", "B版")):
             path = os.path.join(root, "BES1860", version, "LDO_01.json")
             assert os.path.isfile(path)
