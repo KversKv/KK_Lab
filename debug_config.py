@@ -13,6 +13,6 @@ REPORT_ITEM_TIMING = True
 
 # Module Test 报告 PDF 输出开关：
 # 开启后 save_html_report 在生成 HTML 报告的同时，经系统 Edge/Chrome 无头打印
-# 输出 report.pdf（含全量原始数据表与原尺寸截图，见 core/module_test/pdf_export.py）；
+# 输出与报告目录同名的 PDF（含全量原始数据表与原尺寸截图，见 core/module_test/pdf_export.py）；
 # 未找到浏览器或打印失败仅记 WARN 跳过，不影响 HTML/XLSX；改值后须重启应用（同 DEBUG_MOCK）
 REPORT_PDF_EXPORT = True

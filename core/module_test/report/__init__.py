@@ -76,7 +76,7 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
     指标标签注明计算范围（有效段 Vbit 区间）。
 19. PDF 输出（2026-09-08）：debug_config.REPORT_PDF_EXPORT 开启时
     save_html_report 经系统 Edge/Chrome 无头打印（pdf_export.py）追加
-    report.pdf，并返回 (html_path, pdf_path)；表格 printAll 全量重建
+    <报告目录名>.pdf，并返回 (html_path, pdf_path)；表格 printAll 全量重建
     （取消 >200 行截断至 100 行，详细原始数据全量进 PDF），打印版截图
     网格单列原比例全宽、表内截图 96px→320px。无头打印不依赖 beforeprint
     （headless 下触发不可靠）：由 _to_print_variant 派生打印变体

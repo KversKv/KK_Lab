@@ -56,7 +56,7 @@ def save_html_report(result: ModuleTestResult,
     同时在 ``out_dir/XLSX/`` 下为每个有内容的测试项生成独立 XLSX
     （数据表 + 截图/波形入单元格；best-effort，失败不影响报告）。
     ``debug_config.REPORT_PDF_EXPORT`` 开启时再经系统 Edge/Chrome 无头打印
-    打印变体（``_to_print_variant``）追加 ``report.pdf``（全量数据 +
+    打印变体（``_to_print_variant``）追加 ``<报告目录名>.pdf``（全量数据 +
     原尺寸截图；best-effort，关闭或失败时 pdf_path 为 None）。
     """
     os.makedirs(out_dir, exist_ok=True)
@@ -68,9 +68,10 @@ def save_html_report(result: ModuleTestResult,
     logger.info("模块测试报告已生成: %s", path)
     pdf_path = None
     if getattr(debug_config, "REPORT_PDF_EXPORT", False):
+        pdf_name = f"{os.path.basename(os.path.normpath(out_dir))}.pdf"
         try:
             pdf_path = export_pdf_from_html(
-                path, os.path.join(out_dir, "report.pdf"),
+                path, os.path.join(out_dir, pdf_name),
                 html_text=_to_print_variant(html_text))
         except Exception:  # noqa: BLE001 - PDF 导出失败不影响 HTML/XLSX 报告
             logger.warning("PDF 报告导出失败（不影响 HTML 报告）", exc_info=True)

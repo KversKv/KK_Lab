@@ -11,7 +11,7 @@
         screenshots/... # （如 screenshots/foo.png），与正常输出目录布局一致
     Results/module_test/{module_type}/final/{芯片}_{模块}_{条件}_{时间戳}/
         {item_key}.csv / screenshots/...   # 原始文件按原布局聚合还原
-        report.html / report.pdf / XLSX/...
+        report.html / {报告目录名}.pdf / XLSX/...
 
 **覆盖保存**：同一「芯片 + 模块」下每个测试项只维护一套已保存结果，再次
 保存整目录覆盖重建；导出弹窗按当前 DUT 配置的芯片/模块过滤加载。
