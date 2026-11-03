@@ -5,7 +5,7 @@
 固化契约：
 - 全部测量值满足条件 → PASS；任一不满足 → FAIL；
 - 无规则 / 规则全部无测量数据 → None（保持 N/A）；
-- 指标提取覆盖 dict 标量 / list[dict] / {"rows": 无键行} 三种 measured 结构。
+- 指标提取覆盖 dict 标量 / dict 列表值 / list[dict] / {"rows": 无键行}。
 """
 from __future__ import annotations
 
@@ -22,6 +22,11 @@ def _crit(metric: str, op: str, v1: float, v2: float | None = None) -> dict:
 def test_extract_scalar_dict():
     spec = MetricSpec("max_vpp_mv", "Max Vpp", "mV")
     assert extract_values({"max_vpp_mv": 8.5, "points": 3}, spec) == [8.5]
+
+
+def test_extract_list_value_from_dict():
+    spec = JUDGE_METRICS["ldo_dropout"][0]
+    assert extract_values({"dropout_mv": [180.0, 200.0, ""]}, spec) == [180.0, 200.0]
 
 
 def test_extract_list_of_dict():

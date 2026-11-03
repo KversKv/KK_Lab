@@ -262,18 +262,11 @@ def load_transient(ctx: ItemContext) -> ItemResult:
                               mock_over_mv=30.0, mock_under_mv=25.0)
 
 
-def dropout(ctx: ItemContext) -> ItemResult:
-    """压差电压 Dropout（维持稳压所需最小 Vin-Vout）。
-
-    流程：Vin=PS2Q 源、带固定负载，先在 Vin 上限、加载稳定后实测 Vout 作为基准 V0，
-    再从 Vin 上限逐步降低，当 Vout 跌出容差（低于 V0*(1-tol)）时，记录此时的 Vin-Vout 即为压差。
-    启用自动最优点时，粗扫触发后回退一个用户 Vin 步进，再按 1mV 精扫触发点。
-    CSV 与报告保留配置、基准、逐点扫描和结果计算的完整数据。
-    """
+def _dropout_step_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
+    """方式一：逐步降压测试的单负载流程。"""
     item_key = "ldo_dropout"
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-    iload_ma = float(cfg.get("dropout_iload_ma", 100))
     # Drop Vin 走 DUT Config 的独立 Vin 通道（非 Vbat 主供电通道）
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
@@ -318,15 +311,15 @@ def dropout(ctx: ItemContext) -> ItemResult:
 
     threshold_mv = v0_mv * (1.0 - tol)
     rows.append([
-        "1. 配置", round(vin_hi, 6), "", "", "",
-        f"Vin CH{vin_ch}=PS2Q；Iload CH{iload_ch}={iload_ma:g}mA；"
+        "1. 配置", iload_ma, round(vin_hi, 6), "", "", "", "", "",
+        f"方式1：逐步降压测试；Vin CH{vin_ch}=PS2Q；Iload CH{iload_ch}={iload_ma:g}mA；"
         f"Vin {vin_hi:.3f}→{vin_lo:.3f}V，步进 {vin_step:.3f}V；"
         f"容差 {tol:.2%}，稳定 {settle_s:.3f}s，平均 {avg_cnt} 次；"
         f"自动最优点 {'开启（1mV 精扫）' if auto_optimal else '关闭'}",
     ])
     rows.append([
-        "2. 基准", round(vin_hi, 6), round(v0_mv, 3), round(threshold_mv, 3),
-        round(vin_hi * 1000.0 - v0_mv, 3),
+        "2. 基准", iload_ma, round(vin_hi, 6), "", round(v0_mv, 3),
+        round(threshold_mv, 3), round(vin_hi * 1000.0 - v0_mv, 3), "",
         f"V0={v0_mv:.3f}mV；Threshold=V0×(1-{tol:.2%})={threshold_mv:.3f}mV",
     ])
     ctx.log_fn(
@@ -365,8 +358,9 @@ def dropout(ctx: ItemContext) -> ItemResult:
                     "Vout≥Threshold，继续以 1mV 降低 Vin" if fine_mode else
                     "Vout≥Threshold，稳压正常（已达 Vin 下限）" if at_min else
                     "Vout≥Threshold，继续降低 Vin")
-        rows.append([f"3. {phase} {phase_count}", round(vin, 6), round(v, 3),
-                     round(threshold_mv, 3), round(diff_mv, 3), decision])
+        rows.append([f"3. {phase} {phase_count}", iload_ma, round(vin, 6), "",
+                     round(v, 3), round(threshold_mv, 3), round(diff_mv, 3),
+                     "", decision])
         ctx.log_fn(
             f"[{item_key}] 步骤3/4 {phase}#{phase_count}：Vin={vin:.3f}V，"
             f"Vout={v:.3f}mV，Threshold={threshold_mv:.3f}mV，"
@@ -412,8 +406,9 @@ def dropout(ctx: ItemContext) -> ItemResult:
         trigger_vin_mv = round(trigger_vin_v * 1000.0, 3)
         calc_text = (f"Dropout=Vin-Vout={trigger_vin_mv:.3f}-{trigger_vout_mv:.3f}"
                      f"={dropout_mv:.3f}mV")
-        rows.append(["4. 计算", round(trigger_vin_v, 6), trigger_vout_mv,
-                     round(threshold_mv, 3), dropout_mv, calc_text])
+        rows.append(["4. 计算", iload_ma, round(trigger_vin_v, 6), "",
+                     trigger_vout_mv, round(threshold_mv, 3), dropout_mv,
+                     "", calc_text])
         note = (f"Dropout={dropout_mv:.3f}mV @ Iload={iload_ma:g}mA；{calc_text}；"
                 f"触发条件：Vout={trigger_vout_mv:.3f}mV < "
                 f"V0×(1-{tol:.2%})={threshold_mv:.3f}mV")
@@ -422,25 +417,24 @@ def dropout(ctx: ItemContext) -> ItemResult:
     elif ok_at_min_vin:
         calc_text = (f"最低 Vin={vin_lo:.3f}V 时 Vout={last_vout_mv:.3f}mV ≥ "
                      f"Threshold={threshold_mv:.3f}mV，未触发，Dropout 不计算")
-        rows.append(["4. 计算", round(vin_lo, 6), round(last_vout_mv, 3),
-                     round(threshold_mv, 3), "", calc_text])
+        rows.append(["4. 计算", iload_ma, round(vin_lo, 6), "",
+                     round(last_vout_mv, 3), round(threshold_mv, 3), "",
+                     "", calc_text])
         note = f"在最低 Vin={vin_lo:.3f}V 下仍正常输出（Iload={iload_ma:g}mA）；{calc_text}"
     else:
         calc_text = "扫描中止，未计算 Dropout" if aborted else "无有效扫描点，未计算 Dropout"
-        rows.append(["4. 计算", round(last_vin_v, 6) if last_vin_v is not None else "",
+        rows.append(["4. 计算", iload_ma,
+                     round(last_vin_v, 6) if last_vin_v is not None else "", "",
                      round(last_vout_mv, 3) if last_vout_mv is not None else "",
-                     round(threshold_mv, 3), "", calc_text])
+                     round(threshold_mv, 3), "", "", calc_text])
         note = "未判定（中止）" if aborted else "未判定（无有效扫描点）"
 
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    dropout_csv = round(dropout_mv, 3) if dropout_mv is not None else ""
-    write_csv(csv_path,
-              ["Step", "Vin Set (V)", "Vout (mV)", "Threshold (mV)",
-               "Vin-Vout (mV)", "Data / Calculation"], rows)
+    dropout_value = round(dropout_mv, 3) if dropout_mv is not None else ""
     ctx.log_fn(f"[{item_key}] 步骤4/4 Iload={iload_ma:g}mA，V0={v0_mv:.3f}mV；{note}")
     return ItemResult(item_key=item_key, name="Dropout Voltage", unit="mV",
-                      passed=None, measured={"dropout_mv": dropout_csv,
+                      passed=None, measured={"dropout_mv": dropout_value,
                                              "ok_at_min_vin": ok_at_min_vin,
+                                             "aborted": aborted,
                                              "vin_lo_v": vin_lo,
                                              "v0_mv": round(v0_mv, 3),
                                              "threshold_mv": round(threshold_mv, 3),
@@ -449,8 +443,255 @@ def dropout(ctx: ItemContext) -> ItemResult:
                                              "dropout_vout_mv": trigger_vout_mv,
                                              "scan_points": scan_count,
                                              "iload_ma": iload_ma,
-                                             "vout_nominal_mv": nominal_mv},
-                      raw_csv_path=csv_path, notes=note)
+                                             "vout_nominal_mv": nominal_mv,
+                                             "_rows": rows},
+                      notes=note)
+
+
+def _dropout_direct_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
+    """方式二：四线 Sense 下检测 Vout 刚下降，直接以实测值计算压差。"""
+    item_key = "ldo_dropout"
+    cfg = ctx.config
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
+    vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
+    vin_step = float(cfg.get("dropout_vin_step_v", 0.02))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    rows: list[list] = []
+    ctx.log_fn(
+        f"[{item_key}] 方式二提醒：请在 Vin CH{vin_ch} 使用四线 Sense 接线；"
+        "本项将通道设置为 4 Wire，并以实测 Vin/Vout/Iload 计算 Dropout")
+
+    if ctx.is_mock:
+        v0_mv = mock_jitter(nominal_mv, 0.01)
+        mock_dropout_mv = mock_jitter(180.0, 0.05)
+        base_vin_v = vin_hi
+        base_iload_ma = iload_ma
+    else:
+        setup_source_channel(ctx, vin_ch, vin_hi, current_limit=vin_current_limit_a(cfg))
+        try:
+            ctx.n6705c.set_sense_mode(vin_ch, "4 Wire")
+        except Exception:  # noqa: BLE001 - 四线是方式二成立前提，失败不得继续出数
+            teardown_load(ctx, iload_ch)
+            teardown_vin(ctx, vin_ch)
+            logger.error("set Vin four-wire sense failed", exc_info=True)
+            raise
+        setup_vout_meter(ctx)
+        setup_load_channel(ctx, iload_ch, initial_current_a=iload_ma / 1000.0)
+        settle(ctx, max(settle_s * 4, 0.2))
+        v0_mv = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
+                             default=nominal_mv / 1000.0) * 1000.0
+        base_vin_v = measure_avg(ctx, "measure_voltage", vin_ch, count=avg_cnt,
+                                 settle_s=settle_s, default=vin_hi)
+        base_iload_ma = abs(measure_avg(
+            ctx, "measure_current", iload_ch, count=avg_cnt,
+            settle_s=settle_s, default=iload_ma / 1000.0)) * 1000.0
+
+    rows.append([
+        "1. 配置", iload_ma, round(vin_hi, 6), "", "", "", "", "",
+        f"方式2：直接压差测试（需四线）；Vin CH{vin_ch}=PS2Q，Sense=4 Wire；"
+        f"Iload CH{iload_ch}={iload_ma:g}mA；Vin {vin_hi:.3f}→{vin_lo:.3f}V，"
+        f"步进 {vin_step:.3f}V；稳定 {settle_s:.3f}s，平均 {avg_cnt} 次",
+    ])
+    rows.append([
+        "2. 基准", iload_ma, round(vin_hi, 6), round(base_vin_v, 6),
+        round(v0_mv, 3), "", round(base_vin_v * 1000.0 - v0_mv, 3),
+        round(base_iload_ma, 3),
+        f"V0={v0_mv:.3f}mV @ 实测 Vin={base_vin_v:.6f}V；"
+        "方式二在 Vout<V0（刚出现下降）时直接记录实测值",
+    ])
+    ctx.log_fn(
+        f"[{item_key}] 步骤2/4 基准：Iload={iload_ma:g}mA，V0={v0_mv:.3f}mV，"
+        f"实测 Vin={base_vin_v:.6f}V")
+
+    dropout_mv: float | None = None
+    trigger_vin_set_v: float | None = None
+    trigger_vin_v: float | None = None
+    trigger_vout_mv: float | None = None
+    trigger_iload_ma: float | None = None
+    last_vin_v: float | None = None
+    last_vout_mv: float | None = None
+    scan_count = 0
+    aborted = False
+    ok_at_min_vin = False
+    vin = round(vin_hi - vin_step, 6)
+    while vin >= vin_lo - 1e-9:
+        if ctx.stop_flag_fn():
+            aborted = True
+            break
+        scan_count += 1
+        if not ctx.is_mock:
+            try:
+                ctx.n6705c.set_voltage(vin_ch, vin)
+            except Exception:  # noqa: BLE001
+                logger.error("set Vin failed", exc_info=True)
+            settle(ctx, settle_s)
+            measured_vin_v = measure_avg(ctx, "measure_voltage", vin_ch,
+                                         count=avg_cnt, settle_s=settle_s, default=vin)
+        else:
+            measured_vin_v = vin
+        if ctx.is_mock:
+            v = min(v0_mv, vin * 1000.0 - mock_dropout_mv)
+            measured_iload_ma = iload_ma
+        else:
+            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
+                             default=nominal_mv / 1000.0) * 1000.0
+            measured_iload_ma = abs(measure_avg(
+                ctx, "measure_current", iload_ch, count=avg_cnt,
+                settle_s=settle_s, default=iload_ma / 1000.0)) * 1000.0
+        last_vin_v, last_vout_mv = measured_vin_v, v
+        diff_mv = measured_vin_v * 1000.0 - v
+        triggered = v < v0_mv
+        at_min = vin <= vin_lo + 1e-9
+        decision = ("Vout<V0，输出刚出现下降，记录实测 Vin/Vout/Iload" if triggered else
+                    "Vout≥V0，稳压正常（已达 Vin 下限）" if at_min else
+                    "Vout≥V0，继续降低 Vin")
+        rows.append([
+            f"3. 扫描 {scan_count}", iload_ma, round(vin, 6),
+            round(measured_vin_v, 6), round(v, 3), "", round(diff_mv, 3),
+            round(measured_iload_ma, 3), decision,
+        ])
+        ctx.log_fn(
+            f"[{item_key}] 步骤3/4 扫描#{scan_count}：Vin Set={vin:.3f}V，"
+            f"实测 Vin={measured_vin_v:.6f}V，Vout={v:.3f}mV，"
+            f"Iload={measured_iload_ma:.3f}mA，Vin-Vout={diff_mv:.3f}mV；{decision}")
+        if triggered:
+            trigger_vin_set_v = vin
+            trigger_vin_v = round(measured_vin_v, 6)
+            trigger_vout_mv = round(v, 3)
+            trigger_iload_ma = round(measured_iload_ma, 3)
+            dropout_mv = round(max(
+                round(measured_vin_v * 1000.0, 3) - round(v, 3), 0.0), 3)
+            break
+        if at_min:
+            ok_at_min_vin = True
+        vin = round(vin - vin_step, 6)
+
+    if not ctx.is_mock:
+        teardown_load(ctx, iload_ch)
+        teardown_vin(ctx, vin_ch)
+
+    if trigger_vin_v is not None and trigger_vout_mv is not None and dropout_mv is not None:
+        trigger_vin_mv = round(trigger_vin_v * 1000.0, 3)
+        calc_text = (f"Dropout=实测 Vin-Vout={trigger_vin_mv:.3f}-{trigger_vout_mv:.3f}"
+                     f"={dropout_mv:.3f}mV")
+        rows.append([
+            "4. 计算", iload_ma, round(trigger_vin_set_v, 6), trigger_vin_v,
+            trigger_vout_mv, "", dropout_mv, trigger_iload_ma, calc_text,
+        ])
+        note = (f"方式2 Dropout={dropout_mv:.3f}mV @ Iload={iload_ma:g}mA"
+                f"（实测 {trigger_iload_ma:.3f}mA）；{calc_text}；"
+                f"触发条件：Vout={trigger_vout_mv:.3f}mV < V0={v0_mv:.3f}mV；四线 Sense")
+    elif ok_at_min_vin:
+        calc_text = (f"最低 Vin={vin_lo:.3f}V 时 Vout={last_vout_mv:.3f}mV ≥ "
+                     f"V0={v0_mv:.3f}mV，未出现下降，Dropout 不计算")
+        rows.append(["4. 计算", iload_ma, round(vin_lo, 6),
+                     round(last_vin_v, 6), round(last_vout_mv, 3), "", "", "",
+                     calc_text])
+        note = f"方式2 在最低 Vin={vin_lo:.3f}V 下仍未出现下降（Iload={iload_ma:g}mA）"
+    else:
+        calc_text = "扫描中止，未计算 Dropout" if aborted else "无有效扫描点，未计算 Dropout"
+        rows.append(["4. 计算", iload_ma, "",
+                     round(last_vin_v, 6) if last_vin_v is not None else "",
+                     round(last_vout_mv, 3) if last_vout_mv is not None else "",
+                     "", "", "", calc_text])
+        note = "未判定（中止）" if aborted else "未判定（无有效扫描点）"
+
+    dropout_value = round(dropout_mv, 3) if dropout_mv is not None else ""
+    ctx.log_fn(f"[{item_key}] 步骤4/4 Iload={iload_ma:g}mA，V0={v0_mv:.3f}mV；{note}")
+    return ItemResult(item_key=item_key, name="Dropout Voltage", unit="mV",
+                      passed=None, measured={"dropout_mv": dropout_value,
+                                             "ok_at_min_vin": ok_at_min_vin,
+                                             "aborted": aborted,
+                                             "vin_lo_v": vin_lo,
+                                             "v0_mv": round(v0_mv, 3),
+                                             "threshold_mv": None,
+                                             "dropout_vin_v": trigger_vin_v,
+                                             "dropout_vout_mv": trigger_vout_mv,
+                                             "iload_measured_ma": trigger_iload_ma,
+                                             "sense_mode": "4 Wire",
+                                             "scan_points": scan_count,
+                                             "iload_ma": iload_ma,
+                                             "vout_nominal_mv": nominal_mv,
+                                             "_rows": rows},
+                      notes=note)
+
+
+def _dropout_load_list(raw) -> list[float]:
+    values = raw if isinstance(raw, (list, tuple)) else str(raw).replace("，", ",").split(",")
+    loads: list[float] = []
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        current = float(text)
+        if not 0.0 < current <= 100000.0:
+            raise ValueError("压差负载必须在 0~100000mA 之间，且不能为 0mA")
+        loads.append(current)
+    if not loads:
+        raise ValueError("请至少设置一个压差负载，多个负载用逗号分隔，如 100, 300, 500")
+    return loads
+
+
+def dropout(ctx: ItemContext) -> ItemResult:
+    """按所选方式对负载列表逐一执行 Dropout 测试，并汇总 CSV 与结果。"""
+    item_key = "ldo_dropout"
+    cfg = ctx.config
+    method = str(cfg.get("dropout_method", "step"))
+    if method not in ("step", "direct"):
+        raise ValueError(f"未知 Dropout 测试方式：{method}")
+    loads = _dropout_load_list(cfg.get("dropout_iload_ma", "100"))
+    rows: list[list] = []
+    load_results: list[dict] = []
+    notes: list[str] = []
+    method_name = "方式1：逐步降压测试" if method == "step" else "方式2：直接压差测试"
+    ctx.log_fn(f"[{item_key}] {method_name}；负载列表："
+               + ", ".join(f"{value:g}" for value in loads) + "mA")
+
+    for index, iload_ma in enumerate(loads, 1):
+        if load_results and ctx.stop_flag_fn():
+            break
+        ctx.log_fn(f"[{item_key}] 负载 {index}/{len(loads)}：{iload_ma:g}mA")
+        result = (_dropout_step_load(ctx, iload_ma) if method == "step"
+                  else _dropout_direct_load(ctx, iload_ma))
+        measured = result.measured
+        rows.extend(measured.pop("_rows"))
+        load_results.append(measured)
+        notes.append(result.notes)
+        if measured.get("aborted"):
+            break
+
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path,
+              ["Step", "Iload Set (mA)", "Vin Set (V)", "Vin Measured (V)",
+               "Vout (mV)", "Threshold (mV)", "Vin-Vout (mV)",
+               "Iload Measured (mA)", "Data / Calculation"], rows)
+    summary: dict = {
+        "dropout_method": method,
+        "dropout_method_name": method_name,
+        "load_results": load_results,
+        "scan_points": sum(int(item.get("scan_points", 0)) for item in load_results),
+        "vout_nominal_mv": float(cfg.get("vout_nominal_mv", 1800)),
+    }
+    if len(load_results) == 1:
+        summary.update(load_results[0])
+        summary["load_results"] = load_results
+    else:
+        summary["dropout_mv"] = [
+            item["dropout_mv"] for item in load_results
+            if item.get("dropout_mv") != "" and not item.get("aborted")
+        ]
+        summary["iload_ma"] = [item["iload_ma"] for item in load_results]
+        summary["ok_at_min_vin"] = bool(load_results) and all(
+            item.get("ok_at_min_vin") for item in load_results)
+    note = "；".join(notes) if notes else "未判定（中止）"
+    ctx.log_fn(f"[{item_key}] 多负载测试完成：{note}")
+    return ItemResult(item_key=item_key, name="Dropout Voltage", unit="mV",
+                      passed=None, measured=summary, raw_csv_path=csv_path,
+                      notes=note)
 
 
 def current_limit(ctx: ItemContext) -> ItemResult:
@@ -647,11 +888,16 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         settle_time(), average_cnt(),
     )),
     "ldo_dropout": ("Dropout Voltage", dropout, False, False, (
-        ParamSpec("dropout_iload_ma", "压差负载", "float", 100.0, "mA", maximum=100000.0),
+        ParamSpec("dropout_method", "测试方式", "choice", "step", "", options=(
+            ("step", "方式1：逐步降压测试"),
+            ("direct", "方式2：直接压差测试（需四线）"),
+        )),
+        ParamSpec("dropout_iload_ma", "压差负载列表", "text", "100", "mA",
+                  hint="多个负载用逗号分隔，如 100, 300, 500"),
         ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
         ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
         ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),
-        ParamSpec("dropout_auto_optimal", "自动找到最优点", "bool", False, ""),
+        ParamSpec("dropout_auto_optimal", "自动找到最优点（方式1）", "bool", False, ""),
         vout_tol(), settle_time(), average_cnt(),
     )),
     "ldo_current_limit": ("Current Limit", current_limit, False, False, (

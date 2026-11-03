@@ -168,7 +168,8 @@ def extract_values(measured: Any, metric: MetricSpec) -> list[float]:
             r.get(metric.key) for r in measured if isinstance(r, dict))
     elif isinstance(measured, dict):
         if metric.key in measured:
-            candidates = (measured[metric.key],)
+            raw = measured[metric.key]
+            candidates = raw if isinstance(raw, (list, tuple)) else (raw,)
         else:  # {"rows": [dict, ...]} 兜底
             rows = measured.get("rows")
             if isinstance(rows, list):

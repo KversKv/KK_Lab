@@ -261,8 +261,10 @@ def test_ldo_dropout_steps_logs_and_report():
         with open(result.raw_csv_path, encoding="utf-8-sig", newline="") as f:
             rows = list(csv.reader(f))
 
-        assert rows[0] == ["Step", "Vin Set (V)", "Vout (mV)",
-                           "Threshold (mV)", "Vin-Vout (mV)", "Data / Calculation"]
+        assert rows[0] == ["Step", "Iload Set (mA)", "Vin Set (V)",
+                           "Vin Measured (V)", "Vout (mV)", "Threshold (mV)",
+                           "Vin-Vout (mV)", "Iload Measured (mA)",
+                           "Data / Calculation"]
         body = rows[1:]
         assert body[0][0] == "1. 配置"
         assert body[1][0] == "2. 基准"
@@ -270,22 +272,22 @@ def test_ldo_dropout_steps_logs_and_report():
         assert len(scan_rows) == result.measured["scan_points"]
         assert body[-1][0] == "4. 计算"
         calc = body[-1]
-        expected_mv = round(round(float(calc[1]) * 1000.0, 3) - float(calc[2]), 3)
-        assert float(calc[4]) == expected_mv == result.measured["dropout_mv"]
-        assert "Dropout=Vin-Vout=" in calc[5]
-        assert calc[5] in result.notes
+        expected_mv = round(round(float(calc[2]) * 1000.0, 3) - float(calc[4]), 3)
+        assert float(calc[6]) == expected_mv == result.measured["dropout_mv"]
+        assert "Dropout=Vin-Vout=" in calc[8]
+        assert calc[8] in result.notes
 
         log_text = "\n".join(logs)
         for step in ("步骤1/4", "步骤2/4", "步骤3/4", "步骤4/4"):
             assert step in log_text
-        assert calc[5] in log_text
+        assert calc[8] in log_text
 
         report = build_report_data(ModuleTestResult(module_type="ldo", items=[result]))
         report_item = report["items"][0]
         assert report_item["note"] == result.notes
         assert report_item["table"]["rows"] == len(body)
         assert report_item["table"]["data"][-1][0] == "4. 计算"
-        assert report_item["table"]["data"][-1][-1] == calc[5]
+        assert report_item["table"]["data"][-1][-1] == calc[8]
         metric_keys = {metric["key"] for metric in report_item["metrics"]}
         assert {"dropout", "v0", "dropout_vin", "dropout_vout",
                 "threshold", "iload"} <= metric_keys
@@ -318,17 +320,127 @@ def test_ldo_dropout_auto_optimal_refines_at_1mv():
     coarse_rows = [row for row in rows if row[0].startswith("3. 扫描")]
     fine_rows = [row for row in rows if row[0].startswith("3. 精扫")]
     assert coarse_rows and fine_rows
-    coarse_trigger_vin = float(coarse_rows[-1][1])
+    coarse_trigger_vin = float(coarse_rows[-1][2])
     assert coarse_trigger_vin == 1.9
-    assert float(fine_rows[0][1]) == coarse_trigger_vin + 0.05
+    assert float(fine_rows[0][2]) == coarse_trigger_vin + 0.05
     for previous, current in zip(fine_rows, fine_rows[1:]):
-        assert round(float(previous[1]) - float(current[1]), 6) == 0.001
-    assert float(fine_rows[-1][1]) == 1.943
+        assert round(float(previous[2]) - float(current[2]), 6) == 0.001
+    assert float(fine_rows[-1][2]) == 1.943
     assert rows[-1][0] == "4. 计算"
-    assert float(rows[-1][1]) == result.measured["dropout_vin_v"] == 1.943
+    assert float(rows[-1][2]) == result.measured["dropout_vin_v"] == 1.943
     assert result.measured["dropout_mv"] == 180.0
     assert "1mV 精扫" in result.notes
     assert any("回退一个用户步进" in line for line in logs)
+
+
+def test_ldo_dropout_step_supports_multiple_loads():
+    import csv
+    from core.module_test._common import ItemContext
+    from core.module_test.ldo.items import dropout
+
+    with tempfile.TemporaryDirectory() as out_dir:
+        ctx = ItemContext(
+            n6705c=None, scope=None, chamber=None,
+            config={"vout_nominal_mv": 1800, "dropout_method": "step",
+                    "dropout_vin_hi_v": 2.0, "dropout_vin_lo_v": 1.7,
+                    "dropout_vin_step_v": 0.05,
+                    "dropout_iload_ma": "100, 300, 500", "vout_tol": 0.02},
+            out_dir=out_dir, is_mock=True, stop_flag_fn=lambda: False,
+            log_fn=lambda _line: None, progress_fn=lambda _percent, _label: None,
+        )
+        result = dropout(ctx)
+        with open(result.raw_csv_path, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.reader(f))
+
+    assert [load["iload_ma"] for load in result.measured["load_results"]] == [100, 300, 500]
+    assert len(result.measured["dropout_mv"]) == 3
+    config_rows = [row for row in rows if row[0] == "1. 配置"]
+    assert [float(row[1]) for row in config_rows] == [100, 300, 500]
+    assert len([row for row in rows if row[0] == "4. 计算"]) == 3
+
+
+def test_ldo_dropout_direct_uses_four_wire_and_measured_values():
+    import csv
+    from core.module_test._common import ItemContext
+    from core.module_test.judge import JUDGE_METRICS, extract_values
+    from core.module_test.ldo.items import dropout
+    from core.module_test.report import build_report_data
+    from core.module_test.result_model import ModuleTestResult
+
+    class FakeN6705C:
+        def __init__(self):
+            self.vin = 2.0
+            self.iload_a = 0.1
+            self.sense_calls = []
+            self.load_settings = []
+
+        def set_mode(self, _channel, _mode):
+            pass
+
+        def set_channel_range(self, _channel):
+            pass
+
+        def set_current_limit(self, _channel, _limit):
+            pass
+
+        def set_voltage(self, channel, voltage):
+            if channel == 2:
+                self.vin = voltage
+
+        def set_current(self, _channel, current):
+            self.iload_a = abs(current)
+            self.load_settings.append(current)
+
+        def set_sense_mode(self, channel, mode):
+            self.sense_calls.append((channel, mode))
+
+        def channel_on(self, _channel):
+            pass
+
+        def channel_off(self, _channel):
+            pass
+
+        def measure_voltage(self, channel):
+            if channel == 2:
+                return self.vin - 0.003
+            return 1.8 if self.vin >= 1.98 else self.vin - 0.18
+
+        def measure_current(self, _channel):
+            return -(self.iload_a - 0.0002)
+
+    logs = []
+    fake = FakeN6705C()
+    with tempfile.TemporaryDirectory() as out_dir:
+        ctx = ItemContext(
+            n6705c=fake, scope=None, chamber=None,
+            config={"vout_nominal_mv": 1800, "dropout_method": "direct",
+                    "dropout_vin_hi_v": 2.0, "dropout_vin_lo_v": 1.7,
+                    "dropout_vin_step_v": 0.05,
+                    "dropout_iload_ma": "100, 300", "vbat_channel": 1,
+                    "vin_channel": 2, "vout_channel": 1, "iload_channel": 3,
+                    "settle_time_s": 0.0, "average_cnt": 1},
+            out_dir=out_dir, is_mock=False, stop_flag_fn=lambda: False,
+            log_fn=logs.append, progress_fn=lambda _percent, _label: None,
+        )
+        result = dropout(ctx)
+        with open(result.raw_csv_path, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.reader(f))
+
+    assert fake.sense_calls == [(2, "4 Wire"), (2, "4 Wire")]
+    assert fake.load_settings == [-0.1, -0.3]
+    assert result.measured["dropout_mv"] == [177.0, 177.0]
+    assert [load["iload_measured_ma"] for load in result.measured["load_results"]] == [99.8, 299.8]
+    calc_rows = [row for row in rows if row[0] == "4. 计算"]
+    assert len(calc_rows) == 2
+    assert all(float(row[3]) == 1.947 for row in calc_rows)
+    assert all(float(row[4]) == 1770.0 for row in calc_rows)
+    assert all(float(row[6]) == 177.0 for row in calc_rows)
+    assert any("四线 Sense" in line for line in logs)
+    metric = JUDGE_METRICS["ldo_dropout"][0]
+    assert extract_values(result.measured, metric) == [177.0, 177.0]
+    report = build_report_data(ModuleTestResult(module_type="ldo", items=[result]))
+    metric_keys = {metric["key"] for metric in report["items"][0]["metrics"]}
+    assert {"dropout_load_0", "dropout_load_1"} <= metric_keys
 
 
 if __name__ == "__main__":

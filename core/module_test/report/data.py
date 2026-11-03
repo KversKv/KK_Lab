@@ -352,12 +352,34 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
                _mk("max_under", "最大欠冲", m.get("max_undershoot_mv"), "mV", 1),
                _mk("groups", "组数", m.get("groups"), "", 0)]
     elif key.endswith("dropout"):
-        out = [_mk("dropout", "Dropout", m.get("dropout_mv"), "mV"),
-               _mk("v0", "V0", m.get("v0_mv"), "mV"),
-               _mk("dropout_vin", "Vin @ Dropout", m.get("dropout_vin_v"), "V"),
-               _mk("dropout_vout", "Vout @ Dropout", m.get("dropout_vout_mv"), "mV"),
-               _mk("threshold", "Vout Threshold", m.get("threshold_mv"), "mV"),
-               _mk("iload", "Iload", m.get("iload_ma"), "mA")]
+        load_results = m.get("load_results")
+        if isinstance(load_results, list) and len(load_results) > 1:
+            for index, load in enumerate(load_results):
+                iload = _num(load.get("iload_ma"))
+                condition = f" @ {iload:g}mA" if iload is not None else f" #{index + 1}"
+                out.append(_mk(f"dropout_load_{index}", f"Dropout{condition}",
+                               load.get("dropout_mv"), "mV"))
+            for index, load in enumerate(load_results):
+                iload = _num(load.get("iload_ma"))
+                condition = f" @ {iload:g}mA" if iload is not None else f" #{index + 1}"
+                out.extend([
+                    _mk(f"v0_load_{index}", f"V0{condition}", load.get("v0_mv"), "mV"),
+                    _mk(f"dropout_vin_load_{index}", f"Vin @ Dropout{condition}",
+                        load.get("dropout_vin_v"), "V"),
+                    _mk(f"dropout_vout_load_{index}", f"Vout @ Dropout{condition}",
+                        load.get("dropout_vout_mv"), "mV"),
+                    _mk(f"iload_measured_load_{index}", f"Iload Measured{condition}",
+                        load.get("iload_measured_ma"), "mA"),
+                ])
+        else:
+            out = [_mk("dropout", "Dropout", m.get("dropout_mv"), "mV"),
+                   _mk("v0", "V0", m.get("v0_mv"), "mV"),
+                   _mk("dropout_vin", "Vin @ Dropout", m.get("dropout_vin_v"), "V"),
+                   _mk("dropout_vout", "Vout @ Dropout", m.get("dropout_vout_mv"), "mV"),
+                   _mk("threshold", "Vout Threshold", m.get("threshold_mv"), "mV"),
+                   _mk("iload", "Iload", m.get("iload_ma"), "mA"),
+                   _mk("iload_measured", "Iload Measured",
+                       m.get("iload_measured_ma"), "mA")]
     elif key.endswith("startup"):
         out = [_mk("soft_start", "SoftStart", m.get("soft_start_ms"), "ms"),
                _mk("overshoot", "Overshoot", m.get("overshoot_mv"), "mV")]

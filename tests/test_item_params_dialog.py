@@ -121,6 +121,22 @@ def test_editor_types():
     assert dlg.get_override()["e"] is True
 
 
+# ------------------------------------------------------------------ 选项下拉
+def test_choice_prefill_and_get():
+    spec = ParamSpec("dropout_method", "测试方式", "choice", "step", "", options=(
+        ("step", "方式1：逐步降压测试"),
+        ("direct", "方式2：直接压差测试（需四线）"),
+    ))
+    dlg = _dlg([spec], override={"dropout_method": "direct"})
+    editor = dlg._editors["dropout_method"]
+    assert isinstance(editor, QComboBox)
+    assert editor.currentData() == "direct"
+    assert "四线" in editor.currentText()
+    assert dlg.get_override() == {"dropout_method": "direct"}
+    editor.setCurrentIndex(0)
+    assert dlg.get_override() == {"dropout_method": "step"}
+
+
 # ------------------------------------------------------------------ 通道下拉
 def test_channel_prefill_and_diff():
     spec = ParamSpec("dropout_vin_channel", "Drop Vin 通道", "channel",

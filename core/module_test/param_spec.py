@@ -20,9 +20,9 @@ class ParamSpec:
     Attributes:
         key: 写入 override / cfg 的键名（如 ``settle_time_s``）。
         label: 弹窗内显示的中文标签。
-        ptype: 输入类型，取值 ``int`` / ``float`` / ``text`` / ``channel`` / ``bool``
+        ptype: 输入类型，取值 ``int`` / ``float`` / ``text`` / ``channel`` / ``choice`` / ``bool``
             （``channel`` 渲染为 N6705C 通道下拉框，值为 ``"CH n"`` 字符串；
-            ``bool`` 渲染为勾选框）。
+            ``choice`` 渲染为 options 下拉框，``bool`` 渲染为勾选框）。
         default: 该项自身缺省值（当 base_key 也取不到时兜底）。
         unit: 单位（追加到标签，如 ``s`` / ``mA``）；无单位留空。
         base_key: 基类 cfg 中的取值来源键；非空则弹窗预填该全局值。
@@ -43,6 +43,8 @@ class ParamSpec:
     hint: str = ""
     # ptype="groups" 时的子列定义（复用 ParamSpec 描述每列：key/label/unit/min/max/decimals）
     columns: tuple = ()
+    # ptype="choice" 时的选项：(存储值, 显示文本)
+    options: tuple = ()
 
 
 # 常用基类衍生字段的复用定义（避免各项重复书写）
