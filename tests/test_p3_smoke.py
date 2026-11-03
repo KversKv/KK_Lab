@@ -430,12 +430,20 @@ def test_ldo_dropout_direct_uses_four_wire_and_measured_values():
     assert fake.load_settings == [-0.1, -0.3]
     assert result.measured["dropout_mv"] == [177.0, 177.0]
     assert [load["iload_measured_ma"] for load in result.measured["load_results"]] == [99.8, 299.8]
+    scan_rows = [row for row in rows if row[0].startswith("3. 扫描")]
+    assert len(scan_rows) == 4
+    assert [float(row[4]) for row in scan_rows] == [1770.0, 1720.0, 1770.0, 1720.0]
+    assert all(float(row[5]) == 1764.0 for row in scan_rows)
+    assert "仍在容差内" in scan_rows[0][8]
+    assert "跌出容差" in scan_rows[1][8]
     calc_rows = [row for row in rows if row[0] == "4. 计算"]
     assert len(calc_rows) == 2
-    assert all(float(row[3]) == 1.947 for row in calc_rows)
-    assert all(float(row[4]) == 1770.0 for row in calc_rows)
+    assert all(float(row[3]) == 1.897 for row in calc_rows)
+    assert all(float(row[4]) == 1720.0 for row in calc_rows)
     assert all(float(row[6]) == 177.0 for row in calc_rows)
     assert any("四线 Sense" in line for line in logs)
+    assert "Threshold=1764.000mV" in result.notes
+    assert "容差=36.000mV" in result.notes
     metric = JUDGE_METRICS["ldo_dropout"][0]
     assert extract_values(result.measured, metric) == [177.0, 177.0]
     report = build_report_data(ModuleTestResult(module_type="ldo", items=[result]))
