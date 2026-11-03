@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QSpinBox,
-    QVBoxLayout, QWidget,
+    QCheckBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from ui.pages.module_test._sections.module_config_panel import ModuleConfigPanel
@@ -70,6 +70,14 @@ class DutConfigPanel(QWidget):
         # —— 电气参数 ——
         root.addWidget(self._group_header("电气参数"))
         elec_grid = self._new_grid()
+
+        if module_type == "ldo":
+            self.vin_bias_spin = QDoubleSpinBox()
+            self.vin_bias_spin.setRange(0.0, 60.0)
+            self.vin_bias_spin.setDecimals(3)
+            self.vin_bias_spin.setSingleStep(0.001)
+            self.vin_bias_spin.setValue(3.8)
+            elec_grid.add_row("Vin (V)", self.vin_bias_spin)
 
         self.vout_nominal_spin = QSpinBox()
         self.vout_nominal_spin.setRange(0, 6000)

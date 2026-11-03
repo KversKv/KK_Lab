@@ -145,7 +145,7 @@ class ModuleConfigStore:
         temp_enabled = dut.temp_test_check.isChecked()
         chip_name, chip_version = normalize_chip_identity(
             dut.chip_name_edit.text(), dut.chip_version_edit.text())
-        return {
+        config = {
             "selected_items": self._plan.selected_keys(),
             "chip_name": chip_name,
             "chip_version": chip_version,
@@ -188,6 +188,9 @@ class ModuleConfigStore:
                  for k, v in self._judge.items() if isinstance(v, dict)}
                 if self._judge is not None else {}),
         }
+        if self._module_type == "ldo":
+            config["vin_v"] = dut.vin_bias_spin.value()
+        return config
 
     # ------------------------------------------------------------------ 回填
     def restore(self, cfg: dict) -> None:
@@ -231,6 +234,8 @@ class ModuleConfigStore:
             _idx = int(cfg["scope_vout_channel"]) - 1
             if 0 <= _idx < dut.scope_vout_ch_combo.count():
                 dut.scope_vout_ch_combo.setCurrentIndex(_idx)
+        if self._module_type == "ldo" and "vin_v" in cfg:
+            dut.vin_bias_spin.setValue(float(cfg["vin_v"]))
         if "vout_nominal_mv" in cfg:
             dut.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"]))
         if "max_iload_ma" in cfg:
@@ -265,6 +270,16 @@ class ModuleConfigStore:
             self._overrides.update(
                 {k: dict(v) for k, v in overrides.items()
                  if k in self._registry and isinstance(v, dict)})
+            # LDO 固定偏置已收敛到 DUT 配置，清除旧配置中的项级 VIN 覆盖
+            if self._module_type == "ldo":
+                for key in ("ldo_ripple", "ldo_load_reg", "ldo_current_limit",
+                            "ldo_quiescent", "ldo_output_noise"):
+                    values = self._overrides.get(key)
+                    if values is None:
+                        continue
+                    values.pop("vin_v", None)
+                    if not values:
+                        self._overrides.pop(key)
             for key in self._registry:
                 self._plan.set_item_customized(key, key in self._overrides)
 

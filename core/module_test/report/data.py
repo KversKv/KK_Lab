@@ -353,7 +353,11 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
                _mk("groups", "组数", m.get("groups"), "", 0)]
     elif key.endswith("dropout"):
         out = [_mk("dropout", "Dropout", m.get("dropout_mv"), "mV"),
-               _mk("v0", "V0", m.get("v0_mv"), "mV")]
+               _mk("v0", "V0", m.get("v0_mv"), "mV"),
+               _mk("dropout_vin", "Vin @ Dropout", m.get("dropout_vin_v"), "V"),
+               _mk("dropout_vout", "Vout @ Dropout", m.get("dropout_vout_mv"), "mV"),
+               _mk("threshold", "Vout Threshold", m.get("threshold_mv"), "mV"),
+               _mk("iload", "Iload", m.get("iload_ma"), "mA")]
     elif key.endswith("startup"):
         out = [_mk("soft_start", "SoftStart", m.get("soft_start_ms"), "ms"),
                _mk("overshoot", "Overshoot", m.get("overshoot_mv"), "mV")]

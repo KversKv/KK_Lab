@@ -308,7 +308,7 @@ class ConfigManagerDialog(QDialog):
         self._populate(select_path=path)
 
     def _default_config(self, chip: str, version: str = "") -> dict:
-        return {
+        config = {
             "selected_items": [],
             "chip_name": chip,
             "chip_version": version,
@@ -330,6 +330,9 @@ class ConfigManagerDialog(QDialog):
             "scope_vout_channel": 1,
             "item_overrides": {},
         }
+        if self._module_type == "ldo":
+            config["vin_v"] = 3.8
+        return config
 
     def _on_rename(self) -> None:
         path, _chip, _version = self._current_cfg()

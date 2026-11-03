@@ -63,21 +63,22 @@ def test_class_attr_differentiation():
 def test_get_test_config_keys_and_defaults():
     ui = _make()
     ui.ldo_test_ui._store.restore(
-        {"chip_name": "BES1307", "chip_version": "", "vout_nominal_mv": 1800,
-         "judge_enabled": True})
+        {"chip_name": "BES1307", "chip_version": "", "vin_v": 4.2,
+         "vout_nominal_mv": 1800, "judge_enabled": True})
     cfg = ui.ldo_test_ui.get_test_config()
     expected = {"selected_items", "chip_name", "chip_version", "module_name", "test_condition",
                 "operator",
                 "temp_test_enabled", "temperature", "temp_soak_s",
                 "temp_tolerance_c", "temp_wait_s", "vbat_channel", "vin_channel",
                 "vout_channel", "force_channel", "volt_method",
-                "iload_channel", "vout_nominal_mv", "max_iload_ma",
+                "iload_channel", "vin_v", "vout_nominal_mv", "max_iload_ma",
                 "device_addr", "width_flag",
                 "scope_vout_channel", "item_overrides",
                 "module_config_enabled", "module_config_yaml", "judge_enabled",
                 "judge_criteria"}
     assert set(cfg.keys()) == expected
     assert cfg["chip_version"] == ""
+    assert cfg["vin_v"] == 4.2
     assert cfg["vout_nominal_mv"] == 1800
     assert cfg["judge_enabled"] is True
     ui.ldo_test_ui.test_plan.set_judge_enabled(False)
@@ -85,6 +86,31 @@ def test_get_test_config_keys_and_defaults():
     ui.ldo_test_ui._store.restore({"judge_enabled": True})
     assert ui.ldo_test_ui.test_plan.judge_enabled() is True
     assert ui.dcdc_test_ui.get_test_config()["vout_nominal_mv"] == 1200
+    assert "vin_v" not in ui.dcdc_test_ui.get_test_config()
+
+
+def test_ldo_shared_vin_and_legacy_override_cleanup():
+    shared_keys = ("ldo_ripple", "ldo_load_reg", "ldo_current_limit",
+                   "ldo_quiescent", "ldo_output_noise")
+    for key in shared_keys:
+        assert all(p.key != "vin_v" for p in LDOTestUI.ITEMS_REGISTRY[key][4])
+    assert any(p.key == "vin_v" for p in LDOTestUI.ITEMS_REGISTRY["ldo_vout_scan"][4])
+    assert any(p.key == "vin_v" for p in DCDCTestUI.ITEMS_REGISTRY["dcdc_ripple"][4])
+
+    sub = _make().ldo_test_ui
+    sub._store.restore({
+        "vin_v": 4.1,
+        "item_overrides": {
+            "ldo_ripple": {"vin_v": 5.0},
+            "ldo_load_reg": {"vin_v": 4.9, "settle_time_s": 0.02},
+            "ldo_vout_scan": {"vin_v": 4.8},
+        },
+    })
+    cfg = sub.get_test_config()
+    assert cfg["vin_v"] == 4.1
+    assert "ldo_ripple" not in cfg["item_overrides"]
+    assert cfg["item_overrides"]["ldo_load_reg"] == {"settle_time_s": 0.02}
+    assert cfg["item_overrides"]["ldo_vout_scan"] == {"vin_v": 4.8}
 
 
 def test_legacy_1860_chip_version_restore():
@@ -212,6 +238,57 @@ def test_widgets_shim_compat():
         box = widgets.CollapsibleGroupBox("旧接口", expanded=True)
         assert box.is_expanded()
         assert "QDialog" in widgets.DIALOG_QSS
+
+
+def test_ldo_dropout_steps_logs_and_report():
+    import csv
+    from core.module_test._common import ItemContext
+    from core.module_test.ldo.items import dropout
+    from core.module_test.report import build_report_data
+    from core.module_test.result_model import ModuleTestResult
+
+    logs = []
+    with tempfile.TemporaryDirectory() as out_dir:
+        ctx = ItemContext(
+            n6705c=None, scope=None, chamber=None,
+            config={"vout_nominal_mv": 1800, "dropout_vin_hi_v": 2.0,
+                    "dropout_vin_lo_v": 1.7, "dropout_vin_step_v": 0.05,
+                    "dropout_iload_ma": 100, "vout_tol": 0.02},
+            out_dir=out_dir, is_mock=True, stop_flag_fn=lambda: False,
+            log_fn=logs.append, progress_fn=lambda _percent, _label: None,
+        )
+        result = dropout(ctx)
+        with open(result.raw_csv_path, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.reader(f))
+
+        assert rows[0] == ["Step", "Vin Set (V)", "Vout (mV)",
+                           "Threshold (mV)", "Vin-Vout (mV)", "Data / Calculation"]
+        body = rows[1:]
+        assert body[0][0] == "1. 配置"
+        assert body[1][0] == "2. 基准"
+        scan_rows = [row for row in body if row[0].startswith("3. 扫描")]
+        assert len(scan_rows) == result.measured["scan_points"]
+        assert body[-1][0] == "4. 计算"
+        calc = body[-1]
+        expected_mv = round(round(float(calc[1]) * 1000.0, 3) - float(calc[2]), 3)
+        assert float(calc[4]) == expected_mv == result.measured["dropout_mv"]
+        assert "Dropout=Vin-Vout=" in calc[5]
+        assert calc[5] in result.notes
+
+        log_text = "\n".join(logs)
+        for step in ("步骤1/4", "步骤2/4", "步骤3/4", "步骤4/4"):
+            assert step in log_text
+        assert calc[5] in log_text
+
+        report = build_report_data(ModuleTestResult(module_type="ldo", items=[result]))
+        report_item = report["items"][0]
+        assert report_item["note"] == result.notes
+        assert report_item["table"]["rows"] == len(body)
+        assert report_item["table"]["data"][-1][0] == "4. 计算"
+        assert report_item["table"]["data"][-1][-1] == calc[5]
+        metric_keys = {metric["key"] for metric in report_item["metrics"]}
+        assert {"dropout", "v0", "dropout_vin", "dropout_vout",
+                "threshold", "iload"} <= metric_keys
 
 
 if __name__ == "__main__":
