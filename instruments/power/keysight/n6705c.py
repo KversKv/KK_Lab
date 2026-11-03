@@ -78,6 +78,27 @@ class N6705C:
         logger.debug("N6705C set_voltage: CH%s = %s V", channel, voltage)
         self.instr.write(f"VOLT {voltage}, (@{channel})")
 
+    def set_sense_mode(self, channel, mode="INT"):
+        """设置通道 Sense 方式：Local/INTernal 为本地检测，4 Wire/EXTernal 为远端检测。"""
+        mode_str = str(mode).strip().upper()
+        mode_map = {
+            "INT": "INT",
+            "INTERNAL": "INT",
+            "LOCAL": "INT",
+            "EXT": "EXT",
+            "EXTERNAL": "EXT",
+            "4WIRE": "EXT",
+            "4 WIRE": "EXT",
+            "4-WIRE": "EXT",
+        }
+        if mode_str not in mode_map:
+            raise ValueError(
+                f"Invalid sense mode '{mode}', expected 'LOCAL' or '4 WIRE'"
+            )
+        scpi_mode = mode_map[mode_str]
+        logger.debug("N6705C set_sense_mode: CH%s = %s", channel, scpi_mode)
+        self.instr.write(f"VOLT:SENS:SOUR {scpi_mode},(@{channel})")
+
     def get_mode(self, channel):
         return self.instr.query(f"EMULation? (@{channel})").strip()
 

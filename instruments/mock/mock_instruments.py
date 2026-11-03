@@ -92,6 +92,26 @@ class MockN6705C:
         if self._mock_i2c is not None:
             self._mock_i2c.set_mock_voltage(voltage)
 
+    def set_sense_mode(self, channel, mode="INT"):
+        mode_str = str(mode).strip().upper()
+        mode_map = {
+            "INT": "INT",
+            "INTERNAL": "INT",
+            "LOCAL": "INT",
+            "EXT": "EXT",
+            "EXTERNAL": "EXT",
+            "4WIRE": "EXT",
+            "4 WIRE": "EXT",
+            "4-WIRE": "EXT",
+        }
+        if mode_str not in mode_map:
+            raise ValueError(
+                f"Invalid sense mode '{mode}', expected 'LOCAL' or '4 WIRE'"
+            )
+        if not hasattr(self, "_channel_sense_modes"):
+            self._channel_sense_modes = {}
+        self._channel_sense_modes[channel] = mode_map[mode_str]
+
     def set_voltagemode(self, channel):
         self._channel_modes[channel] = "VMETer"
 
