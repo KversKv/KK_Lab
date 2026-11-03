@@ -2,22 +2,9 @@
   "schema_version": 1,
   "config": {
     "selected_items": [
-      "dcdc_vout_scan",
-      "dcdc_efficiency",
-      "dcdc_load_reg",
-      "dcdc_line_reg",
-      "dcdc_quiescent",
-      "dcdc_ripple",
-      "dcdc_switching_freq",
-      "dcdc_load_transient",
-      "dcdc_current_limit",
-      "dcdc_psrr",
-      "dcdc_inductor_current",
-      "dcdc_startup",
-      "dcdc_protection",
-      "dcdc_topology"
+      "dcdc_load_transient"
     ],
-    "chip_name": "",
+    "chip_name": "TPS62840",
     "chip_version": "",
     "module_name": "",
     "test_condition": "",
@@ -28,17 +15,68 @@
     "temp_tolerance_c": 2,
     "temp_wait_s": 1800,
     "vbat_channel": "CH 1",
-    "vin_channel": "CH 2",
+    "vin_channel": "CH 1",
     "vout_channel": "CH 2",
-    "iload_channel": "CH 3",
+    "iload_channel": "CH 2",
     "force_channel": "CH 2",
-    "volt_method": "n6705c",
-    "vout_nominal_mv": 1200,
+    "volt_method": "scope",
+    "vout_nominal_mv": 1800,
     "max_iload_ma": 400,
     "device_addr": "0x00",
     "width_flag": 1,
     "scope_vout_channel": 1,
-    "item_overrides": {},
+    "item_overrides": {
+      "dcdc_load_transient": {
+        "transient_groups": [
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 10.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 10.0
+          },
+          {
+            "i0_ma": 25.0,
+            "i1_ma": 125.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "i0_ma": 25.0,
+            "i1_ma": 125.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 25.0,
+            "i1_ma": 125.0,
+            "freq_hz": 10.0
+          }
+        ],
+        "settle_time_s": 0.01
+      }
+    },
     "module_config_enabled": false,
     "module_config_yaml": "",
     "judge_enabled": true,

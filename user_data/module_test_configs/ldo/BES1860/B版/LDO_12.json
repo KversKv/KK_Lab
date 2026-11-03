@@ -2,9 +2,7 @@
   "schema_version": 1,
   "module_type": "ldo",
   "config": {
-    "selected_items": [
-      "ldo_dropout"
-    ],
+    "selected_items": [],
     "chip_name": "BES1860",
     "chip_version": "B版",
     "module_name": "LDO_12",
@@ -18,14 +16,14 @@
     "vbat_channel": "CH 1",
     "vin_channel": "CH 2",
     "vout_channel": "CH 2",
-    "iload_channel": "CH 3",
-    "force_channel": "CH 3",
+    "iload_channel": "CH 2",
+    "force_channel": "CH 2",
     "volt_method": "scope",
-    "vout_nominal_mv": 610,
+    "vout_nominal_mv": 600,
     "max_iload_ma": 200,
     "device_addr": "0x17",
     "width_flag": 1,
-    "scope_vout_channel": 1,
+    "scope_vout_channel": 2,
     "item_overrides": {
       "ldo_quiescent": {
         "vin_v": 3.8,
