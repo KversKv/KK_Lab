@@ -2,18 +2,11 @@
   "schema_version": 1,
   "config": {
     "selected_items": [
-      "ldo_vout_scan",
-      "ldo_ripple",
-      "ldo_load_reg",
-      "ldo_line_reg",
-      "ldo_quiescent",
-      "ldo_output_noise",
-      "ldo_load_transient",
-      "ldo_line_transient"
+      "ldo_dropout"
     ],
     "chip_name": "BES1860",
     "chip_version": "B版",
-    "module_name": "LDO_14",
+    "module_name": "LDO_15",
     "test_condition": "LP_BIAS010",
     "operator": "KK",
     "temp_test_enabled": false,
@@ -24,21 +17,20 @@
     "vbat_channel": "CH 1",
     "vin_channel": "CH 1",
     "vout_channel": "CH 2",
-    "iload_channel": "CH 3",
-    "force_channel": "CH 3",
+    "iload_channel": "CH 2",
+    "force_channel": "CH 2",
     "volt_method": "scope",
     "vout_nominal_mv": 1800,
-    "max_iload_ma": 500,
+    "max_iload_ma": 300,
     "device_addr": "0x17",
     "width_flag": 1,
     "scope_vout_channel": 1,
     "item_overrides": {
       "ldo_quiescent": {
-        "vin_v": 4.0,
         "average_cnt": 5,
         "settle_time_s": 0.05,
-        "iq_en_dr_addr": "0x0202",
-        "iq_en_addr": "0x0202",
+        "iq_en_dr_addr": "0x020A",
+        "iq_en_addr": "0x020A",
         "iq_en_dr_bit": 10,
         "iq_en_bit": 9,
         "iq_on_dr_val": 1,
@@ -48,9 +40,9 @@
         "iq_vout_offset_mv": 20.0
       },
       "ldo_vout_scan": {
-        "reg_addr": "0x0203",
-        "msb": 4,
-        "lsb": 0,
+        "reg_addr": "0x020B",
+        "msb": 14,
+        "lsb": 10,
         "min_code": 0,
         "max_code": 31,
         "vin_v": 5.0,
@@ -62,7 +54,6 @@
         "iload_end_ma": 1000.0,
         "iload_step_ma": 50.0,
         "iload_knee_ma": 0.0,
-        "vin_v": 4.0,
         "settle_time_s": 0.01,
         "average_cnt": 1,
         "use_ripple_sweep": true
@@ -75,15 +66,13 @@
         "average_cnt": 1
       },
       "ldo_ripple": {
-        "vin_v": 4.0,
         "iload_start_ma": 0.0,
-        "iload_end_ma": 700.0,
-        "iload_step_ma": 70.0,
+        "iload_end_ma": 400.0,
+        "iload_step_ma": 50.0,
         "settle_time_s": 0.01,
         "average_cnt": 1
       },
       "ldo_output_noise": {
-        "vin_v": 3.8,
         "noise_center_freq_khz": 15.0,
         "noise_freq_span_khz": 30.0
       },
@@ -144,9 +133,9 @@
         "settle_time_s": 0.05
       },
       "ldo_dropout": {
-        "dropout_iload_ma": 100.0,
-        "dropout_vin_hi_v": 4.1,
-        "dropout_vin_lo_v": 3.3,
+        "dropout_iload_ma": 300.0,
+        "dropout_vin_hi_v": 3.8,
+        "dropout_vin_lo_v": 3.2,
         "dropout_vin_step_v": 0.02,
         "vout_tol": 0.02,
         "settle_time_s": 0.01,
@@ -277,11 +266,12 @@
           {
             "metric": "max_load_ma",
             "op": ">",
-            "v1": 500.0,
+            "v1": 300.0,
             "v2": null
           }
         ]
       }
-    }
+    },
+    "vin_v": 3.8
   }
 }
