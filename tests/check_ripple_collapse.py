@@ -86,9 +86,16 @@ check("A 崩溃阈值=拐点前后中点", m.get("collapse_vout_threshold_mv") =
 check("A 日志提示崩溃剔除",
       any("Max Load=240mA" in s and "无效" in s for s in LOGS))
 check("A 逐点日志含相对 0mA 的 Vout Drop",
-      any("Iload=0mA" in s and "Vout Drop@0mA=0.0000 mV" in s for s in LOGS)
-      and any("Iload=20mA" in s and "Vout Drop@0mA=-9.1420 mV" in s
+      any("Iload=   0mA" in s and "Vout Drop@0mA=    0.0000 mV" in s for s in LOGS)
+      and any("Iload=  20mA" in s and "Vout Drop@0mA=   -9.1420 mV" in s
               for s in LOGS))
+point_logs = [s for s in LOGS if "Iload=" in s and "Vout Drop@0mA=" in s]
+field_markers = (" -> Vout=", " mV, Vpp=", " mV, RMS=", " mV, Vout Drop@")
+check("A 逐点日志数值列纵向对齐",
+      len(point_logs) == len(ILOADS)
+      and all(len(s) == len(point_logs[0]) for s in point_logs)
+      and all(all(s.find(marker) == point_logs[0].find(marker)
+                  for marker in field_markers) for s in point_logs))
 
 # ---- 用例 B：崩溃点 Vpp 异常放大也不污染 Max Vpp ----
 vpps_bad = list(VPPS)
