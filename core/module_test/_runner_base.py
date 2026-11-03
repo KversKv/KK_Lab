@@ -108,6 +108,7 @@ class ModuleTestRunner(QThread):
         self._out_dir = out_dir or os.path.join(
             "Results", "module_test", module_type, "_".join(parts))
         self._stop_flag = False
+        self._stop_announced = False
         # 用户确认弹窗应答（confirm_request 信号 → UI 弹窗 → respond_confirm 回传）
         self._confirm_reply = threading.Event()
         self._confirm_continue = False
@@ -124,6 +125,12 @@ class ModuleTestRunner(QThread):
     def request_stop(self):
         """协作式中断（检查标志位，禁强杀线程）。"""
         self._stop_flag = True
+
+    def _stop_requested(self) -> bool:
+        if self._stop_flag and not self._stop_announced:
+            self._stop_announced = True
+            self._log("[STOP] 收到停止请求，终止后续仪器操作与测试项。")
+        return self._stop_flag
 
     def respond_confirm(self, continue_test: bool) -> None:
         """UI 弹窗应答：是否继续（经 confirm_request 信号的回传出口）。"""
@@ -302,6 +309,13 @@ class ModuleTestRunner(QThread):
         return True
 
     def run(self):  # noqa: D401 - QThread 入口
+        try:
+            self._run_impl()
+        except Exception as exc:  # noqa: BLE001 - 保证 UI 必能退出运行/停止态
+            logger.error("module test runner 未处理异常", exc_info=True)
+            self.failed.emit(f"测试流程异常：{exc}")
+
+    def _run_impl(self) -> None:
         selected: list[str] = [k for k in self._cfg.get("selected_items", []) if k in self._items_registry]
         if not selected:
             self._log("[WARN] 未勾选任何测试项。")
@@ -313,23 +327,28 @@ class ModuleTestRunner(QThread):
         total = len(selected)
         self._log(f"[RUN] {self._module_type.upper()} Module Test 开始，共 {total} 项，输出目录: {self._out_dir}")
 
-        # 配置完成后、第一项测试前：Vin 通道限流设为 (Max Iload + 0.1) A
-        self._setup_vin_current_limit()
-
-        # 配置完成后、第一项测试前：Iload 通道 1mA 预拉载 1s 后关断
-        self._preload_iload()
+        aborted_reason = ""
+        # 预处理逐步检查停止，避免停止后仍继续示波器入位 / Vout 采样。
+        for pre_step in (self._setup_vin_current_limit, self._preload_iload):
+            if self._stop_requested():
+                aborted_reason = "用户请求停止"
+                break
+            pre_step()
 
         # 第一项测试开始前：记录 Vout 基准电压 V0（逐项偏差门禁基准）
-        vout_baseline = self._record_vout_baseline()
-        aborted_reason = ""
+        vout_baseline = None
+        if not self._stop_requested():
+            vout_baseline = self._record_vout_baseline()
+        if self._stop_requested():
+            aborted_reason = "用户请求停止"
 
         # 待回填的 Load Regulation 项（ripple_key -> load_reg item_key）：
         # 开关开启时跳过本项测量，待 ripple 完成后以其 CSV 数据生成结果
         pending_follow: dict[str, str] = {}
 
         for idx, item_key in enumerate(selected):
-            if self._stop_flag:
-                self._log("[STOP] 收到停止请求，终止后续项。")
+            if self._stop_requested():
+                aborted_reason = "用户请求停止"
                 break
             name, run_fn, needs_scope, _default_checked, _params = self._items_registry[item_key]
 
@@ -399,7 +418,10 @@ class ModuleTestRunner(QThread):
                 self.item_finished.emit(lr_key, lr_result.to_summary())
                 self._progress(int((idx + 1) / total * 100), name)
 
-            # 逐项 Vout 偏差门禁：与 V0 偏差超 ±20 mV 则停止后续项
+            # 停止后不再发起额外 Vout 测量；正常完成才执行逐项偏差门禁。
+            if self._stop_requested():
+                aborted_reason = "用户请求停止"
+                break
             if not self._check_vout_deviation(ctx, vout_baseline, item_key):
                 aborted_reason = f"{item_key} 结束后 Vout 与基准 V0 偏差超过 ±20 mV"
                 break
@@ -410,11 +432,14 @@ class ModuleTestRunner(QThread):
             self._result.summary["aborted"] = aborted_reason
 
         try:
-            report_path, pdf_path = save_html_report(self._result, self._out_dir)
+            report_path, pdf_path = save_html_report(
+                self._result, self._out_dir, export_pdf=not self._stop_flag)
             self._result.summary["report_path"] = report_path
             self._log(f"[DONE] 报告已生成: {report_path}")
             if pdf_path:
                 self._log(f"[DONE] PDF 报告已生成: {pdf_path}")
+            elif self._stop_flag and REPORT_PDF_EXPORT:
+                self._log("[STOP] 已跳过 PDF 报告导出。")
             elif REPORT_PDF_EXPORT:
                 self._log("[WARN] PDF 报告导出失败，详见日志。")
         except Exception:  # noqa: BLE001 - 报告生成失败不影响结果返回

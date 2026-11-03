@@ -134,13 +134,15 @@ def load_reg_summary(rows: list[list[Any]], knee_ma: float = 0.0) -> dict:
 
 
 def settle(ctx: "ItemContext", seconds: float) -> None:
-    """稳定等待（Mock 模式跳过；真机 time.sleep，禁 QThread 依赖）。
-
-    真机测量前需等待电源/负载建立稳态，参考 PMU DCDC worker 的 settle 逻辑。
-    """
+    """稳定等待（Mock 模式跳过；真机切片休眠，可被停止请求中断）。"""
     if ctx.is_mock or seconds <= 0:
         return
-    time.sleep(seconds)
+    deadline = time.monotonic() + seconds
+    while not ctx.stop_flag_fn():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.05, remaining))
 
 
 def _acq_settle_s(timebase_s: float) -> float:
@@ -192,10 +194,12 @@ def measure_avg(ctx: "ItemContext", method: str, channel: int, *,
     n = max(1, int(count))
     samples: list[float] = []
     for i in range(n):
+        if ctx.stop_flag_fn():
+            break
         samples.append(safe_measure(ctx.n6705c, method, channel, default))
         if i < n - 1:
             settle(ctx, settle_s)
-    return trimmed_mean(samples)
+    return trimmed_mean(samples) if samples else default
 
 
 # DUT 配置「电压测试方式」（cfg 键 volt_method）取值：
@@ -261,7 +265,7 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
     恢复 run 采集（上一项可能定格在 stop 态，读数是旧帧）。
     成功后把 V0 / 通道记入 ctx，供 measure_vout 越窗复测判定。
     """
-    if ctx.is_mock or ctx.scope is None:
+    if ctx.is_mock or ctx.scope is None or ctx.stop_flag_fn():
         return None
     ch = int(ctx.config.get("scope_vout_channel", 1))
     try:
@@ -274,6 +278,8 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
         if not ctx.scope.is_acquiring():
             ctx.scope.run()
             settle(ctx, 0.3)
+        if ctx.stop_flag_fn():
+            return None
         key = _scope_vout_cache_key(ctx.config, ch)
         cached = _SCOPE_VOUT_CACHE.get(key)
         if cached is not None and not force:
@@ -293,12 +299,16 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
         settle(ctx, _acq_settle_s(_SCOPE_VOUT_TIMEBASE_S))
         v0 = None
         for center_v in (nominal_v, 0.0, 2.5):
+            if ctx.stop_flag_fn():
+                return None
             ctx.scope.set_channel_offset(ch, center_v)
             v0 = _scope_mean_raw(ctx, ch)
             if v0 is not None:
                 break
         if v0 is None:
             ctx.log_fn(f"[scope] Vout 通道 ch{ch} Step1 读取 V0 失败，入位降级。")
+            return None
+        if ctx.stop_flag_fn():
             return None
         # Step2 / Step3：先切精量程再写 offset——写序与规则步骤相反：
         # 改 scale 时示波器按地线标记屏幕位置守恒重算 offset
@@ -340,6 +350,8 @@ def _scope_vout_sample(ctx: "ItemContext", ch: int, default: float) -> float:
     读数无效（测量异常/无波形）或越窗（过高/过低、疑似削波）时，重做完整
     Step1~3 入位后复测一次；仍失败返回 default。
     """
+    if ctx.stop_flag_fn():
+        return default
     v = _scope_mean_raw(ctx, ch)
     v0, setup_ch = ctx._scope_vout_v0, ctx._scope_vout_ch
     if v is not None:
@@ -352,6 +364,8 @@ def _scope_vout_sample(ctx: "ItemContext", ch: int, default: float) -> float:
     else:
         reason = "读数无效（测量异常/无波形）"
     ctx.log_fn(f"[scope] Vout {reason}，重走完整流程（Step1~3）后复测。")
+    if ctx.stop_flag_fn():
+        return default
     if _setup_scope_vout_meter(ctx, force=True) is not None:
         v = _scope_mean_raw(ctx, ch)
         if v is not None:
@@ -372,6 +386,8 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
     n = max(1, int(count))
     samples: list[float] = []
     for i in range(n):
+        if ctx.stop_flag_fn():
+            break
         if use_scope:
             ch = int(cfg.get("scope_vout_channel", 1))
             samples.append(_scope_vout_sample(ctx, ch, default))
@@ -380,7 +396,7 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
             samples.append(safe_measure(ctx.n6705c, "measure_voltage", ch, default))
         if i < n - 1:
             settle(ctx, settle_s)
-    return trimmed_mean(samples)
+    return trimmed_mean(samples) if samples else default
 
 
 def setup_vout_meter(ctx: "ItemContext", *, force: bool = False) -> None:

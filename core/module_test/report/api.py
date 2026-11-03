@@ -49,15 +49,16 @@ def _to_print_variant(html_text: str) -> str:
         "<script>", "<script>window.__KK_PRINT__=1;</script>\n<script>", 1)
 
 
-def save_html_report(result: ModuleTestResult,
-                     out_dir: str) -> tuple[str, str | None]:
+def save_html_report(result: ModuleTestResult, out_dir: str, *,
+                     export_pdf: bool = True) -> tuple[str, str | None]:
     """生成 HTML 报告并落盘，返回 ``(html_path, pdf_path)``。
 
     同时在 ``out_dir/XLSX/`` 下为每个有内容的测试项生成独立 XLSX
     （数据表 + 截图/波形入单元格；best-effort，失败不影响报告）。
-    ``debug_config.REPORT_PDF_EXPORT`` 开启时再经系统 Edge/Chrome 无头打印
-    打印变体（``_to_print_variant``）追加 ``<报告目录名>.pdf``（全量数据 +
-    原尺寸截图；best-effort，关闭或失败时 pdf_path 为 None）。
+    ``export_pdf`` 且 ``debug_config.REPORT_PDF_EXPORT`` 开启时再经系统
+    Edge/Chrome 无头打印打印变体（``_to_print_variant``）追加
+    ``<报告目录名>.pdf``（全量数据 + 原尺寸截图；best-effort，关闭或失败时
+    pdf_path 为 None）。
     """
     os.makedirs(out_dir, exist_ok=True)
     xlsx_map = export_items_xlsx_dir(result, out_dir)
@@ -67,7 +68,7 @@ def save_html_report(result: ModuleTestResult,
         f.write(html_text)
     logger.info("模块测试报告已生成: %s", path)
     pdf_path = None
-    if getattr(debug_config, "REPORT_PDF_EXPORT", False):
+    if export_pdf and getattr(debug_config, "REPORT_PDF_EXPORT", False):
         pdf_name = f"{os.path.basename(os.path.normpath(out_dir))}.pdf"
         try:
             pdf_path = export_pdf_from_html(

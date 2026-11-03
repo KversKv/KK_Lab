@@ -3,14 +3,7 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_vout_scan",
-      "ldo_ripple",
-      "ldo_load_reg",
-      "ldo_line_reg",
-      "ldo_quiescent",
-      "ldo_output_noise",
-      "ldo_load_transient",
-      "ldo_line_transient"
+      "ldo_dropout"
     ],
     "chip_name": "BES1860",
     "chip_version": "B版",
@@ -141,10 +134,12 @@
         "settle_time_s": 0.05
       },
       "ldo_dropout": {
-        "dropout_iload_ma": 100.0,
-        "dropout_vin_hi_v": 4.1,
-        "dropout_vin_lo_v": 3.3,
+        "dropout_method": "step",
+        "dropout_iload_ma": "100.0",
+        "dropout_vin_hi_v": 3.6,
+        "dropout_vin_lo_v": 3.1,
         "dropout_vin_step_v": 0.02,
+        "dropout_auto_optimal": false,
         "vout_tol": 0.02,
         "settle_time_s": 0.01,
         "average_cnt": 1

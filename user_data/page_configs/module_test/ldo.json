@@ -133,10 +133,12 @@
         "settle_time_s": 0.05
       },
       "ldo_dropout": {
-        "dropout_iload_ma": 300.0,
-        "dropout_vin_hi_v": 3.8,
-        "dropout_vin_lo_v": 3.2,
+        "dropout_method": "step",
+        "dropout_iload_ma": "100.0",
+        "dropout_vin_hi_v": 3.6,
+        "dropout_vin_lo_v": 3.1,
         "dropout_vin_step_v": 0.02,
+        "dropout_auto_optimal": false,
         "vout_tol": 0.02,
         "settle_time_s": 0.01,
         "average_cnt": 1
