@@ -191,6 +191,11 @@ class ItemParamsDialog(QDialog):
             ]
             rows = prefill if isinstance(prefill, list) else []
             return GroupsTableEditor(columns, prefill=rows, parent=self)
+        if spec.ptype == "bool":
+            w = QCheckBox()
+            w.setProperty("switch", "true")
+            w.setChecked(bool(prefill))
+            return w
         if spec.ptype == "int":
             w = QSpinBox()
             w.setRange(int(spec.minimum), int(spec.maximum))
@@ -260,6 +265,8 @@ class ItemParamsDialog(QDialog):
         w = self._editors[spec.key]
         if spec.ptype == "groups":
             return w.value()
+        if spec.ptype == "bool":
+            return w.isChecked()
         if spec.ptype == "int":
             return w.value()
         if spec.ptype == "float":

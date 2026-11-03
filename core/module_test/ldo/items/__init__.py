@@ -267,6 +267,7 @@ def dropout(ctx: ItemContext) -> ItemResult:
 
     流程：Vin=PS2Q 源、带固定负载，先在 Vin 上限、加载稳定后实测 Vout 作为基准 V0，
     再从 Vin 上限逐步降低，当 Vout 跌出容差（低于 V0*(1-tol)）时，记录此时的 Vin-Vout 即为压差。
+    启用自动最优点时，粗扫触发后回退一个用户 Vin 步进，再按 1mV 精扫触发点。
     CSV 与报告保留配置、基准、逐点扫描和结果计算的完整数据。
     """
     item_key = "ldo_dropout"
@@ -279,6 +280,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
     vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
     vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
     vin_step = float(cfg.get("dropout_vin_step_v", 0.02))
+    auto_optimal = bool(cfg.get("dropout_auto_optimal", False))
+    fine_step_v = 0.001
     tol = float(cfg.get("vout_tol", 0.02))
     settle_s = float(cfg.get("settle_time_s", 0.01))
     avg_cnt = int(cfg.get("average_cnt", 1))
@@ -289,12 +292,18 @@ def dropout(ctx: ItemContext) -> ItemResult:
     last_vin_v: float | None = None
     last_vout_mv: float | None = None
     scan_count = 0
+    fine_scan_count = 0
+    fine_mode = False
+    fine_floor_v: float | None = None
+    coarse_trigger: tuple[float, float, float] | None = None
+    refined_result = False
     aborted = False
     ok_at_min_vin = False
     ctx.log_fn(
         f"[{item_key}] 步骤1/4 配置：Vin CH{vin_ch}=PS2Q，Iload CH{iload_ch}="
         f"{iload_ma:g}mA；Vin {vin_hi:.3f}→{vin_lo:.3f}V，步进 {vin_step:.3f}V；"
-        f"Vout 容差 {tol:.2%}，稳定时间 {settle_s:.3f}s，平均次数 {avg_cnt}")
+        f"Vout 容差 {tol:.2%}，稳定时间 {settle_s:.3f}s，平均次数 {avg_cnt}；"
+        f"自动最优点 {'开启（回退一个 Vin 步进后按 1mV 精扫）' if auto_optimal else '关闭'}")
     if ctx.is_mock:
         v0_mv = mock_jitter(nominal_mv, 0.01)
         mock_dropout_mv = mock_jitter(180.0, 0.05)
@@ -312,7 +321,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
         "1. 配置", round(vin_hi, 6), "", "", "",
         f"Vin CH{vin_ch}=PS2Q；Iload CH{iload_ch}={iload_ma:g}mA；"
         f"Vin {vin_hi:.3f}→{vin_lo:.3f}V，步进 {vin_step:.3f}V；"
-        f"容差 {tol:.2%}，稳定 {settle_s:.3f}s，平均 {avg_cnt} 次",
+        f"容差 {tol:.2%}，稳定 {settle_s:.3f}s，平均 {avg_cnt} 次；"
+        f"自动最优点 {'开启（1mV 精扫）' if auto_optimal else '关闭'}",
     ])
     rows.append([
         "2. 基准", round(vin_hi, 6), round(v0_mv, 3), round(threshold_mv, 3),
@@ -332,6 +342,10 @@ def dropout(ctx: ItemContext) -> ItemResult:
             aborted = True
             break
         scan_count += 1
+        if fine_mode:
+            fine_scan_count += 1
+        phase = "精扫" if fine_mode else "扫描"
+        phase_count = fine_scan_count if fine_mode else scan_count
         if not ctx.is_mock:
             try:
                 ctx.n6705c.set_voltage(vin_ch, vin)
@@ -348,22 +362,46 @@ def dropout(ctx: ItemContext) -> ItemResult:
         triggered = v < threshold_mv
         at_min = vin <= vin_lo + 1e-9
         decision = ("Vout<Threshold，触发 Dropout" if triggered else
+                    "Vout≥Threshold，继续以 1mV 降低 Vin" if fine_mode else
                     "Vout≥Threshold，稳压正常（已达 Vin 下限）" if at_min else
                     "Vout≥Threshold，继续降低 Vin")
-        rows.append([f"3. 扫描 {scan_count}", round(vin, 6), round(v, 3),
+        rows.append([f"3. {phase} {phase_count}", round(vin, 6), round(v, 3),
                      round(threshold_mv, 3), round(diff_mv, 3), decision])
         ctx.log_fn(
-            f"[{item_key}] 步骤3/4 扫描#{scan_count}：Vin={vin:.3f}V，"
+            f"[{item_key}] 步骤3/4 {phase}#{phase_count}：Vin={vin:.3f}V，"
             f"Vout={v:.3f}mV，Threshold={threshold_mv:.3f}mV，"
             f"Vin-Vout={diff_mv:.3f}mV；{decision}")
         if triggered:
+            measured_dropout_mv = round(
+                max(round(vin * 1000.0, 3) - round(v, 3), 0.0), 3)
+            if auto_optimal and not fine_mode and vin_step > fine_step_v + 1e-9:
+                coarse_trigger = (vin, round(v, 3), measured_dropout_mv)
+                fine_floor_v = vin
+                fine_start_v = round(min(vin_hi, vin + vin_step), 6)
+                if fine_start_v > vin + 1e-9:
+                    fine_mode = True
+                    vin = fine_start_v
+                    ctx.log_fn(
+                        f"[{item_key}] 粗扫触发 Dropout，回退一个用户步进至 "
+                        f"Vin={fine_start_v:.3f}V，开始按 1mV 精扫")
+                    continue
+            refined_result = fine_mode
             trigger_vin_v = vin
             trigger_vout_mv = round(v, 3)
-            dropout_mv = round(max(round(vin * 1000.0, 3) - trigger_vout_mv, 0.0), 3)
+            dropout_mv = measured_dropout_mv
             break
-        if at_min:
+        if fine_mode and fine_floor_v is not None and vin <= fine_floor_v + 1e-9:
+            if coarse_trigger is not None:
+                trigger_vin_v, trigger_vout_mv, dropout_mv = coarse_trigger
+            ctx.log_fn(f"[{item_key}] 精扫未复现阈值触发，保留粗扫触发结果")
+            break
+        if at_min and not fine_mode:
             ok_at_min_vin = True
-        vin -= vin_step
+        current_step_v = fine_step_v if fine_mode else vin_step
+        next_vin_v = round(vin - current_step_v, 6)
+        if fine_mode and fine_floor_v is not None:
+            next_vin_v = max(fine_floor_v, next_vin_v)
+        vin = next_vin_v
 
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
@@ -379,6 +417,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
         note = (f"Dropout={dropout_mv:.3f}mV @ Iload={iload_ma:g}mA；{calc_text}；"
                 f"触发条件：Vout={trigger_vout_mv:.3f}mV < "
                 f"V0×(1-{tol:.2%})={threshold_mv:.3f}mV")
+        if refined_result:
+            note += "；自动最优点：粗扫后回退一个 Vin 步进，按 1mV 精扫确定"
     elif ok_at_min_vin:
         calc_text = (f"最低 Vin={vin_lo:.3f}V 时 Vout={last_vout_mv:.3f}mV ≥ "
                      f"Threshold={threshold_mv:.3f}mV，未触发，Dropout 不计算")
@@ -611,6 +651,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
         ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
         ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),
+        ParamSpec("dropout_auto_optimal", "自动找到最优点", "bool", False, ""),
         vout_tol(), settle_time(), average_cnt(),
     )),
     "ldo_current_limit": ("Current Limit", current_limit, False, False, (

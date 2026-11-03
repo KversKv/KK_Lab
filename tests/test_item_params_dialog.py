@@ -16,7 +16,9 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
+from PySide6.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox,
+)
 
 from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaTab
 
@@ -106,12 +108,17 @@ def test_editor_types():
         ParamSpec("b", "B", "float", 0.5, "", decimals=2),
         ParamSpec("c", "C", "text", "x", ""),
         ParamSpec("d", "D", "channel", "CH 2", ""),
+        ParamSpec("e", "E", "bool", False, ""),
     ]
     dlg = _dlg(specs)
     assert isinstance(dlg._editors["a"], QSpinBox)
     assert isinstance(dlg._editors["b"], QDoubleSpinBox)
     assert isinstance(dlg._editors["c"], QLineEdit)
     assert isinstance(dlg._editors["d"], QComboBox)
+    assert isinstance(dlg._editors["e"], QCheckBox)
+    assert dlg.get_override()["e"] is False
+    dlg._editors["e"].setChecked(True)
+    assert dlg.get_override()["e"] is True
 
 
 # ------------------------------------------------------------------ 通道下拉

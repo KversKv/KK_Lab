@@ -291,6 +291,46 @@ def test_ldo_dropout_steps_logs_and_report():
                 "threshold", "iload"} <= metric_keys
 
 
+def test_ldo_dropout_auto_optimal_refines_at_1mv():
+    import csv
+    from unittest.mock import patch
+
+    from core.module_test._common import ItemContext
+    from core.module_test.ldo.items import dropout
+
+    logs = []
+    with patch("core.module_test.ldo.items.mock_jitter",
+               side_effect=lambda base, ratio=0.02: base):
+        with tempfile.TemporaryDirectory() as out_dir:
+            ctx = ItemContext(
+                n6705c=None, scope=None, chamber=None,
+                config={"vout_nominal_mv": 1800, "dropout_vin_hi_v": 2.0,
+                        "dropout_vin_lo_v": 1.7, "dropout_vin_step_v": 0.05,
+                        "dropout_iload_ma": 100, "vout_tol": 0.02,
+                        "dropout_auto_optimal": True},
+                out_dir=out_dir, is_mock=True, stop_flag_fn=lambda: False,
+                log_fn=logs.append, progress_fn=lambda _percent, _label: None,
+            )
+            result = dropout(ctx)
+            with open(result.raw_csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.reader(f))
+
+    coarse_rows = [row for row in rows if row[0].startswith("3. 扫描")]
+    fine_rows = [row for row in rows if row[0].startswith("3. 精扫")]
+    assert coarse_rows and fine_rows
+    coarse_trigger_vin = float(coarse_rows[-1][1])
+    assert coarse_trigger_vin == 1.9
+    assert float(fine_rows[0][1]) == coarse_trigger_vin + 0.05
+    for previous, current in zip(fine_rows, fine_rows[1:]):
+        assert round(float(previous[1]) - float(current[1]), 6) == 0.001
+    assert float(fine_rows[-1][1]) == 1.943
+    assert rows[-1][0] == "4. 计算"
+    assert float(rows[-1][1]) == result.measured["dropout_vin_v"] == 1.943
+    assert result.measured["dropout_mv"] == 180.0
+    assert "1mV 精扫" in result.notes
+    assert any("回退一个用户步进" in line for line in logs)
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted({k: v for k, v in globals().items()
