@@ -63,13 +63,13 @@
 <h3>数据导入 / 导出</h3>
 <p><b>Import Datalog</b> 支持以下格式，导入数据以 F1-、F2- 等前缀与实时数据区分：</p>
 <ul>
-  <li><b>.csv</b> — 首列为时间，后续列为各通道数据；支持附带 [CUSTOM_LABELS] 与 [CH_NAME_RENAMES] 段</li>
+  <li><b>.csv</b> — 支持共享时间列或每通道独立 Time/Value 列；支持附带 [CUSTOM_LABELS] 与 [CH_NAME_RENAMES] 段</li>
   <li><b>.dlog</b> — Keysight 原始二进制 Datalog 格式</li>
   <li><b>.edlg</b> — Keysight 扩展 Datalog 格式</li>
 </ul>
 <p><b>Export Datalog</b> 支持导出：</p>
 <ul>
-  <li><b>.csv</b> — 时间列 + 全部通道数据；双仪器分 Time_A(s) / Time_B(s) 两组时间列；同时导出自定义标注与通道重命名信息</li>
+  <li><b>.csv</b> — 每通道使用独立 Time/Value 列，保留原始时间位置；不等长或稀疏数据尾部留空，同时导出自定义标注与通道重命名信息</li>
   <li><b>.dlog</b> — 原始二进制 Datalog 数据（需先有采集或导入的原始数据）</li>
 </ul>
 

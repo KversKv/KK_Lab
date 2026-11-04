@@ -1,0 +1,381 @@
+# -*- coding: utf-8 -*-
+"""Module Test 非法参数、测量异常、停止与空数据防线回归测试。"""
+from __future__ import annotations
+
+import math
+from types import SimpleNamespace
+
+import pytest
+
+from core.module_test import _common
+from core.module_test._common import (
+    ItemContext, linspace, load_reg_summary, measure_avg, run_load_capability_ripple,
+    run_line_transient, run_load_transient, run_vout_scan, safe_measure,
+)
+from core.module_test._runner_base import ModuleTestRunner
+from core.module_test.dcdc.items import DCDC_ITEMS, current_limit as dcdc_current_limit
+from core.module_test.judge import evaluate_item
+from core.module_test.ldo.items import LDO_ITEMS, current_limit as ldo_current_limit
+from core.module_test.ldo.items import dropout
+from core.module_test.report import build_report_data
+from core.module_test.result_model import ItemResult, ModuleTestResult
+from ui.pages.module_test._base_subpage import ModuleTestSubPageBase
+
+
+def _ctx(tmp_path, **kwargs) -> ItemContext:
+    return ItemContext(
+        n6705c=kwargs.get("n6705c"),
+        scope=kwargs.get("scope"),
+        chamber=None,
+        config=kwargs.get("config", {}),
+        out_dir=str(tmp_path),
+        is_mock=kwargs.get("is_mock", True),
+        stop_flag_fn=kwargs.get("stop_flag_fn", lambda: False),
+        log_fn=lambda _line: None,
+        progress_fn=lambda _percent, _label: None,
+    )
+
+
+class _ForbiddenInstrument:
+    def __init__(self):
+        self.calls = []
+
+    def __getattr__(self, name):
+        self.calls.append(name)
+        raise AssertionError(f"非法参数校验前调用了仪器方法 {name}")
+
+
+class _ZeroThenFailInstrument:
+    def __init__(self):
+        self.fail = False
+
+    def measure_voltage(self, _channel):
+        if self.fail:
+            raise RuntimeError("read failed")
+        return 0.0
+
+
+class _FailOnInstrument:
+    def __init__(self, fail_method: str):
+        self.fail_method = fail_method
+
+    def __getattr__(self, name):
+        if name == "instr":
+            return None
+
+        def _call(*_args, **_kwargs):
+            if name == self.fail_method:
+                raise RuntimeError(f"{name} failed")
+            return None
+
+        return _call
+
+
+def test_safe_measure_preserves_real_zero_and_marks_failure(tmp_path):
+    inst = _ZeroThenFailInstrument()
+    assert safe_measure(inst, "measure_voltage", 1) == 0.0
+    inst.fail = True
+    assert math.isnan(safe_measure(inst, "measure_voltage", 1))
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False)
+    assert math.isnan(measure_avg(ctx, "measure_voltage", 1))
+    assert ctx.measurement_failed is True
+
+
+def test_linspace_rejects_invalid_values_and_supports_descending():
+    assert linspace(5, 1, 2) == [5.0, 3.0, 1.0]
+    for start, end, step in ((1, 2, 0), (1, 2, -1), (1, math.nan, 0.1)):
+        with pytest.raises(ValueError):
+            linspace(start, end, step)
+
+
+@pytest.mark.parametrize("step", [0, -0.01, math.nan])
+def test_ldo_current_limit_rejects_step_before_instrument(tmp_path, step):
+    inst = _ForbiddenInstrument()
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False,
+               config={"ilim_start_ma": 50, "ilim_end_ma": 500,
+                       "ilim_step_ma": step})
+    with pytest.raises(ValueError):
+        ldo_current_limit(ctx)
+    assert inst.calls == []
+
+
+def test_dcdc_current_limit_rejects_range_values_before_instrument(tmp_path):
+    inst = _ForbiddenInstrument()
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False,
+               config={"ilim_start_ma": 100, "ilim_end_ma": math.inf,
+                       "ilim_step_ma": 20})
+    with pytest.raises(ValueError):
+        dcdc_current_limit(ctx)
+    assert inst.calls == []
+
+
+@pytest.mark.parametrize("config", [
+    {"dropout_vin_step_v": 0},
+    {"dropout_vin_step_v": -0.02},
+    {"dropout_vin_hi_v": 1.7, "dropout_vin_lo_v": 2.0},
+    {"dropout_vin_lo_v": math.nan},
+])
+def test_dropout_rejects_invalid_scan_before_instrument(tmp_path, config):
+    inst = _ForbiddenInstrument()
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False, config=config)
+    with pytest.raises(ValueError):
+        dropout(ctx)
+    assert inst.calls == []
+
+
+def test_empty_and_single_point_load_reg_have_no_performance_result():
+    for rows in ([], [[100, 1800.0]]):
+        summary = load_reg_summary(rows)
+        assert summary["vout_drop_mv"] == ""
+        assert summary["load_reg_pct"] == ""
+    passed, _ = evaluate_item(
+        "ldo_load_reg", {"rules": [{"metric": "load_reg_pct", "op": "<", "v1": 1.0}]},
+        load_reg_summary([]))
+    assert passed is None
+
+
+def test_first_point_stop_produces_empty_current_limit(tmp_path):
+    ctx = _ctx(tmp_path, stop_flag_fn=lambda: True,
+               config={"ilim_start_ma": 50, "ilim_end_ma": 500,
+                       "ilim_step_ma": 20})
+    result = ldo_current_limit(ctx)
+    assert result.measured["current_limit_ma"] == ""
+    assert result.measured["peak_current_ma"] == ""
+
+
+def test_ripple_first_point_stop_has_no_zero_metrics(tmp_path):
+    ctx = _ctx(tmp_path, scope=object(), stop_flag_fn=lambda: True,
+               config={"iload_start_ma": 0, "iload_end_ma": 200,
+                       "iload_step_ma": 20})
+    result = run_load_capability_ripple(ctx, "ldo_ripple", "Ripple", 10.0, 2.0)
+    assert result.measured["points"] == 0
+    assert result.measured["max_vpp_mv"] == ""
+    assert result.measured["max_vout_drop_mv"] == ""
+    assert result.measured["max_load_ma"] == ""
+
+
+def test_ripple_scope_exception_does_not_become_zero(tmp_path, monkeypatch):
+    scope = _FailOnInstrument("set_AutoRipple_test")
+    for name in ("setup_source_channel", "setup_vout_meter", "setup_load_channel",
+                 "setup_scope_timebase", "apply_load_current", "teardown_load",
+                 "settle"):
+        monkeypatch.setattr(_common, name, lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_common, "measure_vout", lambda *_args, **_kwargs: 1.8)
+    monkeypatch.setattr(_common, "_capture_scope_png", lambda *_args, **_kwargs: None)
+    ctx = _ctx(tmp_path, n6705c=object(), scope=scope, is_mock=False,
+               config={"iload_start_ma": 0, "iload_end_ma": 0,
+                       "iload_step_ma": 20, "vout_nominal_mv": 1800})
+    result = run_load_capability_ripple(ctx, "ldo_ripple", "Ripple", 10.0, 2.0)
+    assert ctx.measurement_failed is True
+    assert result.measured["max_vpp_mv"] == ""
+    assert result.raw_csv_path
+
+
+@pytest.mark.parametrize("kind", ["line", "load"])
+def test_transient_group_exception_has_no_zero_metrics(tmp_path, monkeypatch, kind):
+    fail_method = "set_mode" if kind == "line" else "set_current_slew"
+    inst = _FailOnInstrument(fail_method)
+    for name in ("_reset_arb_state", "_arb_stop_and_wait", "teardown_load",
+                 "restore_vin", "setup_load_channel"):
+        monkeypatch.setattr(_common, name, lambda *_args, **_kwargs: None)
+    ctx = _ctx(tmp_path, n6705c=inst, scope=object(), is_mock=False)
+    if kind == "line":
+        result = run_line_transient(ctx, "ldo_line_transient", "Line Transient", 1.0, 1.0)
+    else:
+        result = run_load_transient(ctx, "ldo_load_transient", "Load Transient", 1.0, 1.0)
+    assert ctx.measurement_failed is True
+    assert result.measured["max_overshoot_mv"] == ""
+    assert result.measured["max_undershoot_mv"] == ""
+
+
+def test_vout_scan_measurement_failure_does_not_spin_or_emit_metrics(tmp_path, monkeypatch):
+    class _I2C:
+        def __init__(self):
+            self.writes = []
+
+        def read(self, *_args):
+            return 0
+
+        def write(self, *args):
+            self.writes.append(args)
+
+    i2c = _I2C()
+    inst = _ZeroThenFailInstrument()
+    inst.fail = True
+    monkeypatch.setattr(_common, "create_i2c", lambda _ctx: i2c)
+    for name in ("setup_source_channel", "setup_load_channel", "teardown_load",
+                 "teardown_vin"):
+        monkeypatch.setattr(_common, name, lambda *_args, **_kwargs: None)
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False,
+               config={"min_code": 0, "max_code": 2})
+    result = run_vout_scan(ctx, "ldo_vout_scan", "Output Voltage Scan")
+    assert ctx.measurement_failed is True
+    assert result.passed is not True
+    assert not result.measured
+    assert i2c.writes[-1][-2] == 0  # 恢复默认寄存器值
+
+
+def _run_single_item(tmp_path, monkeypatch, run_fn):
+    key = "ldo_line_reg"
+    runner = ModuleTestRunner(
+        module_type="ldo",
+        items_registry={key: ("Line Regulation", run_fn, False, True, ())},
+        config={"selected_items": [key], "judge_enabled": True,
+                "judge_criteria": {key: {"rules": [
+                    {"metric": "line_reg_pct", "op": "<", "v1": 1.0}
+                ]}}},
+        n6705c=None, out_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(runner, "_setup_vin_current_limit", lambda: None)
+    monkeypatch.setattr(runner, "_preload_iload", lambda: None)
+    monkeypatch.setattr(runner, "_record_vout_baseline", lambda: None)
+    monkeypatch.setattr(runner, "_check_vout_deviation", lambda *_args: True)
+    monkeypatch.setattr("core.module_test._runner_base.save_html_report",
+                        lambda *_args, **_kwargs: (str(tmp_path / "report.html"), None))
+    finished = []
+    runner.finished_result.connect(finished.append)
+    runner._run_impl()
+    assert len(finished) == 1
+    return finished[0]
+
+
+def test_runner_measurement_failure_cannot_judge_pass(tmp_path, monkeypatch):
+    def _run(ctx):
+        ctx.measurement_failed = True
+        return ItemResult(item_key="ldo_line_reg", name="Line Regulation",
+                          measured={"line_reg_pct": 0.0})
+
+    result = _run_single_item(tmp_path, monkeypatch, _run)
+    assert result.items[0].passed is False
+    assert "测量异常" in result.items[0].notes
+    assert result.summary["overall"] == "FAIL"
+
+
+def test_runner_stop_is_checked_before_judge(tmp_path, monkeypatch):
+    holder = {}
+
+    def _run(_ctx):
+        holder["runner"].request_stop()
+        return ItemResult(item_key="ldo_line_reg", name="Line Regulation",
+                          measured={"line_reg_pct": 0.0})
+
+    original_init = ModuleTestRunner.__init__
+
+    def _capture_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        holder["runner"] = self
+
+    monkeypatch.setattr(ModuleTestRunner, "__init__", _capture_init)
+    result = _run_single_item(tmp_path, monkeypatch, _run)
+    assert result.items[0].passed is None
+    assert result.summary["aborted"] == "用户请求停止"
+    assert "不参与判定" in result.items[0].notes
+
+
+def test_repeated_summary_and_report_keep_aborted_state():
+    result = ModuleTestResult(module_type="ldo", items=[
+        ItemResult(item_key="ldo_line_reg", name="Line Regulation", passed=None)
+    ])
+    result.summary["aborted"] = "用户请求停止"
+    result.build_summary()
+    report = build_report_data(result)
+    result.build_summary()
+    assert result.summary["aborted"] == "用户请求停止"
+    assert report["summary"]["aborted"] == "用户请求停止"
+
+
+@pytest.mark.parametrize("config", [
+    {"msb": 3, "lsb": 7},
+    {"msb": 7, "lsb": 0, "max_code": 256},
+    {"min_code": -1},
+])
+def test_vout_scan_rejects_invalid_code_range_before_i2c_or_instrument(
+        tmp_path, monkeypatch, config):
+    inst = _ForbiddenInstrument()
+
+    def _forbidden_i2c(_ctx):
+        raise AssertionError("非法参数校验前创建了 I2C 接口")
+
+    monkeypatch.setattr(_common, "create_i2c", _forbidden_i2c)
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False, config=config)
+    with pytest.raises(ValueError):
+        run_vout_scan(ctx, "ldo_vout_scan", "Output Voltage Scan")
+    assert inst.calls == []
+
+
+@pytest.mark.parametrize("module_type,registry,item_key,override", [
+    ("ldo", LDO_ITEMS, "ldo_ripple", {"iload_step_ma": 0}),
+    ("dcdc", DCDC_ITEMS, "dcdc_line_reg", {"vin_step_v": math.nan}),
+    ("dcdc", DCDC_ITEMS, "dcdc_current_limit", {"ilim_end_ma": math.inf}),
+    ("ldo", LDO_ITEMS, "ldo_dropout", {
+        "dropout_vin_hi_v": 1.0, "dropout_vin_lo_v": 2.0,
+    }),
+    ("ldo", LDO_ITEMS, "ldo_vout_scan", {"msb": 3, "lsb": 7}),
+    ("dcdc", DCDC_ITEMS, "dcdc_vout_scan", {"max_code": 256}),
+])
+def test_runner_invalid_item_params_fail_before_any_io(
+        tmp_path, monkeypatch, module_type, registry, item_key, override):
+    out_dir = tmp_path / "must_not_be_created"
+    inst = _ForbiddenInstrument()
+    runner = ModuleTestRunner(
+        module_type=module_type,
+        items_registry=registry,
+        config={"selected_items": [item_key],
+                "item_overrides": {item_key: override}},
+        n6705c=inst,
+        out_dir=str(out_dir),
+    )
+    pre_calls = []
+    for name in ("_setup_vin_current_limit", "_preload_iload", "_record_vout_baseline"):
+        monkeypatch.setattr(
+            runner, name, lambda name=name: pre_calls.append(name))
+    failed = []
+    finished = []
+    runner.failed.connect(failed.append)
+    runner.finished_result.connect(finished.append)
+
+    runner._run_impl()
+
+    assert len(failed) == 1
+    assert "测试参数无效" in failed[0]
+    assert item_key in failed[0]
+    assert pre_calls == []
+    assert inst.calls == []
+    assert finished == []
+    assert not out_dir.exists()
+
+
+def test_ui_invalid_override_blocks_module_config_and_runner():
+    cfg = {
+        "selected_items": ["ldo_ripple"],
+        "item_overrides": {"ldo_ripple": {"iload_step_ma": 0}},
+        "module_config_enabled": True,
+        "module_config_yaml": "WRITE 0x00 0x01",
+    }
+    alerts = []
+    states = []
+    modcfg_calls = []
+    runner_calls = []
+    page = SimpleNamespace(
+        ITEMS_REGISTRY=LDO_ITEMS,
+        is_test_running=False,
+        get_test_config=lambda: cfg,
+        left_rail=SimpleNamespace(
+            dut_panel=SimpleNamespace(validate=lambda: None)),
+        _alert_banner=SimpleNamespace(hide=lambda: None),
+    )
+    page._show_alert = lambda text, severity="warning": alerts.append((text, severity))
+    page._missing_instruments = lambda _cfg: []
+    page._apply_run_state = states.append
+    page._run_module_config = modcfg_calls.append
+    page._proceed_start_test = runner_calls.append
+    page._precheck = lambda value: ModuleTestSubPageBase._precheck(page, value)
+
+    ModuleTestSubPageBase._on_start_test(page)
+
+    assert [state.name for state in states] == ["PRECHECK", "IDLE"]
+    assert len(alerts) == 1
+    assert "测试参数无效" in alerts[0][0]
+    assert "ldo_ripple" in alerts[0][0]
+    assert modcfg_calls == []
+    assert runner_calls == []

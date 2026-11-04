@@ -2,7 +2,15 @@
   "schema_version": 1,
   "module_type": "ldo",
   "config": {
-    "selected_items": [],
+    "selected_items": [
+      "ldo_ripple",
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient"
+    ],
     "chip_name": "BES1860",
     "chip_version": "B版",
     "module_name": "LDO_09",
@@ -23,10 +31,9 @@
     "max_iload_ma": 300,
     "device_addr": "0x17",
     "width_flag": 1,
-    "scope_vout_channel": 2,
+    "scope_vout_channel": 1,
     "item_overrides": {
       "ldo_quiescent": {
-        "vin_v": 3.8,
         "average_cnt": 5,
         "settle_time_s": 0.05,
         "iq_en_dr_addr": "0x0067",
@@ -54,7 +61,6 @@
         "iload_end_ma": 200.0,
         "iload_step_ma": 10.0,
         "iload_knee_ma": 0.0,
-        "vin_v": 4.0,
         "settle_time_s": 0.01,
         "average_cnt": 1,
         "use_ripple_sweep": true
@@ -67,15 +73,13 @@
         "average_cnt": 1
       },
       "ldo_ripple": {
-        "vin_v": 3.8,
         "iload_start_ma": 0.0,
-        "iload_end_ma": 300.0,
+        "iload_end_ma": 350.0,
         "iload_step_ma": 20.0,
         "settle_time_s": 0.01,
         "average_cnt": 1
       },
       "ldo_output_noise": {
-        "vin_v": 3.8,
         "noise_center_freq_khz": 15.0,
         "noise_freq_span_khz": 30.0
       },
@@ -264,6 +268,7 @@
           }
         ]
       }
-    }
+    },
+    "vin_v": 3.8
   }
 }

@@ -8,6 +8,7 @@ Auto Test Worker:对多个 BIN 顺序执行 下载 -> 启动 -> Force 测试 的
  - 把巨型方法按 Step 切分成若干小方法,便于阅读和调试。
 """
 
+import math
 import os
 import queue
 import threading
@@ -26,7 +27,10 @@ from .common import (
     build_summary_payload,
     configure_datalog_all,
     fetch_datalog_all,
+    require_channel_results,
     start_datalog_sync,
+    validate_channel_force_configs,
+    validate_datalog_timing,
     wait_datalog_with_progress,
 )
 
@@ -45,7 +49,7 @@ class AutoTestWorker(QObject):
     download_state_changed = Signal(str)
     download_finished = Signal(object)
     download_error = Signal(str)
-    finished = Signal()
+    finished = Signal(bool, str)
     error = Signal(str)
 
     _AUTO_SET_SPECIAL_VOLTAGES = [0.625, 0.67, 0.725, 0.78]
@@ -103,9 +107,9 @@ class AutoTestWorker(QObject):
         # 测试模式: high_voltage(外供高压, 跳过 I2C 配置) / standard(标准电压, 走 I2C 配置)
         self.test_mode = test_mode
         # 下载成功后、开始测试功耗前的芯片稳定等待时间(秒)
-        self.stabilization_delay_sec = float(stabilization_delay_sec)
+        self.stabilization_delay_sec = stabilization_delay_sec
         # 下载波特率(对应 dldtool 的 --pgm-rate 参数)
-        self.download_pgm_rate = int(download_pgm_rate)
+        self.download_pgm_rate = download_pgm_rate
         self._is_stopped = False
         self._current_download_state = None
         # 测试前配置寄存器快照 {stage: {(device_addr, reg_addr, width): orig_val}}
@@ -117,12 +121,42 @@ class AutoTestWorker(QObject):
         self._is_stopped = True
 
     def run(self):
+        success = False
+        message = ""
         try:
-            self._auto_test()
+            self.test_time, self.sample_period = validate_datalog_timing(
+                self.test_time, self.sample_period
+            )
+            self.channel_force_configs = validate_channel_force_configs(
+                self.channel_force_configs
+            )
+            try:
+                delay = float(self.stabilization_delay_sec)
+                rate = float(self.download_pgm_rate)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Stable delay and baudrate must be numeric.") from exc
+            if not math.isfinite(delay) or delay < 0:
+                raise ValueError("Stable delay must be finite and non-negative.")
+            if not math.isfinite(rate) or rate <= 0 or not rate.is_integer():
+                raise ValueError("Baudrate must be a positive integer.")
+            self.stabilization_delay_sec = delay
+            self.download_pgm_rate = int(rate)
+            if not self.firmware_paths:
+                raise ValueError("No firmware files provided.")
+            results = self._auto_test()
+            if self._is_stopped:
+                message = "Auto test stopped."
+            elif not results or len(results) != len(self.firmware_paths):
+                message = "Auto test did not produce complete results."
+                self.error.emit(message)
+            else:
+                success = True
+                message = "All auto test completed."
         except Exception as e:
-            self.error.emit(str(e))
+            message = str(e)
+            self.error.emit(message)
         finally:
-            self.finished.emit()
+            self.finished.emit(success, message)
 
     # ---- 工具 ----
     @staticmethod
@@ -470,6 +504,7 @@ class AutoTestWorker(QObject):
         if len(all_bin_results) > 1:
             self._emit_final_summary_table(all_bin_results)
         self._log("[AUTO_TEST] All auto test completed.")
+        return all_bin_results
 
     # ---- Step 子方法 ----
     def _prepare_poweron_vbat(self, base, span):
@@ -613,9 +648,12 @@ class AutoTestWorker(QObject):
         )
         if self._is_stopped:
             return None
-        vbat_current = vbat_result.get(self.vbat_hw_ch, 0.0)
+        vbat_values = require_channel_results(
+            vbat_result, [self.vbat_hw_ch], self.vbat_device_label
+        )
+        vbat_current = vbat_values[self.vbat_hw_ch]
         self.channel_result.emit(
-            self.vbat_device_label, self.vbat_hw_ch, float(vbat_current), "vbat"
+            self.vbat_device_label, self.vbat_hw_ch, vbat_current, "vbat"
         )
         self._log(
             f"[AUTO_TEST] Vbat total current: {_format_current_unified(vbat_current)}"
@@ -636,14 +674,18 @@ class AutoTestWorker(QObject):
             for ch in hw_channels:
                 try:
                     v = float(n6705c_inst.measure_voltage(ch))
+                    if not math.isfinite(v):
+                        raise ValueError("non-finite voltage")
                     default_voltages[(device_label, ch)] = v
                     ch_name = self.channel_names.get(
                         (device_label, ch), f"{device_label}-CH{ch}"
                     )
                     self._log(f"[AUTO_TEST]   {ch_name}: {v:.4f}V")
                 except Exception as e:
-                    self._log(f"[WARNING] Failed to measure {device_label}-CH{ch}: {e}")
-                    default_voltages[(device_label, ch)] = 0.0
+                    self._log(f"[ERROR] Failed to measure {device_label}-CH{ch}: {e}")
+                    raise RuntimeError(
+                        f"Default voltage unavailable on {device_label}-CH{ch}."
+                    ) from e
         return default_voltages
 
     def _resolve_config_commands(self, detected_chip_name):
@@ -896,7 +938,7 @@ class AutoTestWorker(QObject):
                             f"[AUTO_TEST]   {ch_name}: Force -> {force_value:.4f}V (user override)"
                         )
                     else:
-                        v_default = default_voltages.get((device_label, ch), 0.0)
+                        v_default = default_voltages[(device_label, ch)]
                         v_boosted = self._compute_boosted_voltage(
                             v_default, boost_mode, boost_value
                         )
@@ -911,6 +953,7 @@ class AutoTestWorker(QObject):
                         )
                 except Exception as e:
                     self._log(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
+                    raise
 
     def _step_execute_config_commands(self, i2c, chip_info, config_commands):
         self._log("[AUTO_TEST] Step 11: Executing configuration commands...")
@@ -972,7 +1015,7 @@ class AutoTestWorker(QObject):
                             f"[AUTO_TEST]   {ch_name}: Force -> {force_value:.4f}V (user override)"
                         )
                     else:
-                        v_default = default_voltages.get((device_label, ch), 0.0)
+                        v_default = default_voltages[(device_label, ch)]
                         aligned_v = self._align_voltage(v_default)
                         v_boosted = self._compute_boosted_voltage(
                             v_default, boost_mode, boost_value
@@ -985,6 +1028,7 @@ class AutoTestWorker(QObject):
                         )
                 except Exception as e:
                     self._log(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
+                    raise
 
     def _step_sub_channel_consumption(self, vbat_current, base, span):
         self._log("[AUTO_TEST] Step 13: Running sub-channel consumption test...")
@@ -1000,10 +1044,12 @@ class AutoTestWorker(QObject):
 
         self._log("[AUTO_TEST] Configuring datalog on instruments...")
         active_tasks = configure_datalog_all(task_list, self.test_time, self._log)
-        if not active_tasks:
-            return results, vbat_remain
+        if not active_tasks or len(active_tasks) != len(task_list):
+            return None, None
 
-        start_datalog_sync(active_tasks, self._log, timeout=30)
+        start_errors = start_datalog_sync(active_tasks, self._log, timeout=30)
+        if any(start_errors):
+            return None, None
 
         def _tick(frac):
             self.progress.emit(base + (0.65 + frac * 0.25) * span)
@@ -1014,20 +1060,30 @@ class AutoTestWorker(QObject):
         self._log("[AUTO_TEST] Fetching results...")
         fetch_errors = fetch_datalog_all(active_tasks, self.test_time, self._log, timeout=30)
 
+        if any(fetch_errors):
+            return None, None
         vbat_label = self.vbat_device_label
         vbat_ch = self.vbat_hw_ch
-        for idx, task in enumerate(active_tasks):
-            if fetch_errors[idx]:
-                continue
-            cr = task["curr_result"] or {}
-            for ch in task["force_channels"]:
-                avg_i = cr.get(ch, 0.0)
-                self.channel_result.emit(
-                    task["device_label"], ch, float(avg_i), "force_auto"
+        validated_results = []
+        for task in active_tasks:
+            try:
+                cr = require_channel_results(
+                    task["curr_result"], task["all_datalog_channels"], task["device_label"]
                 )
-                results[(task["device_label"], ch)] = float(avg_i)
+            except RuntimeError as e:
+                self._log(f"[ERROR] {e}")
+                return None, None
+            validated_results.append((task, cr))
+
+        for task, cr in validated_results:
+            for ch in task["force_channels"]:
+                avg_i = cr[ch]
+                self.channel_result.emit(
+                    task["device_label"], ch, avg_i, "force_auto"
+                )
+                results[(task["device_label"], ch)] = avg_i
             if task["device_label"] == vbat_label and vbat_ch in cr:
-                vbat_remain = float(cr[vbat_ch])
+                vbat_remain = cr[vbat_ch]
         return results, vbat_remain
 
     def _step_restore_registers(self, i2c, original_registers):
@@ -1053,9 +1109,10 @@ class AutoTestWorker(QObject):
         channel_voltages = {}
         try:
             vbat_v = float(self.vbat_inst.measure_voltage(self.vbat_hw_ch))
-        except Exception:
-            vbat_v = 3.8
-        channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
+            if math.isfinite(vbat_v):
+                channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
+        except Exception as e:
+            self._log(f"[WARNING] Failed to measure Vbat voltage: {e}")
         for key, v in default_voltages.items():
             force_mode, force_value, _, _ = self._resolve_channel_force_cfg(*key)
             if force_mode == "force" and force_value is not None:
@@ -1169,9 +1226,11 @@ class AutoTestWorker(QObject):
         for r in all_bin_results:
             bin_name = r["bin_name"]
             channels = r.get("channels", {})
-            vals = [f"{r.get('vbat', 0.0) * scale:.4f}"]
+            vbat_value = r.get("vbat")
+            vals = [f"{vbat_value * scale:.4f}" if vbat_value is not None else "N/A"]
             for key in ordered_keys:
-                vals.append(f"{channels.get(key, 0.0) * scale:.4f}")
+                value = channels.get(key)
+                vals.append(f"{value * scale:.4f}" if value is not None else "N/A")
             if has_vbat_remain:
                 vr = r.get("vbat_remain")
                 vals.append(f"{vr * scale:.4f}" if vr is not None else "N/A")

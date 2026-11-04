@@ -70,6 +70,16 @@ def _fmt_val(value, min_decimals=4, sig_digits=4):
     return f"{value:.{decimals}f}"
 
 
+def _validate_code_range(msb, lsb, min_code, max_code):
+    if lsb < 0 or msb < lsb:
+        raise ValueError("Invalid bit range: require 0 <= LSB <= MSB.")
+    mask = (1 << (msb - lsb + 1)) - 1
+    if min_code < 0 or max_code < min_code or max_code > mask:
+        raise ValueError(
+            f"Invalid code range: require 0 <= Min Code <= Max Code <= 0x{mask:X}."
+        )
+
+
 class _ConfigTraverseWorker(QObject):
     log_message = Signal(str)
     progress = Signal(int)
@@ -98,6 +108,7 @@ class _ConfigTraverseWorker(QObject):
             iic_width = self._cfg["iic_width"]
             test_mode = self._cfg["test_mode"]
             meter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
+            _validate_code_range(msb, lsb, min_code, max_code)
 
             is_voltage = (test_mode == "Voltage")
             unit = "V" if is_voltage else "A"
@@ -287,10 +298,15 @@ class _ConfigTraverseWorker(QObject):
             i2c.write(device_addr, reg_addr, default_reg, iic_width)
             self.log_message.emit("[TEST] Register restored to default value.")
 
-            self.log_message.emit(f"[TEST] Register 0x{reg_addr:02X} traverse complete.")
-            self.test_finished.emit(True)
+            success = not self._stop_flag and bool(measurements)
+            if success:
+                self.log_message.emit(f"[TEST] Register 0x{reg_addr:02X} traverse complete.")
+            elif not self._stop_flag:
+                self.log_message.emit("[ERROR] No measurement data collected.")
+            self.test_finished.emit(success)
         except Exception as e:
             self.log_message.emit(f"[ERROR] {e}")
+            _logger.error("Config traverse test failed", exc_info=True)
             self.test_finished.emit(False)
 
 
@@ -784,8 +800,9 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
             lsb = int(self.lsb_edit.text())
             min_code = int(self.min_code_edit.text(), 16)
             max_code = int(self.max_code_edit.text(), 16)
-        except ValueError:
-            self.append_log("[ERROR] Invalid hex address or parameter.")
+            _validate_code_range(msb, lsb, min_code, max_code)
+        except ValueError as e:
+            self.append_log(f"[ERROR] {e}")
             return
 
         iic_width = self.iic_width_combo.currentData()
@@ -810,6 +827,7 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
             "iic_width": iic_width,
         }
 
+        self._stop_requested = False
         self.set_test_running(True)
         self.set_progress(0)
 
@@ -830,6 +848,7 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
     def _on_stop_test(self):
         if self.test_worker is not None:
             self.test_worker.request_stop()
+        self._stop_requested = True
         self.append_log("[TEST] Stop requested...")
 
     def _on_chart_clear(self):
@@ -875,8 +894,11 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
 
     def _on_test_finished(self, success):
         self.set_test_running(False)
+        stopped = bool(getattr(self, "_stop_requested", False))
         if success:
             self.append_log("[TEST] Config traverse test completed.")
+        elif stopped:
+            self.append_log("[TEST] Config traverse test aborted.")
         else:
             self.append_log("[TEST] Config traverse test ended with errors.")
         if self.test_thread is not None:
@@ -885,9 +907,8 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
             self.test_thread = None
             self.test_worker = None
         # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
-        self.sequence_execution_finished.emit(
-            bool(success), "测试完成" if success else "测试结束（出错）"
-        )
+        summary = "测试完成" if success else ("测试被中止" if stopped else "测试结束（出错）")
+        self.sequence_execution_finished.emit(bool(success), summary)
 
     def _on_clear_log(self):
         self.execution_logs.clear_log()

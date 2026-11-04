@@ -27,6 +27,7 @@
 通过信号把日志与结果回填到 UI。
 """
 
+import math
 import queue
 import re
 import time
@@ -188,6 +189,14 @@ class SleepVminEngine(QObject):
     # ------------------------------------------------------------------
     def run(self) -> None:
         try:
+            self._validate_config()
+        except (TypeError, ValueError) as exc:
+            logger.error("Invalid SleepVminConfig: %s", exc, exc_info=True)
+            self.log_message.emit(f"[ERROR] Invalid config: {exc}")
+            self.finished.emit(False, str(exc))
+            return
+
+        try:
             self._run_sweep()
         except Exception as exc:
             logger.error("SleepVminEngine crashed: %s", exc, exc_info=True)
@@ -202,10 +211,40 @@ class SleepVminEngine(QObject):
             self._release_pins_safe()
             self.finished.emit(False, str(exc))
 
+    def _validate_config(self) -> None:
+        cfg = self._cfg
+        if not cfg.sleep_points:
+            raise ValueError("Sleep points must not be empty")
+        try:
+            cfg.sleep_points = [float(value) for value in cfg.sleep_points]
+            cfg.wake_voltage = float(cfg.wake_voltage)
+            if cfg.default_voltage is not None:
+                cfg.default_voltage = float(cfg.default_voltage)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Sleep sweep voltages must be numeric") from exc
+
+        voltages = [cfg.wake_voltage, *cfg.sleep_points]
+        if cfg.default_voltage is not None:
+            voltages.append(cfg.default_voltage)
+        if not all(math.isfinite(value) for value in voltages):
+            raise ValueError("Sleep sweep voltages must be finite")
+        try:
+            test_cnt = int(cfg.test_cnt)
+            if test_cnt <= 0 or float(cfg.test_cnt) != test_cnt:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Test count must be a positive integer") from exc
+        cfg.test_cnt = test_cnt
+
     def _run_sweep(self) -> None:
         cfg = self._cfg
         temp = cfg.temperature
         ch = cfg.channel
+
+        if self._stop_flag:
+            self._result.stopped = True
+            self._finalize(None, success=False, message="Stopped by user.")
+            return
 
         restore_v = cfg.restore_voltage
         self.log_message.emit(
@@ -238,8 +277,12 @@ class SleepVminEngine(QObject):
             time.sleep(cfg.wake_settle_s)
 
         if not self._ensure_wake_state():
-            self._result.stopped = True
-            self._finalize(None)
+            self._result.stopped = self._stop_flag
+            message = (
+                "Stopped by user." if self._stop_flag
+                else "Initialization failed: DUT wake state was not confirmed."
+            )
+            self._finalize(None, success=False, message=message)
             return
 
         total = len(cfg.sleep_points)
@@ -599,9 +642,19 @@ class SleepVminEngine(QObject):
             sleep_v, temp, f"CH{ch}", str(pass_cnt), status, note, flag_log
         )
 
-    def _finalize(self, last_pass: Optional[float]) -> None:
+    def _finalize(
+        self,
+        last_pass: Optional[float],
+        success: bool = True,
+        message: str = "",
+    ) -> None:
         # 收尾（PASS/FAIL/异常/停止）统一把该 CH 还原为 Default 电压，
         # 避免停留在失败点低压导致 DUT 持续异常
+        if self._stop_flag:
+            self._result.stopped = True
+            success = False
+            message = message or "Stopped by user."
+
         cfg = self._cfg
         try:
             restore_v = cfg.restore_voltage
@@ -615,11 +668,14 @@ class SleepVminEngine(QObject):
         self._release_pins_safe()
         self._result.vmin = last_pass
         self.vmin_found.emit(last_pass)
-        if last_pass is not None:
-            self.log_message.emit(f"[DONE] Sleep Vmin = {last_pass:.3f} V")
-        else:
-            self.log_message.emit("[DONE] No passing sleep voltage found.")
-        self.finished.emit(True, "")
+        if success:
+            if last_pass is not None:
+                self.log_message.emit(f"[DONE] Sleep Vmin = {last_pass:.3f} V")
+            else:
+                self.log_message.emit("[DONE] No passing sleep voltage found.")
+        elif not self._result.stopped:
+            self.log_message.emit(f"[FAIL] {message or 'Sleep Vmin sweep failed.'}")
+        self.finished.emit(success, message)
 
 
 class SleepVminRunner(QObject):

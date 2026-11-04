@@ -645,6 +645,7 @@ def build_report_data(result: ModuleTestResult,
             "warn": 0,  # 异常点数由前端规则引擎求值后回填
             "na": summary.get("norec", 0),
             "total": summary.get("total", 0),
+            "aborted": summary.get("aborted") or None,
         },
         "items": items,
     }

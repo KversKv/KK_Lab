@@ -25,9 +25,12 @@ from .common import (
     configure_datalog_all,
     fetch_datalog_all,
     format_current_short,
+    require_channel_results,
     restore_force_channels,
     run_threads_parallel,
     start_datalog_sync,
+    validate_channel_force_configs,
+    validate_datalog_timing,
     wait_datalog_with_progress,
 )
 
@@ -39,7 +42,7 @@ class BaseForceTestWorker(QObject):
     channel_result = Signal(str, int, float, str)
     test_summary = Signal(dict)
     progress = Signal(float)
-    finished = Signal()
+    finished = Signal(bool, str)
     error = Signal(str)
 
     # 子类覆盖
@@ -68,12 +71,29 @@ class BaseForceTestWorker(QObject):
         self._is_stopped = True
 
     def run(self):
+        success = False
+        message = ""
         try:
-            self._run_flow()
+            self.test_time, self.sample_period = validate_datalog_timing(
+                self.test_time, self.sample_period
+            )
+            self.channel_force_configs = validate_channel_force_configs(
+                self.channel_force_configs
+            )
+            results = self._run_flow()
+            if self._is_stopped:
+                message = f"{self._TEST_NAME} test stopped."
+            elif not results:
+                message = f"{self._TEST_NAME} test returned no measurements."
+                self.error.emit(message)
+            else:
+                success = True
+                message = f"{self._TEST_NAME} consumption test completed."
         except Exception as e:
-            self.error.emit(str(e))
+            message = str(e)
+            self.error.emit(message)
         finally:
-            self.finished.emit()
+            self.finished.emit(success, message)
 
     @staticmethod
     def _estimate_datalog_time(test_time):
@@ -136,18 +156,19 @@ class BaseForceTestWorker(QObject):
         cursor += step1_time
         self.progress.emit(min(cursor / total_est, 1.0))
         if self._is_stopped:
-            return
+            return None
 
-        vbat_current = vbat_result.get(vbat_ch, 0.0)
+        vbat_values = require_channel_results(vbat_result, [vbat_ch], vbat_label)
+        vbat_current = vbat_values[vbat_ch]
         logger.debug("%s: Vbat total current = %.6e A", self._TEST_NAME, vbat_current)
-        self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
-        results[(vbat_label, vbat_ch)] = float(vbat_current)
+        self.channel_result.emit(vbat_label, vbat_ch, vbat_current, "vbat")
+        results[(vbat_label, vbat_ch)] = vbat_current
 
         try:
             vbat_v = float(vbat_inst.measure_voltage(vbat_ch))
             channel_voltages[(vbat_label, vbat_ch)] = vbat_v
-        except Exception:
-            channel_voltages[(vbat_label, vbat_ch)] = 0.0
+        except Exception as e:
+            self.log_message.emit(f"[WARNING] Failed to measure Vbat voltage: {e}")
 
         # Step 3: 准备并启动 Force
         self.log_message.emit(
@@ -159,7 +180,7 @@ class BaseForceTestWorker(QObject):
         if not task_list:
             self.progress.emit(1.0)
             self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
+            return results
 
         self.log_message.emit(
             f"[TEST] Preparing {self._PREPARE_LABEL.lower()} on all instruments..."
@@ -189,20 +210,16 @@ class BaseForceTestWorker(QObject):
             for ch, v in (task.get("measured_voltages") or {}).items():
                 channel_voltages[(task["device_label"], ch)] = v
 
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
+        if not active_tasks or len(active_tasks) != len(task_list):
+            raise RuntimeError(f"{self._PREPARE_LABEL} failed; measurement is incomplete.")
 
         # Step 4: 配置 + 同步启动 datalog
         self.log_message.emit("[TEST] Configuring datalog on all instruments...")
         active_tasks = configure_datalog_all(
             active_tasks, self.test_time, self.log_message.emit
         )
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
+        if not active_tasks or len(active_tasks) != len(task_list):
+            raise RuntimeError("Datalog configuration failed; measurement is incomplete.")
 
         self.log_message.emit(
             f"[TEST] Sync-starting datalog on {len(active_tasks)} instrument(s)..."
@@ -211,7 +228,9 @@ class BaseForceTestWorker(QObject):
             "%s: sync-starting datalog on %d instruments",
             self._TEST_NAME, len(active_tasks),
         )
-        start_datalog_sync(active_tasks, self.log_message.emit, timeout=30)
+        start_errors = start_datalog_sync(active_tasks, self.log_message.emit, timeout=30)
+        if any(start_errors):
+            raise RuntimeError("Datalog start failed; measurement is incomplete.")
 
         # Step 5: 等待采集完成
         total_wait_est = (self.test_time + 1) + 3.0
@@ -223,7 +242,7 @@ class BaseForceTestWorker(QObject):
             )
 
         if not wait_datalog_with_progress(self.test_time, lambda: self._is_stopped, _tick):
-            return
+            return None
 
         # Step 6: 并发 fetch 结果
         self.log_message.emit("[TEST] Fetching results from all instruments...")
@@ -235,26 +254,33 @@ class BaseForceTestWorker(QObject):
         cursor = setup_time + step1_time + step2_time
         self.progress.emit(min(cursor / total_est, 1.0))
 
-        for idx, task in enumerate(active_tasks):
-            if fetch_errors[idx]:
-                continue
-            cr = task["curr_result"] or {}
+        if any(fetch_errors):
+            raise RuntimeError("Datalog fetch failed; measurement is incomplete.")
+        validated_results = []
+        for task in active_tasks:
+            cr = require_channel_results(
+                task["curr_result"], task["all_datalog_channels"], task["device_label"]
+            )
+            validated_results.append((task, cr))
+
+        for task, cr in validated_results:
             for ch in task["force_channels"]:
-                avg_i = cr.get(ch, 0.0)
+                avg_i = cr[ch]
                 logger.debug(
                     "%s result: %s CH%s = %.6e A",
                     self._TEST_NAME, task["device_label"], ch, avg_i,
                 )
                 self.channel_result.emit(
-                    task["device_label"], ch, float(avg_i), self._PHASE_TAG
+                    task["device_label"], ch, avg_i, self._PHASE_TAG
                 )
-                results[(task["device_label"], ch)] = float(avg_i)
+                results[(task["device_label"], ch)] = avg_i
             if task["device_label"] == vbat_label and vbat_ch in cr:
-                vbat_remain = float(cr[vbat_ch])
+                vbat_remain = cr[vbat_ch]
 
         self.progress.emit(1.0)
         self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
         self.log_message.emit(f"[TEST] {self._TEST_NAME} consumption test completed.")
+        return results
 
     def _emit_summary(self, results, vbat_current, vbat_remain, channel_voltages=None):
         summary, _ = build_summary_payload(

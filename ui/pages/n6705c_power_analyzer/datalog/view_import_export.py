@@ -15,7 +15,13 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QVBoxLayout,
 )
-from instruments.power.keysight.n6705c_datalog_process import build_marker_dlog_bytes, import_csv_file, import_dlog_file, import_edlg_file
+from instruments.power.keysight.n6705c_datalog_process import (
+    build_marker_dlog_bytes,
+    import_csv_file,
+    import_dlog_file,
+    import_edlg_file,
+    paired_samples,
+)
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
 from ui.pages.n6705c_power_analyzer.datalog.helpers import _display_label, _parse_ch_label, _sort_key_for_label
 from log_config import get_logger
@@ -274,8 +280,8 @@ class ImportExportViewMixin:
         group.addButton(rb_standard)
         layout.addWidget(rb_standard)
 
-        std_hint = QLabel("    Exports the full dataset in the original format.\n"
-                          "    Supports .dlog (raw) and .csv (legacy layout).")
+        std_hint = QLabel("    Exports the full dataset.\n"
+                          "    Supports .dlog (raw) and .csv (per-channel Time/Value).")
         std_hint.setStyleSheet(dss.HINT_TEXT_STYLE)
         layout.addWidget(std_hint)
 
@@ -371,82 +377,35 @@ class ImportExportViewMixin:
                                 f.write(self._raw_dlog_list[idx])
             else:
                 sorted_labels = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
-
-                group_a = []
-                group_b = []
-                for lbl in sorted_labels:
-                    if self._is_b_label(lbl):
-                        group_b.append(lbl)
-                    else:
-                        group_a.append(lbl)
-
-                has_both = bool(group_a) and bool(group_b)
-
-                len_a = max((len(self.datalog_data[l]["time"]) for l in group_a), default=0)
-                len_b = max((len(self.datalog_data[l]["time"]) for l in group_b), default=0)
-                max_len = max(len_a, len_b)
+                channel_samples = {
+                    lbl: paired_samples(self.datalog_data.get(lbl, {}))
+                    for lbl in sorted_labels
+                }
+                max_len = max((len(samples) for samples in channel_samples.values()), default=0)
+                if max_len <= 0:
+                    logger.warning("Standard datalog export: no valid samples.")
+                    return
 
                 with open(path, "w", newline="") as f:
                     header_parts = []
-                    if has_both:
-                        header_parts.append("Time_A(s)")
-                        for lbl in group_a:
-                            header_parts.append(_display_label(lbl))
-                        header_parts.append("Time_B(s)")
-                        for lbl in group_b:
-                            header_parts.append(_display_label(lbl))
-                    else:
-                        header_parts.append("Time(s)")
-                        for lbl in sorted_labels:
-                            header_parts.append(_display_label(lbl))
+                    for lbl in sorted_labels:
+                        disp = _display_label(lbl)
+                        header_parts.append(self._csv_escape(f"Time_{disp}(s)"))
+                        header_parts.append(self._csv_escape(disp))
                     f.write(",".join(header_parts) + "\n")
 
                     for i in range(max_len):
                         row_parts = []
-                        if has_both:
-                            if group_a and i < len_a:
-                                ref_a_lbl = group_a[0]
-                                ref_a = self.datalog_data[ref_a_lbl]
-                                t_val = ref_a["time"][i] + self._get_total_time_offset(ref_a_lbl)
+                        for lbl in sorted_labels:
+                            samples = channel_samples[lbl]
+                            if i < len(samples):
+                                t_val, v_val = samples[i]
+                                t_val += self._get_total_time_offset(lbl)
                                 row_parts.append(f"{t_val:.6f}")
+                                row_parts.append(f"{v_val:.9f}")
                             else:
                                 row_parts.append("")
-                            for lbl in group_a:
-                                ch = self.datalog_data[lbl]
-                                if i < len(ch["values"]):
-                                    row_parts.append(f"{ch['values'][i]:.9f}")
-                                else:
-                                    row_parts.append("")
-
-                            if group_b and i < len_b:
-                                ref_b_lbl = group_b[0]
-                                ref_b = self.datalog_data[ref_b_lbl]
-                                t_val = ref_b["time"][i] + self._get_total_time_offset(ref_b_lbl)
-                                row_parts.append(f"{t_val:.6f}")
-                            else:
                                 row_parts.append("")
-                            for lbl in group_b:
-                                ch = self.datalog_data[lbl]
-                                if i < len(ch["values"]):
-                                    row_parts.append(f"{ch['values'][i]:.9f}")
-                                else:
-                                    row_parts.append("")
-                        else:
-                            all_labels = sorted_labels
-                            first_lbl = all_labels[0]
-                            first = self.datalog_data[first_lbl]
-                            if i < len(first["time"]):
-                                t_val = first["time"][i] + self._get_total_time_offset(first_lbl)
-                                row_parts.append(f"{t_val:.6f}")
-                            else:
-                                row_parts.append("")
-                            for lbl in all_labels:
-                                ch = self.datalog_data[lbl]
-                                if i < len(ch["values"]):
-                                    row_parts.append(f"{ch['values'][i]:.9f}")
-                                else:
-                                    row_parts.append("")
-
                         f.write(",".join(row_parts) + "\n")
 
                     if self.custom_labels:
@@ -570,12 +529,13 @@ class ImportExportViewMixin:
         try:
             sorted_keys = sorted(visible_keys, key=_sort_key_for_label)
 
-            max_len = 0
-            for lbl in sorted_keys:
-                ch = self.datalog_data.get(lbl)
-                if ch is None:
-                    continue
-                max_len = max(max_len, len(ch.get("time", [])), len(ch.get("values", [])))
+            channel_samples = {
+                lbl: paired_samples(self.datalog_data.get(lbl, {}))
+                for lbl in sorted_keys
+            }
+            max_len = max((len(samples) for samples in channel_samples.values()), default=0)
+            if max_len <= 0:
+                return {"ok": False, "message": "当前可见通道无有效样本。"}
 
             display_names = []
             for lbl in sorted_keys:
@@ -597,17 +557,14 @@ class ImportExportViewMixin:
                 for i in range(max_len):
                     row_parts = []
                     for lbl in sorted_keys:
-                        ch = self.datalog_data.get(lbl, {})
-                        times = ch.get("time", [])
-                        values = ch.get("values", [])
-                        if i < len(times):
-                            t_val = times[i] + self._get_total_time_offset(lbl)
+                        samples = channel_samples[lbl]
+                        if i < len(samples):
+                            t_val, v_val = samples[i]
+                            t_val += self._get_total_time_offset(lbl)
                             row_parts.append(f"{t_val:.6f}")
+                            row_parts.append(f"{v_val:.9f}")
                         else:
                             row_parts.append("")
-                        if i < len(values):
-                            row_parts.append(f"{values[i]:.9f}")
-                        else:
                             row_parts.append("")
                     f.write(",".join(row_parts) + "\n")
 
@@ -696,6 +653,10 @@ class ImportExportViewMixin:
                         rows.append((t_eff, values[j]))
                 channel_rows[lbl] = rows
                 max_len = max(max_len, len(rows))
+
+            if max_len <= 0:
+                logger.warning("Marker region CSV export: no valid samples in window.")
+                return
 
             display_names = []
             for lbl in sorted_keys:

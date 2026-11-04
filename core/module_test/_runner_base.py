@@ -28,6 +28,7 @@ from core.module_test._common import (
     setup_load_channel,
     setup_vout_meter,
     teardown_load,
+    validate_selected_items,
     vbat_channel,
     vin_current_limit_a,
     write_csv,
@@ -322,6 +323,13 @@ class ModuleTestRunner(QThread):
             self.failed.emit("未勾选任何测试项")
             return
 
+        try:
+            validate_selected_items(self._cfg, self._items_registry)
+        except (TypeError, ValueError) as exc:
+            self._log(f"[ERROR] 测试参数无效：{exc}")
+            self.failed.emit(f"测试参数无效：{exc}")
+            return
+
         os.makedirs(self._out_dir, exist_ok=True)
         self._result.instruments = self._collect_instruments()
         total = len(selected)
@@ -400,6 +408,14 @@ class ModuleTestRunner(QThread):
                 self._log(f"[ERROR] {item_key} 执行异常，记为 FAIL。")
                 result = ItemResult(item_key=item_key, name=name, passed=False,
                                     notes="执行异常，见日志")
+            stopped = self._stop_requested()
+            if stopped:
+                if result.passed is True:
+                    result.passed = None
+                result.notes = f"{result.notes}；测试中止，结果不参与判定" if result.notes else "测试中止，结果不参与判定"
+            elif ctx.measurement_failed:
+                result.passed = False
+                result.notes = f"{result.notes}；测量异常，结果无效" if result.notes else "测量异常，结果无效"
             else:
                 self._apply_judge(item_key, result)
             if REPORT_ITEM_TIMING:
@@ -410,7 +426,7 @@ class ModuleTestRunner(QThread):
             self._progress(int((idx + 1) / total * 100), name)
 
             # 回填：Load Regulation 直接使用 Load Capability&Ripple 数据作为结果
-            if item_key in pending_follow:
+            if item_key in pending_follow and not stopped:
                 lr_key = pending_follow.pop(item_key)
                 lr_result = self._build_follow_load_reg_result(lr_key, result)
                 self._apply_judge(lr_key, lr_result)
@@ -419,7 +435,7 @@ class ModuleTestRunner(QThread):
                 self._progress(int((idx + 1) / total * 100), name)
 
             # 停止后不再发起额外 Vout 测量；正常完成才执行逐项偏差门禁。
-            if self._stop_requested():
+            if stopped:
                 aborted_reason = "用户请求停止"
                 break
             if not self._check_vout_deviation(ctx, vout_baseline, item_key):
@@ -465,6 +481,10 @@ class ModuleTestRunner(QThread):
         lr_cfg.update(self._item_overrides.get(load_reg_key) or {})
         knee_ma = float(lr_cfg.get("iload_knee_ma", 0) or 0)
 
+        if ripple_result.passed is False:
+            return ItemResult(item_key=load_reg_key, name=name, passed=None,
+                              notes="Load Capability&Ripple 测量异常，本项无有效结果")
+
         rows: list[list[float]] = []
         csv_src = ripple_result.raw_csv_path
         if csv_src and os.path.exists(csv_src):
@@ -474,7 +494,9 @@ class ModuleTestRunner(QThread):
                         if len(rec) < 2:
                             continue
                         try:
-                            rows.append([float(rec[0]), float(rec[1])])
+                            row = [float(rec[0]), float(rec[1])]
+                            if all(math.isfinite(v) for v in row):
+                                rows.append(row)
                         except ValueError:
                             continue  # 跳过表头/非数值行
             except OSError:
@@ -501,10 +523,15 @@ class ModuleTestRunner(QThread):
         if self._module_type == "ldo":
             # LDO 额外指标：全量程负载调整率（mV/A），与 load_line_reg 对齐
             i_start, i_end = rows[0][0], rows[-1][0]
-            measured["load_reg_mv_per_a"] = round(
-                s["vout_drop_mv"] / max((i_end - i_start) / 1000.0, 1e-6), 4)
+            span_a = abs(i_end - i_start) / 1000.0
+            drop_mv = s["vout_drop_mv"]
+            measured["load_reg_mv_per_a"] = (round(drop_mv / span_a, 4)
+                                             if isinstance(drop_mv, (int, float)) and span_a > 1e-9
+                                             else "")
+        drop_text = (f"{s['vout_drop_mv']:.4f} mV"
+                     if isinstance(s["vout_drop_mv"], (int, float)) else "N/A")
         self._log(f"[FOLLOW] {load_reg_key} 已取 Load Capability&Ripple 实测数据："
-                  f"{len(rows)} 点，Vout 跌落 {s['vout_drop_mv']:.4f} mV")
+                  f"{len(rows)} 点，Vout 跌落 {drop_text}")
         return ItemResult(item_key=load_reg_key, name=name, unit="mV",
                           passed=None, measured=measured, raw_csv_path=csv_path,
                           notes="数据取自 Load Capability&Ripple 实测结果")

@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import math
 import os
 
 from core.module_test._common import (
@@ -89,15 +90,20 @@ def efficiency(ctx: ItemContext) -> ItemResult:
             set_load_current(ctx, iload_ch, il / 1000.0)
             settle(ctx, settle_s)
             vout = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                                default=vout_v_nom)
+                                default=float("nan"))
             iout = abs(measure_avg(ctx, "measure_current", iload_ch, count=avg_cnt, settle_s=settle_s))
             iin = measure_avg(ctx, "measure_current", vbat_ch, count=avg_cnt, settle_s=settle_s)
             vin_meas = measure_avg(ctx, "measure_voltage", vbat_ch, count=avg_cnt, settle_s=settle_s,
-                                   default=vin_v)
-            denom = vin_meas * max(iin - iin_base, 1e-9)
-            eff = (vout * iout) / denom * 100 if denom > 0 else 0
-            eff = max(min(eff, 120.0), 0.0)
-        rows.append([il, round(vout * 1000.0, 4), round(eff, 3)])
+                                   default=float("nan"))
+            denom = vin_meas * (iin - iin_base)
+            if all(math.isfinite(v) for v in (vout, iout, iin, vin_meas)) and denom > 0:
+                eff = max(min((vout * iout) / denom * 100, 120.0), 0.0)
+            else:
+                eff = float("nan")
+                ctx.measurement_failed = True
+        rows.append([il,
+                     round(vout * 1000.0, 4) if math.isfinite(vout) else "",
+                     round(eff, 3) if math.isfinite(eff) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Eff {il}mA")
         ctx.log_fn(f"[{item_key}] Iload={il}mA -> η={eff:.3f} %")
 
@@ -106,9 +112,9 @@ def efficiency(ctx: ItemContext) -> ItemResult:
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Efficiency (%)"], rows)
-    effs = [r[2] for r in rows]
-    measured = {"points": len(rows), "max_eff": round(max(effs), 3) if effs else 0,
-                "avg_eff": round(sum(effs) / len(effs), 3) if effs else 0}
+    effs = [r[2] for r in rows if isinstance(r[2], (int, float)) and math.isfinite(r[2])]
+    measured = {"points": len(rows), "max_eff": round(max(effs), 3) if effs else "",
+                "avg_eff": round(sum(effs) / len(effs), 3) if effs else ""}
     return ItemResult(item_key=item_key, name="Efficiency", unit="%",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -149,22 +155,23 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
             apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
             settle(ctx, settle_s)
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
-            if v < vout_guard_mv:
+                             default=float("nan")) * 1000.0
+            if math.isfinite(v) and v < vout_guard_mv:
                 rows.append([il, round(v, 4)])
                 ctx.log_fn(f"[ERROR] [{item_key}] Iload={il}mA 时 Vout={v:.4f} mV，"
                            f"跌落超过 V0 的 {_LOAD_REG_VOUT_DROP_RATIO:.0%}"
                            f"（阈值 {vout_guard_mv:.1f} mV），终止本项测试，继续后续测试项。")
                 guard_tripped = True
                 break
-        rows.append([il, round(v, 4)])
+        rows.append([il, round(v, 4) if math.isfinite(v) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Load reg {il}mA")
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
-    s = load_reg_summary(rows, knee_ma)
+    valid_rows = [r for r in rows if isinstance(r[1], (int, float)) and math.isfinite(r[1])]
+    s = load_reg_summary(valid_rows, knee_ma)
     measured = {"points": len(rows), "knee_ma": s["knee_ma"],
                 "vout_drop_mv": s["vout_drop_mv"],
                 "load_reg_pct": s["load_reg_pct"],
@@ -213,19 +220,23 @@ def line_reg(ctx: ItemContext) -> ItemResult:
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
-        rows.append([vin, round(v, 4)])
+                             default=float("nan")) * 1000.0
+        rows.append([vin, round(v, 4) if math.isfinite(v) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
         restore_vin(ctx, vbat_ch, float(cfg.get("vin_v", 3.8)))
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
-    delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
-    mean_v = (sum(r[1] for r in rows) / len(rows)) if rows else 0.0
-    line_reg_pct = (delta / mean_v * 100.0) if abs(mean_v) > 1e-9 else 0.0
-    measured = {"points": len(rows), "vout_span_mv": round(delta, 4),
-                "line_reg_pct": round(line_reg_pct, 4)}
+    valid_values = [r[1] for r in rows
+                    if isinstance(r[1], (int, float)) and math.isfinite(r[1])]
+    delta = (max(valid_values) - min(valid_values)) if len(valid_values) >= 2 else None
+    mean_v = sum(valid_values) / len(valid_values) if valid_values else None
+    line_reg_pct = (delta / mean_v * 100.0
+                    if delta is not None and mean_v is not None and abs(mean_v) > 1e-9 else None)
+    measured = {"points": len(rows),
+                "vout_span_mv": round(delta, 4) if delta is not None else "",
+                "line_reg_pct": round(line_reg_pct, 4) if line_reg_pct is not None else ""}
     return ItemResult(item_key=item_key, name="Line Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -413,14 +424,19 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
                     samples.append(float(ctx.scope.get_channel_frequency(scope_ch)))
                     if j < avg_cnt - 1:
                         settle(ctx, settle_s)
+                if not samples or not all(math.isfinite(v) for v in samples):
+                    raise ValueError("invalid switching frequency sample")
                 fsw_khz = sum(samples) / len(samples) / 1000.0  # Hz->kHz
             except Exception:  # noqa: BLE001 - 单点测频失败降级，继续扫描
                 logger.error("scope Fsw read failed @%gmA", il, exc_info=True)
-                fsw_khz = 0.0
-        rows.append([il, round(fsw_khz, 3)])
-        measured_rows.append({"Iload (mA)": il, "Fsw (kHz)": round(fsw_khz, 3)})
+                ctx.measurement_failed = True
+                fsw_khz = float("nan")
+        fsw_value = round(fsw_khz, 3) if math.isfinite(fsw_khz) else ""
+        rows.append([il, fsw_value])
+        measured_rows.append({"Iload (mA)": il, "Fsw (kHz)": fsw_value})
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Fsw {il:g}mA")
-        ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Fsw={fsw_khz:.3f} kHz")
+        ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Fsw="
+                   f"{fsw_value if fsw_value != '' else 'N/A'} kHz")
 
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
@@ -465,8 +481,8 @@ def current_limit(ctx: ItemContext) -> ItemResult:
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
 
-    ilim_ma = 0.0
-    ipk_ma = 0.0
+    ilim_ma = None
+    peak_samples: list[float] = []
     threshold = nominal_v * (1.0 - tol)
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
@@ -479,27 +495,34 @@ def current_limit(ctx: ItemContext) -> ItemResult:
         else:
             set_load_current(ctx, iload_ch, il / 1000.0)
             settle(ctx, settle_s)
-            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=0.0)
+            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s)
             iout = abs(measure_avg(ctx, "measure_current", iload_ch, count=avg_cnt,
                                    settle_s=settle_s)) * 1000.0
-        ipk_ma = max(ipk_ma, iout)
-        rows.append([round(il, 3), round(v * 1000.0, 4), round(iout, 4)])
+        if math.isfinite(iout):
+            peak_samples.append(iout)
+        rows.append([round(il, 3),
+                     round(v * 1000.0, 4) if math.isfinite(v) else "",
+                     round(iout, 4) if math.isfinite(iout) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Ilim {il}mA")
         ctx.log_fn(f"[{item_key}] Iset={il}mA Vout={v * 1000:.3f}mV Iout={iout:.3f}mA")
-        if v < threshold and ilim_ma == 0.0:
+        if not math.isfinite(v) or not math.isfinite(iout):
+            break
+        if v < threshold:
             ilim_ma = iout
             ctx.log_fn(f"[{item_key}] current limit hit @ Iout={iout:.3f}mA")
             break
 
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
+    ipk_ma = round(max(peak_samples), 3) if peak_samples else ""
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iset (mA)", "Vout (mV)", "Iout (mA)"], rows)
-    ctx.log_fn(f"[{item_key}] Ilimit={ilim_ma:.3f} mA, Ipeak={ipk_ma:.3f} mA")
+    ctx.log_fn(f"[{item_key}] Ilimit={ilim_ma if ilim_ma is not None else 'N/A'} mA, "
+               f"Ipeak={ipk_ma if ipk_ma != '' else 'N/A'} mA")
     return ItemResult(item_key=item_key, name="Current Limit", unit="mA",
-                      passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
-                                             "peak_current_ma": round(ipk_ma, 3),
+                      passed=None, measured={"current_limit_ma": (round(ilim_ma, 3)
+                                                                  if ilim_ma is not None else ""),
+                                             "peak_current_ma": ipk_ma,
                                              "vout_nominal_mv": nominal_mv},
                       raw_csv_path=csv_path)
 
@@ -580,11 +603,15 @@ def topology(ctx: ItemContext) -> ItemResult:
         setup_vout_meter(ctx)
         settle(ctx, max(settle_s * 4, 0.2))
         vin_meas = measure_avg(ctx, "measure_voltage", vbat_ch, count=3, settle_s=settle_s,
-                               default=vin_v)
+                               default=float("nan"))
         vout_meas = measure_vout(ctx, count=3, settle_s=settle_s,
-                                 default=nominal_v)
-    ratio = vout_meas / vin_meas if vin_meas > 1e-6 else 0.0
-    if ratio < 0.9:
+                                 default=float("nan"))
+    ratio = (vout_meas / vin_meas
+             if math.isfinite(vout_meas) and math.isfinite(vin_meas) and vin_meas > 1e-6
+             else float("nan"))
+    if not math.isfinite(ratio):
+        detected = "N/A"
+    elif ratio < 0.9:
         detected = "Buck"
     elif ratio > 1.1:
         detected = "Boost"

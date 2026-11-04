@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import math
 import os
 
 from core.module_test._common import (
@@ -76,15 +77,15 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
             apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
             settle(ctx, settle_s)
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
-            if v < vout_guard_mv:
+                             default=float("nan")) * 1000.0
+            if math.isfinite(v) and v < vout_guard_mv:
                 rows.append([il, round(v, 4)])
                 ctx.log_fn(f"[ERROR] [{item_key}] Iload={il}mA 时 Vout={v:.4f} mV，"
                            f"跌落超过 V0 的 {_LOAD_REG_VOUT_DROP_RATIO:.0%}"
                            f"（阈值 {vout_guard_mv:.1f} mV），终止本项测试，继续后续测试项。")
                 guard_tripped = True
                 break
-        rows.append([il, round(v, 4)])
+        rows.append([il, round(v, 4) if math.isfinite(v) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Load reg {il}mA")
         ctx.log_fn(f"[{item_key}] Iload={il}mA -> Vout={v:.4f} mV")
     if not ctx.is_mock:
@@ -92,10 +93,15 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
-    s = load_reg_summary(rows, knee_ma)
+    valid_rows = [r for r in rows if isinstance(r[1], (int, float)) and math.isfinite(r[1])]
+    s = load_reg_summary(valid_rows, knee_ma)
+    drop_mv = s["vout_drop_mv"]
+    span_a = abs(i_end - i_start) / 1000.0
+    load_reg_mv_per_a = (round(drop_mv / span_a, 4)
+                         if isinstance(drop_mv, (int, float)) and span_a > 1e-9 else "")
     measured = {"points": len(rows), "knee_ma": s["knee_ma"],
-                "vout_drop_mv": s["vout_drop_mv"],
-                "load_reg_mv_per_a": round(s["vout_drop_mv"] / max((i_end - i_start) / 1000.0, 1e-6), 4),
+                "vout_drop_mv": drop_mv,
+                "load_reg_mv_per_a": load_reg_mv_per_a,
                 "load_reg_pct": s["load_reg_pct"],
                 "vout_drop_linear_mv": s["vout_drop_linear_mv"],
                 "load_reg_linear_pct": s["load_reg_linear_pct"]}
@@ -142,8 +148,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
-        rows.append([vin, round(v, 4)])
+                             default=float("nan")) * 1000.0
+        rows.append([vin, round(v, 4) if math.isfinite(v) else ""])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
         ctx.log_fn(f"[{item_key}] Vin={vin}V -> Vout={v:.4f} mV")
 
@@ -153,11 +159,15 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
-    delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
-    mean_v = (sum(r[1] for r in rows) / len(rows)) if rows else 0.0
-    line_reg_pct = (delta / mean_v * 100.0) if abs(mean_v) > 1e-9 else 0.0
-    measured = {"points": len(rows), "vout_span_mv": round(delta, 4),
-                "line_reg_pct": round(line_reg_pct, 4)}
+    valid_values = [r[1] for r in rows
+                    if isinstance(r[1], (int, float)) and math.isfinite(r[1])]
+    delta = (max(valid_values) - min(valid_values)) if len(valid_values) >= 2 else None
+    mean_v = sum(valid_values) / len(valid_values) if valid_values else None
+    line_reg_pct = (delta / mean_v * 100.0
+                    if delta is not None and mean_v is not None and abs(mean_v) > 1e-9 else None)
+    measured = {"points": len(rows),
+                "vout_span_mv": round(delta, 4) if delta is not None else "",
+                "line_reg_pct": round(line_reg_pct, 4) if line_reg_pct is not None else ""}
     return ItemResult(item_key=item_key, name="Line Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -307,7 +317,7 @@ def _dropout_step_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
         settle(ctx, max(settle_s * 4, 0.2))
         # 在 Vin 上限、加载稳定后实测一次 Vout 作为基准 V0
         v0_mv = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+                             default=float("nan")) * 1000.0
 
     threshold_mv = v0_mv * (1.0 - tol)
     rows.append([
@@ -326,12 +336,11 @@ def _dropout_step_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
         f"[{item_key}] 步骤2/4 基准：V0={v0_mv:.3f}mV @ Vin={vin_hi:.3f}V；"
         f"Threshold=V0×(1-{tol:.2%})={threshold_mv:.3f}mV")
 
-    # dropout_mv: None=到下限仍正常; 0.0=中止未判定; >0=实测压差
+    # dropout_mv: None=未触发或中止; >0=实测压差
     dropout_mv: float | None = None
     vin = vin_hi
     while vin >= vin_lo - 1e-9:
         if ctx.stop_flag_fn():
-            dropout_mv = 0.0
             aborted = True
             break
         scan_count += 1
@@ -349,7 +358,7 @@ def _dropout_step_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
             v = mock_jitter(min(v0_mv, vin * 1000.0 - mock_dropout_mv), 0.0005)
         else:
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+                             default=float("nan")) * 1000.0
         last_vin_v, last_vout_mv = vin, v
         diff_mv = vin * 1000.0 - v
         triggered = v < threshold_mv
@@ -484,12 +493,12 @@ def _dropout_direct_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
         setup_load_channel(ctx, iload_ch, initial_current_a=iload_ma / 1000.0)
         settle(ctx, max(settle_s * 4, 0.2))
         v0_mv = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+                             default=float("nan")) * 1000.0
         base_vin_v = measure_avg(ctx, "measure_voltage", vin_ch, count=avg_cnt,
-                                 settle_s=settle_s, default=vin_hi)
+                                 settle_s=settle_s, default=float("nan"))
         base_iload_ma = abs(measure_avg(
             ctx, "measure_current", iload_ch, count=avg_cnt,
-            settle_s=settle_s, default=iload_ma / 1000.0)) * 1000.0
+            settle_s=settle_s, default=float("nan"))) * 1000.0
 
     threshold_mv = v0_mv * (1.0 - tol)
     tolerance_mv = v0_mv - threshold_mv
@@ -536,7 +545,7 @@ def _dropout_direct_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
             measured_vin_v = measure_avg(ctx, "measure_voltage", vin_ch,
-                                         count=avg_cnt, settle_s=settle_s, default=vin)
+                                         count=avg_cnt, settle_s=settle_s, default=float("nan"))
         else:
             measured_vin_v = vin
         if ctx.is_mock:
@@ -544,10 +553,10 @@ def _dropout_direct_load(ctx: ItemContext, iload_ma: float) -> ItemResult:
             measured_iload_ma = iload_ma
         else:
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+                             default=float("nan")) * 1000.0
             measured_iload_ma = abs(measure_avg(
                 ctx, "measure_current", iload_ch, count=avg_cnt,
-                settle_s=settle_s, default=iload_ma / 1000.0)) * 1000.0
+                settle_s=settle_s, default=float("nan"))) * 1000.0
         last_vin_v, last_vout_mv = measured_vin_v, v
         diff_mv = measured_vin_v * 1000.0 - v
         triggered = v < threshold_mv
@@ -653,6 +662,16 @@ def dropout(ctx: ItemContext) -> ItemResult:
     if method not in ("step", "direct"):
         raise ValueError(f"未知 Dropout 测试方式：{method}")
     loads = _dropout_load_list(cfg.get("dropout_iload_ma", "100"))
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
+    vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
+    vin_step = float(cfg.get("dropout_vin_step_v", 0.02))
+    if not all(math.isfinite(v) for v in (vin_hi, vin_lo, vin_step)):
+        raise ValueError("Dropout Vin Start/End/Step 必须为有限数值")
+    if vin_step <= 0:
+        raise ValueError("Dropout Vin Step 必须大于 0")
+    if vin_hi < vin_lo:
+        raise ValueError("Dropout Vin Start 必须大于或等于 End")
     rows: list[list] = []
     load_results: list[dict] = []
     notes: list[str] = []
@@ -722,49 +741,58 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     settle_s = float(cfg.get("settle_time_s", 0.01))
     avg_cnt = int(cfg.get("average_cnt", 1))
 
+    points = linspace(ilim_start, ilim_end, ilim_step)
     rows: list[list] = []
     if ctx.is_mock:
-        iset = ilim_start
-        while iset <= ilim_end + 1e-9:
+        ilim_ma = None
+        threshold_mv = nominal_mv * (1.0 - tol)
+        for iset in points:
+            if ctx.stop_flag_fn():
+                break
             # 模拟 300mA 触发限流，之后 Vout 跌落
             v = nominal_mv if iset < 300 else nominal_mv * (300.0 / iset)
             v = mock_jitter(v, 0.003)
             iout = mock_jitter(min(iset, 400.0), 0.02)
             rows.append([round(iset, 3), round(v, 4), round(iout, 4)])
-            iset += ilim_step
-        ilim_ma = 300.0
-        ipk_ma = max(r[2] for r in rows) if rows else ilim_ma
+            if v < threshold_mv:
+                ilim_ma = iout
+                break
+        ipk_ma = round(max((r[2] for r in rows), default=0.0), 3) if rows else ""
     else:
         setup_source_channel(ctx, vbat_ch, vin_v, current_limit=1.0)
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=ilim_start / 1000.0)
         threshold_mv = nominal_mv * (1.0 - tol)
-        ilim_ma = 0.0
-        ipk_ma = 0.0
-        iset = ilim_start
-        while iset <= ilim_end + 1e-9:
+        ilim_ma = None
+        peak_samples: list[float] = []
+        for iset in points:
             if ctx.stop_flag_fn():
                 break
             set_load_current(ctx, iload_ch, iset / 1000.0)
             settle(ctx, settle_s)
-            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s) * 1000.0
             iout = abs(measure_avg(ctx, "measure_current", iload_ch,
-                                   count=avg_cnt, settle_s=settle_s, default=0.0)) * 1000.0
-            ipk_ma = max(ipk_ma, iout)
-            rows.append([round(iset, 3), round(v, 4), round(iout, 4)])
+                                   count=avg_cnt, settle_s=settle_s)) * 1000.0
+            if math.isfinite(iout):
+                peak_samples.append(iout)
+            rows.append([round(iset, 3),
+                         round(v, 4) if math.isfinite(v) else "",
+                         round(iout, 4) if math.isfinite(iout) else ""])
             ctx.log_fn(f"[{item_key}] Iset={iset:.1f}mA -> Vout={v:.3f}mV, Iout={iout:.3f}mA")
+            if not math.isfinite(v) or not math.isfinite(iout):
+                break
             if v < threshold_mv:
                 ilim_ma = iout
                 break
-            iset += ilim_step
+        ipk_ma = round(max(peak_samples), 3) if peak_samples else ""
         teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iset (mA)", "Vout (mV)", "Iout (mA)"], rows)
-    ctx.log_fn(f"[{item_key}] Current limit={ilim_ma:.3f} mA")
+    ctx.log_fn(f"[{item_key}] Current limit={ilim_ma if ilim_ma is not None else 'N/A'} mA")
     return ItemResult(item_key=item_key, name="Current Limit", unit="mA",
-                      passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
-                                             "peak_current_ma": round(ipk_ma, 3),
+                      passed=None, measured={"current_limit_ma": (round(ilim_ma, 3)
+                                                                  if ilim_ma is not None else ""),
+                                             "peak_current_ma": ipk_ma,
                                              "vout_nominal_mv": nominal_mv},
                       raw_csv_path=csv_path)
 

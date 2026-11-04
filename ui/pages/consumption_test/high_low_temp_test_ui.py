@@ -26,6 +26,10 @@ from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from debug_config import DEBUG_MOCK
 from instruments.chambers import TemperatureStabilizer
+from core.consumption_test.workers.common import (
+    require_channel_results,
+    validate_datalog_timing,
+)
 
 from log_config import get_logger
 
@@ -150,11 +154,28 @@ class _HighLowTempTestWorker(QObject):
         return arr
 
     def run(self):
+        result = {
+            "success": False,
+            "message": "Test did not complete.",
+            "data": [],
+            "channels": self.config.get("channels", [1]),
+        }
         try:
             result = self._run_temp_consumption()
-            self.finished.emit(result)
+            result["success"] = False
+            if self._stop_flag:
+                result["message"] = "Test stopped."
+            elif not result["data"]:
+                result["message"] = "Test returned no measurements."
+                self.error.emit(result["message"])
+            else:
+                result["success"] = True
+                result["message"] = "Test completed successfully."
         except Exception as e:
+            result["message"] = str(e)
             self.error.emit(str(e))
+        finally:
+            self.finished.emit(result)
 
     def _run_temp_consumption(self):
         temp_start = self.config["temp_start"]
@@ -168,6 +189,19 @@ class _HighLowTempTestWorker(QObject):
         ext_power = self.config.get("ext_power", {})
         ext_rails = ext_power.get("rails", []) if ext_power.get("enabled") else []
 
+        test_time, sample_period = validate_datalog_timing(test_time, sample_period)
+        try:
+            temp_start = float(temp_start)
+            temp_end = float(temp_end)
+            temp_step = float(temp_step)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Temperature range must be numeric.") from exc
+        if not all(math.isfinite(v) for v in (temp_start, temp_end, temp_step)):
+            raise ValueError("Temperature range must be finite.")
+        if temp_step <= 0:
+            raise ValueError("Temperature step must be positive.")
+        if not channels:
+            raise ValueError("No measurement channels selected.")
         temps = self._float_range(temp_start, temp_end, temp_step)
         if not temps:
             raise ValueError("Invalid temperature range")
@@ -273,9 +307,12 @@ class _HighLowTempTestWorker(QObject):
                 channels, test_time, sample_period,
                 stop_check=stop_check,
             )
+            if self._stop_flag:
+                self.log.emit("[WARN] Test stopped")
+                break
+            measured = require_channel_results(datalog_result, channels, "N6705C-A")
             for ch in channels:
-                avg_current_a = datalog_result.get(ch, 0.0)
-                ch_results[ch] = avg_current_a * 1000.0
+                ch_results[ch] = measured[ch] * 1000.0
 
             if self._stop_flag:
                 self.log.emit("[WARN] Test stopped")
@@ -352,10 +389,13 @@ class _HighLowTempTestWorker(QObject):
             for i, r in enumerate(all_results):
                 row = f"  {i + 1:>3}  {r['temp']:>10.2f}"
                 for ch in channels:
-                    row += f"  {r['currents'].get(ch, 0.0):>14.6f}"
+                    value = r["currents"].get(ch)
+                    row += f"  {value:>14.6f}" if value is not None else f"  {'N/A':>14}"
                 for rail in ext_rails:
-                    row += f"  {r.get('rails', {}).get(rail['name'], 0.0):>14.6f}"
-                    row += f"  {r.get('rail_vouts', {}).get(rail['name'], 0.0):>14.6f}"
+                    value = r.get("rails", {}).get(rail["name"])
+                    row += f"  {value:>14.6f}" if value is not None else f"  {'N/A':>14}"
+                    value = r.get("rail_vouts", {}).get(rail["name"])
+                    row += f"  {value:>14.6f}" if value is not None else f"  {'N/A':>14}"
                 self.log.emit(f"[SUMMARY] {row}")
             self.log.emit("[SUMMARY] " + "=" * 70)
 
@@ -381,6 +421,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self._test_thread = None
         self._test_worker = None
         self.result_data = []
+        self._test_completed_successfully = False
 
         self._setup_style()
         self._create_layout()
@@ -999,6 +1040,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self.plot_widget.clear()
         self._plot_curves = {}
         self.result_data = []
+        self._test_completed_successfully = False
 
         chamber = getattr(self, 'chamber', None)
         n6705c_a = getattr(self, 'n6705c', None)
@@ -1046,7 +1088,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
 
         for ch in channels:
             temps = [r["temp"] for r in self.result_data]
-            vals = [r["currents"].get(ch, 0.0) for r in self.result_data]
+            vals = [r["currents"].get(ch, float("nan")) for r in self.result_data]
             self._plot_curves[ch].setData(temps, vals)
 
         rail_names = list(rails.keys())
@@ -1073,8 +1115,12 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self.execution_logs.set_progress(val)
 
     def _on_test_finished(self, result):
-        self.execution_logs.set_progress(100)
-        self.append_log("[INFO] Test completed successfully.")
+        self._test_completed_successfully = bool(result.get("success"))
+        if self._test_completed_successfully:
+            self.execution_logs.set_progress(100)
+            self.append_log("[INFO] Test completed successfully.")
+        else:
+            self.append_log(f"[WARN] {result.get('message', 'Test did not complete.')}")
 
     def _on_test_error(self, err_msg):
         self.append_log(f"[ERROR] {err_msg}")
@@ -1091,8 +1137,8 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self.start_btn.setEnabled(True)
 
     def _on_export_csv(self):
-        if not self.result_data:
-            self.append_log("[WARN] No data to export")
+        if not self._test_completed_successfully or not self.result_data:
+            self.append_log("[WARN] No complete successful test data to export")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -1116,10 +1162,16 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
                           + [f"{name} DUT Vout (V)" for name in rail_names])
                 writer.writerow(header)
                 for r in self.result_data:
-                    row = ([f"{r['temp']:.2f}"]
-                           + [f"{r['currents'].get(ch, 0.0):.6f}" for ch in channels]
-                           + [f"{r.get('rails', {}).get(name, 0.0):.6f}" for name in rail_names]
-                           + [f"{r.get('rail_vouts', {}).get(name, 0.0):.6f}" for name in rail_names])
+                    row = [f"{r['temp']:.2f}"]
+                    for ch in channels:
+                        value = r["currents"].get(ch)
+                        row.append(f"{value:.6f}" if value is not None else "")
+                    for name in rail_names:
+                        value = r.get("rails", {}).get(name)
+                        row.append(f"{value:.6f}" if value is not None else "")
+                    for name in rail_names:
+                        value = r.get("rail_vouts", {}).get(name)
+                        row.append(f"{value:.6f}" if value is not None else "")
                     writer.writerow(row)
             self.append_log(f"[INFO] Data exported to: {path}")
         except Exception as e:

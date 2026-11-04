@@ -132,8 +132,7 @@ class ConsumptionTestViewTestExecMixin:
                 "boost_mode": "constant"/"percent",
                 "boost_value": float,        # auto 模式下的增压值
             }}
-            Force 模式且 force_value 为空/非法时跳过该通道(走 Auto 默认值)。
-            Auto 模式下 boost_value 为空/非法时使用默认 0.02。
+            数值原样交由 Worker 在首次仪器操作前统一校验；Auto 空值使用默认 0.02。
         """
         configs = {}
         for cfg in self._channel_configs:
@@ -152,20 +151,9 @@ class ConsumptionTestViewTestExecMixin:
             }
 
             if force_mode == "force":
-                val_text = cfg.get("force_value", "").strip()
-                if not val_text:
-                    continue
-                try:
-                    entry["force_value"] = float(val_text)
-                except ValueError:
-                    continue
+                entry["force_value"] = cfg.get("force_value", "").strip() or None
             else:
-                val_text = cfg.get("boost_value", "").strip()
-                if val_text:
-                    try:
-                        entry["boost_value"] = float(val_text)
-                    except ValueError:
-                        pass
+                entry["boost_value"] = cfg.get("boost_value", "").strip() or 0.02
 
             configs[(device_label, hw_ch)] = entry
         return configs
@@ -413,10 +401,13 @@ class ConsumptionTestViewTestExecMixin:
     def _on_test_error(self, err_msg):
         self.append_log(f"[ERROR] {err_msg}")
 
-    def _on_test_finished(self):
+    def _on_test_finished(self, success, message):
         self.is_testing = False
-        self.start_test_btn.setStateComplete()
-        self.append_log("[TEST] Test completed.")
+        if success:
+            self.start_test_btn.setStateComplete()
+        else:
+            self.start_test_btn.setStateFailed()
+        self.append_log(f"[TEST] {message}")
 
     def _on_test_thread_cleaned(self):
         self._test_worker = None
@@ -690,11 +681,14 @@ class ConsumptionTestViewTestExecMixin:
         self.auto_test_btn._progress_timer.stop()
 
     def _on_auto_test_error(self, err_msg):
-        pass
+        self.append_log(f"[AUTO_TEST] Error: {err_msg}")
 
-    def _on_auto_test_finished(self):
+    def _on_auto_test_finished(self, success, message):
         self.is_testing = False
-        self.auto_test_btn.setStateComplete()
+        if success:
+            self.auto_test_btn.setStateComplete()
+        else:
+            self.auto_test_btn.setStateFailed()
 
     def _on_auto_test_thread_cleaned(self):
         self._auto_test_worker = None

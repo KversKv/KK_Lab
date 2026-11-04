@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QMessageBox, QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
-from core.module_test._common import VOLT_METHOD_SCOPE, cfg_int
+from core.module_test._common import (
+    VOLT_METHOD_SCOPE, cfg_int, validate_selected_items,
+)
 from core.module_test.module_config import ModuleConfigWorker
 from core.module_test.result_model import ItemResult, ModuleTestResult
 from core.module_test.saved_results import (
@@ -228,6 +230,11 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             self._show_alert("必填字段缺失或无效，请检查 DUT 配置（红框标注）。", "error")
             self.left_rail.config_card.set_expanded(True)
             err_row.editor.setFocus()
+            return False
+        try:
+            validate_selected_items(cfg, self.ITEMS_REGISTRY)
+        except (TypeError, ValueError) as exc:
+            self._show_alert(f"测试参数无效：{exc}", "error")
             return False
         missing = self._missing_instruments(cfg)
         if missing:
@@ -461,11 +468,17 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         )
         elapsed = time.monotonic() - self._run_start_ts
         self.detail_dock.set_result(result, elapsed)
-        self.run_bar.set_current_item("完成")
+        aborted = bool(s.get("aborted"))
+        overall = s.get("overall", "N/A")
+        self.run_bar.set_current_item("已中止" if aborted else (
+            "完成" if overall == "PASS" else "测试结束"))
         self.run_bar.set_timing(elapsed, None)
         self._apply_run_state(RunState.FINISHED)
-        Toast.popup(self, f"测试完成：总体 {s.get('overall', 'N/A')}",
-                    severity="success" if s.get("overall") == "PASS" else "warning")
+        message = (f"测试已中止：{s.get('aborted')}" if aborted else
+                   f"测试完成：总体 {overall}" if overall == "PASS" else
+                   f"测试结束：总体 {overall}")
+        Toast.popup(self, message,
+                    severity="success" if overall == "PASS" and not aborted else "warning")
 
     def _on_failed(self, msg: str) -> None:
         self.detail_dock.log_panel.flush_now()

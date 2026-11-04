@@ -35,7 +35,7 @@ class ConsumptionController(QObject):
     auto_test_summary = Signal(dict)
     auto_test_progress = Signal(float)
     auto_test_download_state = Signal(str)
-    auto_test_finished = Signal()
+    auto_test_finished = Signal(bool, str)
     auto_test_error = Signal(str)
     auto_test_cleaned = Signal()
 
@@ -185,10 +185,14 @@ class ConsumptionController(QObject):
         self.log_message.emit(f"[AUTO_TEST] Error: {err_msg}")
         self.auto_test_error.emit(err_msg)
 
-    def _on_auto_finished(self):
-        logger.info("Auto test completed")
-        self.log_message.emit("[AUTO_TEST] Auto test completed.")
-        self.auto_test_finished.emit()
+    def _on_auto_finished(self, success=True, message=""):
+        if success:
+            logger.info("Auto test completed")
+            self.log_message.emit(f"[AUTO_TEST] {message or 'Auto test completed.'}")
+        else:
+            logger.warning("Auto test unfinished: %s", message)
+            self.log_message.emit(f"[AUTO_TEST] {message or 'Auto test did not complete.'}")
+        self.auto_test_finished.emit(success, message)
 
     def _on_auto_thread_cleaned(self):
         self._auto_test_worker = None

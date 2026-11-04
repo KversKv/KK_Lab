@@ -42,6 +42,8 @@ class ItemContext:
     # runner 首项前实测的 Vout 基准 V0（单位 V，_record_vout_baseline 注入；
     # None = 读取失败或未记录，使用方须自行回落标称值）
     vout_baseline_v: float | None = None
+    # 任一实际采样失败即置位，runner 禁止该项被判定为 PASS
+    measurement_failed: bool = False
 
 
 def parse_channel(value: Any) -> int:
@@ -62,13 +64,20 @@ def write_csv(path: str, header: list[str], rows: list[list[Any]]) -> None:
             writer.writerow(row)
 
 
-def safe_measure(n6705c: Any, method: str, channel: int, default: float = 0.0) -> float:
-    """防御性测量封装：异常返回 default 并记日志，禁裸 except 传播。"""
+def safe_measure(n6705c: Any, method: str, channel: int,
+                 default: float = float("nan")) -> float:
+    """防御性测量封装：失败返回 NaN（或显式 default），真实 0 值原样保留。"""
     try:
         fn = getattr(n6705c, method)
         val = fn(channel)
-        return float(val) if val is not None else default
-    except Exception:  # noqa: BLE001 - 测量异常降级为默认值，保证流程不中断
+        if val is None:
+            return default
+        value = float(val)
+        if not math.isfinite(value):
+            logger.error("measure %s ch%d returned non-finite value", method, channel)
+            return default
+        return value
+    except Exception:  # noqa: BLE001 - 测量异常以无数据语义返回，保证流程可收尾
         logger.error("measure %s ch%d failed", method, channel, exc_info=True)
         return default
 
@@ -78,15 +87,30 @@ def mock_jitter(base: float, ratio: float = 0.02) -> float:
     return base * (1.0 + random.uniform(-ratio, ratio))
 
 
+def _validate_scan_values(start: Any, end: Any, step: Any,
+                          label: str = "扫描") -> tuple[float, float, float]:
+    """校验并转换扫描三参数；step 为正步长，Start/End 方向不限。"""
+    try:
+        start, end, step = float(start), float(end), float(step)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} Start/End/Step 必须为数值") from exc
+    if not all(math.isfinite(v) for v in (start, end, step)):
+        raise ValueError(f"{label} Start/End/Step 必须为有限数值")
+    if step <= 0:
+        raise ValueError(f"{label} Step 必须大于 0")
+    return start, end, step
+
+
 def linspace(start: float, end: float, step: float) -> list[float]:
-    """等步进序列（含 end，step>0）。"""
-    if step <= 0 or end < start:
-        return [start]
+    """等步进序列（含 end）；step 为正步长，支持 start>end 的降序扫描。"""
+    start, end, step = _validate_scan_values(start, end, step)
+    descending = end < start
+    delta = -step if descending else step
     pts = []
     v = start
-    while v <= end + 1e-9:
+    while (v >= end - 1e-9) if descending else (v <= end + 1e-9):
         pts.append(round(v, 6))
-        v += step
+        v += delta
     return pts
 
 
@@ -101,12 +125,12 @@ def load_reg_summary(rows: list[list[Any]], knee_ma: float = 0.0) -> dict:
     """
     n = len(rows)
     if n == 0:
-        return {"knee_ma": 0.0, "vout_drop_mv": 0.0, "load_reg_pct": 0.0,
-                "vout_drop_linear_mv": 0.0, "load_reg_linear_pct": 0.0}
+        return {"knee_ma": "", "vout_drop_mv": "", "load_reg_pct": "",
+                "vout_drop_linear_mv": "", "load_reg_linear_pct": ""}
     if n < 2:
         return {"knee_ma": round(float(rows[0][0]), 6),
-                "vout_drop_mv": 0.0, "load_reg_pct": 0.0,
-                "vout_drop_linear_mv": 0.0, "load_reg_linear_pct": 0.0}
+                "vout_drop_mv": "", "load_reg_pct": "",
+                "vout_drop_linear_mv": "", "load_reg_linear_pct": ""}
     if knee_ma and knee_ma > 0:
         cand = [i for i, r in enumerate(rows) if float(r[0]) <= knee_ma]
         ki = cand[-1] if cand else 0
@@ -183,7 +207,8 @@ def trimmed_mean(samples: list[float]) -> float:
 
 
 def measure_avg(ctx: "ItemContext", method: str, channel: int, *,
-                count: int = 1, settle_s: float = 0.0, default: float = 0.0) -> float:
+                count: int = 1, settle_s: float = 0.0,
+                default: float = float("nan")) -> float:
     """多次采样去极值均值（参考 PMU average_cnt + settle）。
 
     Args:
@@ -196,7 +221,10 @@ def measure_avg(ctx: "ItemContext", method: str, channel: int, *,
     for i in range(n):
         if ctx.stop_flag_fn():
             break
-        samples.append(safe_measure(ctx.n6705c, method, channel, default))
+        sample = safe_measure(ctx.n6705c, method, channel, default)
+        if not math.isfinite(sample):
+            ctx.measurement_failed = True
+        samples.append(sample)
         if i < n - 1:
             settle(ctx, settle_s)
     return trimmed_mean(samples) if samples else default
@@ -374,7 +402,7 @@ def _scope_vout_sample(ctx: "ItemContext", ch: int, default: float) -> float:
 
 
 def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
-                 default: float = 0.0) -> float:
+                 default: float = float("nan")) -> float:
     """按 DUT 配置的「电压测试方式」测 Vout（单位 V，多次采样去极值均值）。
 
     - N6705C（默认）：Vout 通道 VMETer measure_voltage；
@@ -390,10 +418,13 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
             break
         if use_scope:
             ch = int(cfg.get("scope_vout_channel", 1))
-            samples.append(_scope_vout_sample(ctx, ch, default))
+            sample = _scope_vout_sample(ctx, ch, default)
         else:
             ch = parse_channel(cfg.get("vout_channel", 1))
-            samples.append(safe_measure(ctx.n6705c, "measure_voltage", ch, default))
+            sample = safe_measure(ctx.n6705c, "measure_voltage", ch, default)
+        if not math.isfinite(sample):
+            ctx.measurement_failed = True
+        samples.append(sample)
         if i < n - 1:
             settle(ctx, settle_s)
     return trimmed_mean(samples) if samples else default
@@ -578,6 +609,73 @@ def cfg_int(cfg: dict, key: str, default: int) -> int:
     return int(val)
 
 
+def validate_code_range(msb: int, lsb: int, min_code: int, max_code: int) -> int:
+    """校验寄存器位域及代码范围，返回位域掩码；非法输入不做截断。"""
+    if lsb < 0 or msb < lsb:
+        raise ValueError("无效位域：必须满足 0 <= LSB <= MSB")
+    mask = (1 << (msb - lsb + 1)) - 1
+    if min_code < 0 or max_code < min_code or max_code > mask:
+        raise ValueError(
+            f"无效代码范围：必须满足 0 <= Min Code <= Max Code <= 0x{mask:X}"
+        )
+    return mask
+
+
+def _item_param_value(cfg: dict, specs: dict[str, Any], key: str) -> Any:
+    if key in cfg:
+        return cfg[key]
+    spec = specs[key]
+    if spec.base_key and spec.base_key in cfg:
+        return cfg[spec.base_key]
+    return spec.default
+
+
+def validate_selected_items(config: dict, items_registry: dict[str, tuple]) -> None:
+    """在任何仪器操作前校验所有勾选项的扫描参数（含项级 override）。"""
+    overrides = config.get("item_overrides", {}) or {}
+    sweep_groups = (
+        (("iload_start_ma", "iload_end_ma", "iload_step_ma"), "Iload"),
+        (("vin_start_v", "vin_end_v", "vin_step_v"), "Vin"),
+        (("ilim_start_ma", "ilim_end_ma", "ilim_step_ma"), "Current Limit"),
+    )
+    code_keys = {"reg_addr", "msb", "lsb", "min_code", "max_code"}
+    for item_key in config.get("selected_items", []):
+        entry = items_registry.get(item_key)
+        if entry is None:
+            continue
+        name, _run_fn, _needs_scope, _checked, params = entry
+        specs = {spec.key: spec for spec in params}
+        item_cfg = dict(config)
+        item_cfg.update(overrides.get(item_key) or {})
+        try:
+            if code_keys.issubset(specs):
+                cfg_int(item_cfg, "reg_addr", _item_param_value(item_cfg, specs, "reg_addr"))
+                validate_code_range(
+                    cfg_int(item_cfg, "msb", _item_param_value(item_cfg, specs, "msb")),
+                    cfg_int(item_cfg, "lsb", _item_param_value(item_cfg, specs, "lsb")),
+                    cfg_int(item_cfg, "min_code", _item_param_value(item_cfg, specs, "min_code")),
+                    cfg_int(item_cfg, "max_code", _item_param_value(item_cfg, specs, "max_code")),
+                )
+            for keys, label in sweep_groups:
+                if all(key in specs for key in keys):
+                    _validate_scan_values(
+                        *(_item_param_value(item_cfg, specs, key) for key in keys),
+                        label=label,
+                    )
+            if "dropout_vin_step_v" in specs:
+                nominal_mv = float(item_cfg.get("vout_nominal_mv", 1800))
+                vin_hi, vin_lo, _vin_step = _validate_scan_values(
+                    item_cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0),
+                    item_cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0),
+                    item_cfg.get("dropout_vin_step_v", 0.02),
+                    label="Dropout Vin",
+                )
+                if vin_hi < vin_lo:
+                    raise ValueError("Dropout Vin Start 必须大于或等于 End")
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name}（{item_key}）：{exc}") from exc
+
+
 # ---- Output Voltage 扫描：前置校验 / 尾部饱和检测阈值 ----
 # 与 ui/pages/pmu_test/pmu_output_voltage.py 同名常量保持一致（双向同步）
 _PRECHECK_POINTS = 5
@@ -712,18 +810,14 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
 
     def _scan_vout() -> float:
         # 扫描全程 Vout 直接读 Iload 负载通道电压（CCLoad 通道并接 DUT 输出）
-        return safe_measure(ctx.n6705c, "measure_voltage", iload_ch, 0.0)
+        value = safe_measure(ctx.n6705c, "measure_voltage", iload_ch)
+        if not math.isfinite(value):
+            ctx.measurement_failed = True
+        return value
 
-    bit_count = msb - lsb + 1
-    mask = (1 << bit_count) - 1
-    max_code = min(max_code, mask)
-    min_code = max(min_code, 0)
-
-    # code 范围校验前置于通道上电：无效范围直接返回，不涉及通道关断
+    # 位域与代码范围在任何 I2C / 仪器操作前校验；非法输入不得静默截断。
+    mask = validate_code_range(msb, lsb, min_code, max_code)
     total_points = max_code - min_code + 1
-    if total_points <= 0:
-        ctx.log_fn(f"[{item_key}] [ERROR] Invalid code range (min >= max).")
-        return _skipped("无效的 code 范围（min >= max）")
 
     i2c = create_i2c(ctx)
     if ctx.is_mock:
@@ -778,6 +872,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
                 ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during stabilization.")
                 return _skipped("稳定阶段被用户停止")
             v = _scan_vout()
+            if not math.isfinite(v):
+                ctx.log_fn(f"[{item_key}] [ERROR] Vout measurement failed during stabilization.")
+                return _skipped("稳定阶段 Vout 测量失败")
             recent_voltages.append(v)
             if len(recent_voltages) >= 3:
                 last3 = recent_voltages[-3:]
@@ -801,6 +898,10 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             time.sleep(sleep_time)
 
             measured_v = _scan_vout()
+            if not math.isfinite(measured_v):
+                rows.append([code, ""])
+                ctx.log_fn(f"[{item_key}] [ERROR] Vout measurement failed at code=0x{code:X}.")
+                break
             voltages.append(measured_v)
             codes.append(code)
             rows.append([code, round(measured_v * 1000.0, 3)])
@@ -895,12 +996,13 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             code += 1
 
         # 有效线性区间：参考步进判据双向剔除死区/饱和段（与 PMU 同步）
-        min_voltage = max_voltage = 0.0
-        valid_min_code = valid_max_code = 0
-        step_voltage_mv = 0.0
-        step_error_mv = 0.0
-        linearity_pct = 0.0
-        if len(voltages) >= 2 and not precheck_failed:
+        min_voltage = max_voltage = None
+        valid_min_code = valid_max_code = None
+        step_voltage_mv = None
+        step_error_mv = None
+        linearity_pct = None
+        result_valid = not ctx.measurement_failed and not ctx.stop_flag_fn()
+        if len(voltages) >= 2 and not precheck_failed and result_valid:
             low_valid, high_valid = _compute_valid_range(voltages)
 
             valid_voltages = voltages[low_valid:high_valid + 1]
@@ -949,9 +1051,14 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         teardown_vin(ctx, vin_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"],
-              [row + ["" if i == 0 else round(row[1] - rows[i - 1][1], 3)]
-               for i, row in enumerate(rows)])
+    csv_rows: list[list[Any]] = []
+    for i, row in enumerate(rows):
+        diff_mv = ""
+        if (i > 0 and isinstance(row[1], (int, float))
+                and isinstance(rows[i - 1][1], (int, float))):
+            diff_mv = round(row[1] - rows[i - 1][1], 3)
+        csv_rows.append(row + [diff_mv])
+    write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"], csv_rows)
     if precheck_failed:
         # 前置校验失败且用户选择中止：不作指标计算，原始数据仍落 CSV
         return ItemResult(item_key=item_key, name=name, passed=None,
@@ -959,19 +1066,29 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
                           notes="前置校验失败，用户选择中止")
     measured = {
         "points": len(rows),
-        "default_voltage_mv": round(default_voltage * 1000.0, 3),
+        "default_voltage_mv": (round(default_voltage * 1000.0, 3)
+                               if math.isfinite(default_voltage) else ""),
         "default_code": default_code,
-        "vout_min_mv": round(min_voltage * 1000.0, 3),
-        "vout_max_mv": round(max_voltage * 1000.0, 3),
-        "valid_min_code": valid_min_code,
-        "valid_max_code": valid_max_code,
-        "step_mv": round(step_voltage_mv, 3),
-        "step_error_mv": round(step_error_mv, 3),
-        "linearity_pct": round(linearity_pct, 3),
+        "vout_min_mv": round(min_voltage * 1000.0, 3) if min_voltage is not None else "",
+        "vout_max_mv": round(max_voltage * 1000.0, 3) if max_voltage is not None else "",
+        "valid_min_code": valid_min_code if valid_min_code is not None else "",
+        "valid_max_code": valid_max_code if valid_max_code is not None else "",
+        "step_mv": round(step_voltage_mv, 3) if step_voltage_mv is not None else "",
+        "step_error_mv": round(step_error_mv, 3) if step_error_mv is not None else "",
+        "linearity_pct": round(linearity_pct, 3) if linearity_pct is not None else "",
     }
+    if ctx.measurement_failed:
+        note = "Vout 测量异常，性能结果无效"
+    elif ctx.stop_flag_fn():
+        note = "测试中止，性能结果不参与判定"
+    elif step_voltage_mv is None:
+        note = "有效采样不足，未计算性能结果"
+    else:
+        note = (f"有效段步进 {step_voltage_mv:.3f}mV，步进误差 {step_error_mv:.3f}mV，"
+                f"线性度 {linearity_pct:.3f}%")
     return ItemResult(item_key=item_key, name=name, unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path,
-                      notes=f"有效段步进 {step_voltage_mv:.3f}mV，步进误差 {step_error_mv:.3f}mV，线性度 {linearity_pct:.3f}%")
+                      notes=note)
 
 
 def _arb_stop_and_wait(ctx: "ItemContext", channel: int) -> None:
@@ -1385,15 +1502,17 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                 rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
             except Exception:  # noqa: BLE001 - 单点读数失败降级，继续扫描
                 logger.error("scope ripple read failed @%gmA", il, exc_info=True)
-                vpp = 0.0
-                rms = 0.0
+                ctx.measurement_failed = True
+                vpp = float("nan")
+                rms = float("nan")
             finally:
                 if dbg:
                     ctx.scope.debug_shot_cb = None
                     _debug_scope_shot(ctx, dbg_dir,
                                       f"{item_key}_p{i:02d}_{il:g}mA_20_measured")
-            vout = measure_vout(ctx, count=1, settle_s=settle_s,
-                                default=nominal_mv / 1000.0) * 1000.0
+            if not math.isfinite(vpp) or not math.isfinite(rms):
+                ctx.measurement_failed = True
+            vout = measure_vout(ctx, count=1, settle_s=settle_s) * 1000.0
             # Vpp/RMS 的 DISPlay 测量会触发示波器重新刷新，读数后波形需时间
             # 恢复稳定，等待后再截图（否则定格在过渡帧，截图无波形）
             settle(ctx, 1.0)
@@ -1401,22 +1520,28 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                 _debug_scope_shot(ctx, dbg_dir,
                                   f"{item_key}_p{i:02d}_{il:g}mA_30_vout")
             shot = _capture_scope_png(ctx, item_key, il, shot_dir)
-        if vout_start_mv is None:
+        if vout_start_mv is None and math.isfinite(vout):
             vout_start_mv = vout
-        vout_drop_mv = vout - vout_start_mv
-        rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4),
-                     round(vout_drop_mv, 4)])
+        vout_drop_mv = (vout - vout_start_mv
+                        if math.isfinite(vout) and vout_start_mv is not None else None)
+        rows.append([il,
+                     round(vout, 4) if math.isfinite(vout) else "",
+                     round(vpp, 4) if math.isfinite(vpp) else "",
+                     round(rms, 4) if math.isfinite(rms) else "",
+                     round(vout_drop_mv, 4) if vout_drop_mv is not None else ""])
         if shot:
             screenshots.append({"Iload (mA)": il, "png": shot})
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
+        drop_debug = f"{vout_drop_mv:.4f}" if vout_drop_mv is not None else "N/A"
+        drop_log = f"{vout_drop_mv:10.4f}" if vout_drop_mv is not None else "N/A"
         _debug_event(ctx, dbg_dir,
                      f"p{i:02d} {il:g}mA 测量: Vout={vout:.4f}mV "
                      f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV "
-                     f"Vout Drop@{i_start:g}mA={vout_drop_mv:.4f}mV"
+                     f"Vout Drop@{i_start:g}mA={drop_debug}mV"
                      + (f" 截图={os.path.basename(shot)}" if shot else " 截图=失败/未生成"))
         ctx.log_fn(f"[{item_key}] Iload={il:4g}mA -> Vout={vout:9.4f} mV, "
                    f"Vpp={vpp:6.3f} mV, RMS={rms:6.3f} mV, "
-                   f"Vout Drop@{i_start:g}mA={vout_drop_mv:10.4f} mV")
+                   f"Vout Drop@{i_start:g}mA={drop_log} mV")
     if not ctx.is_mock and load_state.get("on"):
         # 仅在仍开启时关断（0mA 收尾点通道已被 apply_load_current 关掉）
         teardown_load(ctx, iload_ch)
@@ -1432,28 +1557,34 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     # 首个单步跌幅 > max(5×步进跌幅中位数, 0.5%×V(起始)) 的前一点为有效段末尾；
     # 拐点后 Vout 崩溃（带载能力不足），该行及之后数据无效——保留进 CSV/报告，
     # 但不参与 Max Vpp / Max Vout Drop 等性能计算，Max Load 取拐点前位置
-    knee_ma = load_reg_summary(
-        [[r[0], r[1]] for r in rows
-         if isinstance(r[0], (int, float)) and isinstance(r[1], (int, float))]
-    )["knee_ma"]
+    def _finite(value: Any) -> bool:
+        return isinstance(value, (int, float)) and math.isfinite(value)
+
+    vout_rows = [[r[0], r[1]] for r in rows if _finite(r[0]) and _finite(r[1])]
+    knee_ma = load_reg_summary(vout_rows)["knee_ma"] if vout_rows else ""
     valid_rows = [r for r in rows
-                  if isinstance(r[0], (int, float)) and r[0] <= knee_ma + 1e-6]
-    collapsed = bool(valid_rows) and len(valid_rows) < len(rows)
+                  if _finite(r[0]) and _finite(r[1])
+                  and (knee_ma == "" or r[0] <= knee_ma + 1e-6)]
+    first_bad = (next((r for r in vout_rows if r[0] > knee_ma + 1e-6), None)
+                 if knee_ma != "" else None)
+    collapsed = bool(valid_rows) and first_bad is not None
     if collapsed:
-        first_bad = rows[len(valid_rows)]
         collapse_vout_threshold_mv = round((valid_rows[-1][1] + first_bad[1]) / 2.0, 4)
         ctx.log_fn(f"[{item_key}] Max Load={knee_ma:g}mA，{first_bad[0]:g}mA 起 "
                    f"Vout 崩溃（{valid_rows[-1][1]:.1f}→{first_bad[1]:.1f} mV），"
-                   f"{len(rows) - len(valid_rows)} 点无效，已排除出性能计算")
+                   f"{len(vout_rows) - len(valid_rows)} 点无效，已排除出性能计算")
         _debug_event(ctx, dbg_dir,
-                     f"带载拐点: Max Load={knee_ma:g}mA，{len(rows) - len(valid_rows)} 点崩溃无效")
+                     f"带载拐点: Max Load={knee_ma:g}mA，"
+                     f"{len(vout_rows) - len(valid_rows)} 点崩溃无效")
     else:
         collapse_vout_threshold_mv = None
 
-    max_row = max(valid_rows, key=lambda r: r[2], default=None)
+    vpp_rows = [r for r in valid_rows if _finite(r[2])]
+    max_row = max(vpp_rows, key=lambda r: r[2], default=None)
     # 输出电压最大 Drop：标称值 - 有效段内最小 Vout（崩溃段不计入）
-    vout_values = [r[1] for r in valid_rows if isinstance(r[1], (int, float))]
-    max_vout_drop_mv = (nominal_mv - min(vout_values)) if vout_values else 0.0
+    vout_values = [r[1] for r in valid_rows]
+    max_vout_drop_mv = (round(nominal_mv - min(vout_values), 4)
+                        if vout_values else "")
     measured: dict[str, Any] = {
         "points": len(rows),
         "valid_points": len(valid_rows),
@@ -1462,8 +1593,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         "i_step_ma": i_step,
         "max_vpp_mv": max_row[2] if max_row else "",
         "max_vpp_at_ma": max_row[0] if max_row else "",
-        "max_vout_drop_mv": round(max_vout_drop_mv, 4),
-        "max_load_ma": knee_ma,
+        "max_vout_drop_mv": max_vout_drop_mv,
+        "max_load_ma": knee_ma if valid_rows else "",
     }
     if collapse_vout_threshold_mv is not None:
         measured["collapse_vout_threshold_mv"] = collapse_vout_threshold_mv
@@ -1540,7 +1671,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
             vpp = over + under
             shot = None
         else:
-            over = under = vpp = 0.0
+            over = under = vpp = float("nan")
             shot = None
             try:
                 # 先停掉上一轮遗留 ARB 并等 initiated 清零，否则改参数报 +308
@@ -1629,7 +1760,8 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.scope.run()
             except Exception:  # noqa: BLE001 - 单组失败降级，继续下一组
                 logger.error("line transient group %d failed", idx + 1, exc_info=True)
-                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
+                ctx.measurement_failed = True
+                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，本组无有效数据，继续")
             finally:
                 try:
                     # 停 ARB 并轮询 initiated 清零，否则紧跟的
@@ -1640,8 +1772,12 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 except Exception:  # noqa: BLE001
                     logger.error("exit arb ch%d failed", vbat_ch, exc_info=True)
 
+        if not all(math.isfinite(v) for v in (over, under, vpp)):
+            ctx.measurement_failed = True
         rows.append([idx + 1, vin0_v, vin1_v, freq,
-                     round(over, 3), round(under, 3), round(vpp, 3)])
+                     round(over, 3) if math.isfinite(over) else "",
+                     round(under, 3) if math.isfinite(under) else "",
+                     round(vpp, 3) if math.isfinite(vpp) else ""])
         if shot:
             screenshots.append({"Group": str(idx + 1), "png": shot})
         ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
@@ -1657,8 +1793,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
               ["Group", "Vin0 (V)", "Vin1 (V)", "Freq (Hz)",
                "Overshoot (mV)", "Undershoot (mV)", "Vpp (mV)"], rows)
 
-    max_over = max(rows, key=lambda r: r[4], default=None)
-    max_under = max(rows, key=lambda r: r[5], default=None)
+    over_rows = [r for r in rows if isinstance(r[4], (int, float)) and math.isfinite(r[4])]
+    under_rows = [r for r in rows if isinstance(r[5], (int, float)) and math.isfinite(r[5])]
+    max_over = max(over_rows, key=lambda r: r[4], default=None)
+    max_under = max(under_rows, key=lambda r: r[5], default=None)
     measured: dict[str, Any] = {
         "groups": len(rows),
         "max_overshoot_mv": max_over[4] if max_over else "",
@@ -1751,7 +1889,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
             vpp = over + under
             shot = None
         else:
-            over = under = vpp = 0.0
+            over = under = vpp = float("nan")
             shot = None
             try:
                 # 先停掉上一轮遗留 ARB 并等 initiated 清零，否则改参数报 +308
@@ -1901,8 +2039,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 if dbg:
                     _debug_scope_shot(ctx, dbg_dir,
                                       f"{item_key}_{grp_tag}_90_group_error")
+                ctx.measurement_failed = True
                 ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常"
-                           f"（{type(e).__name__}: {e}），记 0 继续")
+                           f"（{type(e).__name__}: {e}），本组无有效数据，继续")
             finally:
                 try:
                     # 停 ARB 并轮询 initiated 清零，否则紧跟的
@@ -1918,8 +2057,12 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     ctx.log_fn(f"[{item_key}] [ERROR] {label} 收尾异常"
                                f"（{type(e).__name__}: {e}）")
 
+        if not all(math.isfinite(v) for v in (over, under, vpp)):
+            ctx.measurement_failed = True
         rows.append([idx + 1, i0_ma, i1_ma, freq,
-                     round(over, 3), round(under, 3), round(vpp, 3)])
+                     round(over, 3) if math.isfinite(over) else "",
+                     round(under, 3) if math.isfinite(under) else "",
+                     round(vpp, 3) if math.isfinite(vpp) else ""])
         if shot:
             screenshots.append({"Group": str(idx + 1), "png": shot})
         ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
@@ -1940,8 +2083,10 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                  f"item 完成: {name}（{item_key}），有效组 {len(rows)}，"
                  f"CSV={os.path.basename(csv_path)}")
 
-    max_over = max(rows, key=lambda r: r[4], default=None)
-    max_under = max(rows, key=lambda r: r[5], default=None)
+    over_rows = [r for r in rows if isinstance(r[4], (int, float)) and math.isfinite(r[4])]
+    under_rows = [r for r in rows if isinstance(r[5], (int, float)) and math.isfinite(r[5])]
+    max_over = max(over_rows, key=lambda r: r[4], default=None)
+    max_under = max(under_rows, key=lambda r: r[5], default=None)
     measured: dict[str, Any] = {
         "groups": len(rows),
         "max_overshoot_mv": max_over[4] if max_over else "",

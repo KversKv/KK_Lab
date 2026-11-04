@@ -9,6 +9,7 @@ Consumption Test 公共工具与共享常量。
  - emit_summary 辅助
 """
 
+import math
 import threading
 import time as _time
 
@@ -26,6 +27,77 @@ def _format_current_unified(current_A, unit=None):
         unit = CURRENT_UNIT
     cfg = _UNIT_CONFIG.get(unit, _UNIT_CONFIG["uA"])
     return f"{current_A * cfg['scale']:.4f}{cfg['suffix']}"
+
+
+def validate_datalog_timing(test_time, sample_period):
+    """校验并规范化采集参数；N6705C 最小采样周期为 20 us。"""
+    try:
+        test_time = float(test_time)
+        sample_period = float(sample_period)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Test time and sample period must be numeric.") from exc
+    if not math.isfinite(test_time) or test_time <= 0:
+        raise ValueError("Test time must be a finite positive number.")
+    if not math.isfinite(sample_period) or sample_period < 20e-6:
+        raise ValueError("Sample period must be finite and at least 20 us.")
+    if sample_period > test_time:
+        raise ValueError("Sample period must not exceed test time.")
+    return test_time, sample_period
+
+
+def validate_channel_force_configs(configs):
+    """在仪器操作前校验所有通道的 Force/Auto 数值配置。"""
+    normalized = {}
+    for key, cfg in (configs or {}).items():
+        force_mode = cfg.get("force_mode", "auto")
+        boost_mode = cfg.get("boost_mode", "constant")
+        if force_mode not in ("force", "auto"):
+            raise ValueError(f"Invalid force mode for {key}: {force_mode}")
+        if boost_mode not in ("constant", "percent"):
+            raise ValueError(f"Invalid boost mode for {key}: {boost_mode}")
+        entry = dict(cfg)
+        if force_mode == "force":
+            try:
+                value = float(cfg.get("force_value"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Force voltage for {key} must be numeric.") from exc
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"Force voltage for {key} must be finite and positive.")
+            entry["force_value"] = value
+        else:
+            raw_boost = cfg.get("boost_value", 0.02)
+            if raw_boost is None or raw_boost == "":
+                raw_boost = 0.02
+            try:
+                value = float(raw_boost)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Boost value for {key} must be numeric.") from exc
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"Boost value for {key} must be finite and non-negative.")
+            entry["boost_value"] = value
+        normalized[key] = entry
+    return normalized
+
+
+def require_channel_results(result, channels, device_label):
+    """返回完整有限测量值；空结果、缺通道及 NaN/Inf 均明确失败。"""
+    if not result:
+        raise RuntimeError(f"No consumption data returned by {device_label}.")
+    values = {}
+    missing = []
+    for ch in channels:
+        try:
+            value = float(result[ch])
+        except (KeyError, TypeError, ValueError):
+            missing.append(ch)
+            continue
+        if not math.isfinite(value):
+            missing.append(ch)
+            continue
+        values[ch] = value
+    if missing:
+        raise RuntimeError(f"Missing/invalid current data on {device_label}: CH{missing}")
+    return values
 
 
 def format_current_short(current_A):
@@ -108,9 +180,9 @@ def configure_datalog_all(active_tasks, test_time, log_fn):
 
 
 def start_datalog_sync(active_tasks, log_fn, timeout=30):
-    """使用 Barrier 让所有设备尽可能同步启动 datalog。"""
+    """使用 Barrier 让所有设备尽可能同步启动 datalog，并返回各任务错误。"""
     if not active_tasks:
-        return
+        return []
     barrier = threading.Barrier(len(active_tasks), timeout=timeout)
 
     def _worker(idx, task):
@@ -122,6 +194,7 @@ def start_datalog_sync(active_tasks, log_fn, timeout=30):
         if err:
             dl = active_tasks[idx]["device_label"]
             log_fn(f"[ERROR] Start datalog failed on {dl}: {err}")
+    return errors
 
 
 def wait_datalog_with_progress(test_time, is_stopped_fn, on_tick):
@@ -186,8 +259,8 @@ def build_summary_payload(device_map, channel_names,
     parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
     for key in ordered_keys:
         name = channel_names.get(key, f"{key[0]}-CH{key[1]}")
-        val = results.get(key, 0.0)
-        parts.append(f"{name}: {_format_current_unified(val)}")
+        val = results.get(key)
+        parts.append(f"{name}: {_format_current_unified(val) if val is not None else 'N/A'}")
     if vbat_remain is not None:
         parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
 
@@ -199,7 +272,8 @@ def build_summary_payload(device_map, channel_names,
     scale = cfg["scale"]
     values = [f"{vbat_current * scale:.4f}"]
     for key in ordered_keys:
-        values.append(f"{results.get(key, 0.0) * scale:.4f}")
+        val = results.get(key)
+        values.append(f"{val * scale:.4f}" if val is not None else "N/A")
     if vbat_remain is not None:
         values.append(f"{vbat_remain * scale:.4f}")
     log_fn(f"[DATA] {prefix}{'\t'.join(values)}")
@@ -231,6 +305,9 @@ __all__ = [
     "CURRENT_UNIT",
     "_UNIT_CONFIG",
     "_format_current_unified",
+    "validate_datalog_timing",
+    "validate_channel_force_configs",
+    "require_channel_results",
     "format_current_short",
     "build_datalog_tasks",
     "run_threads_parallel",

@@ -8,10 +8,15 @@ N6705C 消耗测试 Worker（仅依赖 QtCore，无 QtWidgets）。
 
 from PySide6.QtCore import QObject, Signal
 
+from core.consumption_test.workers.common import (
+    require_channel_results,
+    validate_datalog_timing,
+)
+
 
 class ConsumptionTestWorker(QObject):
     channel_result = Signal(str, int, float)
-    finished = Signal()
+    finished = Signal(bool, str)
     error = Signal(str)
 
     def __init__(self, n6705c, device_label, channels, test_time, sample_period):
@@ -27,18 +32,28 @@ class ConsumptionTestWorker(QObject):
         self._is_stopped = True
 
     def run(self):
+        success = False
+        message = ""
         try:
-            if self._is_stopped:
-                self.finished.emit()
-                return
-            result = self.n6705c.fetch_current_by_datalog(
-                self.channels, self.test_time, self.sample_period
+            self.test_time, self.sample_period = validate_datalog_timing(
+                self.test_time, self.sample_period
             )
-            for ch, avg_current in result.items():
-                if self._is_stopped:
-                    break
-                self.channel_result.emit(self.device_label, ch, float(avg_current))
-            self.finished.emit()
+            if not self.channels:
+                raise ValueError("No consumption channels selected.")
+            if not self._is_stopped:
+                result = self.n6705c.fetch_current_by_datalog(
+                    self.channels, self.test_time, self.sample_period
+                )
+                values = require_channel_results(result, self.channels, self.device_label)
+            if self._is_stopped:
+                message = f"[{self.device_label}] Consumption test stopped."
+            else:
+                for ch in self.channels:
+                    self.channel_result.emit(self.device_label, ch, values[ch])
+                success = True
+                message = f"[{self.device_label}] Consumption test completed."
         except Exception as e:
-            self.error.emit(f"[{self.device_label}] {e}")
-            self.finished.emit()
+            message = f"[{self.device_label}] {e}"
+            self.error.emit(message)
+        finally:
+            self.finished.emit(success, message)

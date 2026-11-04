@@ -18,6 +18,7 @@ from ui.pages.n6705c_power_analyzer.widgets import (
     DISABLED_TEXT, DISABLED_BTN_BORDER,
 )
 from core.n6705c import ConsumptionTestWorker as _ConsumptionTestWorker
+from core.consumption_test.workers.common import validate_datalog_timing
 
 logger = get_logger(__name__)
 
@@ -265,9 +266,12 @@ class ConsumptionViewMixin:
             return
 
         try:
-            test_time = float(self.ct_test_time_input.text())
-            sample_period = float(self.ct_sample_period_input.text()) / 1_000_000.0
-        except ValueError:
+            test_time, sample_period = validate_datalog_timing(
+                self.ct_test_time_input.text(),
+                float(self.ct_sample_period_input.text()) / 1_000_000.0,
+            )
+        except (TypeError, ValueError) as e:
+            logger.error("Invalid consumption parameters: %s", e)
             return
 
         logger.debug("CT start_test: test_time=%s, sample_period=%s", test_time, sample_period)
@@ -280,6 +284,7 @@ class ConsumptionViewMixin:
 
         self._test_finished_count = 0
         self._test_expected_count = 0
+        self._test_all_succeeded = True
 
         for label, dev in self.devices.items():
             if not dev["is_connected"] or not dev["n6705c"]:
@@ -319,8 +324,9 @@ class ConsumptionViewMixin:
     def _ct_on_error(self, err_msg):
         logger.error("Consumption test error: %s", err_msg)
 
-    def _ct_on_one_finished(self):
+    def _ct_on_one_finished(self, success, message):
         self._test_finished_count += 1
+        self._test_all_succeeded = self._test_all_succeeded and success
         logger.debug("CT one test finished: %d/%d", self._test_finished_count, self._test_expected_count)
         if self._test_finished_count >= self._test_expected_count:
             self.is_testing = False
@@ -328,6 +334,10 @@ class ConsumptionViewMixin:
             self.ct_stop_btn.setEnabled(False)
             self._test_threads.clear()
             self._test_workers.clear()
+            if self._test_all_succeeded:
+                logger.info("Consumption tests completed")
+            else:
+                logger.warning("Consumption tests unfinished: %s", message)
 
     def _ct_stop_test(self):
         logger.debug("CT stop_test called")

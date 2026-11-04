@@ -1,3 +1,4 @@
+import math
 import struct
 import re
 from log_config import get_logger
@@ -7,6 +8,11 @@ logger = get_logger(__name__)
 
 _MEAS_TYPE_TO_UNIT = {"I": "mA", "V": "mV", "P": "mW"}
 _MEAS_TYPE_TO_BASE_UNIT = {"I": "A", "V": "V", "P": "W"}
+
+
+def paired_samples(channel):
+    """每通道仅输出 time/value 同时存在的样本对。"""
+    return list(zip(channel.get("time", []), channel.get("values", [])))
 
 
 def parse_channel_label(label):
@@ -75,29 +81,35 @@ def parse_csv_text(csv_text, curr_channels, volt_channels, ulabel, sample_period
 
     col_data = {i: [] for i in range(len(ordered_cols))}
 
+    sample_idx = 0
     for line in lines:
         if not line.strip() or "," not in line:
             continue
         parts = line.split(",")
         try:
-            float(parts[0])
+            row_time = float(parts[0])
+            if not math.isfinite(row_time):
+                continue
         except (ValueError, IndexError):
             continue
         for col_idx in range(len(ordered_cols)):
             try:
-                col_data[col_idx].append(float(parts[1 + col_idx]))
+                value = float(parts[1 + col_idx])
+                if math.isfinite(value):
+                    col_data[col_idx].append((sample_idx, value))
             except (ValueError, IndexError):
                 pass
+        sample_idx += 1
 
     all_data = {}
     for col_idx, (meas_type, ch) in enumerate(ordered_cols):
         suffix = "I" if meas_type == "curr" else "V"
         label = f"{ulabel} CH{ch} {suffix}".strip()
-        values = col_data[col_idx]
-        logger.info("[Datalog] %s: %d points", label, len(values))
-        if values:
-            values = [v * 1000.0 for v in values]
-            t = [i * sample_period_s for i in range(len(values))]
+        samples = col_data[col_idx]
+        logger.info("[Datalog] %s: %d points", label, len(samples))
+        if samples:
+            t = [idx * sample_period_s for idx, _ in samples]
+            values = [value * 1000.0 for _, value in samples]
             all_data[label] = {"time": t, "values": values}
 
     return all_data
@@ -209,11 +221,14 @@ def calc_power_for_ch(all_data, ch, unit_prefix, key_prefix=""):
     i_label = f"{key_prefix}{prefix}CH{ch} I".strip()
     p_label = f"{key_prefix}{prefix}CH{ch} P".strip()
     if v_label in all_data and i_label in all_data:
-        v_vals = all_data[v_label]["values"]
-        i_vals = all_data[i_label]["values"]
-        t = all_data[v_label]["time"]
-        p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
-        all_data[p_label] = {"time": t, "values": p_vals}
+        v_samples = paired_samples(all_data[v_label])
+        i_vals = dict(paired_samples(all_data[i_label]))
+        p_samples = [(t, v * i_vals[t] / 1000.0) for t, v in v_samples if t in i_vals]
+        if p_samples:
+            all_data[p_label] = {
+                "time": [t for t, _ in p_samples],
+                "values": [p for _, p in p_samples],
+            }
 
 
 def _parse_csv_field(field):
@@ -407,12 +422,14 @@ def import_csv_file(path):
 
         for col_idx, (name, ti) in channel_col_map.items():
             t = time_values.get(ti)
-            if t is None:
+            if t is None or not math.isfinite(t):
                 continue
             try:
-                val = float(parts[col_idx]) if col_idx < len(parts) and parts[col_idx].strip() else 0.0
+                val = float(parts[col_idx])
+                if not math.isfinite(val):
+                    continue
             except (ValueError, IndexError):
-                val = 0.0
+                continue
             all_data[name]["time"].append(t)
             all_data[name]["values"].append(val)
 
@@ -543,11 +560,14 @@ def import_edlg_file(path):
             v_label = f"CH{ch_id} V"
             i_label = f"CH{ch_id} I"
             if v_label in all_data and i_label in all_data:
-                v_vals = all_data[v_label]["values"]
-                i_vals = all_data[i_label]["values"]
-                t = all_data[v_label]["time"]
-                p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
-                all_data[f"CH{ch_id} P"] = {"time": t, "values": p_vals}
+                v_samples = paired_samples(all_data[v_label])
+                i_vals = dict(paired_samples(all_data[i_label]))
+                p_samples = [(t, v * i_vals[t] / 1000.0) for t, v in v_samples if t in i_vals]
+                if p_samples:
+                    all_data[f"CH{ch_id} P"] = {
+                        "time": [t for t, _ in p_samples],
+                        "values": [p for _, p in p_samples],
+                    }
 
     if not all_data:
         return None, None
@@ -579,10 +599,12 @@ def build_marker_dlog_bytes(unit_channels, lo, hi):
     window_samples = []
     for _, _, info in traces:
         times = info["times"]
+        values = info["values"]
         off = info["offset"]
-        idxs = [j for j in range(len(times)) if lo <= (times[j] + off) <= hi]
+        sample_count = min(len(times), len(values))
+        idxs = [j for j in range(sample_count) if lo <= (times[j] + off) <= hi]
         window_samples.append(idxs)
-        if len(times) >= 2:
+        if sample_count >= 2:
             sample_period = float(times[1] - times[0])
 
     num_samples = min((len(idxs) for idxs in window_samples), default=0)
@@ -676,11 +698,14 @@ def import_dlog_file(path):
         v_label = f"CH{ch_id} V"
         i_label = f"CH{ch_id} I"
         if v_label in all_data and i_label in all_data:
-            v_vals = all_data[v_label]["values"]
-            i_vals = all_data[i_label]["values"]
-            t = all_data[v_label]["time"]
-            p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
-            all_data[f"CH{ch_id} P"] = {"time": t, "values": p_vals}
+            v_samples = paired_samples(all_data[v_label])
+            i_vals = dict(paired_samples(all_data[i_label]))
+            p_samples = [(t, v * i_vals[t] / 1000.0) for t, v in v_samples if t in i_vals]
+            if p_samples:
+                all_data[f"CH{ch_id} P"] = {
+                    "time": [t for t, _ in p_samples],
+                    "values": [p for _, p in p_samples],
+                }
 
     if not all_data:
         return None, None

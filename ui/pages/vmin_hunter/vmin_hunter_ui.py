@@ -1183,8 +1183,12 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         self._runner = None
         next_index = ctx["phase_index"] + 1
-        if not ok or ctx.get("stop_requested") or next_index >= len(ctx["phases"]):
+        stopped = bool(ctx.get("stop_requested"))
+        if not ok or stopped or next_index >= len(ctx["phases"]):
             self._sweep_context = None
+            if stopped:
+                ok = False
+                message = message or "Stopped by user."
             self._on_engine_finished(ok, message)
             return
 

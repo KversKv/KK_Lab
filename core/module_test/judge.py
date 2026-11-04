@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Iterable
 
 
@@ -145,7 +146,8 @@ def _to_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        value = float(value)
+        return value if math.isfinite(value) else None
     except (TypeError, ValueError):
         return None
 

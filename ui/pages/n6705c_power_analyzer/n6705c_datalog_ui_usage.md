@@ -157,7 +157,7 @@ CUSTOM LABELS 面板的展开/折叠入口在**标题栏一键截图按钮右侧
 
 | 格式 | 说明 |
 |------|------|
-| `.csv` | 标准 CSV 格式，首列为时间，后续列为各通道数据。支持附带 `[CUSTOM_LABELS]` 和 `[CH_NAME_RENAMES]` 段。 |
+| `.csv` | 支持共享时间列或每通道独立 Time/Value 列。支持附带 `[CUSTOM_LABELS]` 和 `[CH_NAME_RENAMES]` 段。 |
 | `.dlog` | Keysight 原始二进制 Datalog 格式。 |
 | `.edlg` | Keysight 扩展 Datalog 格式。 |
 
@@ -169,7 +169,7 @@ CUSTOM LABELS 面板的展开/折叠入口在**标题栏一键截图按钮右侧
 
 | 格式 | 说明 |
 |------|------|
-| `.csv` | 包含时间列和所有通道数据。双仪器模式下分 `Time_A(s)` 和 `Time_B(s)` 两组时间列。同时导出自定义标注和通道重命名信息。 |
+| `.csv` | 每通道使用独立 Time/Value 列，保留原始时间位置；不等长或稀疏数据尾部留空。同时导出自定义标注和通道重命名信息。 |
 | `.dlog` | 导出原始二进制 Datalog 数据（需先有采集或导入的原始数据）。 |
 
 ---

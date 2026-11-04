@@ -82,6 +82,16 @@ def _fmt_val(value, min_decimals=4, sig_digits=4):
     return f"{value:.{decimals}f}"
 
 
+def _validate_code_range(msb, lsb, min_code, max_code):
+    if lsb < 0 or msb < lsb:
+        raise ValueError("Invalid bit range: require 0 <= LSB <= MSB.")
+    mask = (1 << (msb - lsb + 1)) - 1
+    if min_code < 0 or max_code < min_code or max_code > mask:
+        raise ValueError(
+            f"Invalid code range: require 0 <= Min Code <= Max Code <= 0x{mask:X}."
+        )
+
+
 class _ItermTestWorker(QObject):
     log_message = Signal(str)
     progress = Signal(int)
@@ -134,9 +144,9 @@ class _ItermTestWorker(QObject):
                     "measured_ma": f"{abs(iterm) * 1000.0:.4f}",
                     "result": "DONE",
                 })
-            self.test_finished.emit(True)
+            self.test_finished.emit(iterm is not None and not self._stop_flag)
         except Exception as e:
-            logger.error(f"{e}")
+            logger.error("Single Iterm test failed", exc_info=True)
             self.log_message.emit(f"[ERROR] {e}")
             self.test_finished.emit(False)
 
@@ -154,14 +164,14 @@ class _ItermTestWorker(QObject):
             min_code = self._cfg["min_code"]
             max_code = self._cfg["max_code"]
 
-            self.traverse_iterm_test(
+            point_count = self.traverse_iterm_test(
                 device_addr, iterm_reg, iic_width,
                 vbat_channel, current_channel, voreg, average_time,
                 msb, lsb, min_code, max_code,
             )
-            self.test_finished.emit(True)
+            self.test_finished.emit(point_count > 0 and not self._stop_flag)
         except Exception as e:
-            logger.error(f"{e}")
+            logger.error("Traverse Iterm test failed", exc_info=True)
             self.log_message.emit(f"[ERROR] {e}")
             self.test_finished.emit(False)
         finally:
@@ -414,6 +424,7 @@ class _ItermTestWorker(QObject):
         vbat_channel, current_channel, voreg, average_time,
         msb, lsb, min_code, max_code,
     ):
+        _validate_code_range(msb, lsb, min_code, max_code)
         i2c = I2CInterface()
         self._i2c = i2c
 
@@ -430,7 +441,7 @@ class _ItermTestWorker(QObject):
         if total_points <= 0:
             logger.error("Invalid code range.")
             self.log_message.emit("[ERROR] Invalid code range.")
-            return
+            return 0
 
         msg = (f"Traverse Iterm Test: Device=0x{device_addr:02X}, "
                f"Reg=0x{iterm_reg:02X}, MSB={msb}, LSB={lsb}")
@@ -527,7 +538,7 @@ class _ItermTestWorker(QObject):
         i2c.write(device_addr, iterm_reg, default_reg, iic_width)
         logger.info("Register restored to default value.")
         self.log_message.emit("[TEST] Register restored to default value.")
-
+        return len(codes)
 
 
 class _BackgroundTaskWorker(QObject):
@@ -1255,9 +1266,10 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
             lsb = int(self.lsb_edit.text())
             min_code = int(self.min_code_edit.text(), 16)
             max_code = int(self.max_code_edit.text(), 16)
-        except ValueError:
-            logger.error("Invalid hex address or parameter.")
-            self._append_to_log("[ERROR] Invalid hex address or parameter.")
+            _validate_code_range(msb, lsb, min_code, max_code)
+        except ValueError as e:
+            logger.error("Invalid Iterm test parameter: %s", e)
+            self._append_to_log(f"[ERROR] {e}")
             return
 
         iic_width = self.iic_width_combo.currentData()
@@ -1293,6 +1305,7 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
             "max_code": max_code,
         }
 
+        self._stop_requested = False
         self.set_test_running(True)
         self.set_progress(0)
 
@@ -1316,6 +1329,7 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
     def _on_stop_test(self):
         if self.test_worker is not None:
             self.test_worker.request_stop()
+        self._stop_requested = True
         logger.info("Stop requested...")
         self._append_to_log("[TEST] Stop requested...")
 
@@ -1326,13 +1340,15 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         else:
             self._fail_count += 1
 
-        self._export_data.append(row)
-
     def _on_test_finished(self, success):
         self.set_test_running(False)
+        stopped = bool(getattr(self, "_stop_requested", False))
         if success:
             logger.info("Iterm test completed.")
             self._append_to_log("[TEST] Iterm test completed.")
+        elif stopped:
+            logger.info("Iterm test aborted.")
+            self._append_to_log("[TEST] Iterm test aborted.")
         else:
             logger.error("Iterm test ended with errors.")
             self._append_to_log("[TEST] Iterm test ended with errors.")
@@ -1342,9 +1358,8 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
             self.test_thread = None
             self.test_worker = None
         # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
-        self.sequence_execution_finished.emit(
-            bool(success), "测试完成" if success else "测试结束（出错）"
-        )
+        summary = "测试完成" if success else ("测试被中止" if stopped else "测试结束（出错）")
+        self.sequence_execution_finished.emit(bool(success), summary)
 
     def _on_clear_log(self):
         self.execution_logs.clear_log()
@@ -1355,6 +1370,8 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
             self.term_marker_series.clear()
 
     def _on_chart_series_data(self, timestamps, currents, t_term, iterm, v_term):
+        if not timestamps or not currents:
+            return
         if not HAS_QTCHARTS or not hasattr(self, 'current_series'):
             return
 
@@ -1459,7 +1476,17 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write("X,Y\n")
-                for x_val, y_val in self._export_data:
+                for point in self._export_data:
+                    if isinstance(point, dict):
+                        try:
+                            x_raw = point["code"]
+                            y_val = float(point["measured_ma"])
+                            x_val = (int(x_raw, 16) if isinstance(x_raw, str)
+                                     and x_raw.lower().startswith("0x") else float(x_raw))
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                    else:
+                        x_val, y_val = point
                     f.write(f"{x_val:.10g},{y_val:.10g}\n")
             logger.info(f"Data exported to {path}")
             self._append_to_log(f"[EXPORT] Data exported to {path}")

@@ -72,11 +72,11 @@ class ModuleTestResult:
         failed = sum(1 for it in self.items if it.passed is False)
         norec = sum(1 for it in self.items if it.passed is None)
         overall = "PASS" if failed == 0 and passed > 0 else ("FAIL" if failed > 0 else "N/A")
-        self.summary = {
+        self.summary.update({
             "total": len(self.items),
             "pass": passed,
             "fail": failed,
             "norec": norec,
             "overall": overall,
-        }
+        })
         return self.summary

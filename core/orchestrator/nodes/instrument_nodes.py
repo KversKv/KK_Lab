@@ -917,6 +917,11 @@ class I2CTraverse(BaseNode):
         reg_start = _resolve_hex(context, self.params["reg_start"])
         reg_end = _resolve_hex(context, self.params["reg_end"])
         width = int(context.resolve_value(self.params["width"]))
+        if width not in (8, 10, 32):
+            raise ValueError(f"Unsupported I2C width: {width}")
+        if reg_start < 0 or reg_end < reg_start:
+            raise ValueError("I2C traverse requires 0 <= start reg <= end reg")
+
         iter_var = str(self.params.get("iter_var", "reg"))
         val_var = str(self.params.get("val_var", "reg_val"))
         result_var = str(self.params["result_var"])
@@ -924,34 +929,42 @@ class I2CTraverse(BaseNode):
         results = {}
         total = reg_end - reg_start + 1
         for idx, reg in enumerate(range(reg_start, reg_end + 1)):
-            if context.should_stop:
-                break
+            context.check_stop()
             try:
                 val = _call_with_stop_check(i2c.read, dev, reg, width, context=context)
-                if val is None and context.should_stop:
-                    break
-                results[reg] = val
-                context.set_variable(iter_var, reg, export=False)
-                context.set_variable(f"{iter_var}_hex", f"0x{reg:X}", export=False)
-                context.set_variable(val_var, val, export=False)
-                context.set_variable(f"{val_var}_hex", f"0x{val:X}", export=False)
-                context.set_variable(f"{iter_var}_index", idx, export=False)
-                context.set_variable(f"{iter_var}_total", total, export=False)
-                if auto_record:
-                    context.record_data({
-                        "device_addr": f"0x{dev:02X}",
-                        "reg_addr": f"0x{reg:X}",
-                        "value_hex": f"0x{val:X}",
-                        "value_dec": val,
-                    })
-                if self.children:
-                    context.execute_children(self.children)
-            except BreakLoop:
-                logger.info("I2C Traverse: break at reg=0x%X", reg)
-                break
             except Exception as e:
+                context.check_stop()
                 logger.warning("I2C Traverse: dev=0x%02X reg=0x%X => %s", dev, reg, e)
                 results[reg] = None
+                continue
+
+            if val is None:
+                context.check_stop()
+                logger.warning("I2C Traverse: dev=0x%02X reg=0x%X => no data", dev, reg)
+                results[reg] = None
+                continue
+
+            results[reg] = val
+            context.set_variable(iter_var, reg, export=False)
+            context.set_variable(f"{iter_var}_hex", f"0x{reg:X}", export=False)
+            context.set_variable(val_var, val, export=False)
+            context.set_variable(f"{val_var}_hex", f"0x{val:X}", export=False)
+            context.set_variable(f"{iter_var}_index", idx, export=False)
+            context.set_variable(f"{iter_var}_total", total, export=False)
+            if auto_record:
+                context.record_data({
+                    "device_addr": f"0x{dev:02X}",
+                    "reg_addr": f"0x{reg:X}",
+                    "value_hex": f"0x{val:X}",
+                    "value_dec": val,
+                })
+            if self.children:
+                try:
+                    context.execute_children(self.children)
+                except BreakLoop:
+                    logger.info("I2C Traverse: break at reg=0x%X", reg)
+                    break
+            context.check_stop()
         logger.info("I2C Traverse: dev=0x%02X reg=0x%X..0x%X => %d regs", dev, reg_start, reg_end, len(results))
         context.set_variable(result_var, results)
 

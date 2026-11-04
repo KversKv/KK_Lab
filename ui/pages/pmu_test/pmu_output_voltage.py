@@ -69,6 +69,17 @@ _VALID_STEP_CONSEC = 2
 
 _CC_LOAD_CURRENT_A = 0.001
 
+
+def _validate_code_range(msb, lsb, min_code, max_code):
+    if lsb < 0 or msb < lsb:
+        raise ValueError("Invalid bit range: require 0 <= LSB <= MSB.")
+    mask = (1 << (msb - lsb + 1)) - 1
+    if min_code < 0 or max_code < min_code or max_code > mask:
+        raise ValueError(
+            f"Invalid code range: require 0 <= Min Code <= Max Code <= 0x{mask:X}."
+        )
+
+
 try:
     from PySide6.QtCharts import (
         QChart, QChartView, QLineSeries, QValueAxis
@@ -84,7 +95,7 @@ class OutputVoltageTestThread(QThread):
     chart_point = Signal(float, float)
     chart_clear = Signal()
     result_update = Signal(dict)
-    test_finished = Signal()
+    test_finished = Signal(bool, str)
     # 前置校验失败 / 尾部饱和 → 请求 UI 弹窗让用户决定是否继续
     # （部分场景前几 bit 固有异常 / 需要完整曲线确认全程平坦）
     confirm_request = Signal(str, str)
@@ -225,6 +236,8 @@ class OutputVoltageTestThread(QThread):
     def run(self):
         restore_ctx = None  # (i2c, device_addr, reg_addr, default_reg, width_flag)
         close_channel_ch = None
+        success = False
+        finish_reason = "测试未完成"
         try:
             device_addr = int(self._cfg["device_addr"], 16)
             reg_addr = int(self._cfg["reg_addr"], 16)
@@ -235,6 +248,7 @@ class OutputVoltageTestThread(QThread):
             max_code = int(self._cfg["max_code"], 16)
             vmeter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
             vmeter_mode = self._cfg.get("vmeter_mode", "VMETer")
+            _validate_code_range(msb, lsb, min_code, max_code)
             if self._cfg.get("close_channel_after", False):
                 close_channel_ch = vmeter_ch
 
@@ -266,7 +280,8 @@ class OutputVoltageTestThread(QThread):
 
             total_points = max_code - min_code + 1
             if total_points <= 0:
-                self.log_message.emit("[ERROR] Invalid code range (min >= max).")
+                self.log_message.emit("[ERROR] Invalid code range (min > max).")
+                finish_reason = "无效的代码范围"
                 return
 
             # 前置校验点数：DEBUG_MOCK 电压为常数+噪声、单点无法判断变化，均跳过
@@ -307,6 +322,7 @@ class OutputVoltageTestThread(QThread):
             while True:
                 if self._stop_flag:
                     self.log_message.emit("[TEST] Stopped by user during stabilization.")
+                    finish_reason = "测试被中止"
                     return
                 v = self._n6705c.measure_voltage(vmeter_ch)
                 recent_voltages.append(v)
@@ -468,7 +484,9 @@ class OutputVoltageTestThread(QThread):
                 )
                 code += 1
 
-            if len(voltages) >= 2 and not self._stop_flag and not precheck_failed:
+            scan_completed = code > max_code
+            if (len(voltages) >= 2 and scan_completed
+                    and not self._stop_flag and not precheck_failed):
                 low_valid, high_valid = self._compute_valid_range(voltages)
 
                 if high_valid > low_valid:
@@ -503,14 +521,26 @@ class OutputVoltageTestThread(QThread):
                         f"{len(valid_voltages)} points)"
                     )
 
+            if self._stop_flag or not scan_completed or precheck_failed:
+                finish_reason = "测试被中止"
+            elif not voltages:
+                finish_reason = "未采集到测量数据"
+            else:
+                success = True
+                finish_reason = "测试完成"
+
         except Exception as e:
+            finish_reason = f"测试失败：{e}"
             self.log_message.emit(f"[ERROR] Test failed: {e}")
+            _logger.error("Output voltage test failed", exc_info=True)
         finally:
             if close_channel_ch is not None:
                 try:
                     self._n6705c.channel_off(close_channel_ch)
                     self.log_message.emit(f"[TEST] CH{close_channel_ch} turned off after test.")
                 except Exception as e:
+                    success = False
+                    finish_reason = f"测试失败：关闭通道失败（{e}）"
                     self.log_message.emit(f"[ERROR] Failed to turn off channel: {e}")
                     _logger.error("Failed to turn off channel", exc_info=True)
             # 兜底恢复寄存器默认值：覆盖正常完成 / 用户停止 / 异常全部路径
@@ -520,9 +550,11 @@ class OutputVoltageTestThread(QThread):
                     i2c.write(dev, reg, reg_default, wflag)
                     self.log_message.emit("[TEST] Register restored to default value.")
                 except Exception as e:
+                    success = False
+                    finish_reason = f"测试失败：恢复寄存器失败（{e}）"
                     self.log_message.emit(f"[ERROR] Failed to restore register default value: {e}")
                     _logger.error("Failed to restore register default value", exc_info=True)
-            self.test_finished.emit()
+            self.test_finished.emit(success, finish_reason)
 
 
 class CardFrame(QFrame):
@@ -1371,10 +1403,6 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         if self.is_test_running:
             return
 
-        self.clear_results()
-        self._test_stop_requested = False
-        self.set_test_running(True)
-
         config = {
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
             "vmeter_mode": self.vmeter_mode_toggle.value(),
@@ -1387,7 +1415,18 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
             "min_code": self.min_code_edit.text().strip(),
             "max_code": self.max_code_edit.text().strip(),
         }
+        try:
+            _validate_code_range(
+                config["msb"], config["lsb"],
+                int(config["min_code"], 16), int(config["max_code"], 16),
+            )
+        except ValueError as e:
+            self.append_log(f"[ERROR] {e}")
+            return
 
+        self.clear_results()
+        self._test_stop_requested = False
+        self.set_test_running(True)
         self.test_thread = OutputVoltageTestThread(self.n6705c, config, DEBUG_MOCK)
         self.test_thread.log_message.connect(self.append_log)
         self.test_thread.chart_point.connect(self._update_chart_point)
@@ -1420,12 +1459,13 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         if self.test_thread is not None:
             self.test_thread.respond_confirm(box.clickedButton() is continue_btn)
 
-    def _on_test_finished(self):
+    def _on_test_finished(self, success, reason):
         self.set_test_running(False)
         # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
-        stopped = bool(getattr(self, "_test_stop_requested", False))
-        summary = "测试被中止" if stopped else "测试完成"
-        self.sequence_execution_finished.emit(not stopped, summary)
+        stopped = (bool(getattr(self, "_test_stop_requested", False))
+                   or reason == "测试被中止")
+        summary = "测试完成" if success else ("测试被中止" if stopped else reason)
+        self.sequence_execution_finished.emit(bool(success), summary)
 
     def _on_chart_clear(self):
         if HAS_QTCHARTS and hasattr(self, 'series'):
