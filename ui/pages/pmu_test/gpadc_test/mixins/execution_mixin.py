@@ -29,8 +29,32 @@ class _ExecutionMixin:
         else:
             self._start_test()
 
+    def _validate_test_ranges(self, test_item):
+        if (test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_TEMP_CONSISTENCY,
+                          self.TEST_FT_CALIB_CHECK)
+                and self.voltage_min.value() > self.voltage_max.value()):
+            return "电压扫描范围无效：Start <= End 必须成立"
+        if (test_item in (self.TEST_HIGH_LOW_TEMP, self.TEST_TEMP_CONSISTENCY,
+                          self.TEST_MULTI_CH_TEMP)
+                and self.temp_min.value() > self.temp_max.value()):
+            return "温度扫描范围无效：Start <= End 必须成立"
+        if test_item == self.TEST_MULTI_CH_TEMP:
+            for channel in self.multi_ch_panel.get_channels():
+                if (channel.get('enabled', True) and channel.get('sweep_enabled')
+                        and channel.get('v_min', 0.0) > channel.get('v_max', 0.0)):
+                    name = channel.get('name') or "未命名通道"
+                    return f"通道 {name} 电压扫描范围无效：Start <= End 必须成立"
+        return None
+
     def _start_test(self):
         if self.is_test_running:
+            return
+
+        test_item = self.current_test_item
+        range_error = self._validate_test_ranges(test_item)
+        if range_error is not None:
+            self._append_log(f"[ERROR] {range_error}")
+            self.set_system_status(f"错误: {range_error}", is_error=True)
             return
 
         self._acq_mode_snapshot = 'UART' if self.uart_radio.isChecked() else 'IIC'
@@ -76,7 +100,6 @@ class _ExecutionMixin:
         self.set_progress(0)
         self._append_log(f"[INFO] Starting GPADC test... mode={self.current_test_item}")
 
-        test_item = self.current_test_item
         iic_device_addr = int(self.iic_device_address.text(), 16)
         iic_reg_addr = int(self.iic_data_address.text(), 16)
         iic_width = self.iic_width_combo.currentData()
@@ -483,10 +506,39 @@ class _ExecutionMixin:
             return None
         return ('ft_calib_check', result)
 
+    @staticmethod
+    def _result_has_samples(kind, result):
+        if kind in ('force_voltage', 'high_low_temp'):
+            return bool(result.get('voltage')) and bool(result.get('mean'))
+        if kind == 'temp_consistency':
+            return bool(result.get('temp')) and any(result.get('mean') or [])
+        if kind == 'multi_ch_temp':
+            if not result.get('temp'):
+                return False
+            for channel in result.get('channels') or []:
+                rows = channel.get('mean') or []
+                if (any(rows) if channel.get('sweep') else bool(rows)):
+                    return True
+            return False
+        return True
+
     def _on_test_done(self, payload):
         if payload is None:
             return
         kind, result = payload
+
+        empty_result_labels = {
+            'force_voltage': "GPADC电压扫描",
+            'high_low_temp': "GPADC高低温测试",
+            'temp_consistency': "GPADC温度一致性测试",
+            'multi_ch_temp': "GPADC多通道温度测试",
+        }
+        if (result is not None and kind in empty_result_labels
+                and not self._result_has_samples(kind, result)):
+            label = empty_result_labels[kind]
+            self._append_log(f"[WARN] {label}未采集到有效数据，跳过标定、绘图与记录")
+            self.set_system_status(f"{label}未采集到有效数据", is_error=True)
+            return
 
         if kind == '1000cnt':
             self.update_test_result(result)

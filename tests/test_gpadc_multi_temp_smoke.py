@@ -6,6 +6,7 @@
 - 温度循环 × 通道分发（定点通道 + 扫压通道，consumption 风格切换命令文本）；
 - 结果结构（temp / channels / 矩阵对齐）；
 - 中途停止返回部分数据；
+- 温度与通道电压 Start <= End 范围校验；
 - parse_iic_command_text 命令解析（WRITE/WRITE_BITS/READ/前缀/注释）。
 """
 
@@ -131,6 +132,31 @@ def test_stop_midway():
     print("test_stop_midway PASS")
 
 
+def test_invalid_ranges():
+    logs = []
+    i2c, chamber, vol, write_fn, read_reg_fn, sample_fn, writes = _make_fakes(logs)
+    channels = [{"enabled": True, "name": "Vbat", "sweep_enabled": True,
+                 "switch_writes_text": "", "v_min": 3.0, "v_max": 3.2, "v_step": 0.1}]
+
+    result = run_multi_ch_temp_test(
+        chamber=chamber, vol_source=vol,
+        write_fn=write_fn, read_reg_fn=read_reg_fn, sample_fn=sample_fn,
+        channels=channels, temp_min=45.0, temp_max=25.0, temp_step=10.0,
+        soak_time=0, sample_cnt=100, mock_mode=True, log_fn=logs.append,
+    )
+    assert result is None and any("Start <= End" in line for line in logs)
+
+    logs.clear()
+    channels[0]["v_min"], channels[0]["v_max"] = 3.2, 3.0
+    result = run_multi_ch_temp_test(
+        chamber=chamber, vol_source=vol,
+        write_fn=write_fn, read_reg_fn=read_reg_fn, sample_fn=sample_fn,
+        channels=channels, temp_min=25.0, temp_max=45.0, temp_step=10.0,
+        soak_time=0, sample_cnt=100, mock_mode=True, log_fn=logs.append,
+    )
+    assert result is None and any("Start <= End" in line for line in logs)
+
+
 def test_parse_hw_int():
     assert parse_hw_int("0x1F") == 31
     assert parse_hw_int("1F") == 31
@@ -194,4 +220,5 @@ if __name__ == "__main__":
     test_parse_iic_command_text()
     test_full_flow()
     test_stop_midway()
+    test_invalid_ranges()
     print("ALL PASS")

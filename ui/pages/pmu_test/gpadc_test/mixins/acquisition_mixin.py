@@ -215,6 +215,8 @@ class _AcquisitionMixin:
             if progress_callback:
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
+        if not raw_data:
+            raise RuntimeError("未从 IIC 读取到任何 GPADC 样本，采样可能已停止")
         raw_data = self._apply_outlier_filter(raw_data)
         raw_data = self._apply_algo_tracked(raw_data)
         return compute_reg_stats(raw_data, return_raw=return_raw)
@@ -448,10 +450,16 @@ class _AcquisitionMixin:
             mean_cali_rows, min_cali_rows, max_cali_rows = [], [], []
             k = b = 0.0
             for i in range(len(mean_rows)):
+                n = min(len(vpts), len(mean_rows[i]))
+                if n == 0:
+                    mean_cali_rows.append([])
+                    min_cali_rows.append([])
+                    max_cali_rows.append([])
+                    continue
                 k, b, mean_cali, min_cali, max_cali, *_ = compute_calibration(
-                    vpts, mean_rows[i],
-                    min_rows[i] if i < len(min_rows) else [],
-                    max_rows[i] if i < len(max_rows) else [],
+                    vpts[:n], mean_rows[i][:n],
+                    (min_rows[i] if i < len(min_rows) else [])[:n],
+                    (max_rows[i] if i < len(max_rows) else [])[:n],
                     calib_points=self._calib_points_snapshot,
                 )
                 mean_cali_rows.append(mean_cali)

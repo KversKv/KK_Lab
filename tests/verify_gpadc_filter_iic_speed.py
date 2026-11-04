@@ -7,6 +7,8 @@ GPADC 页新增功能冒烟验证（offscreen + DEBUG_MOCK，无需仪器）：
     2. Outlier Filter：开关联动 spin 可用性、core filter_mean_deviation 语义、
        _apply_outlier_filter 剔除/全剔除回退、配置导出/回填
     3. FT Calibration Check 切换时 Algorithm/Outlier Filter 区隐藏
+    4. Start <= End 启动校验、IIC 空采样保护
+    5. 曲线类测试空结果完成保护、多通道空行/部分行标定
 
 用法:
     python tests/verify_gpadc_filter_iic_speed.py
@@ -157,6 +159,75 @@ def main() -> int:
     page.test_item_combo.setCurrentIndex(0)
     _check("切回 1000CNT: Outlier Filter 区恢复可见",
            not page.outlier_filter_frame.isHidden())
+
+    # ---- Start <= End：启动前拦截所有电压/温度扫描入口 ----
+    page.voltage_min.setValue(4.2)
+    page.voltage_max.setValue(4.0)
+    force_idx = page.test_item_combo.findData(page.TEST_FORCE_VOLTAGE)
+    page.test_item_combo.setCurrentIndex(force_idx)
+    page._start_test()
+    _check("非法电压范围: 不启动测试", not page.is_test_running)
+    for item in (page.TEST_TEMP_CONSISTENCY, page.TEST_FT_CALIB_CHECK):
+        _check(f"{item}: 电压 Start > End 被拒绝", page._validate_test_ranges(item) is not None)
+    page.voltage_min.setValue(4.0)
+    page.voltage_max.setValue(4.2)
+
+    page.temp_min.setValue(50.0)
+    page.temp_max.setValue(40.0)
+    for item in (page.TEST_HIGH_LOW_TEMP, page.TEST_TEMP_CONSISTENCY, page.TEST_MULTI_CH_TEMP):
+        _check(f"{item}: 温度 Start > End 被拒绝", page._validate_test_ranges(item) is not None)
+    page.temp_min.setValue(-40.0)
+    page.temp_max.setValue(125.0)
+
+    original_channels = page.multi_ch_panel.get_channels()
+    page.multi_ch_panel.set_channels([{
+        'enabled': True, 'name': 'CH1', 'sweep_enabled': True,
+        'v_min': 2.0, 'v_max': 1.0, 'v_step': 0.1,
+    }])
+    _check("多通道: 单通道电压 Start > End 被拒绝",
+           page._validate_test_ranges(page.TEST_MULTI_CH_TEMP) is not None)
+    page.multi_ch_panel.set_channels(original_channels)
+    page.test_item_combo.setCurrentIndex(0)
+
+    # ---- IIC 首点前停止：明确报错，不进入空列表统计 ----
+    try:
+        page.gpadc_reg_read_by_cnts(get_reg_cnt=1, stop_check=lambda: True)
+    except RuntimeError as exc:
+        _check("IIC 空采样: 返回明确错误", "未从 IIC 读取到任何 GPADC 样本" in str(exc))
+    else:
+        raise AssertionError("IIC 空采样应抛出 RuntimeError")
+
+    # ---- 空结果及只有空行的结果：统一跳过完成处理和空历史记录 ----
+    empty_payloads = [
+        ('force_voltage', {'voltage': [], 'mean': [], 'min': [], 'max': []}),
+        ('high_low_temp', {'voltage': [], 'mean': [], 'min': [], 'max': []}),
+        ('temp_consistency', {'temp': [], 'voltage': [], 'mean': [], 'min': [], 'max': []}),
+        ('temp_consistency', {'temp': [25.0], 'voltage': [], 'mean': [[]], 'min': [[]], 'max': [[]]}),
+        ('multi_ch_temp', {'temp': [], 'channels': []}),
+        ('multi_ch_temp', {'temp': [25.0], 'channels': [{
+            'sweep': True, 'voltage': [], 'mean': [[]], 'min': [[]], 'max': [[]],
+        }]}),
+    ]
+    for kind, result in empty_payloads:
+        page._recent_test_records.clear()
+        page._on_test_done((kind, result))
+        _check(f"{kind} 空结果: 跳过完成处理", not page._recent_test_records)
+
+    # ---- 多通道停止产生的空行/部分行：按实际采样点数标定 ----
+    partial_result = {
+        'temp': [25.0, 35.0],
+        'channels': [{
+            'name': 'CH1', 'sweep': True, 'voltage': [0.1, 0.2, 0.3],
+            'mean': [[], [100.0]], 'min': [[], [90.0]], 'max': [[], [110.0]],
+        }],
+    }
+    page._calib_points_snapshot = None
+    page._compute_multi_ch_calibration(partial_result)
+    calibrated = partial_result['channels'][0]
+    _check("多通道空行/部分行: 标定不越界且保持行对齐",
+           [len(row) for row in calibrated['mean_cali']] == [0, 1]
+           and [len(row) for row in calibrated['min_cali']] == [0, 1]
+           and [len(row) for row in calibrated['max_cali']] == [0, 1])
 
     logger.info("全部冒烟检查通过")
     _clear_config_memory()

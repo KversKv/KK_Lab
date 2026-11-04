@@ -249,6 +249,16 @@ def run_multi_ch_temp_test(
         _log("[ERROR] 无已启用的通道，测试中止")
         _status("错误: 无已启用通道", True)
         return None
+    if temp_min > temp_max:
+        _log("[ERROR] 温度扫描范围无效：Start <= End 必须成立")
+        _status("错误: 温度扫描范围无效", True)
+        return None
+    for channel in enabled:
+        if (channel.get("sweep_enabled")
+                and channel.get("v_min", 0.0) > channel.get("v_max", 0.0)):
+            _log(f"[ERROR] 通道 {channel.get('name') or '未命名通道'} 电压扫描范围无效：Start <= End 必须成立")
+            _status("错误: 通道电压扫描范围无效", True)
+            return None
     if chamber is None:
         _log("[ERROR] Chamber not connected")
         _status("错误: 温箱未连接", True)
