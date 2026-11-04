@@ -113,6 +113,29 @@ def test_ldo_shared_vin_and_legacy_override_cleanup():
     assert cfg["item_overrides"]["ldo_vout_scan"] == {"vin_v": 4.8}
 
 
+def test_loading_config_hides_prompt_banner():
+    sub = _make().ldo_test_ui
+    with tempfile.TemporaryDirectory() as root:
+        path = os.path.join(root, "LDO_01.json")
+        payload = {"schema_version": 1, "module_type": "ldo",
+                   "config": {"chip_name": "BES1307", "module_name": "LDO_01"}}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+
+        class FakeDialog:
+            def selected_path(self):
+                return path
+
+            def selected_identity(self):
+                return None
+
+        sub._config_banner.show()
+        assert not sub._config_banner.isHidden()
+        sub._apply_selected_config(FakeDialog())
+        assert sub._config_banner.isHidden()
+        assert sub.config_display_name() == "LDO_01.json"
+
+
 def test_legacy_1860_chip_version_restore():
     sub = _make().ldo_test_ui
     dut = sub.left_rail.dut_panel

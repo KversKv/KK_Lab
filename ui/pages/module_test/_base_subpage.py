@@ -611,6 +611,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             cfg["chip_name"], cfg["chip_version"] = identity
         self._store.restore(cfg)
         self._current_config_path = path
+        self._config_banner.hide()
         self.detail_dock.log_panel.append_log(
             f"[INFO] 已加载配置：{os.path.basename(path)}")
         Toast.popup(self, f"已加载配置：{os.path.basename(path)}", severity="success")
