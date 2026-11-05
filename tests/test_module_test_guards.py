@@ -379,3 +379,170 @@ def test_ui_invalid_override_blocks_module_config_and_runner():
     assert "ldo_ripple" in alerts[0][0]
     assert modcfg_calls == []
     assert runner_calls == []
+
+
+@pytest.mark.parametrize("module_name,item_name", [
+    ("dcdc", "psrr"),
+    ("dcdc", "inductor_current"),
+    ("dcdc", "startup"),
+    ("dcdc", "protection"),
+    ("ldo", "psrr"),
+    ("ldo", "protection"),
+])
+def test_unimplemented_real_measurements_are_skipped_without_csv(
+        tmp_path, module_name, item_name):
+    from importlib import import_module
+
+    items = import_module(f"core.module_test.{module_name}.items")
+    ctx = _ctx(tmp_path, n6705c=object(), scope=object(), is_mock=False)
+
+    result = getattr(items, item_name)(ctx)
+
+    assert result.passed is None
+    assert result.measured is None
+    assert result.raw_csv_path is None
+    assert "未实现" in result.notes
+    assert list(tmp_path.glob("*.csv")) == []
+    report = build_report_data(ModuleTestResult(module_type=module_name, items=[result]))
+    assert report["items"][0]["verdict"] == "N/A"
+    assert report["items"][0]["note"] == result.notes
+    assert report["summary"]["na"] == 1
+
+
+@pytest.mark.parametrize("module_name,item_name", [
+    ("dcdc", "psrr"),
+    ("dcdc", "inductor_current"),
+    ("dcdc", "startup"),
+    ("dcdc", "protection"),
+    ("ldo", "psrr"),
+    ("ldo", "protection"),
+])
+def test_unimplemented_items_keep_mock_measurements(tmp_path, module_name, item_name):
+    from importlib import import_module
+
+    items = import_module(f"core.module_test.{module_name}.items")
+    ctx = _ctx(tmp_path, n6705c=object(), scope=object(), is_mock=True)
+
+    result = getattr(items, item_name)(ctx)
+
+    assert result.measured is not None
+    assert result.raw_csv_path is not None
+    assert (tmp_path / f"{result.item_key}.csv").is_file()
+
+
+def test_dcdc_topology_invalid_measurement_uses_empty_value(tmp_path):
+    from core.module_test.dcdc.items import topology
+
+    inst = _FailOnInstrument("measure_voltage")
+    ctx = _ctx(tmp_path, n6705c=inst, scope=None, is_mock=False)
+
+    result = topology(ctx)
+
+    assert result.measured["vout_vin_ratio"] == ""
+    assert result.measured["detected"] == "N/A"
+    assert "无法判定拓扑" in result.notes
+    assert ctx.measurement_failed is True
+    csv_lines = (tmp_path / "dcdc_topology.csv").read_text(encoding="utf-8-sig").splitlines()
+    assert csv_lines[1].endswith(",")
+
+
+@pytest.mark.parametrize("function_name,args,fail_method", [
+    ("setup_source_channel", (1, 3.8), "set_voltage"),
+    ("setup_meter_channel", (1,), "set_mode"),
+    ("setup_load_channel", (3, 0.001), "channel_on"),
+    ("set_load_current", (3, 0.1), "set_current"),
+    ("apply_load_current", (3, 0.1, {"on": True}), "set_current"),
+])
+def test_common_instrument_failures_mark_measurement_invalid(
+        tmp_path, function_name, args, fail_method):
+    ctx = _ctx(tmp_path, n6705c=_FailOnInstrument(fail_method), is_mock=False)
+
+    getattr(_common, function_name)(ctx, *args)
+
+    assert ctx.measurement_failed is True
+
+
+def test_scope_timebase_failure_marks_measurement_invalid(tmp_path):
+    ctx = _ctx(tmp_path, scope=_FailOnInstrument("set_timebase_scale"), is_mock=False)
+
+    _common.setup_scope_timebase(ctx)
+
+    assert ctx.measurement_failed is True
+
+
+def test_ripple_unexpected_error_cleans_up_without_masking(tmp_path):
+    class _CleanupFailInstrument:
+        def __init__(self):
+            self.off_calls = []
+
+        def channel_off(self, channel):
+            self.off_calls.append(channel)
+            raise RuntimeError("channel_off failed")
+
+        def __getattr__(self, name):
+            if name == "instr":
+                return None
+            return lambda *_args, **_kwargs: None
+
+    inst = _CleanupFailInstrument()
+    ctx = _ctx(
+        tmp_path, n6705c=inst,
+        scope=_FailOnInstrument("set_channel_display"), is_mock=False,
+        config={"iload_channel": 3, "iload_start_ma": 0,
+                "iload_end_ma": 0, "iload_step_ma": 20},
+    )
+
+    with pytest.raises(RuntimeError, match="set_channel_display failed"):
+        run_load_capability_ripple(ctx, "ldo_ripple", "Ripple", 10.0, 2.0)
+
+    assert inst.off_calls == [3]
+    assert ctx.measurement_failed is True
+
+
+def test_runner_main_report_failure_emits_failed_not_finished(tmp_path, monkeypatch):
+    key = "ldo_line_reg"
+
+    def _run(_ctx):
+        return ItemResult(item_key=key, name="Line Regulation", passed=True)
+
+    def _fail_report(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    runner = ModuleTestRunner(
+        module_type="ldo",
+        items_registry={key: ("Line Regulation", _run, False, True, ())},
+        config={"selected_items": [key]},
+        n6705c=None, out_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(runner, "_setup_vin_current_limit", lambda: None)
+    monkeypatch.setattr(runner, "_preload_iload", lambda: None)
+    monkeypatch.setattr(runner, "_record_vout_baseline", lambda: None)
+    monkeypatch.setattr(runner, "_check_vout_deviation", lambda *_args: True)
+    monkeypatch.setattr("core.module_test._runner_base.save_html_report", _fail_report)
+    failed = []
+    finished = []
+    runner.failed.connect(failed.append)
+    runner.finished_result.connect(finished.append)
+
+    runner._run_impl()
+
+    assert len(failed) == 1
+    assert "生成报告失败" in failed[0]
+    assert "disk full" in failed[0]
+    assert finished == []
+
+
+def test_report_existing_csv_read_error_does_not_drop_points(tmp_path, monkeypatch):
+    csv_path = tmp_path / "line_reg.csv"
+    csv_path.write_text("Iload (mA),Vout (mV)\n100,1800\n", encoding="utf-8")
+    result = ModuleTestResult(module_type="ldo", items=[
+        ItemResult(item_key="ldo_line_reg", name="Line Regulation",
+                   raw_csv_path=str(csv_path)),
+    ])
+
+    def _fail_open(*_args, **_kwargs):
+        raise OSError("read denied")
+
+    monkeypatch.setattr("builtins.open", _fail_open)
+    with pytest.raises(OSError, match="read denied"):
+        build_report_data(result)

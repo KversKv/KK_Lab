@@ -42,7 +42,7 @@ class ItemContext:
     # runner 首项前实测的 Vout 基准 V0（单位 V，_record_vout_baseline 注入；
     # None = 读取失败或未记录，使用方须自行回落标称值）
     vout_baseline_v: float | None = None
-    # 任一实际采样失败即置位，runner 禁止该项被判定为 PASS
+    # 任一测量、仪器配置或清理失败即置位，runner 禁止该项被判定为 PASS
     measurement_failed: bool = False
 
 
@@ -191,8 +191,9 @@ def setup_scope_timebase(ctx: "ItemContext") -> None:
         return
     try:
         ctx.scope.set_timebase_scale(SCOPE_ITEM_TIMEBASE_S)
-    except Exception:  # noqa: BLE001
-        logger.error("set scope timebase %.3g s/div failed",
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test oscilloscope set timebase %.3g s/div failed",
                      SCOPE_ITEM_TIMEBASE_S, exc_info=True)
 
 
@@ -480,8 +481,10 @@ def setup_source_channel(ctx: "ItemContext", channel: int, voltage: float, *,
             ctx.n6705c.set_current_limit(channel, current_limit)
         ctx.n6705c.set_voltage(channel, voltage)
         ctx.n6705c.channel_on(channel)
-    except Exception:  # noqa: BLE001 - 配置失败降级记录，保证流程不中断
-        logger.error("setup source ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C setup PS2Q source ch%d to %.6g V failed",
+                     channel, voltage, exc_info=True)
 
 
 def setup_meter_channel(ctx: "ItemContext", channel: int) -> None:
@@ -494,8 +497,10 @@ def setup_meter_channel(ctx: "ItemContext", channel: int) -> None:
         ctx.n6705c.set_mode(channel, "VMETer")
         ctx.n6705c.set_channel_range(channel)
         ctx.n6705c.channel_on(channel)
-    except Exception:  # noqa: BLE001
-        logger.error("setup meter ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C setup VMETer ch%d failed",
+                     channel, exc_info=True)
 
 
 def setup_load_channel(ctx: "ItemContext", channel: int,
@@ -512,16 +517,20 @@ def setup_load_channel(ctx: "ItemContext", channel: int,
         if initial_current_a is not None and initial_current_a > 0:
             set_load_current(ctx, channel, initial_current_a)
         ctx.n6705c.channel_on(channel)
-    except Exception:  # noqa: BLE001
-        logger.error("setup load ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C setup CCLoad ch%d failed",
+                     channel, exc_info=True)
 
 
 def set_load_current(ctx: "ItemContext", channel: int, current_a: float) -> None:
     """设置电子负载电流（CCLoad 用负电流拉载，参考 PMU DCDC worker）。"""
     try:
         ctx.n6705c.set_current(channel, -abs(current_a))
-    except Exception:  # noqa: BLE001
-        logger.error("set load current ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C set CCLoad ch%d to %.6g A failed",
+                     channel, current_a, exc_info=True)
 
 
 def apply_load_current(ctx: "ItemContext", channel: int, current_a: float,
@@ -543,8 +552,10 @@ def apply_load_current(ctx: "ItemContext", channel: int, current_a: float,
         if not state.get("on"):
             ctx.n6705c.channel_on(channel)
             state["on"] = True
-    except Exception:  # noqa: BLE001
-        logger.error("apply load current ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C apply CCLoad ch%d to %.6g A failed",
+                     channel, current_a, exc_info=True)
 
 
 def teardown_load(ctx: "ItemContext", channel: int) -> None:
@@ -554,8 +565,10 @@ def teardown_load(ctx: "ItemContext", channel: int) -> None:
     """
     try:
         ctx.n6705c.channel_off(channel)
-    except Exception:  # noqa: BLE001
-        logger.error("teardown load ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 清理失败不掩盖原异常，但禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C teardown CCLoad ch%d failed",
+                     channel, exc_info=True)
 
 
 def restore_vin(ctx: "ItemContext", channel: int, voltage: float) -> None:
@@ -567,8 +580,10 @@ def restore_vin(ctx: "ItemContext", channel: int, voltage: float) -> None:
     """
     try:
         ctx.n6705c.set_voltage(channel, voltage)
-    except Exception:  # noqa: BLE001
-        logger.error("restore vin ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 清理失败不掩盖原异常，但禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C restore Vin ch%d to %.6g V failed",
+                     channel, voltage, exc_info=True)
 
 
 def teardown_vin(ctx: "ItemContext", channel: int) -> None:
@@ -583,8 +598,10 @@ def teardown_vin(ctx: "ItemContext", channel: int) -> None:
         return
     try:
         ctx.n6705c.channel_off(channel)
-    except Exception:  # noqa: BLE001
-        logger.error("teardown vin ch%d failed", channel, exc_info=True)
+    except Exception:  # noqa: BLE001 - 清理失败不掩盖原异常，但禁止误判 PASS
+        ctx.measurement_failed = True
+        logger.error("module test N6705C teardown Vin ch%d failed",
+                     channel, exc_info=True)
 
 
 def create_i2c(ctx: "ItemContext"):
@@ -1463,88 +1480,91 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     if dbg:
         _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
-        setup_vout_meter(ctx)
-        setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
-        # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
-        ctx.scope.set_channel_display(scope_ch, True)
-        # 示波器项开局统一时基 5ms/div（2026-09 用户规则）
-        setup_scope_timebase(ctx)
-        if dbg:
-            _debug_scope_shot(ctx, dbg_dir, f"{item_key}_01_display_on")
     load_state = {"on": not ctx.is_mock}
-
-    for i, il in enumerate(points):
-        if ctx.stop_flag_fn():
-            break
-        if ctx.is_mock:
-            vout = mock_jitter(nominal_mv - il * 0.02, 0.002)
-            vpp = mock_jitter(mock_vpp_base + il * 0.005, 0.08)
-            rms = mock_jitter(mock_rms_base + il * 0.001, 0.08)
-            shot = None
-        else:
-            # 0mA 点关断负载通道（CCLoad 开启禁设 0mA / 0mA 禁开机，红线 12）
-            apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
-            settle(ctx, max(settle_s * 8, 0.4))
+    try:
+        if not ctx.is_mock:
+            setup_source_channel(ctx, vbat_ch, vin_v, current_limit=vin_current_limit_a(cfg))
+            setup_vout_meter(ctx)
+            setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
+            # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
+            ctx.scope.set_channel_display(scope_ch, True)
+            # 示波器项开局统一时基 5ms/div（2026-09 用户规则）
+            setup_scope_timebase(ctx)
             if dbg:
-                _debug_scope_shot(ctx, dbg_dir,
-                                  f"{item_key}_p{i:02d}_{il:g}mA_10_loaded")
+                _debug_scope_shot(ctx, dbg_dir, f"{item_key}_01_display_on")
 
-                def _auto_step_cb(tag: str, _p=f"p{i:02d}_{il:g}mA") -> None:
-                    # DSOX4034A set_AutoRipple_test 各内部步骤后回调截图
-                    _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_auto_{tag}")
-                ctx.scope.debug_shot_cb = _auto_step_cb
-            try:
-                ctx.scope.set_AutoRipple_test(scope_ch)
-                settle(ctx, 0.3)
-                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0  # V->mV
-                rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
-            except Exception:  # noqa: BLE001 - 单点读数失败降级，继续扫描
-                logger.error("scope ripple read failed @%gmA", il, exc_info=True)
-                ctx.measurement_failed = True
-                vpp = float("nan")
-                rms = float("nan")
-            finally:
+        for i, il in enumerate(points):
+            if ctx.stop_flag_fn():
+                break
+            if ctx.is_mock:
+                vout = mock_jitter(nominal_mv - il * 0.02, 0.002)
+                vpp = mock_jitter(mock_vpp_base + il * 0.005, 0.08)
+                rms = mock_jitter(mock_rms_base + il * 0.001, 0.08)
+                shot = None
+            else:
+                # 0mA 点关断负载通道（CCLoad 开启禁设 0mA / 0mA 禁开机，红线 12）
+                apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
+                settle(ctx, max(settle_s * 8, 0.4))
                 if dbg:
-                    ctx.scope.debug_shot_cb = None
                     _debug_scope_shot(ctx, dbg_dir,
-                                      f"{item_key}_p{i:02d}_{il:g}mA_20_measured")
-            if not math.isfinite(vpp) or not math.isfinite(rms):
-                ctx.measurement_failed = True
-            vout = measure_vout(ctx, count=1, settle_s=settle_s) * 1000.0
-            # Vpp/RMS 的 DISPlay 测量会触发示波器重新刷新，读数后波形需时间
-            # 恢复稳定，等待后再截图（否则定格在过渡帧，截图无波形）
-            settle(ctx, 1.0)
-            if dbg:
-                _debug_scope_shot(ctx, dbg_dir,
-                                  f"{item_key}_p{i:02d}_{il:g}mA_30_vout")
-            shot = _capture_scope_png(ctx, item_key, il, shot_dir)
-        if vout_start_mv is None and math.isfinite(vout):
-            vout_start_mv = vout
-        vout_drop_mv = (vout - vout_start_mv
-                        if math.isfinite(vout) and vout_start_mv is not None else None)
-        rows.append([il,
-                     round(vout, 4) if math.isfinite(vout) else "",
-                     round(vpp, 4) if math.isfinite(vpp) else "",
-                     round(rms, 4) if math.isfinite(rms) else "",
-                     round(vout_drop_mv, 4) if vout_drop_mv is not None else ""])
-        if shot:
-            screenshots.append({"Iload (mA)": il, "png": shot})
-        ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
-        drop_debug = f"{vout_drop_mv:.4f}" if vout_drop_mv is not None else "N/A"
-        drop_log = f"{vout_drop_mv:10.4f}" if vout_drop_mv is not None else "N/A"
-        _debug_event(ctx, dbg_dir,
-                     f"p{i:02d} {il:g}mA 测量: Vout={vout:.4f}mV "
-                     f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV "
-                     f"Vout Drop@{i_start:g}mA={drop_debug}mV"
-                     + (f" 截图={os.path.basename(shot)}" if shot else " 截图=失败/未生成"))
-        ctx.log_fn(f"[{item_key}] Iload={il:4g}mA -> Vout={vout:9.4f} mV, "
-                   f"Vpp={vpp:6.3f} mV, RMS={rms:6.3f} mV, "
-                   f"Vout Drop@{i_start:g}mA={drop_log} mV")
-    if not ctx.is_mock and load_state.get("on"):
-        # 仅在仍开启时关断（0mA 收尾点通道已被 apply_load_current 关掉）
-        teardown_load(ctx, iload_ch)
+                                      f"{item_key}_p{i:02d}_{il:g}mA_10_loaded")
+
+                    def _auto_step_cb(tag: str, _p=f"p{i:02d}_{il:g}mA") -> None:
+                        # DSOX4034A set_AutoRipple_test 各内部步骤后回调截图
+                        _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_auto_{tag}")
+                    ctx.scope.debug_shot_cb = _auto_step_cb
+                try:
+                    ctx.scope.set_AutoRipple_test(scope_ch)
+                    settle(ctx, 0.3)
+                    vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0  # V->mV
+                    rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
+                except Exception:  # noqa: BLE001 - 单点读数失败降级，继续扫描
+                    logger.error("module test oscilloscope ripple read failed @%gmA",
+                                 il, exc_info=True)
+                    ctx.measurement_failed = True
+                    vpp = float("nan")
+                    rms = float("nan")
+                finally:
+                    if dbg:
+                        ctx.scope.debug_shot_cb = None
+                        _debug_scope_shot(ctx, dbg_dir,
+                                          f"{item_key}_p{i:02d}_{il:g}mA_20_measured")
+                if not math.isfinite(vpp) or not math.isfinite(rms):
+                    ctx.measurement_failed = True
+                vout = measure_vout(ctx, count=1, settle_s=settle_s) * 1000.0
+                # Vpp/RMS 的 DISPlay 测量会触发示波器重新刷新，读数后波形需时间
+                # 恢复稳定，等待后再截图（否则定格在过渡帧，截图无波形）
+                settle(ctx, 1.0)
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_p{i:02d}_{il:g}mA_30_vout")
+                shot = _capture_scope_png(ctx, item_key, il, shot_dir)
+            if vout_start_mv is None and math.isfinite(vout):
+                vout_start_mv = vout
+            vout_drop_mv = (vout - vout_start_mv
+                            if math.isfinite(vout) and vout_start_mv is not None else None)
+            rows.append([il,
+                         round(vout, 4) if math.isfinite(vout) else "",
+                         round(vpp, 4) if math.isfinite(vpp) else "",
+                         round(rms, 4) if math.isfinite(rms) else "",
+                         round(vout_drop_mv, 4) if vout_drop_mv is not None else ""])
+            if shot:
+                screenshots.append({"Iload (mA)": il, "png": shot})
+            ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
+            drop_debug = f"{vout_drop_mv:.4f}" if vout_drop_mv is not None else "N/A"
+            drop_log = f"{vout_drop_mv:10.4f}" if vout_drop_mv is not None else "N/A"
+            _debug_event(ctx, dbg_dir,
+                         f"p{i:02d} {il:g}mA 测量: Vout={vout:.4f}mV "
+                         f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV "
+                         f"Vout Drop@{i_start:g}mA={drop_debug}mV"
+                         + (f" 截图={os.path.basename(shot)}" if shot else " 截图=失败/未生成"))
+            ctx.log_fn(f"[{item_key}] Iload={il:4g}mA -> Vout={vout:9.4f} mV, "
+                       f"Vpp={vpp:6.3f} mV, RMS={rms:6.3f} mV, "
+                       f"Vout Drop@{i_start:g}mA={drop_log} mV")
+    finally:
+        if not ctx.is_mock and load_state.get("on"):
+            # 仅在仍开启时关断（0mA 收尾点通道已被 apply_load_current 关掉）
+            teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)",

@@ -322,12 +322,14 @@ def psrr(ctx: ItemContext) -> ItemResult:
     item_key = "dcdc_psrr"
     if ctx.scope is None:
         return _skipped(item_key, "PSRR", "未连接示波器，跳过")
+    if not ctx.is_mock:
+        return _skipped(item_key, "PSRR", "真机 PSRR 测量未实现，跳过")
     freqs = ctx.config.get("psrr_freqs", ["1kHz", "10kHz", "100kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
         if ctx.stop_flag_fn():
             break
-        db = mock_jitter(45.0, 0.05) if ctx.is_mock else 0.0
+        db = mock_jitter(45.0, 0.05)
         rows.append([f, round(db, 3)])
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"PSRR {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
@@ -353,6 +355,8 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
     item_key = "dcdc_inductor_current"
     if ctx.scope is None:
         return _skipped(item_key, "Inductor Current", "未连接示波器，跳过")
+    if not ctx.is_mock:
+        return _skipped(item_key, "Inductor Current", "真机电感电流测量未实现，跳过")
     i_start = float(ctx.config.get("iload_start_ma", 10))
     i_end = float(ctx.config.get("iload_end_ma", 200))
     i_step = float(ctx.config.get("iload_step_ma", 50))
@@ -361,8 +365,8 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
             break
-        ipk = mock_jitter(il + 30, 0.05) if ctx.is_mock else 0.0
-        ivly = mock_jitter(max(il - 30, 0), 0.05) if ctx.is_mock else 0.0
+        ipk = mock_jitter(il + 30, 0.05)
+        ivly = mock_jitter(max(il - 30, 0), 0.05)
         rows.append([il, round(ipk, 3), round(ivly, 3)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"IL {il}mA")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
@@ -530,20 +534,16 @@ def current_limit(ctx: ItemContext) -> ItemResult:
 def startup(ctx: ItemContext) -> ItemResult:
     """启动特性（软启动 / 启动时间 / 浪涌电流，依赖示波器）。
 
-    大框架占位：Mock 生成合理数据；真机捕获上电到 Vout 稳定的时间与浪涌峰值。
-    触发与测量方法后续迭代。
+    Mock 生成合理数据；真机测量尚未实现，明确返回跳过，避免占位值冒充实测。
     """
     item_key = "dcdc_startup"
     if ctx.scope is None:
         return _skipped(item_key, "Startup Behavior", "未连接示波器，跳过")
-    if ctx.is_mock:
-        soft_start_ms = mock_jitter(1.5, 0.1)
-        rise_time_ms = mock_jitter(1.2, 0.1)
-        inrush_ma = mock_jitter(400.0, 0.1)
-    else:
-        soft_start_ms = 0.0  # TODO(迭代): 软启动斜坡时间
-        rise_time_ms = 0.0   # TODO(迭代): Vout 10%~90% 上升时间
-        inrush_ma = 0.0      # TODO(迭代): 上电浪涌电流峰值
+    if not ctx.is_mock:
+        return _skipped(item_key, "Startup Behavior", "真机启动特性测量未实现，跳过")
+    soft_start_ms = mock_jitter(1.5, 0.1)
+    rise_time_ms = mock_jitter(1.2, 0.1)
+    inrush_ma = mock_jitter(400.0, 0.1)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Soft start (ms)", "Rise time (ms)", "Inrush (mA)"],
               [[round(soft_start_ms, 4), round(rise_time_ms, 4), round(inrush_ma, 3)]])
@@ -559,17 +559,17 @@ def startup(ctx: ItemContext) -> ItemResult:
 def protection(ctx: ItemContext) -> ItemResult:
     """保护功能（过流 / 短路 / 过压 / 欠压 / 过温）。
 
-    大框架占位：Mock 生成合理数据；真机逐项触发保护并记录动作与恢复。
-    各保护触发条件与安全边界后续迭代。
+    Mock 生成合理数据；真机保护触发与安全边界尚未实现，明确返回跳过。
     """
     item_key = "dcdc_protection"
+    if not ctx.is_mock:
+        return _skipped(item_key, "Protection", "真机保护功能测试未实现，跳过")
     checks = ctx.config.get("protection_checks", ["OCP", "SCP", "OVP", "UVP", "OTP"])
     rows: list[list] = []
     for i, c in enumerate(checks):
         if ctx.stop_flag_fn():
             break
-        # TODO(迭代): 真机逐项触发对应保护，判定动作是否符合预期
-        triggered = "YES" if ctx.is_mock else "N/A"
+        triggered = "YES"
         rows.append([c, triggered])
         ctx.progress_fn(int((i + 1) / len(checks) * 100), f"Protection {c}")
         ctx.log_fn(f"[{item_key}] {c} -> {triggered}")
@@ -609,8 +609,11 @@ def topology(ctx: ItemContext) -> ItemResult:
     ratio = (vout_meas / vin_meas
              if math.isfinite(vout_meas) and math.isfinite(vin_meas) and vin_meas > 1e-6
              else float("nan"))
+    notes = ""
     if not math.isfinite(ratio):
         detected = "N/A"
+        notes = "输入/输出电压测量无效，无法判定拓扑"
+        ctx.measurement_failed = True
     elif ratio < 0.9:
         detected = "Buck"
     elif ratio > 1.1:
@@ -618,15 +621,16 @@ def topology(ctx: ItemContext) -> ItemResult:
     else:
         detected = "Buck-Boost"
 
+    measured_ratio = round(ratio, 4) if math.isfinite(ratio) else ""
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Topology(cfg)", "Isolated", "Detected", "Vout/Vin"],
-              [[topo, "YES" if isolated else "NO", detected, round(ratio, 4)]])
+              [[topo, "YES" if isolated else "NO", detected, measured_ratio]])
     ctx.log_fn(f"[{item_key}] cfg={topo} isolated={isolated} detected={detected} "
-               f"(Vout/Vin={ratio:.4f})")
+               f"(Vout/Vin={measured_ratio if measured_ratio != '' else 'N/A'})")
     return ItemResult(item_key=item_key, name="Topology", unit="",
                       passed=None, measured={"topology": topo, "isolated": isolated,
-                                             "detected": detected, "vout_vin_ratio": round(ratio, 4)},
-                      raw_csv_path=csv_path)
+                                             "detected": detected, "vout_vin_ratio": measured_ratio},
+                      raw_csv_path=csv_path, notes=notes)
 
 
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)

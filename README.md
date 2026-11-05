@@ -31,8 +31,8 @@
 
 ## 环境要求
 
-- Windows，Python ≥ 3.10（推荐 3.12）
-- 依赖见 [requirements.txt](./requirements.txt)：PySide6、pyqtgraph、pyvisa、pyserial、openpyxl、numpy、httpx 等
+- Windows，Python ≥ 3.12
+- 直接依赖唯一事实源为 [requirements.txt](./requirements.txt)，pyproject.toml 动态读取同一清单
 
 ## 快速开始
 

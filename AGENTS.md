@@ -91,6 +91,12 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 python main.py
 python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
 python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
+
+# 质量门禁（先安装 .[dev]；Qt 用例需 QT_QPA_PLATFORM=offscreen）
+python -m ruff check .
+python -m mypy
+python -m pytest -m "not qt"
+python -m pytest -m qt
 ```
 
 更多命令见 [docs/ai/02_COMMANDS.md](./docs/ai/02_COMMANDS.md)。
@@ -113,6 +119,7 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 | **版本号 / 发版 / 改版本**                   | [10_VERSIONING](./docs/ai/10_VERSIONING.md)                  | [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)                  |
 | **按 SOP 走 / 大任务开工**                   | [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)              | 上述所有          |
 | **纯文档 / 规则维护**                   | [08_CHECKLISTS §同步矩阵](./docs/ai/08_CHECKLISTS.md) · [.trae/rules/project-rules.md](./.trae/rules/project-rules.md)              | —                |
+| **工程审查 / 优化路线实施**             | [工程审查与优化落地计划](./docs/NewPlan/工程审查与优化落地计划.md)                                  | —                |
 
 ### 阅读规则
 
@@ -120,6 +127,7 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 2. 找不到匹配 → 默认 [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) + [03_GOTCHAS](./docs/ai/03_GOTCHAS.md)。
 3. 跨层改动（ui ↔ core ↔ instruments）必加读 [04_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md)。
 4. 改动完成前必须核对 [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) 的同步矩阵。
+5. 实施工程优化路线中的代码任务，收尾时按验收证据更新对应计划的进度表。
 
 ---
 

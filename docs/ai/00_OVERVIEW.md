@@ -18,10 +18,10 @@
 
 | 层 | 技术 |
 |---|---|
-| 语言 | Python ≥ 3.10 |
-| UI | PySide6 6.6.0（Fusion 风格 + 自定义 QSS + `HoverFixStyle` QProxyStyle） |
-| 绘图 | pyqtgraph 0.13.3 |
-| 仪器通讯 | pyvisa 1.13 + pyvisa-py 0.7，pyserial 3.5 |
+| 语言 | Python ≥ 3.12 |
+| UI | PySide6 ≥6.8,<6.10（Fusion 风格 + 自定义 QSS + `HoverFixStyle` QProxyStyle） |
+| 绘图 | pyqtgraph ≥0.13.7,<0.14 |
+| 仪器通讯 | pyvisa ≥1.14,<1.15 + pyvisa-py ≥0.7.2,<0.8，pyserial ≥3.5,<4 |
 | USB | pyusb + libusb-package |
 | 数据 | numpy, openpyxl |
 | 打包 | PyInstaller（`spec/` 目录下自定义 spec，`hooks/hook-pyqtgraph.py`） |

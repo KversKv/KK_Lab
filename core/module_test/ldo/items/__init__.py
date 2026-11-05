@@ -252,12 +252,14 @@ def psrr(ctx: ItemContext) -> ItemResult:
     item_key = "ldo_psrr"
     if ctx.scope is None:
         return _skipped(item_key, "PSRR", "未连接示波器，跳过")
+    if not ctx.is_mock:
+        return _skipped(item_key, "PSRR", "真机 PSRR 测量未实现，跳过")
     freqs = ctx.config.get("psrr_freqs", ["1kHz", "10kHz", "100kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
         if ctx.stop_flag_fn():
             break
-        db = mock_jitter(60.0, 0.03) if ctx.is_mock else 0.0
+        db = mock_jitter(60.0, 0.03)
         rows.append([f, round(db, 3)])
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"PSRR {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
@@ -886,17 +888,17 @@ def line_transient(ctx: ItemContext) -> ItemResult:
 def protection(ctx: ItemContext) -> ItemResult:
     """保护功能（限流 / 短路 / 过温 / 反灌保护）。
 
-    大框架占位：Mock 生成合理数据；真机逐项触发保护并记录动作与恢复。
-    各保护触发条件与安全边界后续迭代。
+    Mock 生成合理数据；真机保护触发与安全边界尚未实现，明确返回跳过。
     """
     item_key = "ldo_protection"
+    if not ctx.is_mock:
+        return _skipped(item_key, "Protection", "真机保护功能测试未实现，跳过")
     checks = ctx.config.get("protection_checks", ["OCP", "SCP", "OTP", "REVERSE"])
     rows: list[list] = []
     for i, c in enumerate(checks):
         if ctx.stop_flag_fn():
             break
-        # TODO(迭代): 真机逐项触发对应保护，判定动作是否符合预期
-        triggered = "YES" if ctx.is_mock else "N/A"
+        triggered = "YES"
         rows.append([c, triggered])
         ctx.progress_fn(int((i + 1) / len(checks) * 100), f"Protection {c}")
         ctx.log_fn(f"[{item_key}] {c} -> {triggered}")

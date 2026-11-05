@@ -29,15 +29,14 @@ except Exception:  # noqa: BLE001 - 版本缺失不阻断报告
 # ---------------------------------------------------------------------------
 
 def _csv_to_rows(path: str | None) -> list[list[str]]:
-    """读取原始数据 CSV（utf-8-sig），返回含表头的二维行；失败返回空。"""
+    """读取原始数据 CSV（utf-8-sig），返回含表头的二维行。
+
+    已声明且存在的 CSV 读取失败必须阻断主报告，避免静默丢失测量点。
+    """
     if not path or not os.path.isfile(path):
         return []
-    try:
-        with open(path, "r", newline="", encoding="utf-8-sig") as f:
-            return [row for row in csv.reader(f) if row]
-    except Exception:  # noqa: BLE001 - 读取失败不影响报告生成
-        logger.warning("报告读取 CSV 失败: %s", path, exc_info=True)
-        return []
+    with open(path, "r", newline="", encoding="utf-8-sig") as f:
+        return [row for row in csv.reader(f) if row]
 
 
 def _img_data_uri(path: str | None) -> str:

@@ -9,6 +9,9 @@ import json
 import os
 import sys
 import tempfile
+from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -22,6 +25,13 @@ from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDial
 from ui.widgets.run_control_bar import RunState
 
 _app = QApplication.instance() or QApplication(sys.argv)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_data(tmp_path):
+    with patch("ui.widgets.config_memory.get_user_data_dir",
+               side_effect=lambda *parts: os.path.join(str(tmp_path), *parts)):
+        yield
 
 
 def _make() -> ModuleTestUI:

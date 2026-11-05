@@ -21,11 +21,14 @@
 python --version
 where.exe python   # 第一条应指向 .venv\Scripts\python.exe
 
-# 安装依赖（锁定版本）
+# 安装运行时与打包依赖（requirements.txt 为直接依赖唯一事实源）
 python -m pip install -r requirements.txt
 
-# 或使用 pyproject 安装
+# 或通过 pyproject 安装（动态读取同一 requirements.txt）
 python -m pip install -e .
+
+# 开发环境：额外安装 pytest / ruff / mypy
+python -m pip install -e ".[dev]"
 ```
 
 > 若未激活，也可直接用 `.\.venv\Scripts\python.exe <脚本>` 调用虚拟环境内的解释器。
@@ -128,19 +131,27 @@ python main.py
 python lib/i2c/i2c_demo_x64.py
 ```
 
-## 7. 质量检查（可选 / 若添加）
-
-目前项目**未**配置 lint / type-check 命令。如需引入建议：
+## 7. 质量检查
 
 ```powershell
-# 如果后续加了 ruff
-ruff check .
+# 首次使用或依赖变化后安装开发工具
+python -m pip install -e ".[dev]"
 
-# 如果后续加了 mypy
-mypy main.py
+# 静态检查；mypy 当前仅检查 core/module_test 的纯数据模型
+python -m ruff check .
+python -m mypy
+
+# 无需 Qt 的自动测试
+python -m pytest -m "not qt" --junitxml=Temp_Docs/quality/unit-results.xml
+
+# Qt 离屏自动测试
+$env:QT_QPA_PLATFORM="offscreen"
+python -m pytest -m qt --junitxml=Temp_Docs/quality/qt-results.xml
 ```
 
-若新增命令，请更新本文件 + [AGENTS.md](../../AGENTS.md)。
+pytest 根据测试源码自动添加 `unit` / `qt` 标记；`test_config_memory_smoke.py` 与
+`test_nav_layout_smoke.py` 是独立手工 GUI 脚本，不进入自动收集。Windows CI 使用同一组
+命令并上传 JUnit 结果，工作流见 `.github/workflows/quality.yml`。真机验收不纳入自动测试。
 
 ## 8. Git 常用
 

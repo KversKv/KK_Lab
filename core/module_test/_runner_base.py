@@ -458,9 +458,12 @@ class ModuleTestRunner(QThread):
                 self._log("[STOP] 已跳过 PDF 报告导出。")
             elif REPORT_PDF_EXPORT:
                 self._log("[WARN] PDF 报告导出失败，详见日志。")
-        except Exception:  # noqa: BLE001 - 报告生成失败不影响结果返回
-            logger.error("生成报告失败", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - 主报告失败须进入 UI ERROR 状态
+            logger.error("%s 主报告生成失败，输出目录: %s",
+                         self._module_type, self._out_dir, exc_info=True)
             self._log("[ERROR] 生成报告失败，见日志。")
+            self.failed.emit(f"生成报告失败：{exc}")
+            return
 
         self._log(f"[SUMMARY] {self._result.summary.get('overall', 'N/A')} - "
                   f"PASS {self._result.summary.get('pass', 0)} / "
