@@ -8,7 +8,7 @@
 3. 切回主面板 -> 侧栏恢复主面板真值；
 4. 面板 config 生效路径：rx_hex 数据渲染、show_send=False 不回显；
 5. 聚焦额外面板时采集持久化，主面板 serial 段不串值；
-6. 同面板 Connect/Disconnect（焦点不变）时侧栏 Port 使能跟随连接态；
+6. 同面板 Connect/Disconnect（焦点不变）时侧栏 Port 保持可选；
 7. 主面板右键 Settings 改名 + ui.primary_panel_title 持久化往返。
 
 可独立运行：
@@ -81,7 +81,7 @@ def test_sidebar_follows_focus():
 
     panel_cfg = {
         "title": "P2", "port": "COM5", "baudrate": 57600,
-        "databit": "7", "stopbit": "2", "parity": "Even", "flow": "RTS/CTS",
+        "databit": 7, "stopbit": "2", "parity": "Even", "flow": "RTS/CTS",
         "rx_hex": True, "show_timestamp": False,
         "tx_hex": True, "line_ending": "\n", "show_send": False,
     }
@@ -127,7 +127,7 @@ def test_sidebar_follows_focus():
     assert panel["config"]["show_send"] is True, "Show Sent 修改未写回面板 config"
     w._sc_databit_combo.setCurrentText("8")
     w._sc_sidebar_store_serial()
-    assert panel["config"]["databit"] == "8", "Data bits 修改未写回面板 config"
+    assert panel["config"]["databit"] == 8, "Data bits 修改未按 int 写回面板 config"
 
     # --- rx_hex 数据路径生效 ---
     panel["config"]["rx_hex"] = True
@@ -198,11 +198,11 @@ def test_sidebar_settings_dialog_forces_primary_view():
     app.processEvents()
 
 
-def test_sidebar_port_enable_follows_conn_state():
-    """同面板 Connect/Disconnect（焦点不变）时侧栏 Port 使能必须跟随连接态。
+def test_sidebar_port_stays_enabled_across_conn_state():
+    """同面板 Connect/Disconnect（焦点不变）时侧栏 Port 必须保持可选。
 
-    回归：_sc_sync_sidebar_to_focus 焦点未变早退分支曾不刷新 Port 使能，
-    导致聚焦面板 Disconnect 后 Port 下拉卡禁用（Connect 后则漏禁用）。
+    连接态切换端口由 _sc_on_port_switch_requested 完整断开并重连，
+    不应禁用 Port 下拉。
     """
     app, w = _make_widget()
 
@@ -214,17 +214,17 @@ def test_sidebar_port_enable_follows_conn_state():
     assert w._sc_sidebar_bound_index == 1
     assert w._sc_port_combo.isEnabled(), "未连接时 Port 应可改"
 
-    # Mock 连接（焦点不变）→ Port 应禁用
+    # Mock 连接（焦点不变）→ Port 保持可选
     w._sc_on_connect_toggle()
     app.processEvents()
     assert w._sc_extra_panel_is_connected(panel), "Mock 连接未生效"
-    assert not w._sc_port_combo.isEnabled(), "同面板 Connect 后 Port 未禁用"
+    assert w._sc_port_combo.isEnabled(), "同面板 Connect 后 Port 应保持可选"
 
-    # 断开（焦点仍不变）→ Port 应恢复可改
+    # 断开（焦点仍不变）→ Port 仍保持可选
     w._sc_on_connect_toggle()
     app.processEvents()
     assert not w._sc_extra_panel_is_connected(panel), "断开未生效"
-    assert w._sc_port_combo.isEnabled(), "同面板 Disconnect 后 Port 仍禁用（回归）"
+    assert w._sc_port_combo.isEnabled(), "同面板 Disconnect 后 Port 应保持可选"
 
     w.close()
     w.deleteLater()
@@ -289,7 +289,7 @@ if __name__ == "__main__":
     tests = [
         test_sidebar_follows_focus,
         test_sidebar_settings_dialog_forces_primary_view,
-        test_sidebar_port_enable_follows_conn_state,
+        test_sidebar_port_stays_enabled_across_conn_state,
         test_primary_panel_rename,
     ]
     failed = 0

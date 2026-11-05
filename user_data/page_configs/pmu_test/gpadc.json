@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "config": {
-    "n6705c_connected": false,
+    "n6705c_connected": true,
     "chamber_connected": false,
     "test_item": "High-Low Temp Test",
     "data_acquisition_mode": "IIC",

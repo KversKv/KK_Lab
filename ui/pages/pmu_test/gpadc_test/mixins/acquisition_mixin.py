@@ -184,7 +184,7 @@ class _AcquisitionMixin:
         """
         if not hasattr(self, "deviceI2C"):
             self.deviceI2C = I2CInterface()
-            self.set_system_status("I2C接口初始化成功")
+            self._test_worker.status.emit("I2C接口初始化成功")
         self.deviceI2C.speed_mode = self._iic_speed_snapshot
         return self.deviceI2C
 
@@ -272,7 +272,7 @@ class _AcquisitionMixin:
             vol_source = n6705c if n6705c is not None else self.n6705c
             if vol_source is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self.set_system_status("错误: N6705C未连接", is_error=True)
+                self._test_worker.status.emit("错误: N6705C未连接", True)
                 return None
 
         settle_time = 0.0 if DEBUG_MOCK else 0.5
@@ -324,7 +324,7 @@ class _AcquisitionMixin:
                 if guard_reason is not None:
                     self._test_worker.log.emit(f"[WARN] GPADC response guard: {guard_reason}")
                     self._test_worker.log.emit("[WARN] Force voltage test 已中止，请检查 DUT 供电/接线/通道与采集配置")
-                    self.set_system_status("警告: GPADC 无响应，测试已提前中止")
+                    self._test_worker.status.emit("警告: GPADC 无响应，测试已提前中止")
                     return None
 
             current_voltage = round(current_voltage + voltage_step, 6)
@@ -397,7 +397,8 @@ class _AcquisitionMixin:
         self._last_raw_before_algo = before
         return processed
 
-    def _calibration_data(self, result):
+    def _calibration_data(self, result, log_fn=None):
+        log = log_fn or self._append_log
         adc_raw_data = result["voltage"]
         adc_mean     = result["mean"]
         adc_min      = result["min"]
@@ -408,12 +409,12 @@ class _AcquisitionMixin:
                                 calib_points=self._calib_points_snapshot)
 
         if k == 0.0:
-            self._append_log(
+            log(
                 "[WARN] 标定斜率 k=0（ADC 读数无变化或采样点电压相同），跳过标定，使用原始数据"
             )
-        self._append_log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
+        log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
 
-        self._append_log(
+        log(
             'Voltage,RawMean,mean_cali,Δmean(mV),RawMin,RawMax,min_cali,max_cali,Δmin(mV),Δmax(mV)'
         )
         n = len(adc_raw_data)
@@ -422,15 +423,15 @@ class _AcquisitionMixin:
             delta_mean_mv = (mean_cali[i] - v_in) * 1000
             delta_min_mv = (adc_min_cali[i] - v_in) * 1000
             delta_max_mv = (adc_max_cali[i] - v_in) * 1000
-            self._append_log(
+            log(
                 f'{v_in:.4f},{adc_mean[i]:.3f},{mean_cali[i]:.6f},{delta_mean_mv:+.3f}'
                 f',{adc_min[i]},{adc_max[i]}'
                 f',{adc_min_cali[i]:.6f},{adc_max_cali[i]:.6f}'
                 f',{delta_min_mv:+.3f},{delta_max_mv:+.3f}'
             )
 
-        self._append_log(f"[INFO] calibration points: v_low={v_low:.4f}, m_low={m_low:.3f}, v_high={v_high:.4f}, m_high={m_high:.3f}")
-        self._append_log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
+        log(f"[INFO] calibration points: v_low={v_low:.4f}, m_low={m_low:.3f}, v_high={v_high:.4f}, m_high={m_high:.3f}")
+        log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
 
         return adc_raw_data, mean_cali, adc_min_cali, adc_max_cali
 
@@ -496,7 +497,7 @@ class _AcquisitionMixin:
             else:
                 if not hasattr(self, 'chamber') or not self.is_chamber_connected:
                     self._test_worker.log.emit("[ERROR] Chamber not connected")
-                    self.set_system_status("错误: 温箱未连接", is_error=True)
+                    self._test_worker.status.emit("错误: 温箱未连接", True)
                     return None
                 if self._acq_mode_snapshot == 'UART':
                     deviceI2C = None
@@ -525,7 +526,7 @@ class _AcquisitionMixin:
 
                 try:
                     chamber.set_temperature(current_temp)
-                    self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
+                    self._test_worker.status.emit(f"设置温箱温度到 {current_temp:.1f}°C")
 
                     if DEBUG_MOCK:
                         self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
@@ -555,7 +556,7 @@ class _AcquisitionMixin:
                             f"actual={actual_str}, waited {result.waited_s:.0f}s, polls={result.poll_count}"
                         )
 
-                        self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
+                        self._test_worker.status.emit(f"DUT温度均衡中: {current_temp:.1f}°C")
                         for _ in range(int(soak_time)):
                             if stop_check and stop_check():
                                 break
@@ -641,7 +642,7 @@ class _AcquisitionMixin:
         except Exception as e:
             self._test_worker.log.emit(f"[ERROR] {e}")
             logger.error("测试执行错误: %s", e, exc_info=True)
-            self.set_system_status(f"错误: {e}", is_error=True)
+            self._test_worker.status.emit(f"错误: {e}", True)
             return None
 
     def gpadc_temp_consistency_test(
@@ -672,11 +673,11 @@ class _AcquisitionMixin:
         else:
             if not hasattr(self, 'chamber') or not self.is_chamber_connected:
                 self._test_worker.log.emit("[ERROR] Chamber not connected")
-                self.set_system_status("错误: 温箱未连接", is_error=True)
+                self._test_worker.status.emit("错误: 温箱未连接", True)
                 return None
             if self.n6705c is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self.set_system_status("错误: N6705C未连接", is_error=True)
+                self._test_worker.status.emit("错误: N6705C未连接", True)
                 return None
             if self._acq_mode_snapshot != 'UART':
                 self._ensure_device_i2c()
@@ -709,7 +710,7 @@ class _AcquisitionMixin:
                 break
 
             chamber.set_temperature(current_temp)
-            self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
+            self._test_worker.status.emit(f"设置温箱温度到 {current_temp:.1f}°C")
 
             if DEBUG_MOCK:
                 self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
@@ -741,7 +742,7 @@ class _AcquisitionMixin:
                     self._test_worker.log.emit("[INFO] Temp consistency test stopped by user.")
                     break
 
-                self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
+                self._test_worker.status.emit(f"DUT温度均衡中: {current_temp:.1f}°C")
                 for _ in range(int(soak_time)):
                     if stop_check and stop_check():
                         break
@@ -824,7 +825,9 @@ class _AcquisitionMixin:
                     "min": min_matrix[i],
                     "max": max_matrix[i],
                 }
-                _, mean_cali, min_cali, max_cali = self._calibration_data(row_result)
+                _, mean_cali, min_cali, max_cali = self._calibration_data(
+                    row_result, log_fn=self._test_worker.log.emit
+                )
                 mean_cali_matrix.append(mean_cali)
                 min_cali_matrix.append(min_cali)
                 max_cali_matrix.append(max_cali)

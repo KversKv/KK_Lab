@@ -14,10 +14,24 @@ from ui.theme import apply_qss
 from core.pmu_test.gpadc import (
     TestWorker as _TestWorker, compute_detailed_stats, run_ft_calib_check,
     ALGORITHM_REGISTRY, describe_algorithm, assess_fluctuation, parse_hw_int,
-    run_multi_ch_temp_test
+    run_multi_ch_temp_test, freeze_config
 )
 
 logger = get_logger(__name__)
+
+_RETIRED_THREAD_WORKERS = {}
+
+
+def _retire_thread(thread, worker=None):
+    """脱离页面父级并保留引用，线程结束后由事件循环异步回收。"""
+    _RETIRED_THREAD_WORKERS[thread] = worker
+    thread.setParent(None)
+    thread.finished.connect(thread.deleteLater)
+    thread.finished.connect(lambda: _RETIRED_THREAD_WORKERS.pop(thread, None))
+    thread.quit()
+    if not thread.isRunning():
+        _RETIRED_THREAD_WORKERS.pop(thread, None)
+        thread.deleteLater()
 
 
 class _ExecutionMixin:
@@ -63,7 +77,7 @@ class _ExecutionMixin:
         if self._calib_points_snapshot is not None:
             v_lo, v_hi = self._calib_points_snapshot
             self._append_log(f"[INFO] 使用手动校准点: low={v_lo}, high={v_hi}")
-        self._algorithm_snapshot = self._collect_algorithm_config()
+        self._algorithm_snapshot = freeze_config(self._collect_algorithm_config())
         if self._algorithm_snapshot is not None:
             self._append_log(f"[INFO] 启用采样算法: {describe_algorithm(self._algorithm_snapshot)}")
             _algo_spec = ALGORITHM_REGISTRY.get(self._algorithm_snapshot['id']) or {}
@@ -71,10 +85,10 @@ class _ExecutionMixin:
                 self._append_log(f"[INFO] {_algo_spec['principle']}")
         self._iic_speed_snapshot = I2CSpeedMode(self.iic_speed_combo.currentData())
         if self.outlier_filter_switch.isChecked():
-            self._outlier_filter_snapshot = {
+            self._outlier_filter_snapshot = freeze_config({
                 'pos': self.outlier_pos_offset.value(),
                 'neg': self.outlier_neg_offset.value(),
-            }
+            })
             self._append_log(
                 f"[INFO] 启用离群样本筛选: 正向最大偏移 +{self._outlier_filter_snapshot['pos']:.1f} LSB, "
                 f"负向最大偏移 -{self._outlier_filter_snapshot['neg']:.1f} LSB（以样本均值为基准）"
@@ -212,11 +226,13 @@ class _ExecutionMixin:
         worker.finished.connect(self._on_test_done)
         worker.error.connect(self._on_test_error)
         worker.log.connect(self._append_log)
+        worker.status.connect(self.set_system_status)
         worker.progress.connect(self.set_progress)
         worker.confirm_request.connect(self._on_worker_confirm_request)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._on_test_thread_finished)
 
         self._test_worker = worker
@@ -360,7 +376,7 @@ class _ExecutionMixin:
         else:
             if not hasattr(self, 'chamber') or not self.is_chamber_connected:
                 self._test_worker.log.emit("[ERROR] Chamber not connected")
-                self.set_system_status("错误: 温箱未连接", is_error=True)
+                self._test_worker.status.emit("错误: 温箱未连接", True)
                 return None
             chamber = self.chamber
             need_sweep = any(
@@ -368,7 +384,7 @@ class _ExecutionMixin:
             )
             if need_sweep and (self.n6705c is None or not self.is_connected):
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self.set_system_status("错误: N6705C未连接", is_error=True)
+                self._test_worker.status.emit("错误: N6705C未连接", True)
                 return None
             vol_source = self.n6705c if need_sweep else None
             if (self._acq_mode_snapshot == 'UART'
@@ -419,7 +435,7 @@ class _ExecutionMixin:
             default_width=iic_weight,
             mock_mode=DEBUG_MOCK,
             log_fn=self._test_worker.log.emit,
-            status_fn=lambda msg, is_err=False: self.set_system_status(msg, is_err),
+            status_fn=self._test_worker.status.emit,
             stop_check=stop_check,
             progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
@@ -445,7 +461,7 @@ class _ExecutionMixin:
             vol_source = self.n6705c
             if vol_source is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self.set_system_status("错误: N6705C未连接", is_error=True)
+                self._test_worker.status.emit("错误: N6705C未连接", True)
                 return None
 
         # FT 校准检查不应用采样算法与离群筛选（保持 raw 与 volt 的配对一致性）
@@ -495,7 +511,7 @@ class _ExecutionMixin:
                 settle_s=0.0 if DEBUG_MOCK else 0.5,
                 step_s=0.0 if DEBUG_MOCK else 0.2,
                 log_fn=self._test_worker.log.emit,
-                status_fn=lambda msg, is_err=False: self.set_system_status(msg, is_err),
+                status_fn=self._test_worker.status.emit,
                 stop_check=stop_check,
                 progress_callback=lambda v: self._test_worker.progress.emit(v),
             )
@@ -701,9 +717,7 @@ class _ExecutionMixin:
 
     def _on_test_thread_finished(self):
         self._test_worker = None
-        if self.test_thread is not None:
-            self.test_thread.deleteLater()
-            self.test_thread = None
+        self.test_thread = None
         self.is_test_running = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
@@ -737,14 +751,18 @@ class _ExecutionMixin:
 
         for attr in ('_n6705c_search_thread', '_chamber_search_thread', '_serial_search_thread'):
             thread = getattr(self, attr, None)
-            if thread is not None and isValid(thread) and thread.isRunning():
-                thread.quit()
-                thread.wait(3000)
+            worker = getattr(self, attr.replace('_thread', '_worker'), None)
+            if thread is not None and isValid(thread):
+                _retire_thread(thread, worker if worker is None or isValid(worker) else None)
             setattr(self, attr, None)
+            setattr(self, attr.replace('_thread', '_worker'), None)
 
-        if self._test_worker is not None:
-            self._test_worker.request_stop()
-        if self.test_thread is not None and isValid(self.test_thread) and self.test_thread.isRunning():
-            self.test_thread.quit()
-            self.test_thread.wait(3000)
+        worker = self._test_worker
+        if worker is not None and isValid(worker):
+            worker.request_stop()
+            worker.respond_confirm(False)
+        thread = self.test_thread
+        if thread is not None and isValid(thread):
+            _retire_thread(thread, worker if worker is None or isValid(worker) else None)
+        # 置空可避免 CleanupMixin 再次在主线程 wait；worker 引用保留到 run 返回。
         self.test_thread = None

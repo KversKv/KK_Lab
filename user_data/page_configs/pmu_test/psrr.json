@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "config": {
+    "source_channel": 1,
+    "input_channel": 1,
+    "output_channel": 2,
+    "dc_voltage": 5.0,
+    "ripple_mv_rms": 100.0,
+    "frequencies_hz": [
+      100.0,
+      1000.0,
+      10000.0,
+      100000.0
+    ],
+    "cycles": 5.0,
+    "output_scale_mv": 10.0,
+    "limit_db": 0.0,
+    "close_channel_after": false
+  }
+}

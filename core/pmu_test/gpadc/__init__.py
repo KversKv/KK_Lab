@@ -17,7 +17,7 @@ from .gpadc_analysis import (
     compare_algorithm_effect,
     filter_mean_deviation,
 )
-from .gpadc_worker import TestWorker
+from .gpadc_worker import TestWorker, freeze_config
 from .gpadc_ft_check import run_ft_calib_check
 from .gpadc_multi_temp import (
     parse_hw_int,
@@ -42,6 +42,7 @@ __all__ = [
     "compare_algorithm_effect",
     "filter_mean_deviation",
     "TestWorker",
+    "freeze_config",
     "run_ft_calib_check",
     "parse_hw_int",
     "parse_iic_command_text",

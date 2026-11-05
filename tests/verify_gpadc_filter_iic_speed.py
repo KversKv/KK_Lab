@@ -39,13 +39,14 @@ class _LogStub:
     def __init__(self):
         self.lines = []
 
-    def emit(self, msg):
+    def emit(self, msg, *args):
         self.lines.append(msg)
 
 
 class _WorkerStub:
     def __init__(self):
         self.log = _LogStub()
+        self.status = _LogStub()
 
 
 def _check(name, cond):

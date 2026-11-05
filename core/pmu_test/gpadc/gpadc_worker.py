@@ -6,14 +6,28 @@ GPADC 测试 Worker（仅依赖 PySide6.QtCore，不依赖 QtWidgets）。
 """
 
 import threading
+from collections.abc import Mapping
+from types import MappingProxyType
 
 from PySide6.QtCore import QObject, Signal
+
+
+def freeze_config(value):
+    """递归冻结测试配置，避免 worker 与 UI 共享可变 dict/list。"""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: freeze_config(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(freeze_config(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(freeze_config(item) for item in value)
+    return value
 
 
 class TestWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
     log = Signal(str)
+    status = Signal(str, bool)
     progress = Signal(int)
     # 可恢复错误（如温箱串口瞬时中断）→ 请求 UI 弹窗让用户决定重试/中止
     confirm_request = Signal(str, str)
@@ -21,7 +35,7 @@ class TestWorker(QObject):
     def __init__(self, fn, kwargs):
         super().__init__()
         self._fn = fn
-        self._kwargs = kwargs
+        self._kwargs = freeze_config(kwargs)
         self._stop_requested = False
         self._confirm_reply = threading.Event()
         self._confirm_continue = False
