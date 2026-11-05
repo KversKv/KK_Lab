@@ -1,0 +1,6 @@
+# APx500 Python 驱动依赖
+# 驱动本身仅依赖 Python 标准库, 第三方依赖只有 pythonnet (调 APx500 .NET API)
+# 验证环境: Windows 10/11 64位, Python 3.13.15, pythonnet 3.1.0
+pythonnet>=3.0
+
+# Win7 老环境改用: Python 3.8.10 + pythonnet==2.5.2
