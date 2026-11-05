@@ -968,6 +968,12 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         self._test_stop_requested = True
         self.append_log("[TEST] Stop requested...")
 
+    def cleanup_threads(self):
+        """主窗口关闭前停止扫描，并解除可能存在的用户确认等待。"""
+        if self.test_thread is not None:
+            self.test_thread.request_stop()
+            self.test_thread.respond_confirm(False)
+
     def _on_confirm_request(self, title: str, message: str):
         """Worker 确认请求（前置校验失败 / 输出饱和）→ 弹窗让用户决定是否继续。
 

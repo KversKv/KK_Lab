@@ -117,6 +117,7 @@ class GPADCTestUI(
         self._start_btn_text = "▶ START TEST"
         self.test_thread = None
         self._test_worker = None
+        self._test_runner = None
         self._search_thread = None
         self._search_worker = None
         self._export_data = None

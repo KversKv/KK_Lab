@@ -203,6 +203,8 @@ core/
 │   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
 ├── pmu_test/                # PMU 子测试算法与 Worker（clk/dcdc/gpadc/isgain/oscp/output_voltage/psrr）
+│   ├── gpadc/               # GPADC 纯采样、六类测试编排、算法与 QtCore Worker
+│   │   └── gpadc_runner.py  # GPADCAcquisition + GPADCTestRunner（无 Qt，显式依赖注入）
 │   ├── output_voltage/      # Output Voltage 输出电压扫描测试
 │   │   ├── __init__.py      # 导出纯算法、业务 Worker 与旧接口运行器
 │   │   ├── output_voltage_analysis.py # 位域校验、有效区间、结果指标与前置校验（无 Qt）
@@ -803,6 +805,8 @@ spec/
 tests/
 ├── conftest.py                      # pytest 自动分类 unit/qt；排除独立手工 GUI 脚本
 ├── test_pmu_output_voltage_core.py  # Output Voltage 纯算法、Worker 停止/异常与 QThread 生命周期回归
+├── test_module_test_guards.py       # Module Test 未实现项的 Mock/真机结果语义与导出防护
+├── test_gpadc_worker_threading.py   # GPADC Worker 信号、线程与生命周期回归
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
 ├── test_serial_script_engine.py     # core.serial_script 引擎纯逻辑单测 (排序/关键字/循环判定)
 ├── test_serialcom_mixin_assembly.py # SerialComMixin 7-Mixin 装配体实例化 + complete_serialComWidget smoke

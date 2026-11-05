@@ -19,6 +19,10 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 
+class LoadControlError(RuntimeError):
+    """N6705C 电子负载控制失败，当前测试必须停止。"""
+
+
 @dataclass
 class ItemContext:
     """单测试项执行上下文（由 runner 构造后传入 item.run）。"""
@@ -503,6 +507,24 @@ def setup_meter_channel(ctx: "ItemContext", channel: int) -> None:
                      channel, exc_info=True)
 
 
+def _raise_load_control_error(ctx: "ItemContext", channel: int,
+                              current_a: float | None, operation: str,
+                              exc: Exception) -> None:
+    """记录负载控制失败并尽力关断，清理异常不得掩盖原始异常。"""
+    ctx.measurement_failed = True
+    target = f"{current_a:.6g} A" if current_a is not None else "未指定电流"
+    logger.error("module test N6705C CCLoad ch%d %s failed (target %s)",
+                 channel, operation, target, exc_info=True)
+    try:
+        ctx.n6705c.channel_off(channel)
+    except Exception:  # noqa: BLE001 - 安全清理失败仅记录，保留原始异常链
+        logger.error("module test N6705C emergency channel_off ch%d failed",
+                     channel, exc_info=True)
+    raise LoadControlError(
+        f"N6705C CCLoad ch{channel} {operation}失败（目标 {target}）：{exc}"
+    ) from exc
+
+
 def setup_load_channel(ctx: "ItemContext", channel: int,
                        initial_current_a: float | None = None) -> None:
     """把通道配成电子负载（CCLoad）并上电，参考 PMU DCDC worker。
@@ -517,20 +539,19 @@ def setup_load_channel(ctx: "ItemContext", channel: int,
         if initial_current_a is not None and initial_current_a > 0:
             set_load_current(ctx, channel, initial_current_a)
         ctx.n6705c.channel_on(channel)
-    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
-        ctx.measurement_failed = True
-        logger.error("module test N6705C setup CCLoad ch%d failed",
-                     channel, exc_info=True)
+    except LoadControlError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 转换为领域错误并中止当前测量
+        _raise_load_control_error(
+            ctx, channel, initial_current_a, "setup", exc)
 
 
 def set_load_current(ctx: "ItemContext", channel: int, current_a: float) -> None:
     """设置电子负载电流（CCLoad 用负电流拉载，参考 PMU DCDC worker）。"""
     try:
         ctx.n6705c.set_current(channel, -abs(current_a))
-    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
-        ctx.measurement_failed = True
-        logger.error("module test N6705C set CCLoad ch%d to %.6g A failed",
-                     channel, current_a, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - 转换为领域错误并中止当前测量
+        _raise_load_control_error(ctx, channel, current_a, "set current", exc)
 
 
 def apply_load_current(ctx: "ItemContext", channel: int, current_a: float,
@@ -552,10 +573,8 @@ def apply_load_current(ctx: "ItemContext", channel: int, current_a: float,
         if not state.get("on"):
             ctx.n6705c.channel_on(channel)
             state["on"] = True
-    except Exception:  # noqa: BLE001 - 仪器错误经 ctx 传播，禁止误判 PASS
-        ctx.measurement_failed = True
-        logger.error("module test N6705C apply CCLoad ch%d to %.6g A failed",
-                     channel, current_a, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - 转换为领域错误并中止当前测量
+        _raise_load_control_error(ctx, channel, current_a, "apply current", exc)
 
 
 def teardown_load(ctx: "ItemContext", channel: int) -> None:

@@ -230,7 +230,7 @@ def run_multi_ch_temp_test(
     返回：{"temp": [...], "sample_cnt": int,
            "channels": [{"name", "sweep", "voltage"|None,
                          "mean": [...], "min": [...], "max": [...]} ...]}；
-          失败返回 None（用户停止时返回已采集的部分数据）。
+          前置校验失败返回 None，执行异常记录后抛出；用户停止时返回已采集的部分数据。
     """
 
     def _log(msg):
@@ -243,6 +243,11 @@ def run_multi_ch_temp_test(
 
     def _stopped():
         return bool(stop_check and stop_check())
+
+    def _cleanup_error(action, exc):
+        logger.error("多通道高低温%s失败: %s", action, exc, exc_info=True)
+        _log(f"[ERROR] {action}失败: {exc}，请手动确认仪器状态")
+        _status(f"错误: {action}失败，请手动确认仪器状态", True)
 
     enabled = [c for c in (channels or []) if c.get("enabled", True)]
     if not enabled:
@@ -421,8 +426,7 @@ def run_multi_ch_temp_test(
             try:
                 chamber.set_temperature(25.0)
             except Exception as e:  # noqa: BLE001
-                logger.warning("温箱回设 25°C 失败: %s", e, exc_info=True)
-                _log(f"[WARN] 温箱回设 25°C 失败: {e}")
+                _cleanup_error("温箱回设 25°C", e)
             for w, orig in reversed(originals):
                 if orig is None:
                     continue
@@ -430,8 +434,9 @@ def run_multi_ch_temp_test(
                     write_fn(w["dev"], w["reg"], int(orig), w["width"], -1, -1)
                     _log(f"[PRE] RESTORE 0x{w['dev']:02X}/0x{w['reg']:02X}=0x{int(orig):X}")
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("前置配置恢复失败: %s", e, exc_info=True)
-                    _log(f"[WARN] 前置配置恢复失败 0x{w['dev']:02X}/0x{w['reg']:02X}: {e}")
+                    _cleanup_error(
+                        f"前置配置恢复 0x{w['dev']:02X}/0x{w['reg']:02X}", e,
+                    )
 
         # ---------- 结果分类输出 ----------
         _log("===== MULTI-CH TEMP TEST 结果分类输出 =====")
@@ -461,4 +466,4 @@ def run_multi_ch_temp_test(
         _log(f"[ERROR] {e}")
         logger.error("多通道高低温测试执行错误: %s", e, exc_info=True)
         _status(f"错误: {e}", True)
-        return None
+        raise

@@ -149,9 +149,10 @@ $env:QT_QPA_PLATFORM="offscreen"
 python -m pytest -m qt --junitxml=Temp_Docs/quality/qt-results.xml
 ```
 
-pytest 根据测试源码自动添加 `unit` / `qt` 标记；`test_config_memory_smoke.py` 与
-`test_nav_layout_smoke.py` 是独立手工 GUI 脚本，不进入自动收集。Windows CI 使用同一组
-命令并上传 JUnit 结果，工作流见 `.github/workflows/quality.yml`。真机验收不纳入自动测试。
+pytest 根据测试源码自动添加 `unit` / `qt` 标记；独立手工 GUI / 诊断脚本登记在
+`tests/conftest.py` 的 `collect_ignore`，不进入自动收集，需按各脚本入口单独运行。
+Windows CI 使用同一组命令并上传 JUnit 结果，工作流见 `.github/workflows/quality.yml`。
+真机验收不纳入自动测试。
 
 ## 8. Git 常用
 

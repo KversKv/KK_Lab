@@ -262,21 +262,7 @@ class _LayoutMixin:
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(10)
 
-        header_layout = QVBoxLayout()
-        header_layout.setSpacing(2)
-
-
-        title_label = QLabel("GPADC Automated Test")
-        title_label.setObjectName("title_label")
-        title_label.setStyleSheet("border: none")
-
-        subtitle_label = QLabel("Evaluate GPADC performance including Linearity, ENOB, and Temperature Drift.")
-        subtitle_label.setObjectName("subtitle_label")
-        subtitle_label.setStyleSheet("border: none")
-
-        header_layout.addWidget(title_label)
-        header_layout.addWidget(subtitle_label)
-        page_layout.addLayout(header_layout)
+        self._build_header(page_layout)
 
         body_layout = QHBoxLayout()
         body_layout.setSpacing(8)
@@ -304,6 +290,78 @@ class _LayoutMixin:
         left_col.setContentsMargins(0, 0, 2, 0)
         left_col.setSpacing(12)
 
+        left_col.addWidget(self._build_test_item_panel())
+
+        left_col.addWidget(self._build_instruments_panel())
+
+        left_col.addWidget(self._build_data_acquisition_panel())
+
+        left_col.addWidget(self._build_test_params_panel())
+
+        # 多通道高低温测试配置（仅 Multi-Ch Temp Test 测试项可见）
+        self.multi_ch_panel = MultiChTempPanel(self)
+        self.multi_ch_panel.save_requested.connect(self._on_save_multi_ch_config)
+        self.multi_ch_panel.load_requested.connect(self._on_load_multi_ch_config)
+        self.multi_ch_panel.hide()
+        left_col.addWidget(self.multi_ch_panel)
+
+        left_col.addStretch()
+
+        self.left_scroll.setWidget(left_content)
+        left_wrapper.addWidget(self.left_scroll, 1)
+
+        self.start_test_btn = QPushButton("▶ START TEST")
+        self.start_test_btn.setObjectName("primaryStartBtn")
+        # 宽度与上方面板可见宽对齐（左列内容宽 - 列右边距），防止长文本撑开左列
+        self.start_test_btn.setMaximumWidth(
+            left_content.maximumWidth() - left_col.contentsMargins().right()
+        )
+        left_wrapper.addWidget(self.start_test_btn)
+
+        self.stop_test_btn = QPushButton("■")
+        self.stop_test_btn.setObjectName("stopBtn")
+        self.stop_test_btn.setEnabled(False)
+        self.stop_test_btn.hide()
+
+        # 右侧
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+
+        self._build_metrics_row(right_col)
+
+        self._build_chart_log_recent(right_col)
+
+        self.export_params_btn = QPushButton("Export Parameters")
+        self.export_params_btn.hide()
+
+        self.save_config_btn = QPushButton("Save Config")
+        self.load_config_btn = QPushButton("Load Config")
+        self.save_config_btn.hide()
+        self.load_config_btn.hide()
+
+        body_layout.addLayout(left_wrapper, 0)
+        body_layout.addLayout(right_col, 1)
+
+        page_layout.addLayout(body_layout, 1)
+        root_layout.addWidget(self.page, 1)
+
+    def _build_header(self, page_layout):
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(2)
+
+        title_label = QLabel("GPADC Automated Test")
+        title_label.setObjectName("title_label")
+        title_label.setStyleSheet("border: none")
+
+        subtitle_label = QLabel("Evaluate GPADC performance including Linearity, ENOB, and Temperature Drift.")
+        subtitle_label.setObjectName("subtitle_label")
+        subtitle_label.setStyleSheet("border: none")
+
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(subtitle_label)
+        page_layout.addLayout(header_layout)
+
+    def _build_test_item_panel(self):
         # Test Item (下拉菜单)
         test_item_panel = QFrame()
         test_item_panel.setObjectName("panel")
@@ -325,8 +383,9 @@ class _LayoutMixin:
         self.test_item_combo.addItem(self.TEST_MULTI_CH_TEMP, self.TEST_MULTI_CH_TEMP)
         self.test_item_combo.addItem(self.TEST_FT_CALIB_CHECK, self.TEST_FT_CALIB_CHECK)
         test_item_layout.addWidget(self.test_item_combo)
-        left_col.addWidget(test_item_panel)
+        return test_item_panel
 
+    def _build_instruments_panel(self):
         # Instruments (动态显示)
         self.instruments_panel = QFrame()
         self.instruments_panel.setObjectName("panel")
@@ -378,8 +437,9 @@ class _LayoutMixin:
         chamber_card_layout.removeWidget(self.chamber_status_label)
         chamber_title_row.addWidget(self.chamber_status_label)
         instruments_layout.addWidget(self.chamber_card)
-        left_col.addWidget(self.instruments_panel)
+        return self.instruments_panel
 
+    def _build_data_acquisition_panel(self):
         # Data Acquisition
         data_panel = QFrame()
         data_panel.setObjectName("panel")
@@ -461,8 +521,9 @@ class _LayoutMixin:
         self.data_stack.addWidget(self.iic_group)
         self.data_stack.addWidget(self.uart_group)
         data_layout.addWidget(self.data_stack)
-        left_col.addWidget(data_panel)
+        return data_panel
 
+    def _build_test_params_panel(self):
         # Test Parameters
         params_panel = QFrame()
         params_panel.setObjectName("panel")
@@ -480,6 +541,51 @@ class _LayoutMixin:
         self.params_mode_label.setStyleSheet("color: #7e96bf; font-size: 11px; font-weight: 700; border: none;")
         params_layout.addWidget(self.params_mode_label)
 
+        self._build_voltage_params_frame()
+        self._build_temp_params_frame()
+        params_layout.addWidget(self.voltage_params_frame)
+        params_layout.addWidget(self.temp_params_frame)
+
+        # 校准参数：默认留空 = 自动取 1/4、3/4 扫描点；两格都填写时作为手动校准两点
+        self._build_calib_params_frame()
+        params_layout.addWidget(self.calib_params_frame)
+
+        # FT Calibration Check 参数：两个 FT 校准点（电压 + 校准码）与判定阈值
+        # 仅 TEST_FT_CALIB_CHECK 测试项可见
+        self._build_ft_params_frame()
+        params_layout.addWidget(self.ft_params_frame)
+        self.ft_params_frame.hide()
+
+        self.sample_count_label = QLabel("Sample Count")
+        self.sample_count_label.setObjectName("muted_label")
+        params_layout.addWidget(self.sample_count_label)
+
+        self.sample_count = QSpinBox()
+        self.sample_count.setRange(1, 100000)
+        self.sample_count.setValue(1000)
+        self.sample_count.setSingleStep(100)
+        params_layout.addWidget(self.sample_count)
+
+        self.voltage_channel_label = QLabel("Voltage Channel")
+        self.voltage_channel_label.setObjectName("muted_label")
+        params_layout.addWidget(self.voltage_channel_label)
+
+        self.voltage_channel = DarkComboBox(bg="#0a1733", border="#24365e")
+        for ch in range(1, 5):
+            self.voltage_channel.addItem(f"Channel {ch}", ch)
+        self.voltage_channel.setCurrentIndex(3)
+        params_layout.addWidget(self.voltage_channel)
+
+        self._build_algorithm_controls(params_layout)
+        self._build_outlier_filter(params_layout)
+
+        self.temp_hint_label = QLabel("Connect chamber to enable temperature testing.")
+        self.temp_hint_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
+        self.temp_hint_label.setWordWrap(True)
+        params_layout.addWidget(self.temp_hint_label)
+        return params_panel
+
+    def _build_voltage_params_frame(self):
         self.voltage_params_frame = QFrame()
         self.voltage_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         voltage_layout = QGridLayout(self.voltage_params_frame)
@@ -513,6 +619,7 @@ class _LayoutMixin:
         voltage_layout.addWidget(self.voltage_max, 1, 1)
         voltage_layout.addWidget(self.voltage_step, 1, 2)
 
+    def _build_temp_params_frame(self):
         self.temp_params_frame = QFrame()
         self.temp_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         temp_layout = QGridLayout(self.temp_params_frame)
@@ -553,10 +660,7 @@ class _LayoutMixin:
         self.soak_time.setSingleStep(30)
         temp_layout.addWidget(self.soak_time, 3, 0)
 
-        params_layout.addWidget(self.voltage_params_frame)
-        params_layout.addWidget(self.temp_params_frame)
-
-        # 校准参数：默认留空 = 自动取 1/4、3/4 扫描点；两格都填写时作为手动校准两点
+    def _build_calib_params_frame(self):
         self.calib_params_frame = QFrame()
         self.calib_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         calib_layout = QGridLayout(self.calib_params_frame)
@@ -576,10 +680,7 @@ class _LayoutMixin:
         calib_layout.addWidget(self.calib_low, 1, 0)
         calib_layout.addWidget(self.calib_high, 1, 1)
 
-        params_layout.addWidget(self.calib_params_frame)
-
-        # FT Calibration Check 参数：两个 FT 校准点（电压 + 校准码）与判定阈值
-        # 仅 TEST_FT_CALIB_CHECK 测试项可见
+    def _build_ft_params_frame(self):
         self.ft_params_frame = QFrame()
         self.ft_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         ft_layout = QGridLayout(self.ft_params_frame)
@@ -634,29 +735,7 @@ class _LayoutMixin:
         )
         ft_layout.addWidget(self.ft_divider_ratio, 7, 0)
 
-        params_layout.addWidget(self.ft_params_frame)
-        self.ft_params_frame.hide()
-
-        self.sample_count_label = QLabel("Sample Count")
-        self.sample_count_label.setObjectName("muted_label")
-        params_layout.addWidget(self.sample_count_label)
-
-        self.sample_count = QSpinBox()
-        self.sample_count.setRange(1, 100000)
-        self.sample_count.setValue(1000)
-        self.sample_count.setSingleStep(100)
-        params_layout.addWidget(self.sample_count)
-
-        self.voltage_channel_label = QLabel("Voltage Channel")
-        self.voltage_channel_label.setObjectName("muted_label")
-        params_layout.addWidget(self.voltage_channel_label)
-
-        self.voltage_channel = DarkComboBox(bg="#0a1733", border="#24365e")
-        for ch in range(1, 5):
-            self.voltage_channel.addItem(f"Channel {ch}", ch)
-        self.voltage_channel.setCurrentIndex(3)
-        params_layout.addWidget(self.voltage_channel)
-
+    def _build_algorithm_controls(self, params_layout):
         # 采样算法：默认 None（原始数据，与既有流程一致）；参数控件按注册表动态生成
         self.algo_title = QLabel("Algorithm")
         self.algo_title.setObjectName("muted_label")
@@ -680,6 +759,7 @@ class _LayoutMixin:
         self._rebuild_algorithm_params()
         self.algorithm_combo.currentIndexChanged.connect(self._on_algorithm_changed)
 
+    def _build_outlier_filter(self, params_layout):
         # 离群样本筛选：剔除与平均值正/负向偏差超过阈值的样本（FT 测试项不适用，隐藏）
         self.outlier_filter_title = QLabel("Outlier Filter")
         self.outlier_filter_title.setObjectName("muted_label")
@@ -720,42 +800,7 @@ class _LayoutMixin:
         self.outlier_filter_switch.toggled.connect(self._on_outlier_filter_toggled)
         self._on_outlier_filter_toggled(False)
 
-        self.temp_hint_label = QLabel("Connect chamber to enable temperature testing.")
-        self.temp_hint_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
-        self.temp_hint_label.setWordWrap(True)
-        params_layout.addWidget(self.temp_hint_label)
-
-        left_col.addWidget(params_panel)
-
-        # 多通道高低温测试配置（仅 Multi-Ch Temp Test 测试项可见）
-        self.multi_ch_panel = MultiChTempPanel(self)
-        self.multi_ch_panel.save_requested.connect(self._on_save_multi_ch_config)
-        self.multi_ch_panel.load_requested.connect(self._on_load_multi_ch_config)
-        self.multi_ch_panel.hide()
-        left_col.addWidget(self.multi_ch_panel)
-
-        left_col.addStretch()
-
-        self.left_scroll.setWidget(left_content)
-        left_wrapper.addWidget(self.left_scroll, 1)
-
-        self.start_test_btn = QPushButton("▶ START TEST")
-        self.start_test_btn.setObjectName("primaryStartBtn")
-        # 宽度与上方面板可见宽对齐（左列内容宽 - 列右边距），防止长文本撑开左列
-        self.start_test_btn.setMaximumWidth(
-            left_content.maximumWidth() - left_col.contentsMargins().right()
-        )
-        left_wrapper.addWidget(self.start_test_btn)
-
-        self.stop_test_btn = QPushButton("■")
-        self.stop_test_btn.setObjectName("stopBtn")
-        self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.hide()
-
-        # 右侧
-        right_col = QVBoxLayout()
-        right_col.setSpacing(12)
-
+    def _build_metrics_row(self, right_col):
         # 性能指标卡行：包进独立容器，供一键截图（get_capture_pixmap）整行抓取
         metrics_row = QWidget()
         metrics_row.setObjectName("metricsRow")
@@ -770,7 +815,7 @@ class _LayoutMixin:
         enob_card, self.enob_value = self._create_metric_card("ENOB", "---", "metric_value_blue")
         offset_card, self.offset_error_value = self._create_metric_card("OFFSET ERR", "---", "metric_value_yellow")
         gain_card, self.gain_error_value = self._create_metric_card("GAIN ERR", "---", "metric_value_yellow")
-        
+
         # 添加1000CNT TEST的指标卡片
         avg_card, self.avg_value = self._create_metric_card("AVG", "---", "metric_value_green")
         min_card, self.min_value = self._create_metric_card("MIN", "---", "metric_value_blue")
@@ -811,6 +856,7 @@ class _LayoutMixin:
 
         right_col.addWidget(metrics_row)
 
+    def _build_chart_log_recent(self, right_col):
         chart_panel = QFrame()
         chart_panel.setObjectName("chart_panel")
         chart_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -879,20 +925,6 @@ class _LayoutMixin:
         self.recent_curve_splitter.widget(1).setVisible(False)
 
         right_col.addWidget(self.recent_curve_splitter, 1)
-
-        self.export_params_btn = QPushButton("Export Parameters")
-        self.export_params_btn.hide()
-
-        self.save_config_btn = QPushButton("Save Config")
-        self.load_config_btn = QPushButton("Load Config")
-        self.save_config_btn.hide()
-        self.load_config_btn.hide()
-
-        body_layout.addLayout(left_wrapper, 0)
-        body_layout.addLayout(right_col, 1)
-
-        page_layout.addLayout(body_layout, 1)
-        root_layout.addWidget(self.page, 1)
 
     def get_capture_pixmap(self):
         """一键截图目标：性能指标卡行 + 图表卡片纵向合成（不含日志区与 Recent 管理栏）。

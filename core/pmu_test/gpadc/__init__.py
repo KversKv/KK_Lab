@@ -18,6 +18,7 @@ from .gpadc_analysis import (
     filter_mean_deviation,
 )
 from .gpadc_worker import TestWorker, freeze_config
+from .gpadc_runner import GPADCAcquisition, GPADCTestRunner
 from .gpadc_ft_check import run_ft_calib_check
 from .gpadc_multi_temp import (
     parse_hw_int,
@@ -43,6 +44,8 @@ __all__ = [
     "filter_mean_deviation",
     "TestWorker",
     "freeze_config",
+    "GPADCAcquisition",
+    "GPADCTestRunner",
     "run_ft_calib_check",
     "parse_hw_int",
     "parse_iic_command_text",

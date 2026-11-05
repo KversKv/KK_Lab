@@ -7,7 +7,15 @@ import pytest
 
 collect_ignore = [
     "test_config_memory_smoke.py",
+    "test_ft_calib_check_smoke.py",
+    "test_gpadc_band_chart.py",
+    "test_n6705c_suite_mainwindow_smoke.py",
+    "test_n6705c_suite_smoke.py",
     "test_nav_layout_smoke.py",
+    "test_serialcom_fixes.py",
+    "test_serialcom_history_nav.py",
+    "test_valid_range_log.py",
+    "test_waveform_summary_export.py",
 ]
 
 _UI_IMPORT = re.compile(r"^\s*(?:from|import)\s+ui(?:\.|\s|$)", re.MULTILINE)

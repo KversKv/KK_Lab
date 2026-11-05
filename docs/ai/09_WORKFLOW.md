@@ -139,11 +139,17 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 
 ### 3.4 静态检查
 
-- 项目当前未配置 `ruff` / `mypy`。
-- 若引入新 lint / typecheck / test 命令：
-  1. 同步更新 [02_COMMANDS.md](./02_COMMANDS.md)；
-  2. 在 [AGENTS.md](../../AGENTS.md) 运行/打包章节追加；
-  3. 在 [.trae/rules/project-rules.md](../../.trae/rules/project-rules.md) "5. 提交与确认" 提示本次要运行。
+先执行 `python -m pip install -e ".[dev]"`，再运行统一质量门禁：
+
+```powershell
+python -m ruff check .
+python -m mypy
+python -m pytest -m "not qt"
+$env:QT_QPA_PLATFORM="offscreen"; python -m pytest -m qt
+```
+
+Ruff 当前聚焦语法与高风险逻辑错误，Mypy 仅检查 `core/module_test` 的纯数据模型；
+扩展检查范围时同步更新 [02_COMMANDS.md](./02_COMMANDS.md) 与 CI 工作流。
 
 ### 3.5 文档沉淀（按需，不强制）
 

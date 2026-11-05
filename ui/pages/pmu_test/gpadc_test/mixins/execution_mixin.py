@@ -1,25 +1,57 @@
 """GPADCTestUI 测试启停 / 编排 / Worker 生命周期 Mixin。
 
-从 ui/pages/pmu_test/gpadc_test_ui.py 平移而来，行为零变更。
+从 ui/pages/pmu_test/gpadc_test_ui.py 平移而来。
 类装配见 gpadc_test_ui.py。"""
+
+import weakref
 
 from ui.styles import update_start_btn_state
 from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import QThread
 from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
-from log_config import get_logger
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockChamber, MockI2C, MockN6705C
+from instruments.mock.mock_instruments import MockChamber, MockN6705C
 from ui.theme import apply_qss
 from core.pmu_test.gpadc import (
-    TestWorker as _TestWorker, compute_detailed_stats, run_ft_calib_check,
-    ALGORITHM_REGISTRY, describe_algorithm, assess_fluctuation, parse_hw_int,
-    run_multi_ch_temp_test, freeze_config
+    TestWorker as _TestWorker, GPADCTestRunner,
+    ALGORITHM_REGISTRY, describe_algorithm, assess_fluctuation, freeze_config,
 )
 
-logger = get_logger(__name__)
-
 _RETIRED_THREAD_WORKERS = {}
+
+
+class _WorkerSignalRelay:
+    """只弱引用 Worker，不捕获页面或 Widget 的 core 回调中继。"""
+
+    def __init__(self, worker=None):
+        self._worker_ref = weakref.ref(worker) if worker is not None else None
+
+    def attach(self, worker):
+        self._worker_ref = weakref.ref(worker)
+
+    def _worker(self):
+        return self._worker_ref() if self._worker_ref is not None else None
+
+    def log(self, message):
+        worker = self._worker()
+        if worker is not None:
+            worker.log.emit(message)
+
+    def status(self, message, is_error=False):
+        worker = self._worker()
+        if worker is not None:
+            worker.status.emit(message, is_error)
+
+    def progress(self, value):
+        worker = self._worker()
+        if worker is not None:
+            worker.progress.emit(value)
+
+    def confirm(self, title, message):
+        worker = self._worker()
+        if worker is None:
+            return False, False
+        return worker.wait_user_confirm(title, message)
 
 
 def _retire_thread(thread, worker=None):
@@ -120,7 +152,7 @@ class _ExecutionMixin:
         sample_cnt = self.sample_count.value()
 
         if test_item == self.TEST_1000CNT:
-            fn = self._run_1000cnt_test
+            kind = "1000cnt"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -128,7 +160,7 @@ class _ExecutionMixin:
                 sample_cnt=sample_cnt,
             )
         elif test_item == self.TEST_FORCE_VOLTAGE:
-            fn = self._run_force_voltage_test
+            kind = "force_voltage"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -140,7 +172,7 @@ class _ExecutionMixin:
                 sample_cnt=sample_cnt,
             )
         elif test_item == self.TEST_HIGH_LOW_TEMP:
-            fn = self._run_high_low_temp_test
+            kind = "high_low_temp"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -153,7 +185,7 @@ class _ExecutionMixin:
                 sample_cnt=sample_cnt,
             )
         elif test_item == self.TEST_TEMP_CONSISTENCY:
-            fn = self._run_temp_consistency_test
+            kind = "temp_consistency"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -177,7 +209,7 @@ class _ExecutionMixin:
                 self._update_test_button_state(False)
                 self._set_ui_enabled(True)
                 return
-            fn = self._run_multi_ch_temp_test
+            kind = "multi_ch_temp"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -197,7 +229,7 @@ class _ExecutionMixin:
                 self._update_test_button_state(False)
                 self._set_ui_enabled(True)
                 return
-            fn = self._run_ft_calib_check
+            kind = "ft_calib_check"
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
@@ -213,12 +245,10 @@ class _ExecutionMixin:
             self._stop_test()
             return
 
-        # 测试用到的 N6705C 通道在结束后恢复测试前电压设定（快照/恢复在 worker 线程内执行）
-        restore_channels = self._voltage_channels_for_test(test_item, kwargs)
-        if restore_channels:
-            fn = self._wrap_restore_channel_voltage(fn, restore_channels)
-
-        worker = _TestWorker(fn, kwargs)
+        relay = _WorkerSignalRelay()
+        runner = self._build_gpadc_runner(relay)
+        worker = _TestWorker(runner.run, {"kind": kind, "config": kwargs})
+        relay.attach(worker)
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -236,291 +266,100 @@ class _ExecutionMixin:
         thread.finished.connect(self._on_test_thread_finished)
 
         self._test_worker = worker
+        self._test_runner = runner
         self.test_thread = thread
         thread.start()
 
-    def _voltage_channels_for_test(self, test_item, kwargs):
-        """返回本次测试会改动电压设定的 N6705C 通道列表（去重，保持顺序）。"""
-        if test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_TEMP_CONSISTENCY,
-                         self.TEST_FT_CALIB_CHECK):
-            return [kwargs['voltage_channel']]
-        if test_item == self.TEST_MULTI_CH_TEMP:
-            channels = []
-            for ch_cfg in kwargs['channels']:
-                if ch_cfg.get('enabled', True) and ch_cfg.get('sweep_enabled'):
-                    vch = int(ch_cfg.get('voltage_channel') or 1)
-                    if vch not in channels:
-                        channels.append(vch)
-            return channels
-        return []
+    def _build_gpadc_runner(self, relay):
+        """装配纯 core runner；仪器与采集对象均不反向引用页面。"""
+        acquisition = self._create_gpadc_acquisition(
+            log_fn=relay.log,
+            status_fn=relay.status,
+        )
+        if DEBUG_MOCK:
+            n6705c = MockN6705C()
+            n6705c._mock_i2c = acquisition.mock_i2c
+            chamber = MockChamber()
+        else:
+            n6705c = getattr(self, "n6705c", None)
+            chamber = getattr(self, "chamber", None)
+        return GPADCTestRunner(
+            acquisition=acquisition,
+            n6705c=n6705c,
+            chamber=chamber,
+            n6705c_connected=DEBUG_MOCK or bool(getattr(self, "is_connected", False)),
+            chamber_connected=DEBUG_MOCK or bool(getattr(self, "is_chamber_connected", False)),
+            mock_mode=DEBUG_MOCK,
+            calib_points=self._calib_points_snapshot,
+            log_fn=relay.log,
+            status_fn=relay.status,
+            progress_callback=relay.progress,
+            confirm_fn=relay.confirm,
+        )
 
-    def _wrap_restore_channel_voltage(self, fn, channels):
-        """包装测试函数：worker 线程内先 measure_voltage 快照各通道电压，测试结束（含中止/异常）后恢复。"""
-        def _runner(stop_check=None, **fn_kwargs):
-            saved = {}
-            if not DEBUG_MOCK and self.n6705c is not None:
-                for ch in channels:
-                    try:
-                        saved[ch] = self.n6705c.measure_voltage(ch)
-                    except Exception:
-                        logger.warning("GPADC 读取 CH%s 测试前电压失败", ch, exc_info=True)
-            try:
-                return fn(stop_check=stop_check, **fn_kwargs)
-            finally:
-                for ch, voltage in saved.items():
-                    try:
-                        self.n6705c.set_voltage(ch, voltage)
-                        self._test_worker.log.emit(f"[INFO] CH{ch} 电压已恢复测试前设定: {voltage:.3f} V")
-                    except Exception:
-                        logger.warning("GPADC 恢复 CH%s 电压失败", ch, exc_info=True)
-                        self._test_worker.log.emit(f"[WARN] CH{ch} 电压恢复失败，请手动确认通道输出")
-        return _runner
+    def _run_gpadc_compat(self, kind, config, stop_check=None):
+        """旧页内入口的兼容转发；正常启动路径直接绑定 core runner。"""
+        relay = _WorkerSignalRelay(getattr(self, "_test_worker", None))
+        runner = self._build_gpadc_runner(relay)
+        return runner.run(kind, config, stop_check=stop_check)
 
     def _run_1000cnt_test(self, device_addr, reg_addr, sample_cnt=1000, iic_weight=10, stop_check=None):
-        if self._acq_mode_snapshot == 'UART':
-            self._test_worker.log.emit(f"[INFO] Starting 1000CNT TEST via UART Log, keyword='{self._uart_keyword_snapshot}', count={sample_cnt}")
-        else:
-            self._test_worker.log.emit(f"[INFO] Starting 1000CNT TEST with I2C address: 0x{device_addr:x} Register: 0x{reg_addr:x}, count={sample_cnt}")
-        _, _, _, raw_data = self._gpadc_read_by_cnts(
-            device_addr=device_addr,
-            reg_addr=reg_addr,
-            iic_weight=iic_weight,
-            get_reg_cnt=sample_cnt,
-            return_raw=True,
-            stop_check=stop_check,
-            progress_callback=lambda v: self._test_worker.progress.emit(v),
-        )
-        stats = compute_detailed_stats(raw_data)
-        stats['raw'] = raw_data
-        # 算法前后对比（未启用算法为 None），供完成日志输出算法带来的波动改善
-        stats['algo_effect'] = self._last_algo_effect
-        # 算法前的原始数据（未启用算法为 None），供完成日志输出原始/处理后数据
-        stats['raw_before_algo'] = self._last_raw_before_algo
-        return ('1000cnt', stats)
+        return self._run_gpadc_compat("1000cnt", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            sample_cnt=sample_cnt,
+        ), stop_check)
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
                                 voltage_step, voltage_channel, sample_cnt=1000, iic_weight=10,
                                 stop_check=None):
-        result = self.gpadc_force_voltage_test(
-            n6705c=self.n6705c,
-            device_addr=device_addr,
-            reg_addr=reg_addr,
-            iic_weight=iic_weight,
-            voltage_min=voltage_min,
-            voltage_max=voltage_max,
-            voltage_step=voltage_step,
-            voltage_channel=voltage_channel,
-            sample_cnt=sample_cnt,
-            stop_check=stop_check,
-            progress_callback=lambda v: self._test_worker.progress.emit(v),
-        )
-        return ('force_voltage', result)
+        return self._run_gpadc_compat("force_voltage", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            voltage_min=voltage_min, voltage_max=voltage_max, voltage_step=voltage_step,
+            voltage_channel=voltage_channel, sample_cnt=sample_cnt,
+        ), stop_check)
 
     def _run_high_low_temp_test(self, device_addr, reg_addr, temp_min, temp_max,
                                 temp_step, voltage_channel, sample_cnt=1000,
                                 iic_weight=10, stop_check=None, soak_time=180):
-        self._test_worker.log.emit("[INFO] RUN TEST_HIGH_LOW_TEMP TEST")
-        result = self.gpadc_high_low_temp_test(
-            device_addr=device_addr,
-            reg_addr=reg_addr,
-            iic_weight=iic_weight,
-            temp_min=temp_min,
-            temp_max=temp_max,
-            temp_step=temp_step,
-            voltage_channel=voltage_channel,
-            soak_time=soak_time,
-            sample_cnt=sample_cnt,
-            stop_check=stop_check,
-            progress_callback=lambda v: self._test_worker.progress.emit(v),
-        )
-        return ('high_low_temp', result)
+        return self._run_gpadc_compat("high_low_temp", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            temp_min=temp_min, temp_max=temp_max, temp_step=temp_step,
+            voltage_channel=voltage_channel, soak_time=soak_time, sample_cnt=sample_cnt,
+        ), stop_check)
 
     def _run_temp_consistency_test(self, device_addr, reg_addr, temp_min, temp_max,
                                    temp_step, voltage_min, voltage_max, voltage_step,
                                    voltage_channel, sample_cnt=1000, iic_weight=10,
                                    stop_check=None, soak_time=180):
-        self._test_worker.log.emit("[INFO] RUN TEST_TEMP_CONSISTENCY TEST")
-        result = self.gpadc_temp_consistency_test(
-            device_addr=device_addr,
-            reg_addr=reg_addr,
-            iic_weight=iic_weight,
-            temp_min=temp_min,
-            temp_max=temp_max,
-            temp_step=temp_step,
-            voltage_min=voltage_min,
-            voltage_max=voltage_max,
-            voltage_step=voltage_step,
-            voltage_channel=voltage_channel,
-            soak_time=soak_time,
-            sample_cnt=sample_cnt,
-            stop_check=stop_check,
-            progress_callback=lambda v: self._test_worker.progress.emit(v),
-        )
-        return ('temp_consistency', result)
+        return self._run_gpadc_compat("temp_consistency", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            temp_min=temp_min, temp_max=temp_max, temp_step=temp_step,
+            voltage_min=voltage_min, voltage_max=voltage_max, voltage_step=voltage_step,
+            voltage_channel=voltage_channel, soak_time=soak_time, sample_cnt=sample_cnt,
+        ), stop_check)
 
     def _run_multi_ch_temp_test(self, device_addr, reg_addr, iic_weight,
                                 temp_min, temp_max, temp_step, soak_time, sample_cnt,
                                 channels, pre_config, stop_check=None):
-        """多通道高低温联合测试：流程在 core/pmu_test/gpadc/gpadc_multi_temp.py（纯函数）。
-
-        本方法仅做仪器/回调装配：温箱 + N6705C + IIC 写/读 + GPADC 采样回调。
-        """
-        self._test_worker.log.emit("[INFO] RUN TEST_MULTI_CH_TEMP TEST")
-
-        if DEBUG_MOCK:
-            if not hasattr(self, "_mock_i2c"):
-                self._mock_i2c = MockI2C()
-            chamber = MockChamber()
-            vol_source = MockN6705C()
-            vol_source._mock_i2c = self._mock_i2c
-        else:
-            if not hasattr(self, 'chamber') or not self.is_chamber_connected:
-                self._test_worker.log.emit("[ERROR] Chamber not connected")
-                self._test_worker.status.emit("错误: 温箱未连接", True)
-                return None
-            chamber = self.chamber
-            need_sweep = any(
-                c.get('enabled', True) and c.get('sweep_enabled') for c in channels
-            )
-            if need_sweep and (self.n6705c is None or not self.is_connected):
-                self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self._test_worker.status.emit("错误: N6705C未连接", True)
-                return None
-            vol_source = self.n6705c if need_sweep else None
-            if (self._acq_mode_snapshot == 'UART'
-                    and any((c.get('switch_writes_text') or c.get('switch_writes'))
-                            for c in channels if c.get('enabled', True))):
-                self._test_worker.log.emit(
-                    "[INFO] UART 采集模式下，通道切换仍经 I2C 接口写入"
-                )
-
-        def _write_fn(dev, reg, val, width, high=-1, low=-1):
-            if DEBUG_MOCK:
-                self._mock_i2c.write(dev, reg, val, width)
-                return
-            self._ensure_device_i2c().write(dev, reg, val, width, high, low)
-
-        def _read_reg_fn(dev, reg, width):
-            if DEBUG_MOCK:
-                return self._mock_i2c.read(dev, reg, width)
-            return self._ensure_device_i2c().read(dev, reg, width)
-
-        def _sample_fn(ch_cfg, cnt, stop, mock_hint=None):
-            dev = parse_hw_int(ch_cfg.get('read_dev'), device_addr)
-            reg = parse_hw_int(ch_cfg.get('read_reg'), reg_addr)
-            width = int(ch_cfg.get('read_width') or 0) or iic_weight
-            if DEBUG_MOCK and mock_hint is not None:
-                self._mock_i2c.set_mock_voltage(mock_hint)
-            return self._gpadc_read_by_cnts(
-                dev, reg, width,
-                get_reg_cnt=cnt,
-                return_raw=False,
-                stop_check=stop,
-            )
-
-        result = run_multi_ch_temp_test(
-            chamber=chamber,
-            vol_source=vol_source,
-            write_fn=_write_fn,
-            read_reg_fn=_read_reg_fn,
-            sample_fn=_sample_fn,
-            channels=channels,
-            pre_config=pre_config,
-            temp_min=temp_min,
-            temp_max=temp_max,
-            temp_step=temp_step,
-            soak_time=soak_time,
-            sample_cnt=sample_cnt,
-            default_dev=device_addr,
-            default_width=iic_weight,
-            mock_mode=DEBUG_MOCK,
-            log_fn=self._test_worker.log.emit,
-            status_fn=self._test_worker.status.emit,
-            stop_check=stop_check,
-            progress_callback=lambda v: self._test_worker.progress.emit(v),
-        )
-        return ('multi_ch_temp', result)
+        return self._run_gpadc_compat("multi_ch_temp", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            temp_min=temp_min, temp_max=temp_max, temp_step=temp_step,
+            soak_time=soak_time, sample_cnt=sample_cnt,
+            channels=channels, pre_config=pre_config,
+        ), stop_check)
 
     def _run_ft_calib_check(self, device_addr, reg_addr, iic_weight,
                             voltage_min, voltage_max, voltage_step, voltage_channel,
                             calib_p1, calib_p2, raw_tol_lsb, err_limit_mv,
                             divider_ratio=1.0, sample_cnt=1000, stop_check=None):
-        """FT Calibration Check：流程纯函数在 core/pmu_test/gpadc/gpadc_ft_check.py。
-
-        本方法仅做仪器/回调装配：N6705C 扫压 + IIC 实时采样 / UART raw/volt 解析。
-        """
-        mode = self._acq_mode_snapshot
-        self._test_worker.log.emit(f"[INFO] RUN FT CALIBRATION CHECK ({mode})")
-
-        if DEBUG_MOCK:
-            if not hasattr(self, "_mock_i2c"):
-                self._mock_i2c = MockI2C()
-            vol_source = MockN6705C()
-            vol_source._mock_i2c = self._mock_i2c
-        else:
-            vol_source = self.n6705c
-            if vol_source is None or not self.is_connected:
-                self._test_worker.log.emit("[ERROR] N6705C not connected")
-                self._test_worker.status.emit("错误: N6705C未连接", True)
-                return None
-
-        # FT 校准检查不应用采样算法与离群筛选（保持 raw 与 volt 的配对一致性）
-        if self._algorithm_snapshot is not None:
-            self._test_worker.log.emit("[INFO] FT Calibration Check 不应用采样算法，已忽略 Algorithm 配置")
-        saved_algo = self._algorithm_snapshot
-        self._algorithm_snapshot = None
-        if self._outlier_filter_snapshot is not None:
-            self._test_worker.log.emit("[INFO] FT Calibration Check 不应用离群样本筛选，已忽略 Outlier Filter 配置")
-        saved_filter = self._outlier_filter_snapshot
-        self._outlier_filter_snapshot = None
-        try:
-            def _set_voltage(v):
-                vol_source.set_voltage(voltage_channel, v)
-                if DEBUG_MOCK:
-                    # 模拟外部分压：MockN6705C 默认把 DUT 输入设为源输出，
-                    # 实际分压场景 DUT 引脚电压 = 源输出 / 分压比
-                    self._mock_i2c.set_mock_voltage(v / divider_ratio)
-
-            def _sample_iic(cnt, stop):
-                return self.gpadc_reg_read_by_cnts(
-                    device_addr, reg_addr, iic_weight,
-                    get_reg_cnt=cnt, return_raw=False, stop_check=stop,
-                )
-
-            def _sample_uart(cnt, stop):
-                return self.gpadc_uart_read_raw_volt_by_cnts(
-                    get_reg_cnt=cnt,
-                    keyword=self._uart_keyword_snapshot,
-                    stop_check=stop,
-                )
-
-            result = run_ft_calib_check(
-                mode=mode,
-                calib_p1=calib_p1,
-                calib_p2=calib_p2,
-                raw_tol_lsb=raw_tol_lsb,
-                err_limit_mv=err_limit_mv,
-                divider_ratio=divider_ratio,
-                voltage_min=voltage_min,
-                voltage_max=voltage_max,
-                voltage_step=voltage_step,
-                sample_cnt=sample_cnt,
-                set_voltage_fn=_set_voltage,
-                sample_iic_fn=_sample_iic,
-                sample_uart_fn=_sample_uart,
-                settle_s=0.0 if DEBUG_MOCK else 0.5,
-                step_s=0.0 if DEBUG_MOCK else 0.2,
-                log_fn=self._test_worker.log.emit,
-                status_fn=self._test_worker.status.emit,
-                stop_check=stop_check,
-                progress_callback=lambda v: self._test_worker.progress.emit(v),
-            )
-        finally:
-            self._algorithm_snapshot = saved_algo
-            self._outlier_filter_snapshot = saved_filter
-        if result is None:
-            return None
-        return ('ft_calib_check', result)
+        return self._run_gpadc_compat("ft_calib_check", dict(
+            device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
+            voltage_min=voltage_min, voltage_max=voltage_max, voltage_step=voltage_step,
+            voltage_channel=voltage_channel, sample_cnt=sample_cnt,
+            calib_p1=calib_p1, calib_p2=calib_p2,
+            raw_tol_lsb=raw_tol_lsb, err_limit_mv=err_limit_mv,
+            divider_ratio=divider_ratio,
+        ), stop_check)
 
     @staticmethod
     def _result_has_samples(kind, result):
@@ -717,6 +556,7 @@ class _ExecutionMixin:
 
     def _on_test_thread_finished(self):
         self._test_worker = None
+        self._test_runner = None
         self.test_thread = None
         self.is_test_running = False
         self.start_test_btn.setEnabled(True)
@@ -765,4 +605,5 @@ class _ExecutionMixin:
         if thread is not None and isValid(thread):
             _retire_thread(thread, worker if worker is None or isValid(worker) else None)
         # 置空可避免 CleanupMixin 再次在主线程 wait；worker 引用保留到 run 返回。
+        self._test_runner = None
         self.test_thread = None

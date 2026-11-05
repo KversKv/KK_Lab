@@ -173,3 +173,67 @@ def test_legacy_start_uses_qobject_worker_and_cleans_up_thread():
     assert finished == [(True, "测试完成")]
     assert runner._thread is None
     assert instances[0].writes[-1][2] == 0xA5
+
+
+@pytest.mark.qt
+def test_legacy_quit_wait_releases_confirmation_and_stops_thread():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    instances = []
+    config = _config()
+    config["msb"] = 2
+    config["max_code"] = "4"
+    runner = _runner(_Instrument(), config, instances)
+    confirmations = []
+    finished = []
+    runner.confirm_request.connect(lambda *args: confirmations.append(args))
+    runner.test_finished.connect(lambda *args: finished.append(args))
+
+    runner.start()
+    deadline = time.monotonic() + 2.0
+    while not confirmations and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.001)
+
+    assert len(confirmations) == 1
+    runner.request_stop()
+    runner.respond_confirm(False)
+    runner.quit()
+    assert runner.wait(3000) is True
+    app.processEvents()
+
+    assert finished == [(False, "测试被中止")]
+    assert runner._thread is None
+
+
+@pytest.mark.qt
+def test_output_voltage_page_integrates_with_main_window_cleanup():
+    from types import SimpleNamespace
+
+    from ui.cleanup_mixin import CleanupMixin
+    from ui.pages.pmu_test.pmu_output_voltage import PMUOutputVoltageUI
+
+    calls = []
+
+    class _Thread:
+        def request_stop(self):
+            calls.append("request_stop")
+
+        def respond_confirm(self, continue_test):
+            calls.append(("respond_confirm", continue_test))
+
+        def quit(self):
+            calls.append("quit")
+
+        def wait(self, msecs):
+            calls.append(("wait", msecs))
+            return True
+
+    page = SimpleNamespace(test_thread=_Thread())
+    page.cleanup_threads = lambda: PMUOutputVoltageUI.cleanup_threads(page)
+
+    CleanupMixin()._cleanup_sub_ui(page, "PMU.output_voltage_ui")
+
+    assert calls == [
+        "request_stop", ("respond_confirm", False), "quit", ("wait", 3000),
+    ]
+    assert page.test_thread is None

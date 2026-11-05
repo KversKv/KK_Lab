@@ -450,6 +450,21 @@ class OutputVoltageTestThread(QObject):
     def respond_confirm(self, continue_test):
         self._worker.respond_confirm(continue_test)
 
+    def quit(self):
+        """兼容主窗口统一清理契约，退出内部 QThread 事件循环。"""
+        thread = self._thread
+        if thread is not None:
+            thread.quit()
+
+    def wait(self, msecs=None):
+        """等待内部 QThread 结束；尚未启动或已结束时立即成功。"""
+        thread = self._thread
+        if thread is None:
+            return True
+        if msecs is None:
+            return thread.wait()
+        return thread.wait(msecs)
+
     def _on_thread_finished(self):
         if self.sender() is self._thread:
             self._thread = None

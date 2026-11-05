@@ -13,6 +13,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.pmu_test.gpadc.gpadc_multi_temp import (
@@ -155,6 +157,38 @@ def test_invalid_ranges():
         soak_time=0, sample_cnt=100, mock_mode=True, log_fn=logs.append,
     )
     assert result is None and any("Start <= End" in line for line in logs)
+
+
+def test_execution_exception_reraised_and_cleanup_failure_reported():
+    original_error = RuntimeError("sample boom")
+    logs, statuses = [], []
+    i2c, chamber, vol, write_fn, read_reg_fn, sample_fn, writes = _make_fakes(logs)
+
+    class FailingCleanupChamber(MockChamber):
+        def set_temperature(self, temp):
+            if temp == 25.0:
+                raise RuntimeError("cleanup boom")
+            super().set_temperature(temp)
+
+    def failing_sample(ch_cfg, cnt, stop_check, mock_hint=None):
+        raise original_error
+
+    with pytest.raises(RuntimeError) as caught:
+        run_multi_ch_temp_test(
+            chamber=FailingCleanupChamber(), vol_source=vol,
+            write_fn=write_fn, read_reg_fn=read_reg_fn, sample_fn=failing_sample,
+            channels=[{"enabled": True, "name": "Temp", "sweep_enabled": False}],
+            temp_min=40.0, temp_max=40.0, temp_step=10.0,
+            soak_time=0, sample_cnt=4, mock_mode=True,
+            default_dev=0x17, default_width=8,
+            log_fn=logs.append,
+            status_fn=lambda message, is_error=False: statuses.append((message, is_error)),
+        )
+
+    assert caught.value is original_error
+    assert any("温箱回设 25°C失败" in line and "cleanup boom" in line for line in logs)
+    assert any(is_error and "sample boom" in message for message, is_error in statuses)
+    assert any(is_error and "温箱回设 25°C失败" in message for message, is_error in statuses)
 
 
 def test_parse_hw_int():

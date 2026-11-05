@@ -21,6 +21,7 @@ from PySide6.QtCore import QThread, Signal
 
 from core.module_test._common import (
     ItemContext,
+    LoadControlError,
     load_reg_summary,
     measure_vout,
     parse_channel,
@@ -403,6 +404,11 @@ class ModuleTestRunner(QThread):
             item_t0 = time.monotonic()
             try:
                 result: ItemResult = run_fn(ctx)
+            except LoadControlError as exc:
+                self._log(f"[ERROR] {item_key} 负载控制失败，停止后续测试：{exc}")
+                result = ItemResult(item_key=item_key, name=name, passed=False,
+                                    notes=f"负载控制失败：{exc}")
+                aborted_reason = f"{item_key} 负载控制失败"
             except Exception:  # noqa: BLE001 - 单项异常不阻断整体
                 logger.error("item %s 执行异常", item_key, exc_info=True)
                 self._log(f"[ERROR] {item_key} 执行异常，记为 FAIL。")
@@ -434,9 +440,11 @@ class ModuleTestRunner(QThread):
                 self.item_finished.emit(lr_key, lr_result.to_summary())
                 self._progress(int((idx + 1) / total * 100), name)
 
-            # 停止后不再发起额外 Vout 测量；正常完成才执行逐项偏差门禁。
+            # 停止或负载控制失败后不再发起额外 Vout 测量与后续测试项。
             if stopped:
                 aborted_reason = "用户请求停止"
+                break
+            if aborted_reason:
                 break
             if not self._check_vout_deviation(ctx, vout_baseline, item_key):
                 aborted_reason = f"{item_key} 结束后 Vout 与基准 V0 偏差超过 ±20 mV"

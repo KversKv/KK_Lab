@@ -58,12 +58,14 @@ class _ZeroThenFailInstrument:
 class _FailOnInstrument:
     def __init__(self, fail_method: str):
         self.fail_method = fail_method
+        self.calls = []
 
     def __getattr__(self, name):
         if name == "instr":
             return None
 
-        def _call(*_args, **_kwargs):
+        def _call(*args, **_kwargs):
+            self.calls.append((name, args))
             if name == self.fail_method:
                 raise RuntimeError(f"{name} failed")
             return None
@@ -249,6 +251,52 @@ def test_runner_measurement_failure_cannot_judge_pass(tmp_path, monkeypatch):
     assert result.items[0].passed is False
     assert "测量异常" in result.items[0].notes
     assert result.summary["overall"] == "FAIL"
+
+
+def test_runner_load_control_failure_stops_remaining_items(tmp_path, monkeypatch):
+    first_key = "ldo_line_reg"
+    second_key = "ldo_load_reg"
+    calls = []
+
+    def _fail_load(_ctx):
+        calls.append(first_key)
+        raise _common.LoadControlError("set_current failed")
+
+    def _should_not_run(_ctx):
+        calls.append(second_key)
+        return ItemResult(item_key=second_key, name="Load Regulation", passed=True)
+
+    runner = ModuleTestRunner(
+        module_type="ldo",
+        items_registry={
+            first_key: ("Line Regulation", _fail_load, False, True, ()),
+            second_key: ("Load Regulation", _should_not_run, False, True, ()),
+        },
+        config={"selected_items": [first_key, second_key]},
+        n6705c=None, out_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(runner, "_setup_vin_current_limit", lambda: None)
+    monkeypatch.setattr(runner, "_preload_iload", lambda: None)
+    monkeypatch.setattr(runner, "_record_vout_baseline", lambda: None)
+
+    def _forbidden_follow_up(*_args, **_kwargs):
+        raise AssertionError("负载控制失败后仍执行了后续测量")
+
+    monkeypatch.setattr(runner, "_check_vout_deviation", _forbidden_follow_up)
+    monkeypatch.setattr("core.module_test._runner_base.save_html_report",
+                        lambda *_args, **_kwargs: (str(tmp_path / "report.html"), None))
+    finished = []
+    runner.finished_result.connect(finished.append)
+
+    runner._run_impl()
+
+    assert calls == [first_key]
+    assert len(finished) == 1
+    result = finished[0]
+    assert [item.item_key for item in result.items] == [first_key]
+    assert result.items[0].passed is False
+    assert "set_current failed" in result.items[0].notes
+    assert result.summary["aborted"] == f"{first_key} 负载控制失败"
 
 
 def test_runner_stop_is_checked_before_judge(tmp_path, monkeypatch):
@@ -449,9 +497,6 @@ def test_dcdc_topology_invalid_measurement_uses_empty_value(tmp_path):
 @pytest.mark.parametrize("function_name,args,fail_method", [
     ("setup_source_channel", (1, 3.8), "set_voltage"),
     ("setup_meter_channel", (1,), "set_mode"),
-    ("setup_load_channel", (3, 0.001), "channel_on"),
-    ("set_load_current", (3, 0.1), "set_current"),
-    ("apply_load_current", (3, 0.1, {"on": True}), "set_current"),
 ])
 def test_common_instrument_failures_mark_measurement_invalid(
         tmp_path, function_name, args, fail_method):
@@ -459,6 +504,44 @@ def test_common_instrument_failures_mark_measurement_invalid(
 
     getattr(_common, function_name)(ctx, *args)
 
+    assert ctx.measurement_failed is True
+
+
+@pytest.mark.parametrize("function_name,args,fail_method", [
+    ("setup_load_channel", (3, 0.001), "set_current"),
+    ("setup_load_channel", (3, 0.001), "channel_on"),
+    ("set_load_current", (3, 0.1), "set_current"),
+    ("apply_load_current", (3, 0.1, {"on": True}), "set_current"),
+])
+def test_load_control_failures_shutdown_and_raise(
+        tmp_path, function_name, args, fail_method):
+    inst = _FailOnInstrument(fail_method)
+    ctx = _ctx(tmp_path, n6705c=inst, is_mock=False)
+
+    with pytest.raises(_common.LoadControlError, match="ch3"):
+        getattr(_common, function_name)(ctx, *args)
+
+    names = [name for name, _args in inst.calls]
+    assert ctx.measurement_failed is True
+    assert names.count("channel_off") == 1
+    if fail_method == "set_current":
+        assert "channel_on" not in names
+
+
+def test_load_control_cleanup_failure_preserves_original_error(tmp_path):
+    class _WriteAndCleanupFailInstrument(_FailOnInstrument):
+        def channel_off(self, channel):
+            self.calls.append(("channel_off", (channel,)))
+            raise RuntimeError("channel_off failed")
+
+    ctx = _ctx(tmp_path, n6705c=_WriteAndCleanupFailInstrument("set_current"),
+               is_mock=False)
+
+    with pytest.raises(_common.LoadControlError) as caught:
+        _common.set_load_current(ctx, 3, 0.1)
+
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "set_current failed"
     assert ctx.measurement_failed is True
 
 
