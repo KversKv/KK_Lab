@@ -151,6 +151,10 @@ class _ConfigAiMixin:
                 'pos_offset': self.outlier_pos_offset.value(),
                 'neg_offset': self.outlier_neg_offset.value(),
             },
+            'current_monitor': {
+                'enabled': self.current_monitor_switch.isChecked(),
+                'channel': self.current_monitor_channel.currentData(),
+            },
             'multi_channels': self.multi_ch_panel.get_channels(),
             'pre_config': self.multi_ch_panel.get_pre_config(),
         }
@@ -312,8 +316,8 @@ class _ConfigAiMixin:
     def ai_start_test(self) -> tuple[bool, str]:
         if self.is_test_running:
             return False, "测试已在运行中。"
-        # 按当前测试项的仪器需求前置校验（INSTRUMENT_MAP）
-        required = self.INSTRUMENT_MAP.get(self.current_test_item, [])
+        # 按当前测试项与电流监控开关的仪器需求前置校验
+        required = self._required_instruments()
         if "n6705c" in required and (not self.is_connected or self.n6705c is None):
             return False, f"当前测试项 {self.current_test_item} 需要 N6705C，请先连接再启动。"
         if "chamber" in required and (not self.is_chamber_connected or self.chamber is None):
@@ -519,6 +523,25 @@ class _ConfigAiMixin:
                 if "outlier_filter" not in applied:
                     applied.append("outlier_filter")
                 touched.append(spin)
+
+        # High-Low Temp Test 电流监控（启用状态 + N6705C 通道）
+        monitor_cfg = cfg.get("current_monitor")
+        if isinstance(monitor_cfg, dict):
+            channel = monitor_cfg.get("channel")
+            if channel is not None:
+                idx = self.current_monitor_channel.findData(channel)
+                if idx >= 0:
+                    self.current_monitor_channel.setCurrentIndex(idx)
+                    if "current_monitor" not in applied:
+                        applied.append("current_monitor")
+                    touched.append(self.current_monitor_channel)
+            enabled = monitor_cfg.get("enabled")
+            if enabled is not None:
+                self.current_monitor_switch.setChecked(bool(enabled))
+                if "current_monitor" not in applied:
+                    applied.append("current_monitor")
+                touched.append(self.current_monitor_switch)
+            self._refresh_instruments_visibility()
 
         # 多通道高低温测试：通道列表与前置配置
         channels = cfg.get("multi_channels")

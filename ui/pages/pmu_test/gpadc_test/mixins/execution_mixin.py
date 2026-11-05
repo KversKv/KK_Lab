@@ -183,6 +183,8 @@ class _ExecutionMixin:
                 voltage_channel=self.voltage_channel.currentData(),
                 soak_time=self.soak_time.value(),
                 sample_cnt=sample_cnt,
+                current_monitor_enabled=self.current_monitor_switch.isChecked(),
+                current_monitor_channel=self.current_monitor_channel.currentData(),
             )
         elif test_item == self.TEST_TEMP_CONSISTENCY:
             kind = "temp_consistency"
@@ -320,11 +322,14 @@ class _ExecutionMixin:
 
     def _run_high_low_temp_test(self, device_addr, reg_addr, temp_min, temp_max,
                                 temp_step, voltage_channel, sample_cnt=1000,
-                                iic_weight=10, stop_check=None, soak_time=180):
+                                iic_weight=10, stop_check=None, soak_time=180,
+                                current_monitor_enabled=False, current_monitor_channel=1):
         return self._run_gpadc_compat("high_low_temp", dict(
             device_addr=device_addr, reg_addr=reg_addr, iic_weight=iic_weight,
             temp_min=temp_min, temp_max=temp_max, temp_step=temp_step,
             voltage_channel=voltage_channel, soak_time=soak_time, sample_cnt=sample_cnt,
+            current_monitor_enabled=current_monitor_enabled,
+            current_monitor_channel=current_monitor_channel,
         ), stop_check)
 
     def _run_temp_consistency_test(self, device_addr, reg_addr, temp_min, temp_max,

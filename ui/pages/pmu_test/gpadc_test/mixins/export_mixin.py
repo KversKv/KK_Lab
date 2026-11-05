@@ -156,14 +156,21 @@ class _ExportMixin:
 
         row += 2
 
+        current_list = raw.get('current_a')
+        current_channel = raw.get('current_channel')
+        has_current = current_list is not None and current_channel is not None
+        raw_data_columns = 5 if has_current else 4
         _hdr(ws, row, 1, "Raw Data")
         ws.merge_cells(start_row=row, start_column=1,
-                       end_row=row, end_column=4)
+                       end_row=row, end_column=raw_data_columns)
         row += 1
         _sub(ws, row, 1, "Input Voltage (V)")
         _sub(ws, row, 2, "ADC Mean (LSB)")
         _sub(ws, row, 3, "ADC Min (LSB)")
         _sub(ws, row, 4, "ADC Max (LSB)")
+        if has_current:
+            _sub(ws, row, 5, f"CH{current_channel} Current (A)")
+            ws.column_dimensions["E"].width = 20
         row += 1
         rv_list  = raw['voltage']
         rm_list  = raw['mean']
@@ -174,6 +181,8 @@ class _ExportMixin:
             _val(ws, row, 2, float(rm_list[i]))
             _val(ws, row, 3, float(rn_list[i]))
             _val(ws, row, 4, float(rx_list[i]))
+            if has_current:
+                _val(ws, row, 5, float(current_list[i]))
             row += 1
 
         row += 2

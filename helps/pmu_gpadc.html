@@ -11,6 +11,10 @@
   <li><b>FT Calibration Check（两点 FT 校准检查）</b> — 校验 DUT 的 FT 两点校准数据，并评估校准后全量程误差</li>
 </ul>
 
+<h3>High-Low Temp Test 电流监控</h3>
+<p>选择 <b>High-Low Temp Test</b> 后，Test Item 下方显示 <b>Current Monitoring</b> 滑动开关。启用后可选择 N6705C 的 <b>Monitor Channel</b>（Channel 1～4），Instruments 区自动显示 N6705C 连接卡片；真机测试前需完成对应仪器连接。</p>
+<p>每个温度节点完成稳温与 Soak 后，系统在采集该节点 GPADC 数据的同时读取并记录所选通道电流。TEST LOG 的逐点记录和结果表包含电流值（单位 A），Recent 原始记录保留 <code>current_a</code> 与 <code>current_channel</code>，Excel 的 Raw Data 增加对应 <code>CHn Current (A)</code> 列。关闭开关时不需要 N6705C，结果结构与原有高低温测试一致。</p>
+
 <h3>FT Calibration Check（两点 FT 校准检查）</h3>
 <p>用户提供两个 FT 校准电压点及对应校准码（ADC raw code），系统按 Data Acquisition 选择分两种方式检查：</p>
 <ol>

@@ -508,6 +508,15 @@ class GPADCTestRunner:
             self.log_fn("[ERROR] Chamber not connected")
             self.status_fn("错误: 温箱未连接", True)
             return "high_low_temp", None
+        monitor_enabled = bool(config.get("current_monitor_enabled", False))
+        monitor_channel = int(config.get("current_monitor_channel", 1))
+        if monitor_enabled and not self.mock_mode and (
+                self.n6705c is None or not self.n6705c_connected):
+            self.log_fn("[ERROR] N6705C not connected for current monitoring")
+            self.status_fn("错误: 电流监控需要连接 N6705C", True)
+            return "high_low_temp", None
+        if monitor_enabled:
+            self.log_fn(f"[INFO] Current monitoring enabled: N6705C CH{monitor_channel}")
 
         device = None if self.acquisition.mode == "UART" else self.acquisition.ensure_i2c()
         if device is not None:
@@ -515,6 +524,7 @@ class GPADCTestRunner:
             self.log_fn(f"[INFO] Test data: {test_data:x}")
 
         temp_data, adc_mean, adc_min, adc_max = [], [], [], []
+        current_data = []
         current_temp = config["temp_min"]
         total_points = max(1, int(round((config["temp_max"] - config["temp_min"]) / config["temp_step"])) + 1)
         point_idx = 0
@@ -592,11 +602,29 @@ class GPADCTestRunner:
                         logger.warning("温箱串口重开失败", exc_info=True)
                     continue
 
+                current_a = None
+                if monitor_enabled:
+                    try:
+                        current_a = float(self.n6705c.measure_current(monitor_channel))
+                    except Exception as exc:
+                        logger.error(
+                            "GPADC 电流监控读取 CH%s 失败: %s", monitor_channel, exc,
+                            exc_info=True,
+                        )
+                        self.log_fn(f"[ERROR] 读取 N6705C CH{monitor_channel} 电流失败: {exc}")
+                        self.status_fn("错误: N6705C 电流读取失败", True)
+                        raise
+
                 temp_data.append(current_temp)
                 adc_mean.append(avg)
                 adc_min.append(min_val)
                 adc_max.append(max_val)
-                self.log_fn(f"[INFO] T={current_temp:.1f}°C, avg={avg:.3f}, min={min_val}, max={max_val}")
+                if monitor_enabled:
+                    current_data.append(current_a)
+                point_log = f"[INFO] T={current_temp:.1f}°C, avg={avg:.3f}, min={min_val}, max={max_val}"
+                if monitor_enabled:
+                    point_log += f", CH{monitor_channel} current={current_a:.6e} A"
+                self.log_fn(point_log)
                 current_temp += config["temp_step"]
                 point_idx += 1
                 self.progress_callback(int(point_idx * 100 / total_points))
@@ -608,12 +636,25 @@ class GPADCTestRunner:
                 self._report_cleanup_error("恢复温箱 25°C", exc)
 
         self.log_fn("===== HIGH/LOW TEMP TEST 结果 =====")
-        self.log_fn("Temp, RawMean, RawMin, RawMax")
+        result_header = "Temp, RawMean, RawMin, RawMax"
+        if monitor_enabled:
+            result_header += f", CH{monitor_channel} Current (A)"
+        self.log_fn(result_header)
         for index in range(len(temp_data)):
-            self.log_fn(f"{temp_data[index]:.2f}, {adc_mean[index]:.3f}, {adc_min[index]}, {adc_max[index]}")
-        return "high_low_temp", {
+            result_line = (
+                f"{temp_data[index]:.2f}, {adc_mean[index]:.3f}, "
+                f"{adc_min[index]}, {adc_max[index]}"
+            )
+            if monitor_enabled:
+                result_line += f", {current_data[index]:.6e}"
+            self.log_fn(result_line)
+        result = {
             "voltage": temp_data, "mean": adc_mean, "min": adc_min, "max": adc_max,
         }
+        if monitor_enabled:
+            result["current_a"] = current_data
+            result["current_channel"] = monitor_channel
+        return "high_low_temp", result
 
     def _calibration_data(self, result):
         k, b, mean_cali, min_cali, max_cali, v_low, m_low, v_high, m_high = compute_calibration(

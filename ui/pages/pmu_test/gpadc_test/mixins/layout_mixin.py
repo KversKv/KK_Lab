@@ -383,6 +383,34 @@ class _LayoutMixin:
         self.test_item_combo.addItem(self.TEST_MULTI_CH_TEMP, self.TEST_MULTI_CH_TEMP)
         self.test_item_combo.addItem(self.TEST_FT_CALIB_CHECK, self.TEST_FT_CALIB_CHECK)
         test_item_layout.addWidget(self.test_item_combo)
+
+        self.current_monitor_frame = QFrame()
+        self.current_monitor_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        monitor_layout = QGridLayout(self.current_monitor_frame)
+        monitor_layout.setContentsMargins(0, 0, 0, 0)
+        monitor_layout.setHorizontalSpacing(6)
+        monitor_layout.setVerticalSpacing(6)
+
+        monitor_enable_label = QLabel("Current Monitoring")
+        monitor_enable_label.setObjectName("muted_label")
+        monitor_layout.addWidget(monitor_enable_label, 0, 0)
+        self.current_monitor_switch = _ToggleSwitch(checked=False)
+        self.current_monitor_switch.setToolTip("启用后在每个温度节点稳定后记录 N6705C 所选通道电流")
+        monitor_layout.addWidget(self.current_monitor_switch, 0, 1, Qt.AlignRight)
+
+        self.current_monitor_channel_label = QLabel("Monitor Channel")
+        self.current_monitor_channel_label.setObjectName("muted_label")
+        monitor_layout.addWidget(self.current_monitor_channel_label, 1, 0)
+        self.current_monitor_channel = DarkComboBox(bg="#0a1733", border="#24365e")
+        for ch in range(1, 5):
+            self.current_monitor_channel.addItem(f"Channel {ch}", ch)
+        monitor_layout.addWidget(self.current_monitor_channel, 1, 1)
+
+        test_item_layout.addWidget(self.current_monitor_frame)
+        self.current_monitor_switch.toggled.connect(self._on_current_monitor_toggled)
+        self.current_monitor_channel_label.hide()
+        self.current_monitor_channel.hide()
+        self.current_monitor_frame.hide()
         return test_item_panel
 
     def _build_instruments_panel(self):
@@ -1013,12 +1041,8 @@ class _LayoutMixin:
 
     def _set_test_item(self, test_item):
         self.current_test_item = test_item
-
-        required = self.INSTRUMENT_MAP.get(test_item, [])
-        has_instruments = len(required) > 0
-        self.instruments_panel.setVisible(has_instruments)
-        self.n6705c_card.setVisible("n6705c" in required)
-        self.chamber_card.setVisible("chamber" in required)
+        self.current_monitor_frame.setVisible(test_item == self.TEST_HIGH_LOW_TEMP)
+        self._refresh_instruments_visibility()
 
         # 1000CNT 不再隐藏图表面板：改用于展示原始数据相对 AVG 的分布图，指标区改显详细统计卡组
         is_cnt_test = test_item == self.TEST_1000CNT
@@ -1112,6 +1136,26 @@ class _LayoutMixin:
 
         self._update_temp_hint()
 
+    def _required_instruments(self, test_item=None):
+        item = self.current_test_item if test_item is None else test_item
+        required = list(self.INSTRUMENT_MAP.get(item, []))
+        if (item == self.TEST_HIGH_LOW_TEMP and self.current_monitor_switch.isChecked()
+                and "n6705c" not in required):
+            required.append("n6705c")
+        return required
+
+    def _refresh_instruments_visibility(self):
+        required = self._required_instruments()
+        self.instruments_panel.setVisible(bool(required))
+        self.n6705c_card.setVisible("n6705c" in required)
+        self.chamber_card.setVisible("chamber" in required)
+
+    def _on_current_monitor_toggled(self, checked):
+        self.current_monitor_channel_label.setVisible(checked)
+        self.current_monitor_channel.setVisible(checked)
+        self.current_monitor_channel.setEnabled(checked and not self.is_test_running)
+        self._refresh_instruments_visibility()
+
     def _update_temp_hint(self):
         """温度类测试项且温箱未连接时才提示连接温箱"""
         needs_chamber = "chamber" in self.INSTRUMENT_MAP.get(self.current_test_item, [])
@@ -1145,6 +1189,7 @@ class _LayoutMixin:
             self.ft_divider_ratio,
             self.algorithm_combo,
             self.outlier_filter_switch,
+            self.current_monitor_switch,
             self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
             self.load_recent_btn, self.clear_recent_btn,
@@ -1157,6 +1202,7 @@ class _LayoutMixin:
         # 离群筛选偏移输入的可用性始终跟随开关（恢复可用时不得越过开关状态）
         self.outlier_pos_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
         self.outlier_neg_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
+        self.current_monitor_channel.setEnabled(enabled and self.current_monitor_switch.isChecked())
 
     def _rebuild_algorithm_params(self):
         """按当前选中算法重建参数行（参数元信息来自 ALGORITHM_REGISTRY）。"""

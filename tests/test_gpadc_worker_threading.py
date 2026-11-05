@@ -461,6 +461,49 @@ def test_voltage_snapshot_failure_propagates_before_test():
     assert source.set_calls == []
 
 
+def test_high_low_temp_current_monitoring_records_each_temperature(monkeypatch):
+    from core.pmu_test.gpadc import gpadc_runner
+
+    class CurrentSource(MockN6705C):
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+
+        def measure_current(self, channel):
+            self.calls.append(channel)
+            return 0.001 * len(self.calls)
+
+    monkeypatch.setattr(gpadc_runner.time, "sleep", lambda seconds: None)
+    source = CurrentSource()
+    logs = []
+    runner = _make_mock_runner(log_fn=logs.append)
+    runner.n6705c = source
+    config = {
+        **_BASE_RUNNER_CONFIG,
+        "temp_min": 20.0,
+        "temp_max": 60.0,
+        "temp_step": 20.0,
+        "current_monitor_enabled": True,
+        "current_monitor_channel": 3,
+    }
+
+    kind, result = runner.run("high_low_temp", config)
+
+    assert kind == "high_low_temp"
+    assert source.calls == [3, 3, 3]
+    assert result["current_channel"] == 3
+    assert result["current_a"] == pytest.approx([0.001, 0.002, 0.003])
+    assert len(result["current_a"]) == len(result["voltage"])
+    assert "Temp, RawMean, RawMin, RawMax, CH3 Current (A)" in logs
+
+    source.calls.clear()
+    config["current_monitor_enabled"] = False
+    _, result_without_monitor = runner.run("high_low_temp", config)
+    assert source.calls == []
+    assert "current_a" not in result_without_monitor
+    assert "current_channel" not in result_without_monitor
+
+
 def test_high_low_temp_confirm_abort_preserves_result_and_restores_chamber():
     class FailingChamber(MockChamber):
         def __init__(self):
@@ -490,6 +533,68 @@ def test_high_low_temp_confirm_abort_preserves_result_and_restores_chamber():
     assert result == {"voltage": [], "mean": [], "min": [], "max": []}
     assert len(confirmations) == 1 and confirmations[0][0] == "温箱通信失败"
     assert runner.chamber.get_current_temp() == 25.0
+
+
+def test_page_high_low_temp_current_monitor_controls_and_config(app, monkeypatch):
+    from ui.widgets.config_memory import ConfigMemory
+
+    monkeypatch.setattr(ConfigMemory, "watch", lambda self, widget: None)
+    monkeypatch.setattr(ConfigMemory, "restore", lambda self: None)
+
+    from ui.pages.pmu_test.gpadc_test_ui import GPADCTestUI
+
+    page = GPADCTestUI()
+    try:
+        high_low_index = page.test_item_combo.findData(page.TEST_HIGH_LOW_TEMP)
+        page.test_item_combo.setCurrentIndex(high_low_index)
+        app.processEvents()
+
+        assert not page.current_monitor_frame.isHidden()
+        assert page.n6705c_card.isHidden()
+        assert not page.chamber_card.isHidden()
+        assert page.current_monitor_channel.isHidden()
+
+        page.current_monitor_switch.setChecked(True)
+        channel_index = page.current_monitor_channel.findData(3)
+        page.current_monitor_channel.setCurrentIndex(channel_index)
+        app.processEvents()
+
+        assert not page.n6705c_card.isHidden()
+        assert not page.current_monitor_channel.isHidden()
+        assert page.current_monitor_channel.isEnabled()
+        assert page._required_instruments() == ["chamber", "n6705c"]
+        assert page.get_test_config()["current_monitor"] == {
+            "enabled": True, "channel": 3,
+        }
+
+        page.current_monitor_switch.setChecked(False)
+        assert page.n6705c_card.isHidden()
+        ok, _ = page.apply_config_to_controls({
+            "current_monitor": {"enabled": True, "channel": 3},
+        }, silent=True)
+        assert ok
+        assert page.current_monitor_switch.isChecked()
+        assert page.current_monitor_channel.currentData() == 3
+        assert not page.n6705c_card.isHidden()
+
+        page._set_ui_enabled(False)
+        assert not page.current_monitor_switch.isEnabled()
+        assert not page.current_monitor_channel.isEnabled()
+        page._set_ui_enabled(True)
+        assert page.current_monitor_switch.isEnabled()
+        assert page.current_monitor_channel.isEnabled()
+
+        page.test_item_combo.setCurrentIndex(
+            page.test_item_combo.findData(page.TEST_1000CNT)
+        )
+        assert page.current_monitor_frame.isHidden()
+        assert page.instruments_panel.isHidden()
+    finally:
+        if isValid(page):
+            page.cleanup_threads()
+            page.deleteLater()
+        app.processEvents()
+        _drain_until(app, lambda: not isValid(page))
 
 
 def test_page_mock_1000cnt_runs_core_runner_to_completion(app, monkeypatch):
