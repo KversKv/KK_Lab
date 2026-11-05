@@ -20,6 +20,7 @@ from ui.pages.pmu_test.pmu_isGain_ui import PMUIsGainUI
 from ui.pages.pmu_test.pmu_oscp_ui import PMUOSCPUI
 from ui.pages.pmu_test.gpadc_test_ui import GPADCTestUI
 from ui.pages.pmu_test.clk_test_ui import CLKTestUI
+from ui.pages.pmu_test.pmu_psrr_ui import PMUPSRRUI
 
 
 class PMUTestUI(QWidget):
@@ -32,6 +33,7 @@ class PMUTestUI(QWidget):
         "oscp": 3,
         "gpadc_test": 4,
         "clk_test": 5,
+        "psrr": 6,
     }
 
     def __init__(self, n6705c_top=None, mso64b_top=None, chamber_ui=None, instrument_manager=None,
@@ -183,6 +185,13 @@ class PMUTestUI(QWidget):
         )
         self.tab_widget.addTab(self.clk_test_ui, "CLK Test")
 
+        self.psrr_ui = PMUPSRRUI(
+            n6705c_top=self._n6705c_top,
+            mso64b_top=self._mso64b_top,
+            instrument_manager=self._instrument_manager,
+        )
+        self.tab_widget.addTab(self.psrr_ui, "PSRR Test")
+
         main_layout.addWidget(self.tab_widget)
 
 
@@ -222,6 +231,12 @@ class PMUTestUI(QWidget):
         self.clk_test_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("clk_test"))
 
+        self.psrr_ui.start_test_btn.clicked.connect(
+            lambda: self._on_test_started("psrr")
+            if self.psrr_ui.is_test_running else None)
+        self.psrr_ui.sequence_execution_finished.connect(
+            lambda _success, _message: self._on_test_stopped("psrr"))
+
     def _on_test_btn_clicked(self, test_type, ui):
         is_running = getattr(ui, 'is_test_running', None)
         if is_running is None:
@@ -239,7 +254,7 @@ class PMUTestUI(QWidget):
         for sub_ui in [
             self.dcdc_efficiency_ui, self.output_voltage_ui,
             self.is_gain_ui, self.oscp_ui,
-            self.gpadc_test_ui, self.clk_test_ui,
+            self.gpadc_test_ui, self.clk_test_ui, self.psrr_ui,
         ]:
             if hasattr(sub_ui, 'sync_n6705c_from_top'):
                 sub_ui.sync_n6705c_from_top()
@@ -247,6 +262,7 @@ class PMUTestUI(QWidget):
                 sub_ui._sync_from_top()
             if hasattr(sub_ui, 'sync_chamber_from_manager'):
                 sub_ui.sync_chamber_from_manager()
+        self.psrr_ui.sync_oscilloscope_from_top()
 
     def get_current_test(self):
         """获取当前测试key"""
@@ -266,6 +282,8 @@ class PMUTestUI(QWidget):
             self.oscp_ui.set_system_status("测试进行中")
         elif test_type == "gpadc_test":
             self.gpadc_test_ui.set_system_status("测试进行中")
+        elif test_type == "psrr":
+            self.psrr_ui.set_system_status("测试进行中")
 
         config = self.get_test_config(test_type)
         logger.info("开始%s测试，配置: %s", test_type, config)
@@ -282,6 +300,8 @@ class PMUTestUI(QWidget):
             self.oscp_ui.set_system_status("就绪")
         elif test_type == "gpadc_test":
             self.gpadc_test_ui.set_system_status("就绪")
+        elif test_type == "psrr":
+            self.psrr_ui.set_system_status("就绪")
 
         logger.info("停止%s测试", test_type)
 
@@ -297,6 +317,8 @@ class PMUTestUI(QWidget):
             return self.oscp_ui.get_test_config()
         elif test_type == "gpadc_test":
             return self.gpadc_test_ui.get_test_config()
+        elif test_type == "psrr":
+            return self.psrr_ui.get_test_config()
         return None
 
     def update_test_result(self, test_type, result):
@@ -311,6 +333,8 @@ class PMUTestUI(QWidget):
             self.oscp_ui.update_test_result(result)
         elif test_type == "gpadc_test":
             self.gpadc_test_ui.update_test_result(result)
+        elif test_type == "psrr":
+            self.psrr_ui.update_test_result(result)
 
     def clear_all_results(self):
         """清空所有测试结果"""
@@ -319,6 +343,7 @@ class PMUTestUI(QWidget):
         self.is_gain_ui.clear_results()
         self.oscp_ui.clear_results()
         self.gpadc_test_ui.clear_results()
+        self.psrr_ui.clear_results()
 
     def set_system_status(self, status, is_error=False):
         """设置所有子UI的系统状态"""
@@ -327,6 +352,7 @@ class PMUTestUI(QWidget):
         self.is_gain_ui.set_system_status(status, is_error)
         self.oscp_ui.set_system_status(status, is_error)
         self.gpadc_test_ui.set_system_status(status, is_error)
+        self.psrr_ui.set_system_status(status, is_error)
 
     def update_instrument_info(self, instrument_info):
         """更新所有子UI的仪器信息"""
@@ -335,6 +361,7 @@ class PMUTestUI(QWidget):
         self.is_gain_ui.update_instrument_info(instrument_info)
         self.oscp_ui.update_instrument_info(instrument_info)
         self.gpadc_test_ui.update_instrument_info(instrument_info)
+        self.psrr_ui.update_instrument_info(instrument_info)
 
     def get_test_mode(self):
         """获取当前测试模式"""
@@ -350,6 +377,7 @@ class PMUTestUI(QWidget):
         self.is_gain_ui.set_test_mode(mode)
         self.oscp_ui.set_test_mode(mode)
         self.gpadc_test_ui.set_test_mode(mode)
+        self.psrr_ui.set_test_mode(mode)
 
     def get_test_id(self):
         """获取当前测试编号"""
@@ -365,6 +393,7 @@ class PMUTestUI(QWidget):
         self.is_gain_ui.set_test_id(test_id)
         self.oscp_ui.set_test_id(test_id)
         self.gpadc_test_ui.set_test_id(test_id)
+        self.psrr_ui.set_test_id(test_id)
 
 
 if __name__ == "__main__":

@@ -2044,6 +2044,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 "oscp": "pmu_oscp",
                 "gpadc_test": "pmu_gpadc",
                 "clk_test": "pmu_clk",
+                "psrr": "pmu_psrr",
             }
             return key_map.get(self.nav.current_pmu_test_key, "pmu_dcdc_efficiency")
         elif self.current_instrument_ui == "charger_test":

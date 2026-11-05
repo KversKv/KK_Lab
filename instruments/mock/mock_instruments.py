@@ -185,6 +185,9 @@ class MockN6705C:
     def set_arb_shape(self, channel, shape="NONE"):
         pass
 
+    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency):
+        self._arb_sine = (channel, dc_offset, amplitude_vrms, frequency)
+
     def set_arb_step(self, channel, v0, v1, t0, t1):
         pass
 

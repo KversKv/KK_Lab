@@ -77,6 +77,7 @@ _PAGE_KEYS: frozenset[str] = frozenset({
     "pmu_oscp",
     "pmu_gpadc",
     "pmu_clk",
+    "pmu_psrr",
     "charger_config_traverse",
     "charger_status_register",
     "charger_iterm",
@@ -114,6 +115,7 @@ _DIR_OVERRIDE: dict[str, str] = {
     "pmu_oscp": "automation/pmu_test/pmu_oscp",
     "pmu_gpadc": "automation/pmu_test/pmu_gpadc",
     "pmu_clk": "automation/pmu_test/pmu_clk",
+    "pmu_psrr": "automation/pmu_test/pmu_psrr",
     # AUTOMATION 组 —— Charger 测试簇
     "charger_config_traverse": "automation/charger_test/charger_config_traverse",
     "charger_status_register": "automation/charger_test/charger_status_register",

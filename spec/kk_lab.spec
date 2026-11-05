@@ -218,6 +218,7 @@ a = Analysis(
         'ui.pages.pmu_test.gpadc_test.mixins.export_mixin',
         'ui.pages.pmu_test.gpadc_test.mixins.config_ai_mixin',
         'ui.pages.pmu_test.clk_test_ui',
+        'ui.pages.pmu_test.pmu_psrr_ui',
         'ui.pages.pmu',
         'ui.pages.pmu.pmu_1811',
         'ui.pages.pmu.pmu_1811.constants',

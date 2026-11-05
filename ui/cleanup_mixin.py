@@ -90,7 +90,7 @@ class CleanupMixin:
         if self.pmu_test_ui is not None:
             for attr in [
                 'dcdc_efficiency_ui', 'output_voltage_ui',
-                'is_gain_ui', 'oscp_ui', 'gpadc_test_ui', 'clk_test_ui',
+                'is_gain_ui', 'oscp_ui', 'gpadc_test_ui', 'clk_test_ui', 'psrr_ui',
             ]:
                 sub_ui = getattr(self.pmu_test_ui, attr, None)
                 if sub_ui is not None:

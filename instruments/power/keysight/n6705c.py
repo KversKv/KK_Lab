@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import time
@@ -220,6 +221,18 @@ class N6705C:
     def set_arb_shape(self, channel, shape="NONE"):
         """设置 ARB 形状；shape="NONE" 即面板 "No Arb Configured"（清除形状配置）。"""
         self.instr.write(f"ARB:FUNC:SHAP {shape},(@{channel})")
+
+    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency):
+        """配置叠加在直流偏置上的正弦电压，幅度参数为 Vrms。"""
+        if amplitude_vrms <= 0 or frequency <= 0:
+            raise ValueError("正弦幅度与频率必须大于 0")
+        amplitude_peak = math.sqrt(2.0) * amplitude_vrms
+        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP SIN,(@{channel})")
+        self.instr.write(f"ARB:VOLT:SIN:OFFS {dc_offset},(@{channel})")
+        self.instr.write(f"ARB:VOLT:SIN:AMPL {amplitude_peak},(@{channel})")
+        self.instr.write(f"ARB:VOLT:SIN:FREQ {frequency},(@{channel})")
+        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
 
     def set_arb_step(self, channel, v0, v1, t0, t1):
         """

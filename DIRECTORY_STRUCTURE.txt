@@ -199,6 +199,11 @@ core/
 │   ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
 │   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
+├── pmu_test/                # PMU 子测试算法与 Worker（clk/dcdc/gpadc/isgain/oscp）
+│   └── psrr/                # PSRR 扫频测试（N6705C 正弦激励 + 示波器双通道 RMS）
+│       ├── __init__.py      # 导出配置、算法与 Worker
+│       ├── psrr_analysis.py # 纯算法：频点解析、PSRR 计算、配置校验与统计（无 Qt）
+│       └── psrr_worker.py   # Mock/真机扫频 Worker（仅 QtCore）
 ├── serial_io/               # 串口收发与会话管理内核（pyserial 唯一入口，UI 禁直接 import serial）
 │   ├── __init__.py          # 导出 SerialReadWorker / NtpSyncWorker / SerialSession / SerialSessionManager
 │   ├── serial_backend.py    # pyserial 薄封装（无 Qt）：端口枚举 list_serial_ports / open_serial / 参数文本映射
@@ -465,7 +470,8 @@ ui/
 │   │   │   ├── toggle_switch.py          # 页内私有滑动开关 _ToggleSwitch
 │   │   │   └── mixins/                   # 7 职责 Mixin：layout/execution/acquisition/plotting/recent_tests/export/config_ai
 │   │   ├── gpadc_multi_temp_panel.py # GPADC 多通道高低温联合测试配置面板（通道表/前置配置/存取）
-│   │   └── clk_test_ui.py            # 时钟测试界面
+│   │   ├── clk_test_ui.py            # 时钟测试界面
+│   │   └── pmu_psrr_ui.py            # PSRR 电源抑制比扫频测试界面
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
@@ -631,6 +637,7 @@ helps/
 ├── pmu_oscp.html                    # OSCP 过流保护测试操作说明
 ├── pmu_gpadc.html                   # GPADC 测试操作说明
 ├── pmu_clk.html                     # 时钟测试操作说明
+├── pmu_psrr.html                    # PSRR 电源抑制比测试操作说明
 ├── charger_config_traverse.html     # 充电配置遍历测试操作说明
 ├── charger_status_register.html     # 充电状态寄存器测试操作说明
 ├── charger_iterm.html               # Iterm 终止电流测试操作说明

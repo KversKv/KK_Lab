@@ -5,25 +5,25 @@
 ## 加载指针（AI 按需拉取）
 
 - **新增 / 修改测试流程** → @see [docs/ai/07_TEST_GUIDE.md](../../../docs/ai/07_TEST_GUIDE.md)
-- **算法 / Worker 下沉位置** → @see [core/pmu_test/](../../../core/pmu_test/)（clk/dcdc/gpadc/isgain/oscp 各自 analysis+worker）
+- **算法 / Worker 下沉位置** → @see [core/pmu_test/](../../../core/pmu_test/)（clk/dcdc/gpadc/isgain/oscp/psrr 各自 analysis+worker）
 - **巨石重构范式** → @see ADR [005-monolith-refactor](../../../docs/ai/decisions/005-monolith-refactor.md)
 
 ## 本模块职责与边界
 
-- **职责**：PMU 子测试 Tab 容器（DCDC 效率 / 输出电压 / Is Gain / OSCP / GPADC / CLK）。
+- **职责**：PMU 子测试 Tab 容器（DCDC 效率 / 输出电压 / Is Gain / OSCP / GPADC / CLK / PSRR）。
 - **上游**：`ui/main_window.py`；**下游**：`core/pmu_test/` 各 analysis+worker、`instruments/factory`。
 - **铁律**：UI 仅交互；算法 / 解析落 `core/pmu_test/*_analysis.py`（无 Qt）、Worker 落 `*_worker.py`（仅 QtCore）。
 
 ## 接口契约（对外不可破坏）
 
 - `PMUTestUI` 构造透传：`n6705c_top / mso64b_top / chamber_ui / instrument_manager / ui_action_registry`。
-- `TEST_TAB_MAP`：`dcdc_efficiency=0 / output_voltage=1 / is_gain=2 / oscp=3 / gpadc_test=4 / clk_test=5`。
+- `TEST_TAB_MAP`：`dcdc_efficiency=0 / output_voltage=1 / is_gain=2 / oscp=3 / gpadc_test=4 / clk_test=5 / psrr=6`。
 - 各子页实现 `AIControllablePage` 契约：`ai_capabilities / ai_get_config / ai_apply_config / ai_start_test / ai_stop_test / ai_get_result_summary`。
 
 ## 局部约定
 
 - 子页统一模式：`apply_config_to_controls` 单一写入口（线程边界校验 + `_AI_HIGHLIGHT_QSS` 临时高亮）。
-- **上次配置自动记忆**（2026-09，6 子页全铺）：`__init__` 尾部接 `ConfigMemory("pmu_test/<ns>")`（ui/widgets/config_memory.py），有 get/apply 接口页走 `bind_interface` + `apply(..., silent=True)`（silent 跳过高亮与 AI 日志，默认 False 行为不变）+ `watch(self)`；clk 页无接口走逐控件 `bind`。坑：oscp 的 `get_test_config` 把 device/register 地址存成解析后 int，接口恢复丢十六进制文本格式，已用 `bind` 覆盖该两键（bind 值采集时覆盖接口 dict、恢复时在 apply 后执行）；clk 页 `iic_msb/lsb` 必须先于 `reg_min/max/step` 恢复（`_update_reg_range` 会按位宽重设 reg 范围）。容器 `PMUTestUI` 另接 `ConfigMemory("pmu_test/container")` + `bind("current_tab", self.tab_widget)` 记上次子页。
+- **上次配置自动记忆**（2026-09，7 子页全铺）：`__init__` 尾部接 `ConfigMemory("pmu_test/<ns>")`（ui/widgets/config_memory.py），有 get/apply 接口页走 `bind_interface` + `apply(..., silent=True)`（silent 跳过高亮与 AI 日志，默认 False 行为不变）+ `watch(self)`；clk 页无接口走逐控件 `bind`。坑：oscp 的 `get_test_config` 把 device/register 地址存成解析后 int，接口恢复丢十六进制文本格式，已用 `bind` 覆盖该两键（bind 值采集时覆盖接口 dict、恢复时在 apply 后执行）；clk 页 `iic_msb/lsb` 必须先于 `reg_min/max/step` 恢复（`_update_reg_range` 会按位宽重设 reg 范围）。容器 `PMUTestUI` 另接 `ConfigMemory("pmu_test/container")` + `bind("current_tab", self.tab_widget)` 记上次子页。
 - 通道在配置为 int、combo 文本为 "CH n"，apply 经 normalize 归一化匹配。
 - **DCDC Efficiency Custom 扫描模式**（2026-09）：Test Config 分段 Linear/Log/Custom；Custom 隐藏 Start/End/Step/Points、显示 Custom Points 表格（mA，Add/Remove/双击编辑），配置键 `custom_points`（A 列表，apply 兼容 `*_ma` 别名与逗号分隔字符串），经 `bind_interface` 随 ConfigMemory 持久化；表格 QSS 挂容器（`get_table_qss()`）防 AI 高亮清空表格本地样式；Custom 复用 Log X 轴。
 - **Output Voltage 有效区间判据**（`pmu_output_voltage.py` `_compute_valid_range`，2026-09）：以相邻压差**中位数**为参考步进（抗毛刺/饱和段污染），连续 2 点跌破参考的 85%（`_VALID_STEP_RATIO`/`_VALID_STEP_CONSEC` 常量）判死区/饱和，双向剔除；软饱和缓变与平坦段同覆盖（替代旧 1mV 平坦检测）。MSB 位加权不匹配的单点跳变（如 0x80 处约 2 倍步进）是固有现象，靠"连续 N 点"保留勿当异常剔除。
@@ -64,6 +64,6 @@
 
 - 跨线程更新 UI 只走 Signal/Slot；Worker 禁 import QtWidgets。
 - 日志区用 `ExecutionLogsFrame.wrap_with`（见 ui/modules/AGENTS.md §6.4）。
-- 公共 Mixin / 样式改动需回归全部 6 个子页。
+- 公共 Mixin / 样式改动需回归全部 7 个子页。
 - **GPADC 停止测试禁在 UI 线程 `thread.wait()`**（2026-08 实测卡死）：worker 收尾耗时不可控时主线程被无限期阻塞；且 UART 数据泵（`_on_uart_rx_data` 是主线程槽）随主线程一起断供，`_next_uart_log_line` 内层若不查 `stop_check` 会自旋到 deadline（120s）——两层叠加即"点停止无反应、窗口卡死"。修法：`_stop_test` 只 `request_stop()+quit()`，收尾交 `thread.finished → _on_test_thread_finished`（与 clk_test_ui 同范式）；所有 worker 侧等待循环（含内层 `_next_uart_log_line`、temp_consistency 的 30s 稳温 sleep）必须逐片检查 `stop_check`。
 - **worker 线程禁直调 `set_system_status`**（2026-08 实测整进程 SIGABRT / "Fatal Python error: Aborted"，现场仅主线程栈停在 `app.exec()`）：Mixin 原实现直接 `setText/setObjectName/unpolish/polish`，跨线程改 QWidget 破坏线程亲和性；GPADCTestUI 已重写为经 `system_status_requested` 信号队列化回主线程（`_apply_system_status` 槽），页面内直接 `self.set_system_status(...)` 即可，勿绕过重写。

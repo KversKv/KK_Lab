@@ -138,6 +138,7 @@ class NavController:
             "oscp": 3,
             "gpadc_test": 4,
             "clk_test": 5,
+            "psrr": 6,
         }
 
         self.charger_test_tab_map = {
@@ -394,6 +395,7 @@ class NavController:
             ("oscp", "OSCP"),
             ("gpadc_test", "GPADC Test"),
             ("clk_test", "CLK Test"),
+            ("psrr", "PSRR TEST"),
         ], parent=self._host)
         self.pmu_submenu.item_clicked.connect(self._on_pmu_submenu_clicked)
         self.pmu_test_btn.installEventFilter(self._host)
