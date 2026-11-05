@@ -3,6 +3,13 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
+      "ldo_ripple",
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient",
       "ldo_dropout"
     ],
     "chip_name": "BES1860",
@@ -18,17 +25,16 @@
     "vbat_channel": "CH 1",
     "vin_channel": "CH 1",
     "vout_channel": "CH 2",
-    "iload_channel": "CH 3",
-    "force_channel": "CH 3",
+    "iload_channel": "CH 2",
+    "force_channel": "CH 2",
     "volt_method": "scope",
     "vout_nominal_mv": 3300,
-    "max_iload_ma": 1000,
+    "max_iload_ma": 1100,
     "device_addr": "0x17",
     "width_flag": 1,
     "scope_vout_channel": 1,
     "item_overrides": {
       "ldo_quiescent": {
-        "vin_v": 4.0,
         "average_cnt": 5,
         "settle_time_s": 0.05,
         "iq_en_dr_addr": "0x08",
@@ -56,7 +62,6 @@
         "iload_end_ma": 1000.0,
         "iload_step_ma": 50.0,
         "iload_knee_ma": 0.0,
-        "vin_v": 4.0,
         "settle_time_s": 0.01,
         "average_cnt": 1,
         "use_ripple_sweep": true
@@ -69,15 +74,13 @@
         "average_cnt": 1
       },
       "ldo_ripple": {
-        "vin_v": 4.0,
         "iload_start_ma": 0.0,
-        "iload_end_ma": 1000.0,
+        "iload_end_ma": 1100.0,
         "iload_step_ma": 50.0,
         "settle_time_s": 0.01,
         "average_cnt": 1
       },
       "ldo_output_noise": {
-        "vin_v": 3.8,
         "noise_center_freq_khz": 15.0,
         "noise_freq_span_khz": 30.0
       },
@@ -138,10 +141,12 @@
         "settle_time_s": 0.05
       },
       "ldo_dropout": {
-        "dropout_iload_ma": 500.0,
+        "dropout_method": "direct",
+        "dropout_iload_ma": "100, 300, 500, 1000",
         "dropout_vin_hi_v": 4.1,
-        "dropout_vin_lo_v": 3.3,
-        "dropout_vin_step_v": 0.02,
+        "dropout_vin_lo_v": 3.2,
+        "dropout_vin_step_v": 0.01,
+        "dropout_auto_optimal": false,
         "vout_tol": 0.02,
         "settle_time_s": 0.01,
         "average_cnt": 1
@@ -276,6 +281,7 @@
           }
         ]
       }
-    }
+    },
+    "vin_v": 3.8
   }
 }
