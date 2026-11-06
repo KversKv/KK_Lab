@@ -356,7 +356,7 @@ LDO / DCDC / BUCK / SW 等各类模块的使能状态判断、打开/关闭、�
 
 ### 6.3 配色
 
-独立于全局 theme（见 `docs/NewPlan/1811_Tool_UI.md`），主色：
+独立于全局 theme（见 `docs/plans/1811_Tool_UI.md`），主色：
 
 - 琥珀 `#f59e0b` — VSYS 主轨
 - 蓝 `#3b82f6` — 子母线级联

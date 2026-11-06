@@ -35,6 +35,10 @@
       "pos_offset": 100.0,
       "neg_offset": 100.0
     },
+    "current_monitor": {
+      "enabled": true,
+      "channel": 4
+    },
     "multi_channels": [
       {
         "enabled": true,

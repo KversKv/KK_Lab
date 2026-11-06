@@ -26,15 +26,21 @@ KK_Lab/
 ├── AGENTS.md                # 通用 AI Agent 协作指引 (主入口)
 ├── README.md                # 项目说明 (简介/功能/仪器/快速开始/打包/结构)
 │
+├── .agents/                 # 仓库级 AI Agent 配置与技能
 ├── .trae/                   # TRAE IDE 专用配置
 │   └── rules/
 │       └── project-rules.md # 项目级 AI 交互规则
 ├── .github/workflows/       # Windows CI 质量门禁与 JUnit 结果归档
 │   └── quality.yml          # Python 3.12：Ruff、mypy、unit 与 Qt 离屏测试
+├── .venv/                   # 本地 Python 虚拟环境（Git 忽略）
+├── dist/                    # PyInstaller / 工具交付产物（Git 忽略，按发布需要保留）
 ├── docs/                    # 项目文档、运行期知识库与 AI 协作资料
+│   ├── README.md            # 文档导航与临时资料归档规则
 │   ├── ai/                  # AI 协作与项目架构文档
-│   │   └── memory.md        # 长期记忆 / 会话关键上下文
-│   └── NewPlan/             # 工程审查与优化落地计划
+│   ├── plans/               # 工程计划与设计稿
+│   ├── kk_lab_ai_memory/    # 运行期 AI 记忆（与 core/ai、打包配置存在契约）
+│   ├── user/                # 持久技术参考资料与测试分析
+│   └── User Manual/         # 用户操作手册
 │
 ├── chips/                   # BES 芯片配置与型号注册
 ├── core/                    # 核心业务逻辑层
@@ -49,8 +55,9 @@ KK_Lab/
 ├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
 ├── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
 ├── presets/                 # 入库的只读种子模板 (Orchestrator 示例序列等)
-├── Temp/                    # 临时文件收容 (调试产物/会话导出等，Git 不跟踪)
-└── Temp_Docs/               # CSV/XLSX/PDT/PDF 收容 (DLP 加密环境，Git 不跟踪，见 AGENTS.md 硬红线 14)
+└── Temp_Docs/               # 忽略的临时资料区：DLP 文件、验证输出与归档，见 docs/README.md
+
+本地 `.idea/`、`.vscode/` 与 `.git/` 不列入项目目录结构；PyInstaller 的 `build/` 和 Python 工具缓存均为可再生成目录，不纳入持久目录清单。
 
 ================================================================================
   chips/ - BES 芯片配置
@@ -662,8 +669,13 @@ helps/
 ================================================================================
 
 docs/
-├── NewPlan/
-│   └── 工程审查与优化落地计划.md  # 工程审查结论、实施路线与 AI 维护的进度表
+├── README.md                    # 文档导航、分类边界与临时资料归档规则
+├── plans/                       # 工程计划与设计稿
+│   ├── 工程审查与优化落地计划.md # 工程审查结论、实施路线与 AI 维护的进度表
+│   ├── 工程目录与临时文档治理方案.md # 本次目录整理决策、实施证据与进度表
+│   ├── 1811_Tool_UI.md           # PMU 1811 UI 设计稿
+│   └── mcu_io_change.md          # MCU IO 变更记录
+├── ai/                          # AI 协作规范、架构专题与历史功能提案
 ├── kk_lab_ai_memory/             # KK Lab AI 记忆体系：页面经验、常用测试项与测试用例归档（按导航栏 4 大组归类）
 │   ├── _shared/                  # 跨页面共性规则、经验与写入规范
 │   │   ├── README.md             # 体系总览：与 docs/ai 边界、目录结构、文件职责
@@ -878,8 +890,7 @@ presets/
     ├── sample_n6705c_voltage_sweep.json
     └── sample_uart_send_receive.json
 
-Temp/                         # 临时文件收容（Git 不跟踪）：调试产物 / 会话导出 / 数据手册提取等
-Temp_Docs/                    # CSV/XLSX/PDT/PDF 收容（Git 不跟踪，DLP 加密环境禁入库，见 AGENTS.md 硬红线 14）：按原相对路径结构存放已迁出的文档/数据文件
+Temp_Docs/                    # 唯一临时资料区（Git 不跟踪）：docs/user、tests、ui 保持原相对路径；quality、smoke_runs、archive 按类型归类
 
 ================================================================================
   分层与规则速查

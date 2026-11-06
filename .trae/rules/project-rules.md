@@ -20,7 +20,7 @@ Win/PySide6·Py3.12+·pyvisa·pyqtgraph·Modbus·PyInstaller。分层 `main→ui
 
 ## 3. 触发式必读
 仪器→05；页面→06+01§6；测试→07；打包→03+08；报错→03；开工→09。
-实施工程优化路线中的代码任务时，先读 docs/NewPlan/工程审查与优化落地计划.md，并在任务收尾依据验收证据更新其进度表。
+实施工程优化路线中的代码任务时，先读 docs/plans/工程审查与优化落地计划.md，并在任务收尾依据验收证据更新其进度表。
 
 ## 4. 同步
 目录→`DIRECTORY_STRUCTURE.txt`；资源→`spec/kk_lab.spec`；页面→`helps/`；依赖→`requirements.txt`；决策→`decisions/`；上下文→`docs/ai/memory.md`；新坑→03。

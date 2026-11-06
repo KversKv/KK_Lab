@@ -14,6 +14,9 @@
 4. 子模块 AGENTS.md 中出现 `@see docs/ai/xx` 时，**按需追加**加载该专题。
 5. 仍无匹配 → 默认 `09_WORKFLOW` + `03_GOTCHAS`。
 6. **全程只加载"命中"文档**，禁止一次性通读 docs/ai/ 或所有子模块 AGENTS.md。
+7. UI显示一律显示专业简洁的英语，不包含中文。
+
+
 
 ### 收尾维护规则（任务结尾）
 
@@ -45,6 +48,7 @@
 13. 禁止使用Emoji表情符号, 需要使用SVG图标替代.
 14. **CSV / XLSX / PDT / PDF 禁止保存在任何 git 追踪路径**：开发环境 DLP 对这四类格式落盘即加密，入库即损坏。此类文件一律放 `Temp_Docs/`（已 gitignore，按原路径结构存放）；运行期数据产物输出到 `Results/` 等已忽略目录；`.gitignore` 已全局忽略 `*.csv / *.xlsx / *.pdt / *.pdf` 兜底。
 15. **示波器操作等待规范（16×时基 + 两阶段时基）**：改时基 / 改 Vertical Scale / 获取测量值（DISPlay 查询）任一操作都会触发 DSOX 重新捕获全屏，其后必须等待 `16×时基`（下限 1s；时基 >10ms/div 时下限 2.5s，10Hz 组 50ms/div 实测 1s 不足定格残帧）才能取到正确值/稳定帧（500ms/div 即 8s）。大时基下逐轮等待过慢，须用**两阶段时基**：测试项每组开始先将时基设为预览值（`周期/10×1.1`，如 100Hz→1.1ms、1000Hz→110us，整屏约 1.1 周期），在预览时基下完成量程搜索（autoscale）等参数调整（每次等待按 16×预览时基计，极短），参数调好后切最终时基（改前须先 `run()` 恢复采集）做正式测量与截图，等待按 16×最终时基计。
+16. 系统禁止使用 `pythonw.exe`。
 ---
 
 ## 项目一句话概述
@@ -119,7 +123,7 @@ python -m pytest -m qt
 | **版本号 / 发版 / 改版本**                   | [10_VERSIONING](./docs/ai/10_VERSIONING.md)                  | [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)                  |
 | **按 SOP 走 / 大任务开工**                   | [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)              | 上述所有          |
 | **纯文档 / 规则维护**                   | [08_CHECKLISTS §同步矩阵](./docs/ai/08_CHECKLISTS.md) · [.trae/rules/project-rules.md](./.trae/rules/project-rules.md)              | —                |
-| **工程审查 / 优化路线实施**             | [工程审查与优化落地计划](./docs/NewPlan/工程审查与优化落地计划.md)                                  | —                |
+| **工程审查 / 优化路线实施**             | [工程审查与优化落地计划](./docs/plans/工程审查与优化落地计划.md)                                  | —                |
 
 ### 阅读规则
 

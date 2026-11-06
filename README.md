@@ -81,6 +81,7 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 
 ## 文档
 
+- [docs/README.md](./docs/README.md) — 文档导航与临时资料归档规则
 - [AGENTS.md](./AGENTS.md) — AI 协作指引（含加载决策 SOP 与硬红线）
 - [docs/ai/](./docs/ai/) — 深度专题文档（00 概述 ~ 10 版本管理）
 - [helps/](./helps/) — 功能页操作说明

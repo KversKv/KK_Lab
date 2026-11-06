@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
   "config": {
+    "measurement_method": "mso64b_j2120a",
     "source_channel": 1,
     "input_channel": 1,
     "output_channel": 2,
     "dc_voltage": 5.0,
-    "ripple_mv_rms": 100.0,
+    "afg_amplitude_mvpp": 282.84,
     "frequencies_hz": [
       100.0,
       1000.0,
@@ -15,6 +16,16 @@
     "cycles": 5.0,
     "output_scale_mv": 10.0,
     "limit_db": 0.0,
-    "close_channel_after": false
+    "close_channel_after": false,
+    "ap_project_path": "",
+    "ap_signal_path": "Signal Path1",
+    "ap_measurement": "PSRR",
+    "ap_frequencies_hz": [
+      100.0,
+      1000.0,
+      10000.0,
+      100000.0
+    ],
+    "ap_limit_db": 0.0
   }
 }

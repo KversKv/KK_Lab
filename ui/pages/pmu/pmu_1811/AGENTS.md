@@ -8,7 +8,7 @@
 - **I2C 底层 / DLL** → @see [docs/ai/03_GOTCHAS.md §11](../../../../docs/ai/03_GOTCHAS.md)
 - **寄存器数据源** → `Temp_Docs/ui/pages/pmu/pmu_1811/data/1811 pmu inf reg.csv`、`BES1811 LDO输出电压范围.csv`（DLP 加密环境，CSV 已移出 git 追踪路径，见根 AGENTS.md 硬红线 14）
 - **芯片寄存器表** → [chips/bes1811_pmu.py](../../../../chips/bes1811_pmu.py)
-- **UI 设计稿** → `docs/NewPlan/1811_Tool_UI.md`
+- **UI 设计稿** → `docs/plans/1811_Tool_UI.md`
 
 ## 本模块职责与边界
 
