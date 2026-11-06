@@ -821,6 +821,7 @@ spec/
 tests/
 ├── conftest.py                      # pytest 自动分类 unit/qt；排除独立手工 GUI 脚本
 ├── test_pmu_output_voltage_core.py  # Output Voltage 纯算法、Worker 停止/异常与 QThread 生命周期回归
+├── test_psrr_audio_precision_session.py # PSRR AP 持久 SSH 连接/断链与页面 Mock 状态回归
 ├── test_module_test_guards.py       # Module Test 未实现项的 Mock/真机结果语义与导出防护
 ├── test_gpadc_worker_threading.py   # GPADC Worker 信号、线程与生命周期回归
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试

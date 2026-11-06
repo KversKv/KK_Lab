@@ -12,8 +12,15 @@ from .psrr_analysis import AudioPrecisionPSRRConfig
 
 logger = get_logger(__name__)
 
+_PERSISTENT_PYTHON_BOOTSTRAP = (
+    "import base64,sys;"
+    "exec(compile(base64.b64decode(sys.stdin.readline()),'<kk_lab_psrr_guest>','exec'))"
+)
 
-def ssh_command(config: AudioPrecisionPSRRConfig) -> list[str]:
+
+def ssh_command(
+    config: AudioPrecisionPSRRConfig, *, persistent: bool = False
+) -> list[str]:
     command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
     if config.ssh_profile:
         target = config.ssh_profile
@@ -22,7 +29,11 @@ def ssh_command(config: AudioPrecisionPSRRConfig) -> list[str]:
             raise RuntimeError("请填写 Guest IP 或 SSH Profile")
         command.extend(("-p", str(config.ssh_port)))
         target = f"{config.ssh_user}@{config.ssh_host}"
-    command.extend((target, f"{config.ssh_python} -u -"))
+    remote_command = (
+        f'{config.ssh_python} -u -c "{_PERSISTENT_PYTHON_BOOTSTRAP}"'
+        if persistent else f"{config.ssh_python} -u -"
+    )
+    command.extend((target, remote_command))
     return command
 
 
@@ -81,7 +92,7 @@ class AudioPrecisionSSHSession:
         if self.connected:
             return
         self._process = subprocess.Popen(
-            ssh_command(self.config),
+            ssh_command(self.config, persistent=True),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -157,7 +168,8 @@ class AudioPrecisionSSHSession:
     def _send_script(self, script: str) -> None:
         if self._process is None or self._process.stdin is None:
             raise RuntimeError("SSH process stdin is unavailable")
-        self._process.stdin.write(script)
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        self._process.stdin.write(encoded + "\n")
         self._process.stdin.flush()
 
     def _send_json(self, payload: dict) -> None:
