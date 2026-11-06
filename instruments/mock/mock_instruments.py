@@ -1976,3 +1976,71 @@ class MockCMW270(_MockCMWBase):
 
 class MockCMW500(_MockCMWBase):
     MODEL = "MOCK CMW500"
+
+
+class MockAudioPrecision:
+    def __init__(self):
+        self._connected = False
+        self._frequency_hz = 1000.0
+        self._amplitude_vrms = 0.1
+        self.psrr_settings = None
+        self.generator_on = False
+        self.run_count = 0
+
+    @property
+    def connected(self):
+        return self._connected
+
+    def connect(self):
+        self._connected = True
+        return True
+
+    def disconnect(self):
+        self._connected = False
+
+    def is_connected(self):
+        return self._connected
+
+    def identify(self):
+        return "MOCK Audio Precision"
+
+    def open_project(self, project_path):
+        self.project_path = project_path
+
+    def configure_psrr_measurement(self, signal_path_name, measurement_name,
+                                   output_channel=1, amplitude_vrms=0.1,
+                                   offset_v=3.8, bandwidth_hz=250000,
+                                   generator_on=True):
+        self._amplitude_vrms = float(amplitude_vrms)
+        self.generator_on = bool(generator_on)
+        self.psrr_settings = {
+            "signal_path": signal_path_name,
+            "measurement": measurement_name,
+            "output_channel": output_channel,
+            "amplitude_vrms": amplitude_vrms,
+            "offset_v": offset_v,
+            "bandwidth_hz": bandwidth_hz,
+            "highpass": "DC",
+            "lowpass": "AdcPassband",
+            "weighting": "None",
+            "eq": "None",
+        }
+        return measurement_name
+
+    def set_psrr_generator_frequency(self, frequency_hz):
+        self._frequency_hz = float(frequency_hz)
+
+    def set_psrr_generator_off(self):
+        self.generator_on = False
+
+    def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
+                                     channel=0, acquisition_number=1, run=True):
+        if run:
+            self.run_count += 1
+        input_dbv = 20.0 * math.log10(self._amplitude_vrms)
+        psrr_db = 70.0 - 20.0 * math.log10(1.0 + self._frequency_hz / 1000.0)
+        level_dbv = input_dbv if channel == 0 else input_dbv - psrr_db
+        return (
+            [self._frequency_hz / 2.0, self._frequency_hz, self._frequency_hz * 2.0],
+            [-120.0, level_dbv, -120.0],
+        )

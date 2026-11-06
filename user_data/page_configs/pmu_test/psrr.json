@@ -1,16 +1,19 @@
 {
   "schema_version": 1,
   "config": {
-    "measurement_method": "mso64b_j2120a",
+    "measurement_method": "audio_precision",
     "source_channel": 1,
     "input_channel": 1,
     "output_channel": 2,
     "dc_voltage": 5.0,
     "afg_amplitude_mvpp": 282.84,
+    "start_frequency_hz": 100.0,
+    "end_frequency_hz": 100000.0,
+    "frequency_points": 4,
     "frequencies_hz": [
       100.0,
-      1000.0,
-      10000.0,
+      999.9999999999998,
+      9999.999999999996,
       100000.0
     ],
     "cycles": 5.0,
@@ -19,11 +22,17 @@
     "close_channel_after": false,
     "ap_project_path": "",
     "ap_signal_path": "Signal Path1",
-    "ap_measurement": "PSRR",
+    "ap_measurement": "Signal Analyzer",
+    "ap_output_channel": 1,
+    "ap_amplitude_mvrms": 100.0,
+    "ap_offset_v": 3.8,
+    "ap_start_frequency_hz": 100.0,
+    "ap_end_frequency_hz": 100000.0,
+    "ap_frequency_points": 4,
     "ap_frequencies_hz": [
       100.0,
-      1000.0,
-      10000.0,
+      999.9999999999998,
+      9999.999999999996,
       100000.0
     ],
     "ap_limit_db": 0.0

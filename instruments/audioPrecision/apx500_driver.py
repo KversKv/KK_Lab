@@ -69,6 +69,17 @@ def load_ap_api(api_path=None):
     """
     global AP_API_PATH, HAS_AP_API, APx500Class, _AP_LOAD_ERROR
     AP_API_PATH = api_path or DEFAULT_AP_API_PATH
+    if api_path is None and not os.path.isfile(os.path.join(AP_API_PATH, "AudioPrecision.API.dll")):
+        install_root = r"C:\Program Files\Audio Precision"
+        if os.path.isdir(install_root):
+            candidates = [
+                os.path.join(install_root, name, "API")
+                for name in os.listdir(install_root) if name.startswith("APx500 ")
+            ]
+            for candidate in sorted(candidates, reverse=True):
+                if os.path.isfile(os.path.join(candidate, "AudioPrecision.API.dll")):
+                    AP_API_PATH = candidate
+                    break
     try:
         if AP_API_PATH not in sys.path:
             sys.path.append(AP_API_PATH)
@@ -90,7 +101,7 @@ HAS_AP_API = False
 APx500Class = None
 _AP_LOAD_ERROR = None
 
-load_ap_api(AP_API_PATH)
+load_ap_api()
 
 
 class APxConnection:
@@ -244,6 +255,79 @@ class APxConnection:
 
     def show_measurement(self, signal_path_name, measurement_name):
         self.apx.ShowMeasurement(signal_path_name, measurement_name)
+
+    def open_project(self, project_path):
+        if not os.path.isfile(project_path):
+            raise FileNotFoundError(f"APx 项目不存在: {project_path}")
+        self.apx.OpenProject(project_path)
+
+    def configure_psrr_measurement(self, signal_path_name, measurement_name,
+                                   output_channel=1, amplitude_vrms=0.1,
+                                   offset_v=3.8, bandwidth_hz=250000,
+                                   generator_on=True):
+        from AudioPrecision.API import (
+            HighpassFilterMode, InputBandwidthType, LowpassFilterModeAnalog,
+            OutputChannelIndex, OutputConnectorType, SignalAnalyzerBandwidthType,
+            SignalPathWeightingFilterType,
+        )
+        resolved = self.resolve_measurement_name(signal_path_name, measurement_name, auto_add=True)
+        if resolved is None:
+            raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
+        self.apx.ShowMeasurement(signal_path_name, resolved)
+        setup = self.apx.SignalPathSetup
+        setup.OutputConnector.Type = OutputConnectorType.AnalogUnbalanced
+        setup.AnalogInput.ChannelCount = 2
+        setup.AnalogOutput.ChannelCount = int(output_channel)
+        bandwidth_members = {
+            20000: "Bw20k", 40000: "Bw40k", 80000: "Bw80k",
+            250000: "Bw250k", 500000: "Bw500k", 1000000: "Bw1M",
+        }
+        member_name = bandwidth_members.get(int(bandwidth_hz))
+        if member_name is None:
+            raise ValueError(f"不支持的 AP 输入带宽: {bandwidth_hz} Hz")
+        setup.MaximumBandwidth = getattr(InputBandwidthType, member_name)
+        setup.HighpassFilter = HighpassFilterMode.DC
+        setup.LowpassFilterAnalog = LowpassFilterModeAnalog.AdcPassband
+        setup.WeightingFilter = SignalPathWeightingFilterType.wt_None
+        setup.InputEqChannels.TrackFirst = False
+        for channel in (0, 1):
+            setup.InputEqChannels.get_Item(channel).Eq = "None"
+
+        analyzer = self.apx.SignalAnalyzer
+        analyzer.AnalogInputBandwidth = SignalAnalyzerBandwidthType.TrackSetup
+        channel_index = getattr(OutputChannelIndex, f"Ch{int(output_channel)}")
+        self._configure_psrr_generator(
+            analyzer.Generator, channel_index, amplitude_vrms, offset_v, generator_on
+        )
+        self._configure_psrr_generator(
+            setup.Generator, channel_index, amplitude_vrms, offset_v, generator_on
+        )
+        self.configure_fft_settings(signal_path_name, resolved)
+        self._diag(
+            f"[APController] PSRR: AnalogUnbalanced CH{output_channel}, "
+            f"{amplitude_vrms:g} Vrms + {offset_v:g} VDC, bandwidth={member_name}, "
+            "HP=DC, LP=AdcPassband, Weighting/EQ=None"
+        )
+        return resolved
+
+    def _configure_psrr_generator(self, generator, channel_index, amplitude_vrms,
+                                  offset_v, generator_on):
+        generator.Waveform = "Sine"
+        generator.Levels.TrackFirstChannel = False
+        generator.Levels.Unit = "Vrms"
+        generator.Levels.OffsetUnit = "V"
+        generator.Levels.SetValue(channel_index, float(amplitude_vrms))
+        generator.Levels.SetOffsetValue(channel_index, float(offset_v))
+        generator.On = bool(generator_on)
+
+    def set_psrr_generator_frequency(self, frequency_hz):
+        frequency = float(frequency_hz)
+        self.apx.SignalAnalyzer.Generator.Frequency.Value = frequency
+        self.apx.SignalPathSetup.Generator.Frequency.Value = frequency
+
+    def set_psrr_generator_off(self):
+        self.apx.SignalAnalyzer.Generator.On = False
+        self.apx.SignalPathSetup.Generator.On = False
 
     def resolve_measurement_name(self, signal_path_name, expected_name, auto_add=True):
         available = self.get_measurement_names(signal_path_name)
@@ -1548,21 +1632,26 @@ class APxConnection:
 
         return score, info
 
-    def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer", channel=0, acquisition_number=1):
+    def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
+                                     channel=0, acquisition_number=1, run=True):
         resolved = self.resolve_measurement_name(signal_path_name, measurement_name, auto_add=True)
         if resolved is None:
             raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
         self.apx.ShowMeasurement(signal_path_name, resolved)
-        self.configure_fft_settings(signal_path_name, resolved)
+        if run:
+            self.configure_fft_settings(signal_path_name, resolved)
         obj = self._get_active_measurement_object()
-        if obj is not None and hasattr(obj, "SequenceMeasurement"):
-            sm = obj.SequenceMeasurement
-            sm.Checked = True
-            sm.Run()
-            self._wait_for_sequence_done(timeout=30)
-        else:
-            self.apx.Sequence.StartFromMeasurement(signal_path_name, resolved)
-            self._wait_for_sequence_done(timeout=30)
+        if run:
+            if obj is not None and hasattr(obj, "SequenceMeasurement"):
+                sm = obj.SequenceMeasurement
+                sm.Checked = True
+                sm.Run()
+                completed = self._wait_for_sequence_done(timeout=30)
+            else:
+                self.apx.Sequence.StartFromMeasurement(signal_path_name, resolved)
+                completed = self._wait_for_sequence_done(timeout=30)
+            if not completed:
+                raise RuntimeError(f"FFT 测量超时: {resolved}")
         self.apx.ShowMeasurement(signal_path_name, resolved)
         obj = self._get_active_measurement_object()
         self.set_spectrum_unit_dbv(obj, log_success=False, log_failure=False)

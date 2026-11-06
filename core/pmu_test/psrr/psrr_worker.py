@@ -2,21 +2,28 @@
 """PSRR 扫频 Worker，仅依赖 QtCore。"""
 from __future__ import annotations
 
+import base64
+import json
 import math
+from pathlib import Path
+import subprocess
 import time
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from log_config import get_logger
+from resource_path import get_resource_base
 from .psrr_analysis import (
     AudioPrecisionPSRRConfig,
     PSRRConfig,
     acquisition_settle_seconds,
     audio_precision_config_from_dict,
     calculate_psrr_db,
+    calculate_psrr_from_dbv,
     config_from_dict,
     scope_timebase_seconds,
     simulate_psrr_point,
+    spectrum_level_at_frequency,
     summarize_results,
 )
 
@@ -212,7 +219,7 @@ class AudioPrecisionPSRRWorker(QObject):
     finished = Signal(bool, str)
 
     def __init__(self, config: dict | AudioPrecisionPSRRConfig,
-                 audio_precision=None, parent=None):
+                 audio_precision=None, mock_mode: bool = False, parent=None):
         super().__init__(parent)
         self.config = (
             config if isinstance(config, AudioPrecisionPSRRConfig)
@@ -220,19 +227,289 @@ class AudioPrecisionPSRRWorker(QObject):
         )
         self.config.validate()
         self.audio_precision = audio_precision
+        self.mock_mode = mock_mode
+        self._owns_audio_precision = False
+        self._generator_may_be_on = False
+        self._remote_process = None
         self._abort = False
+        self._points: list[dict] = []
 
     def stop(self):
         self._abort = True
+        process = self._remote_process
+        if process is not None and process.poll() is None:
+            process.terminate()
+
+    def _sleep(self, seconds: float) -> bool:
+        deadline = time.monotonic() + max(0.0, seconds)
+        while not self._abort:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(0.05, remaining))
+        return False
 
     @Slot()
     def start(self):
-        self.log.emit(
-            f"[INFO] Audio Precision framework: project={self.config.project_path or '<current>'}, "
-            f"signal path={self.config.signal_path}, measurement={self.config.measurement}, "
-            f"points={len(self.config.frequencies_hz)}"
+        success = False
+        message = "测试停止"
+        try:
+            self.log.emit(
+                f"[INFO] Audio Precision connection: {self.config.connection_mode}, "
+                f"target={self._connection_target()}"
+            )
+            self.log.emit(
+                f"[INFO] Audio Precision PSRR sweep: "
+                f"project={self.config.project_path or '<current>'}, "
+                f"signal path={self.config.signal_path}, measurement={self.config.measurement}, "
+                f"output=CH{self.config.output_channel}, "
+                f"amplitude={self.config.amplitude_vrms * 1000:g} mVrms, "
+                f"offset={self.config.offset_v:g} V, "
+                f"bandwidth={self.config.bandwidth_hz:g} Hz, "
+                f"points={len(self.config.frequencies_hz)}"
+            )
+            if self.mock_mode:
+                self._run_mock()
+            else:
+                self._run_real()
+            complete = len(self._points) == len(self.config.frequencies_hz)
+            success = complete and not self._abort and bool(self._points)
+            message = "测试完成" if success else "测试停止"
+        except Exception as exc:
+            logger.error("Audio Precision PSRR 测试执行失败", exc_info=True)
+            message = str(exc)
+            self.log.emit(f"[ERROR] {message}")
+        finally:
+            if not self.mock_mode:
+                success, message = self._cleanup_audio_precision(success, message)
+            if self._points:
+                self.result_ready.emit({
+                    "points": list(self._points),
+                    "summary": summarize_results(self._points, self.config.limit_db),
+                    "config": self._config_dict(),
+                    "mock_mode": self.mock_mode,
+                    "success": success,
+                })
+            self.progress.emit(100 if success else 0)
+            self.finished.emit(success, message)
+
+    def _run_mock(self):
+        self.log.emit("[MOCK] 使用确定性双通道 FFT 数据验证 Audio Precision 扫频链路")
+        for index, frequency in enumerate(self.config.frequencies_hz):
+            if self._abort or not self._sleep(0.08):
+                break
+            point = simulate_psrr_point(frequency, self.config.amplitude_vrms)
+            point.update({
+                "input_dbv": 20.0 * math.log10(point["input_vrms"]),
+                "output_dbv": 20.0 * math.log10(point["output_vrms"]),
+                "input_fft_frequency_hz": frequency,
+                "output_fft_frequency_hz": frequency,
+            })
+            self._emit_point(point, index)
+
+    def _run_real(self):
+        if self.config.connection_mode == "vm_ssh":
+            self._run_remote()
+            return
+        if self.audio_precision is None:
+            from instruments.factory import create_audio_precision
+            self.audio_precision = create_audio_precision()
+            self._owns_audio_precision = True
+        ap = self.audio_precision
+        if not ap.connected:
+            ap.connect()
+        if self.config.project_path:
+            ap.open_project(self.config.project_path)
+        self._generator_may_be_on = True
+        resolved = ap.configure_psrr_measurement(
+            self.config.signal_path,
+            self.config.measurement,
+            output_channel=self.config.output_channel,
+            amplitude_vrms=self.config.amplitude_vrms,
+            offset_v=self.config.offset_v,
+            bandwidth_hz=self.config.bandwidth_hz,
         )
-        message = "Audio Precision PSRR 测量适配器尚未接入，框架已预留"
-        self.log.emit(f"[WARN] {message}")
-        self.progress.emit(0)
-        self.finished.emit(False, message)
+        measurement = resolved or self.config.measurement
+        self.log.emit(
+            "[INFO] AP INPUT1=DUT VIN, INPUT2=DUT VOUT; "
+            "HP=DC, LP=ADC passband, Weighting=None, EQ=None"
+        )
+        for index, frequency in enumerate(self.config.frequencies_hz):
+            if self._abort:
+                break
+            self._measure_real_point(frequency, index, measurement)
+
+    def _connection_target(self) -> str:
+        if self.config.connection_mode == "local":
+            return "local AP"
+        if self.config.ssh_profile:
+            return self.config.ssh_profile
+        return f"{self.config.ssh_user}@{self.config.ssh_host}:{self.config.ssh_port}"
+
+    def _remote_script(self) -> str:
+        project_root = Path(get_resource_base())
+        analysis_source = (
+            project_root / "core" / "pmu_test" / "psrr" / "psrr_analysis.py"
+        ).read_text(encoding="utf-8")
+        driver_source = (
+            project_root / "instruments" / "audioPrecision" / "apx500_driver.py"
+        ).read_text(encoding="utf-8")
+        guest_source = (
+            project_root / "instruments" / "audioPrecision" / "apx_psrr_guest.py"
+        ).read_text(encoding="utf-8")
+        config = {
+            "project_path": self.config.project_path,
+            "signal_path": self.config.signal_path,
+            "measurement": self.config.measurement,
+            "output_channel": self.config.output_channel,
+            "amplitude_vrms": self.config.amplitude_vrms,
+            "offset_v": self.config.offset_v,
+            "bandwidth_hz": self.config.bandwidth_hz,
+            "frequencies_hz": list(self.config.frequencies_hz),
+        }
+        encoded = base64.b64encode(json.dumps(config).encode("utf-8")).decode("ascii")
+        return (
+            f"{analysis_source}\n\n{driver_source}\n\n{guest_source}\n\n"
+            f"run_psrr_guest(APxConnection, {encoded!r})\n"
+        )
+
+    def _run_remote(self):
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+        if self.config.ssh_profile:
+            target = self.config.ssh_profile
+        else:
+            command.extend(("-p", str(self.config.ssh_port)))
+            target = f"{self.config.ssh_user}@{self.config.ssh_host}"
+        command.extend((target, f"{self.config.ssh_python} -u -"))
+        self.log.emit(f"[INFO] Starting Guest AP worker: {self._connection_target()}")
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self._remote_process = process
+        completed = False
+        try:
+            process.stdin.write(self._remote_script())
+            process.stdin.close()
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if not line.startswith("KK_LAB_PSRR_EVENT:"):
+                    self.log.emit(f"[GUEST] {line}")
+                    continue
+                event = json.loads(base64.b64decode(line.split(":", 1)[1]).decode("utf-8"))
+                event_type = event.get("type")
+                if event_type == "point":
+                    self._emit_point(event["point"], int(event["index"]))
+                elif event_type == "log":
+                    self.log.emit(f"[GUEST] {event['message']}")
+                elif event_type == "error":
+                    raise RuntimeError(event["message"])
+                elif event_type == "complete":
+                    completed = True
+            return_code = process.wait()
+            if self._abort:
+                return
+            if return_code != 0:
+                raise RuntimeError(f"Guest AP worker exited with code {return_code}")
+            if not completed:
+                raise RuntimeError("Guest AP worker ended without a completion event")
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            if process.stdout is not None:
+                process.stdout.close()
+            self._remote_process = None
+
+    def _measure_real_point(self, frequency: float, index: int, measurement: str):
+        ap = self.audio_precision
+        ap.set_psrr_generator_frequency(frequency)
+        input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
+            self.config.signal_path, measurement, channel=0, run=True
+        )
+        output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
+            self.config.signal_path, measurement, channel=1, run=False
+        )
+        input_bin_hz, input_dbv = spectrum_level_at_frequency(
+            input_frequencies, input_levels, frequency
+        )
+        output_bin_hz, output_dbv = spectrum_level_at_frequency(
+            output_frequencies, output_levels, frequency
+        )
+        point = {
+            "frequency_hz": frequency,
+            "input_dbv": input_dbv,
+            "output_dbv": output_dbv,
+            "input_vrms": 10.0 ** (input_dbv / 20.0),
+            "output_vrms": 10.0 ** (output_dbv / 20.0),
+            "input_fft_frequency_hz": input_bin_hz,
+            "output_fft_frequency_hz": output_bin_hz,
+            "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),
+        }
+        self._emit_point(point, index)
+
+    def _emit_point(self, point: dict, index: int):
+        self._points.append(point)
+        self.point_ready.emit(dict(point))
+        self.progress.emit(round((index + 1) * 100 / len(self.config.frequencies_hz)))
+        self.log.emit(
+            f"[DATA] Freq={point['frequency_hz']:g} Hz | "
+            f"CH1={point['input_dbv']:.4f} dBV | CH2={point['output_dbv']:.4f} dBV | "
+            f"PSRR={point['psrr_db']:.3f} dB"
+        )
+
+    def _cleanup_audio_precision(self, success: bool, message: str) -> tuple[bool, str]:
+        ap = self.audio_precision
+        if ap is None:
+            return success, message
+        if self._generator_may_be_on:
+            try:
+                ap.set_psrr_generator_off()
+            except Exception:
+                logger.error("Audio Precision PSRR 发生器关闭失败", exc_info=True)
+                self.log.emit("[ERROR] AP 发生器关闭失败，请检查仪器输出")
+                success = False
+                message = f"{message}; AP 发生器关闭失败"
+        if self._owns_audio_precision:
+            try:
+                ap.disconnect()
+            except Exception:
+                logger.error("Audio Precision 断开连接失败", exc_info=True)
+                self.log.emit("[WARN] AP 断开连接失败")
+        return success, message
+
+    def _config_dict(self) -> dict:
+        return {
+            "measurement_method": "audio_precision",
+            "ap_project_path": self.config.project_path,
+            "ap_signal_path": self.config.signal_path,
+            "ap_measurement": self.config.measurement,
+            "ap_connection_mode": self.config.connection_mode,
+            "ap_ssh_profile": self.config.ssh_profile,
+            "ap_ssh_host": self.config.ssh_host,
+            "ap_ssh_user": self.config.ssh_user,
+            "ap_ssh_port": self.config.ssh_port,
+            "ap_ssh_python": self.config.ssh_python,
+            "ap_output_channel": self.config.output_channel,
+            "ap_amplitude_mvrms": self.config.amplitude_vrms * 1000.0,
+            "ap_offset_v": self.config.offset_v,
+            "ap_bandwidth_hz": self.config.bandwidth_hz,
+            "ap_start_frequency_hz": self.config.frequencies_hz[0],
+            "ap_end_frequency_hz": self.config.frequencies_hz[-1],
+            "ap_frequency_points": len(self.config.frequencies_hz),
+            "ap_frequencies_hz": list(self.config.frequencies_hz),
+            "ap_limit_db": self.config.limit_db,
+        }

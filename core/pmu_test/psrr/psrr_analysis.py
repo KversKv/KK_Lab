@@ -64,19 +64,50 @@ class PSRRConfig:
 class AudioPrecisionPSRRConfig:
     project_path: str = ""
     signal_path: str = "Signal Path1"
-    measurement: str = "PSRR"
+    measurement: str = "Signal Analyzer"
+    connection_mode: str = "vm_ssh"
+    ssh_profile: str = "testvm"
+    ssh_host: str = "192.168.208.128"
+    ssh_user: str = "administrator"
+    ssh_port: int = 22
+    ssh_python: str = "py -3.12"
+    output_channel: int = 1
+    amplitude_vrms: float = 0.1
+    offset_v: float = 3.8
     frequencies_hz: tuple[float, ...] = (100.0, 1000.0, 10000.0, 100000.0)
     limit_db: float = 0.0
+
+    @property
+    def bandwidth_hz(self) -> float:
+        return select_audio_precision_bandwidth(max(self.frequencies_hz))
 
     def validate(self) -> None:
         if not self.signal_path.strip():
             raise ValueError("Audio Precision Signal Path 不能为空")
         if not self.measurement.strip():
             raise ValueError("Audio Precision Measurement 不能为空")
+        if self.connection_mode not in ("local", "vm_ssh"):
+            raise ValueError("Audio Precision Connection 必须为 local 或 vm_ssh")
+        if self.connection_mode == "vm_ssh":
+            if not self.ssh_profile.strip() and not self.ssh_host.strip():
+                raise ValueError("SSH Profile 与 Guest IP 至少填写一项")
+            if not 1 <= self.ssh_port <= 65535:
+                raise ValueError("SSH Port 必须位于 1-65535")
+            if not self.ssh_python.strip():
+                raise ValueError("Guest Python Command 不能为空")
+        if self.output_channel not in (1, 2):
+            raise ValueError("Audio Precision Output Channel 必须为 1 或 2")
+        if not math.isfinite(self.amplitude_vrms) or self.amplitude_vrms <= 0:
+            raise ValueError("Audio Precision Output Amplitude 必须大于 0 Vrms")
+        if not math.isfinite(self.offset_v) or self.offset_v <= 0:
+            raise ValueError("Audio Precision DC Offset 必须大于 0 V")
+        if self.amplitude_vrms * math.sqrt(2.0) >= self.offset_v:
+            raise ValueError("正弦峰值不能超过 DC Offset，避免输出过零")
         if not self.frequencies_hz:
             raise ValueError("至少配置一个扫频点")
         if any(not math.isfinite(f) or f <= 0 for f in self.frequencies_hz):
             raise ValueError("频率必须为大于 0 的有限数值")
+        select_audio_precision_bandwidth(max(self.frequencies_hz))
 
 
 def parse_frequency_points(text: str | Iterable[float]) -> tuple[float, ...]:
@@ -155,7 +186,16 @@ def audio_precision_config_from_dict(data: dict) -> AudioPrecisionPSRRConfig:
     config = AudioPrecisionPSRRConfig(
         project_path=str(data.get("ap_project_path", "")).strip(),
         signal_path=str(data.get("ap_signal_path", "Signal Path1")).strip(),
-        measurement=str(data.get("ap_measurement", "PSRR")).strip(),
+        measurement=str(data.get("ap_measurement", "Signal Analyzer")).strip(),
+        connection_mode=str(data.get("ap_connection_mode", "vm_ssh")).strip(),
+        ssh_profile=str(data.get("ap_ssh_profile", "testvm")).strip(),
+        ssh_host=str(data.get("ap_ssh_host", "192.168.208.128")).strip(),
+        ssh_user=str(data.get("ap_ssh_user", "administrator")).strip(),
+        ssh_port=int(data.get("ap_ssh_port", 22)),
+        ssh_python=str(data.get("ap_ssh_python", "py -3.12")).strip(),
+        output_channel=int(data.get("ap_output_channel", 1)),
+        amplitude_vrms=float(data.get("ap_amplitude_mvrms", 100.0)) / 1000.0,
+        offset_v=float(data.get("ap_offset_v", 3.8)),
         frequencies_hz=parse_frequency_points(data["ap_frequencies_hz"])
         if "ap_frequencies_hz" in data else generate_frequency_points(
             float(data.get("ap_start_frequency_hz", 100.0)),
@@ -175,6 +215,39 @@ def calculate_psrr_db(input_vrms: float, output_vrms: float) -> float:
     if not math.isfinite(output_vrms) or output_vrms <= 0:
         raise ValueError("输出纹波必须为大于 0 的有限数值")
     return 20.0 * math.log10(input_vrms / output_vrms)
+
+
+def select_audio_precision_bandwidth(max_frequency_hz: float) -> float:
+    """选择覆盖最高测试频率的 AP 模拟输入带宽档位。"""
+    for bandwidth in (20000.0, 40000.0, 80000.0, 250000.0, 500000.0, 1000000.0):
+        if max_frequency_hz <= bandwidth:
+            return bandwidth
+    raise ValueError("Audio Precision 最高测试频率不能超过 1 MHz")
+
+
+def spectrum_level_at_frequency(
+    frequencies_hz: Iterable[float], levels_dbv: Iterable[float], target_hz: float
+) -> tuple[float, float]:
+    """返回离目标频率最近的 FFT bin 频率与 dBV 电平。"""
+    frequencies = tuple(float(value) for value in frequencies_hz)
+    levels = tuple(float(value) for value in levels_dbv)
+    if not frequencies or len(frequencies) != len(levels):
+        raise ValueError("FFT 频率与电平数据为空或长度不一致")
+    if any(not math.isfinite(value) or value <= 0 for value in frequencies):
+        raise ValueError("FFT 频率轴包含无效数值")
+    if target_hz < frequencies[0] or target_hz > frequencies[-1]:
+        raise ValueError(f"目标频率 {target_hz:g} Hz 超出 FFT 频率范围")
+    index = min(range(len(frequencies)), key=lambda i: abs(frequencies[i] - target_hz))
+    level = levels[index]
+    if not math.isfinite(level):
+        raise ValueError(f"FFT {frequencies[index]:g} Hz 电平无效")
+    return frequencies[index], level
+
+
+def calculate_psrr_from_dbv(input_dbv: float, output_dbv: float) -> float:
+    if not math.isfinite(input_dbv) or not math.isfinite(output_dbv):
+        raise ValueError("FFT 输入/输出 dBV 电平必须为有限数值")
+    return float(input_dbv - output_dbv)
 
 
 def scope_timebase_seconds(frequency_hz: float, cycles: float) -> float:

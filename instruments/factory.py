@@ -65,6 +65,15 @@ def create_power_analyzer(resource: str):
     return N6705C(resource)
 
 
+def create_audio_precision():
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        from instruments.mock.mock_instruments import MockAudioPrecision
+        return MockAudioPrecision()
+    from instruments.audioPrecision.apx500_driver import APxConnection
+    return APxConnection()
+
+
 def create_chamber(chamber_type: str = "vt6002", port: str = "", baudrate: int | None = None, resource: str = ""):
     from debug_config import DEBUG_MOCK
     port = port or resource

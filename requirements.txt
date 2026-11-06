@@ -28,6 +28,9 @@ Pillow>=10,<12
 # PDF 报告导出
 reportlab>=4.2,<5
 
+# Audio Precision APx500 .NET API
+pythonnet>=3.0,<4
+
 # 科学计算
 numpy==2.4.4
 

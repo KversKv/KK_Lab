@@ -216,10 +216,10 @@ core/
 │   │   ├── __init__.py      # 导出纯算法、业务 Worker 与旧接口运行器
 │   │   ├── output_voltage_analysis.py # 位域校验、有效区间、结果指标与前置校验（无 Qt）
 │   │   └── output_voltage_worker.py   # 扫描 Worker（QObject）与旧 start/run 接口运行器（仅 QtCore）
-│   └── psrr/                # PSRR 扫频测试（N6705C 正弦激励 + 示波器双通道 RMS）
+│   └── psrr/                # PSRR 扫频测试（示波器 RMS / Audio Precision 双通道 FFT）
 │       ├── __init__.py      # 导出配置、算法与 Worker
 │       ├── psrr_analysis.py # 纯算法：频点解析、PSRR 计算、配置校验与统计（无 Qt）
-│       └── psrr_worker.py   # Mock/真机扫频 Worker（仅 QtCore）
+│       └── psrr_worker.py   # 本地/SSH 扫频 Worker 与远程事件回传（仅 QtCore）
 ├── serial_io/               # 串口收发与会话管理内核（pyserial 唯一入口，UI 禁直接 import serial）
 │   ├── __init__.py          # 导出 SerialReadWorker / NtpSyncWorker / SerialSession / SerialSessionManager
 │   ├── serial_backend.py    # pyserial 薄封装（无 Qt）：端口枚举 list_serial_ports / open_serial / 参数文本映射
@@ -272,6 +272,10 @@ instruments/
 │       │                          # (电压/电流设置、通道控制、Datalog 采集等)
 │       └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
 │
+├── audioPrecision/          # Audio Precision APx500 .NET API 驱动与 Guest 执行器
+│   ├── apx500_driver.py     # APx500 连接、PSRR 配置与双通道 FFT 采集（pythonnet）
+│   └── apx_psrr_guest.py    # SSH Guest PSRR 执行与结构化事件输出（由 Worker 拼接运行）
+│
 ├── chambers/                # 环境试验箱驱动
 │   ├── base.py              # 温箱统一抽象接口
 │   ├── mt3065.py            # MT3065 温箱驱动
@@ -318,7 +322,7 @@ instruments/
 ├── mock/                    # 模拟仪器 (用于离线调试/开发)
 │   └── mock_instruments.py  # 模拟仪器实现，包含 MockN6705C / MockI2C /
 │                            # MockPicoGPIO / MockChamber / MockVT6002 /
-│                            # MockMT3065 / MockMSO64B，
+│                            # MockMT3065 / MockMSO64B / MockAudioPrecision，
 │                            # 由 DEBUG_MOCK 开关启用
 │
 └── factory.py               # 仪器工厂函数，统一创建各类仪器实例
