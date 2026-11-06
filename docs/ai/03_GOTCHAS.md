@@ -576,3 +576,9 @@ app.installEventFilter(_WinFilter())
 **现象**：Write/SearchReplace 改写 `resources/icons/*.svg` 返回成功且 Read 回显新内容，但磁盘文件长度/mtime 未变（Grep、Qt 渲染均为旧内容），疑似环境（DLP/EDR）拦截。
 
 **对策**：改写 `resources/` 下文件后以 OS 层为准校验（`Get-Item Length/LastWriteTime` 或离屏渲染确认）；未生效时改用 PowerShell `[System.IO.File]::WriteAllText(...)` 落盘并复核。
+
+## 41. APx500 在 SSH 会话 0 运行 Batch 测量触发模态窗口异常
+
+**现象**：Signal Analyzer 抛出 `RunMeasurementError`，内部为 `InvalidOperationException: UserInteractive=False`；设置 `apx.Visible=False` 无效。
+
+**对策**：APx `Start()` / Sequence Batch 必须在 Guest 交互桌面执行；Host 通过交互式计划任务启动 Guest 进程，并用 SSH 反向转发保持命令会话。Signal Analyzer 保持 `FFTSpectrum.Checked=True`，调用测量对象 `Start()` 返回后直接读取双通道；`AcquisitionCount=1` 是正常状态，不等待它达到 `Averages`，也不调用不存在的 `Stop()`。Demo Mode 不得作为真机验证结果。

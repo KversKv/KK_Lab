@@ -1118,6 +1118,7 @@ class APxConnection:
         obj = self._get_active_measurement_object()
         if obj is None:
             return
+        obj.FFTSpectrum.Checked = True
         try:
             obj.FFTLength = FFTLength.FFT_48000
         except Exception:
@@ -1660,16 +1661,9 @@ class APxConnection:
             self.configure_fft_settings(signal_path_name, resolved)
         obj = self._get_active_measurement_object()
         if run:
-            if obj is not None and hasattr(obj, "SequenceMeasurement"):
-                sm = obj.SequenceMeasurement
-                sm.Checked = True
-                sm.Run()
-                completed = self._wait_for_sequence_done(timeout=30)
-            else:
-                self.apx.Sequence.StartFromMeasurement(signal_path_name, resolved)
-                completed = self._wait_for_sequence_done(timeout=30)
-            if not completed:
-                raise RuntimeError(f"FFT 测量超时: {resolved}")
+            if obj is None or not hasattr(obj, "Start"):
+                raise RuntimeError(f"无法启动 Signal Analyzer: {resolved}")
+            obj.Start()
         self.apx.ShowMeasurement(signal_path_name, resolved)
         obj = self._get_active_measurement_object()
         self.set_spectrum_unit_dbv(obj, log_success=False, log_failure=False)

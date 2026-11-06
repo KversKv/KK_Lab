@@ -117,8 +117,6 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         )
         self._config_memory.watch(self)
         self._config_memory.restore()
-        if self.ap_measurement_edit.text().strip() == "PSRR":
-            self.ap_measurement_edit.setText("Signal Analyzer")
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
@@ -361,19 +359,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         left.addWidget(self.ap_output_card)
 
         self.ap_card = CardFrame("Audio Precision Test Parameters")
-        self.ap_project_edit = QLineEdit()
-        self.ap_project_edit.setPlaceholderText("Optional APx project path")
-        self.ap_signal_path_edit = QLineEdit("Signal Path1")
-        self.ap_measurement_edit = QLineEdit("Signal Analyzer")
         self.ap_start_frequency_spin = self._double_spin(0.1, 1e6, 100.0, 100.0, 3)
         self.ap_end_frequency_spin = self._double_spin(0.1, 1e6, 100000.0, 1000.0, 3)
         self.ap_frequency_points_spin = QSpinBox()
         self.ap_frequency_points_spin.setRange(2, 1001)
         self.ap_frequency_points_spin.setValue(4)
         self.ap_limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
-        self._add_field(self.ap_card.main_layout, "Project Path", self.ap_project_edit)
-        self._add_field(self.ap_card.main_layout, "Signal Path", self.ap_signal_path_edit)
-        self._add_field(self.ap_card.main_layout, "Measurement", self.ap_measurement_edit)
         self._add_field(
             self.ap_card.main_layout, "Start Frequency (Hz)", self.ap_start_frequency_spin
         )
@@ -391,8 +382,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.afg_amplitude_spin, self.start_frequency_spin, self.end_frequency_spin,
             self.frequency_points_spin, self.input_channel_combo, self.output_channel_combo,
             self.cycles_spin, self.output_scale_spin, self.limit_spin,
-            self.close_channel_check, self.ap_project_edit, self.ap_signal_path_edit,
-            self.ap_measurement_edit, self.ap_output_channel_combo, self.ap_amplitude_spin,
+            self.close_channel_check, self.ap_output_channel_combo, self.ap_amplitude_spin,
             self.ap_offset_spin, self.ap_start_frequency_spin,
             self.ap_end_frequency_spin, self.ap_frequency_points_spin, self.ap_limit_spin,
         ]
@@ -781,9 +771,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             "ap_ssh_user": self.ap_ssh_user_edit.text().strip(),
             "ap_ssh_port": self.ap_ssh_port_spin.value(),
             "ap_ssh_python": self.ap_ssh_python_edit.text().strip(),
-            "ap_project_path": self.ap_project_edit.text().strip(),
-            "ap_signal_path": self.ap_signal_path_edit.text().strip(),
-            "ap_measurement": self.ap_measurement_edit.text().strip(),
+            "ap_project_path": "",
+            "ap_signal_path": "Signal Path1",
+            "ap_measurement": "Signal Analyzer",
             "ap_output_channel": self.ap_output_channel_combo.currentData(),
             "ap_amplitude_mvrms": self.ap_amplitude_spin.value(),
             "ap_offset_v": self.ap_offset_spin.value(),
@@ -1166,9 +1156,6 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         set_line(self.ap_ssh_host_edit, "ap_ssh_host")
         set_line(self.ap_ssh_user_edit, "ap_ssh_user")
         set_line(self.ap_ssh_python_edit, "ap_ssh_python")
-        set_line(self.ap_project_edit, "ap_project_path")
-        set_line(self.ap_signal_path_edit, "ap_signal_path")
-        set_line(self.ap_measurement_edit, "ap_measurement")
         if "close_channel_after" in cfg:
             self.close_channel_check.setChecked(bool(cfg["close_channel_after"]))
             applied.append("close_channel_after")

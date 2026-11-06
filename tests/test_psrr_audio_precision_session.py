@@ -1,7 +1,8 @@
+import subprocess
 import sys
 import time
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -46,6 +47,24 @@ emit("disconnected")
 """
 
 
+def _local_transport(session, script):
+    def open_transport():
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", _PERSISTENT_PYTHON_BOOTSTRAP],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+        )
+        session._process = process
+        session._reader = process.stdout
+        session._writer = process.stdin
+        session._send_script(script)
+
+    return open_transport
+
+
 def test_persistent_ssh_command_uses_line_bootstrap():
     config = AudioPrecisionPSRRConfig()
 
@@ -58,21 +77,13 @@ def test_persistent_ssh_command_uses_line_bootstrap():
 
 def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
     config = AudioPrecisionPSRRConfig()
-    local_command = [sys.executable, "-u", "-c", _PERSISTENT_PYTHON_BOOTSTRAP]
     session = AudioPrecisionSSHSession(config)
     connection_events = []
     output_events = []
     sweep_events = []
 
-    with (
-        patch(
-            "core.pmu_test.psrr.audio_precision_session.ssh_command",
-            return_value=local_command,
-        ),
-        patch(
-            "core.pmu_test.psrr.audio_precision_session.build_remote_script",
-            return_value=_GUEST_SCRIPT,
-        ),
+    with patch.object(
+        session, "_open_transport", new=_local_transport(session, _GUEST_SCRIPT)
     ):
         session.connect(connection_events.append)
         assert session.connected
@@ -137,16 +148,10 @@ sys.stdout.flush()
 sys.stdin.readline()
 """
     session = AudioPrecisionSSHSession(AudioPrecisionPSRRConfig())
-    local_command = [sys.executable, "-u", "-c", _PERSISTENT_PYTHON_BOOTSTRAP]
 
     with (
-        patch(
-            "core.pmu_test.psrr.audio_precision_session.ssh_command",
-            return_value=local_command,
-        ),
-        patch(
-            "core.pmu_test.psrr.audio_precision_session.build_remote_script",
-            return_value=script,
+        patch.object(
+            session, "_open_transport", new=_local_transport(session, script)
         ),
         pytest.raises(RuntimeError, match="boom"),
     ):
@@ -259,6 +264,91 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
     assert signal_path_generator.on_writes == [True]
 
 
+def test_fft_configuration_checks_spectrum_result():
+    connection = APxConnection()
+    spectrum = SimpleNamespace(Checked=False)
+    analyzer = SimpleNamespace(FFTSpectrum=spectrum)
+    connection.apx = SimpleNamespace(
+        ActiveMeasurementName="Signal Analyzer",
+        SignalAnalyzer=analyzer,
+        ShowMeasurement=lambda *args: None,
+    )
+    api = SimpleNamespace(
+        FFTLength=SimpleNamespace(FFT_48000="FFT_48000"),
+        WindowType=SimpleNamespace(Equiripple="Equiripple"),
+        AveragingType=SimpleNamespace(Power="Power"),
+        TriggerType=SimpleNamespace(FreeRun="FreeRun"),
+    )
+
+    with (
+        patch.dict(
+            sys.modules,
+            {"AudioPrecision": SimpleNamespace(API=api), "AudioPrecision.API": api},
+        ),
+        patch.object(
+            connection, "resolve_measurement_name", return_value="Signal Analyzer"
+        ),
+        patch.object(connection, "set_spectrum_unit_dbv"),
+    ):
+        connection.configure_fft_settings("Signal Path1", "Signal Analyzer")
+
+    assert spectrum.Checked
+    assert analyzer.FFTLength == "FFT_48000"
+    assert analyzer.WindowType == "Equiripple"
+    assert analyzer.AveragingType == "Power"
+    assert analyzer.Averages == 7
+    assert analyzer.TriggerType == "FreeRun"
+    assert analyzer.DelayTimeInSeconds == pytest.approx(0.250)
+    assert analyzer.UseDelayTimeInSeconds
+
+
+def test_signal_analyzer_starts_once_and_second_channel_reuses_frame():
+    connection = APxConnection()
+    graph = SimpleNamespace(
+        Name="FFT Spectrum", Title="FFT Spectrum", GetXValues=Mock()
+    )
+    analyzer = SimpleNamespace(
+        FFTSpectrum=graph,
+        AcquisitionCount=1,
+        Averages=7,
+        Start=Mock(),
+        Stop=Mock(),
+        SequenceMeasurement=SimpleNamespace(Run=Mock()),
+    )
+    connection.apx = SimpleNamespace(
+        ShowMeasurement=Mock(),
+        Sequence=SimpleNamespace(StartFromMeasurement=Mock(), Run=Mock()),
+    )
+
+    with (
+        patch.object(
+            connection, "resolve_measurement_name", return_value="Signal Analyzer"
+        ),
+        patch.object(connection, "configure_fft_settings"),
+        patch.object(connection, "_get_active_measurement_object", return_value=analyzer),
+        patch.object(connection, "set_spectrum_unit_dbv", return_value=[]),
+        patch.object(
+            connection,
+            "_get_xy_data_from_graph",
+            return_value=([100.0, 1000.0], [-20.0, -30.0]),
+        ),
+    ):
+        frequencies, levels = connection.get_signal_analyzer_fft_data(
+            "Signal Path1", "Signal Analyzer", channel=0, run=True
+        )
+        second_frequencies, second_levels = connection.get_signal_analyzer_fft_data(
+            "Signal Path1", "Signal Analyzer", channel=1, run=False
+        )
+
+    assert frequencies == second_frequencies == [100.0, 1000.0]
+    assert levels == second_levels == [-20.0, -30.0]
+    analyzer.Start.assert_called_once_with()
+    analyzer.Stop.assert_not_called()
+    analyzer.SequenceMeasurement.Run.assert_not_called()
+    connection.apx.Sequence.StartFromMeasurement.assert_not_called()
+    connection.apx.Sequence.Run.assert_not_called()
+
+
 @pytest.mark.qt
 def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
     from PySide6.QtWidgets import QApplication
@@ -286,6 +376,10 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
     page = pmu_psrr_ui.PMUPSRRUI()
     page.show()
     app.processEvents()
+    config = page.get_test_config()
+    assert config["ap_project_path"] == ""
+    assert config["ap_signal_path"] == "Signal Path1"
+    assert config["ap_measurement"] == "Signal Analyzer"
 
     def wait_for_connection():
         deadline = time.monotonic() + 5.0
@@ -327,7 +421,6 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         page.ap_connect_btn.setFocus()
         page.ap_connect_btn.click()
         assert page.ap_connection_toggle_btn.hasFocus()
-        assert not page.ap_project_edit.hasFocus()
         wait_for_connection()
         assert page.ap_connected
         assert page.audio_precision is not None
