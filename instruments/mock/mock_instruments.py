@@ -744,9 +744,22 @@ class MockMSO64B:
         self._trigger_source = 'CH1'
         self._trigger_slope = 'POS'
         self._trigger_level = 1.25
+        self._afg_output = False
+        self._afg_amplitude_vpp = 0.1
+        self._afg_frequency_hz = 1000.0
+        self._afg_offset_v = 0.0
 
     def identify_instrument(self):
         return "TEKTRONIX,MSO64B,MOCK000,FW1.0"
+
+    def set_afg_sine(self, amplitude_vpp, frequency_hz, offset_v=0.0, output_on=True):
+        self._afg_amplitude_vpp = amplitude_vpp
+        self._afg_frequency_hz = frequency_hz
+        self._afg_offset_v = offset_v
+        self.set_afg_output(output_on)
+
+    def set_afg_output(self, enabled):
+        self._afg_output = bool(enabled)
 
     def run(self):
         self._acquiring = True

@@ -19,7 +19,7 @@ class PSRRConfig:
     input_channel: int = 1
     output_channel: int = 2
     dc_voltage: float = 5.0
-    ripple_mv_rms: float = 100.0
+    afg_amplitude_mvpp: float = 100.0
     frequencies_hz: tuple[float, ...] = (100.0, 1000.0, 10000.0, 100000.0)
     cycles: float = 5.0
     output_scale_mv: float = 10.0
@@ -27,8 +27,12 @@ class PSRRConfig:
     close_channel_after: bool = False
 
     @property
-    def ripple_vrms(self) -> float:
-        return self.ripple_mv_rms / 1000.0
+    def afg_amplitude_vpp(self) -> float:
+        return self.afg_amplitude_mvpp / 1000.0
+
+    @property
+    def nominal_input_vrms(self) -> float:
+        return self.afg_amplitude_vpp / (2.0 * math.sqrt(2.0))
 
     def validate(self) -> None:
         for name, channel in (
@@ -42,10 +46,10 @@ class PSRRConfig:
             raise ValueError("输入与输出示波器通道不能相同")
         if self.dc_voltage <= 0:
             raise ValueError("DC Voltage 必须大于 0 V")
-        if self.ripple_mv_rms <= 0:
-            raise ValueError("Input Ripple 必须大于 0 mVrms")
-        if self.ripple_vrms * math.sqrt(2.0) >= self.dc_voltage:
-            raise ValueError("正弦峰值不能超过 DC Voltage，避免电源输出过零")
+        if self.afg_amplitude_mvpp <= 0:
+            raise ValueError("AFG Amplitude 必须大于 0 mVpp")
+        if self.afg_amplitude_vpp / 2.0 >= self.dc_voltage:
+            raise ValueError("AFG 正弦峰值不能超过 DC Voltage，避免电源输出过零")
         if not self.frequencies_hz:
             raise ValueError("至少配置一个扫频点")
         if any(not math.isfinite(f) or f <= 0 for f in self.frequencies_hz):
@@ -54,6 +58,25 @@ class PSRRConfig:
             raise ValueError("Capture Cycles 不能小于 1")
         if self.output_scale_mv <= 0:
             raise ValueError("Output Scale 必须大于 0 mV/div")
+
+
+@dataclass(frozen=True)
+class AudioPrecisionPSRRConfig:
+    project_path: str = ""
+    signal_path: str = "Signal Path1"
+    measurement: str = "PSRR"
+    frequencies_hz: tuple[float, ...] = (100.0, 1000.0, 10000.0, 100000.0)
+    limit_db: float = 0.0
+
+    def validate(self) -> None:
+        if not self.signal_path.strip():
+            raise ValueError("Audio Precision Signal Path 不能为空")
+        if not self.measurement.strip():
+            raise ValueError("Audio Precision Measurement 不能为空")
+        if not self.frequencies_hz:
+            raise ValueError("至少配置一个扫频点")
+        if any(not math.isfinite(f) or f <= 0 for f in self.frequencies_hz):
+            raise ValueError("频率必须为大于 0 的有限数值")
 
 
 def parse_frequency_points(text: str | Iterable[float]) -> tuple[float, ...]:
@@ -82,19 +105,64 @@ def parse_frequency_points(text: str | Iterable[float]) -> tuple[float, ...]:
     return tuple(sorted(set(values)))
 
 
+def generate_frequency_points(start_hz: float, end_hz: float, points: int) -> tuple[float, ...]:
+    """生成包含起止点的对数等间隔频点。"""
+    if not math.isfinite(start_hz) or start_hz <= 0:
+        raise ValueError("Start Frequency 必须为大于 0 的有限数值")
+    if not math.isfinite(end_hz) or end_hz <= start_hz:
+        raise ValueError("End Frequency 必须大于 Start Frequency")
+    if points < 2:
+        raise ValueError("Points 不能小于 2")
+    ratio = end_hz / start_hz
+    values = tuple(
+        start_hz * ratio ** (index / (points - 1)) for index in range(points)
+    )
+    return values[:-1] + (float(end_hz),)
+
+
 def config_from_dict(data: dict) -> PSRRConfig:
-    frequencies = data.get("frequencies_hz", (100.0, 1000.0, 10000.0, 100000.0))
+    if "frequencies_hz" in data:
+        frequencies = data["frequencies_hz"]
+    else:
+        frequencies = generate_frequency_points(
+            float(data.get("start_frequency_hz", 100.0)),
+            float(data.get("end_frequency_hz", 100000.0)),
+            int(data.get("frequency_points", 4)),
+        )
+    if "afg_amplitude_mvpp" in data:
+        amplitude_mvpp = float(data["afg_amplitude_mvpp"])
+    elif "ripple_mv_rms" in data:
+        amplitude_mvpp = float(data["ripple_mv_rms"]) * 2.0 * math.sqrt(2.0)
+    else:
+        amplitude_mvpp = 100.0
     config = PSRRConfig(
         source_channel=int(data.get("source_channel", 1)),
         input_channel=int(data.get("input_channel", 1)),
         output_channel=int(data.get("output_channel", 2)),
         dc_voltage=float(data.get("dc_voltage", 5.0)),
-        ripple_mv_rms=float(data.get("ripple_mv_rms", 100.0)),
+        afg_amplitude_mvpp=amplitude_mvpp,
         frequencies_hz=parse_frequency_points(frequencies),
         cycles=float(data.get("cycles", 5.0)),
         output_scale_mv=float(data.get("output_scale_mv", 10.0)),
         limit_db=float(data.get("limit_db", 0.0)),
         close_channel_after=bool(data.get("close_channel_after", False)),
+    )
+    config.validate()
+    return config
+
+
+def audio_precision_config_from_dict(data: dict) -> AudioPrecisionPSRRConfig:
+    config = AudioPrecisionPSRRConfig(
+        project_path=str(data.get("ap_project_path", "")).strip(),
+        signal_path=str(data.get("ap_signal_path", "Signal Path1")).strip(),
+        measurement=str(data.get("ap_measurement", "PSRR")).strip(),
+        frequencies_hz=parse_frequency_points(data["ap_frequencies_hz"])
+        if "ap_frequencies_hz" in data else generate_frequency_points(
+            float(data.get("ap_start_frequency_hz", 100.0)),
+            float(data.get("ap_end_frequency_hz", 100000.0)),
+            int(data.get("ap_frequency_points", 4)),
+        ),
+        limit_db=float(data.get("ap_limit_db", 0.0)),
     )
     config.validate()
     return config

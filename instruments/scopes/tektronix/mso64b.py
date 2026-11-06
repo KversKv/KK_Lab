@@ -66,6 +66,20 @@ class MSO64B:
     def get_channel_rms(self, channel):
         return self._measure_immediate(channel, 'RMS')
 
+    def set_afg_sine(self, amplitude_vpp, frequency_hz, offset_v=0.0, output_on=True):
+        if amplitude_vpp <= 0:
+            raise ValueError('AFG amplitude must be greater than 0 Vpp')
+        if frequency_hz <= 0:
+            raise ValueError('AFG frequency must be greater than 0 Hz')
+        self.instrument.write('AFG:FUNCtion SINe')
+        self.instrument.write(f'AFG:AMPLitude {amplitude_vpp}')
+        self.instrument.write(f'AFG:FREQuency {frequency_hz}')
+        self.instrument.write(f'AFG:OFFSet {offset_v}')
+        self.set_afg_output(output_on)
+
+    def set_afg_output(self, enabled):
+        self.instrument.write(f"AFG:OUTPut:STATE {'ON' if enabled else 'OFF'}")
+
     def set_trigger_mode(self, mode='EDGE'):
         logger.debug("MSO64B set_trigger_mode: %s", mode)
         self.instrument.write(f'TRIGger:A:TYPe {mode}')

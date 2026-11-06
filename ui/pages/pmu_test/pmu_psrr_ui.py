@@ -3,6 +3,7 @@
 """PMU PSRR 扫频测试页面。"""
 from __future__ import annotations
 
+import math
 import threading
 from typing import Any
 
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -31,7 +33,12 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
-from core.pmu_test.psrr import PSRRTestWorker, config_from_dict
+from core.pmu_test.psrr import (
+    AudioPrecisionPSRRWorker,
+    PSRRTestWorker,
+    audio_precision_config_from_dict,
+    config_from_dict,
+)
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
@@ -60,7 +67,7 @@ class CardFrame(QFrame):
 
 
 class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
-    """N6705C 正弦激励 + 示波器双通道 RMS 的 PSRR 测试。"""
+    """MSO64B + J2120A 或 Audio Precision 的 PSRR 测试页面。"""
 
     connection_status_changed = Signal(bool)
     sequence_execution_finished = Signal(bool, str)
@@ -112,18 +119,19 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QLabel#statusOk { color: #15d1a3; font-weight: 600; }
             QLabel#statusWarn { color: #ffb84d; font-weight: 600; }
             QLabel#statusErr { color: #ff5e7a; font-weight: 600; }
-            QComboBox, QDoubleSpinBox, QLineEdit {
+            QComboBox, QDoubleSpinBox, QSpinBox, QLineEdit {
                 background-color: #0a1733; color: #eef4ff; border: 1px solid #20335f;
                 border-radius: 8px; padding: 6px 10px; selection-background-color: #1fa3ff;
             }
-            QComboBox:focus, QDoubleSpinBox:focus, QLineEdit:focus,
+            QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus,
             QWidget[aiHighlighted="true"] { border: 1px solid #15d1a3; }
             QComboBox::drop-down { border: none; width: 22px; background: transparent; }
             QComboBox QAbstractItemView {
                 background-color: #0a1733; color: #eef4ff; border: 1px solid #20335f;
                 selection-background-color: #1a3260; outline: 0px;
             }
-            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+            QSpinBox::up-button, QSpinBox::down-button {
                 width: 0px; height: 0px; border: none;
             }
             QPushButton {
@@ -192,51 +200,103 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.left_scroll.setWidget(left_panel)
         content.addWidget(self.left_scroll)
 
-        n6705c_card = CardFrame("N6705C Connection")
+        method_card = CardFrame("Measurement Method")
+        self.method_combo = QComboBox()
+        self.method_combo.addItem("MSO64B + J2120A", "mso64b_j2120a")
+        self.method_combo.addItem("Audio Precision", "audio_precision")
+        method_card.main_layout.addWidget(self.method_combo)
+        left.addWidget(method_card)
+
+        self.n6705c_card = CardFrame("N6705C Connection")
         self.build_n6705c_connection_widgets(
-            n6705c_card.main_layout, title_row=n6705c_card.title_row
+            self.n6705c_card.main_layout, title_row=self.n6705c_card.title_row
         )
-        left.addWidget(n6705c_card)
+        left.addWidget(self.n6705c_card)
 
-        scope_card = CardFrame("Oscilloscope Connection")
+        self.scope_card = CardFrame("Oscilloscope Connection")
         self.build_oscilloscope_connection_widgets(
-            scope_card.main_layout, title_row=scope_card.title_row
+            self.scope_card.main_layout, title_row=self.scope_card.title_row
         )
-        left.addWidget(scope_card)
+        left.addWidget(self.scope_card)
 
-        excitation = CardFrame("Excitation")
+        self.excitation_card = CardFrame("Excitation")
         self.source_channel_combo = self._channel_combo()
         self.dc_voltage_spin = self._double_spin(0.1, 20.0, 5.0, 0.1, 3)
-        self.ripple_spin = self._double_spin(0.1, 2000.0, 100.0, 10.0, 2)
-        self.frequencies_edit = QLineEdit("100, 1k, 10k, 100k")
-        self.frequencies_edit.setToolTip("逗号/分号/空白分隔，支持 k、M 与 Hz 后缀")
-        self._add_field(excitation.main_layout, "Source Channel", self.source_channel_combo)
-        self._add_field(excitation.main_layout, "DC Voltage (V)", self.dc_voltage_spin)
-        self._add_field(excitation.main_layout, "Input Ripple (mVrms)", self.ripple_spin)
-        self._add_field(excitation.main_layout, "Frequencies (Hz)", self.frequencies_edit)
-        left.addWidget(excitation)
+        self.afg_amplitude_spin = self._double_spin(0.1, 2000.0, 100.0, 10.0, 2)
+        self.start_frequency_spin = self._double_spin(0.1, 50e6, 100.0, 100.0, 3)
+        self.end_frequency_spin = self._double_spin(0.1, 50e6, 100000.0, 1000.0, 3)
+        self.frequency_points_spin = QSpinBox()
+        self.frequency_points_spin.setRange(2, 1001)
+        self.frequency_points_spin.setValue(4)
+        self._add_field(self.excitation_card.main_layout, "Source Channel", self.source_channel_combo)
+        self._add_field(self.excitation_card.main_layout, "DC Voltage (V)", self.dc_voltage_spin)
+        self._add_field(
+            self.excitation_card.main_layout, "AFG Amplitude (mVpp)", self.afg_amplitude_spin
+        )
+        self._add_field(
+            self.excitation_card.main_layout, "Start Frequency (Hz)", self.start_frequency_spin
+        )
+        self._add_field(
+            self.excitation_card.main_layout, "End Frequency (Hz)", self.end_frequency_spin
+        )
+        self._add_field(self.excitation_card.main_layout, "Points", self.frequency_points_spin)
+        left.addWidget(self.excitation_card)
 
-        acquisition = CardFrame("Acquisition & Limit")
+        self.acquisition_card = CardFrame("Acquisition & Limit")
         self.input_channel_combo = self._channel_combo()
         self.output_channel_combo = self._channel_combo(2)
         self.cycles_spin = self._double_spin(1.0, 20.0, 5.0, 1.0, 1)
         self.output_scale_spin = self._double_spin(0.01, 1000.0, 10.0, 1.0, 2)
         self.limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
         self.close_channel_check = QCheckBox("Turn off source channel after test")
-        self._add_field(acquisition.main_layout, "Input Scope Channel", self.input_channel_combo)
-        self._add_field(acquisition.main_layout, "Output Scope Channel", self.output_channel_combo)
-        self._add_field(acquisition.main_layout, "Capture Cycles", self.cycles_spin)
-        self._add_field(acquisition.main_layout, "Output Scale (mV/div)", self.output_scale_spin)
-        self._add_field(acquisition.main_layout, "Minimum PSRR Limit (dB)", self.limit_spin)
-        acquisition.main_layout.addWidget(self.close_channel_check)
-        left.addWidget(acquisition)
+        self._add_field(self.acquisition_card.main_layout, "Input Scope Channel", self.input_channel_combo)
+        self._add_field(self.acquisition_card.main_layout, "Output Scope Channel", self.output_channel_combo)
+        self._add_field(self.acquisition_card.main_layout, "Capture Cycles", self.cycles_spin)
+        self._add_field(
+            self.acquisition_card.main_layout, "Output Scale (mV/div)", self.output_scale_spin
+        )
+        self._add_field(
+            self.acquisition_card.main_layout, "Minimum PSRR Limit (dB)", self.limit_spin
+        )
+        self.acquisition_card.main_layout.addWidget(self.close_channel_check)
+        left.addWidget(self.acquisition_card)
+
+        self.ap_card = CardFrame("Audio Precision")
+        self.ap_project_edit = QLineEdit()
+        self.ap_project_edit.setPlaceholderText("Optional APx project path")
+        self.ap_signal_path_edit = QLineEdit("Signal Path1")
+        self.ap_measurement_edit = QLineEdit("PSRR")
+        self.ap_start_frequency_spin = self._double_spin(0.1, 50e6, 100.0, 100.0, 3)
+        self.ap_end_frequency_spin = self._double_spin(0.1, 50e6, 100000.0, 1000.0, 3)
+        self.ap_frequency_points_spin = QSpinBox()
+        self.ap_frequency_points_spin.setRange(2, 1001)
+        self.ap_frequency_points_spin.setValue(4)
+        self.ap_limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
+        self._add_field(self.ap_card.main_layout, "Project Path", self.ap_project_edit)
+        self._add_field(self.ap_card.main_layout, "Signal Path", self.ap_signal_path_edit)
+        self._add_field(self.ap_card.main_layout, "Measurement", self.ap_measurement_edit)
+        self._add_field(
+            self.ap_card.main_layout, "Start Frequency (Hz)", self.ap_start_frequency_spin
+        )
+        self._add_field(
+            self.ap_card.main_layout, "End Frequency (Hz)", self.ap_end_frequency_spin
+        )
+        self._add_field(self.ap_card.main_layout, "Points", self.ap_frequency_points_spin)
+        self._add_field(
+            self.ap_card.main_layout, "Minimum PSRR Limit (dB)", self.ap_limit_spin
+        )
+        left.addWidget(self.ap_card)
 
         self._config_widgets = [
-            self.source_channel_combo, self.dc_voltage_spin, self.ripple_spin,
-            self.frequencies_edit, self.input_channel_combo, self.output_channel_combo,
+            self.method_combo, self.source_channel_combo, self.dc_voltage_spin,
+            self.afg_amplitude_spin, self.start_frequency_spin, self.end_frequency_spin,
+            self.frequency_points_spin, self.input_channel_combo, self.output_channel_combo,
             self.cycles_spin, self.output_scale_spin, self.limit_spin,
-            self.close_channel_check,
+            self.close_channel_check, self.ap_project_edit, self.ap_signal_path_edit,
+            self.ap_measurement_edit, self.ap_start_frequency_spin,
+            self.ap_end_frequency_spin, self.ap_frequency_points_spin, self.ap_limit_spin,
         ]
+        self.method_combo.currentIndexChanged.connect(self._on_method_changed)
 
         button_row = QHBoxLayout()
         self.start_test_btn = QPushButton("START TEST")
@@ -322,6 +382,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             result_container, show_progress=True, stretch=(4, 1)
         )
         right.addWidget(self.execution_splitter)
+        self._on_method_changed()
 
     @staticmethod
     def _channel_combo(default: int = 1) -> QComboBox:
@@ -366,26 +427,60 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _sync_scope_from_top(self):
         self.sync_oscilloscope_from_top()
 
+    def _on_method_changed(self):
+        is_j2120a = self.method_combo.currentData() == "mso64b_j2120a"
+        for card in (
+            self.n6705c_card, self.scope_card, self.excitation_card, self.acquisition_card
+        ):
+            card.setVisible(is_j2120a)
+        self.ap_card.setVisible(not is_j2120a)
+        self.limit_line.setValue(self._current_limit_db())
+
+    def _current_limit_db(self) -> float:
+        if self.method_combo.currentData() == "audio_precision":
+            return self.ap_limit_spin.value()
+        return self.limit_spin.value()
+
     def get_test_config(self) -> dict:
         return {
+            "measurement_method": self.method_combo.currentData(),
             "source_channel": self.source_channel_combo.currentData(),
             "input_channel": self.input_channel_combo.currentData(),
             "output_channel": self.output_channel_combo.currentData(),
             "dc_voltage": self.dc_voltage_spin.value(),
-            "ripple_mv_rms": self.ripple_spin.value(),
-            "frequencies_hz": list(self._frequencies_from_text()),
+            "afg_amplitude_mvpp": self.afg_amplitude_spin.value(),
+            "start_frequency_hz": self.start_frequency_spin.value(),
+            "end_frequency_hz": self.end_frequency_spin.value(),
+            "frequency_points": self.frequency_points_spin.value(),
+            "frequencies_hz": list(self._frequencies_from_controls()),
             "cycles": self.cycles_spin.value(),
             "output_scale_mv": self.output_scale_spin.value(),
             "limit_db": self.limit_spin.value(),
             "close_channel_after": self.close_channel_check.isChecked(),
+            "ap_project_path": self.ap_project_edit.text().strip(),
+            "ap_signal_path": self.ap_signal_path_edit.text().strip(),
+            "ap_measurement": self.ap_measurement_edit.text().strip(),
+            "ap_start_frequency_hz": self.ap_start_frequency_spin.value(),
+            "ap_end_frequency_hz": self.ap_end_frequency_spin.value(),
+            "ap_frequency_points": self.ap_frequency_points_spin.value(),
+            "ap_frequencies_hz": list(self._frequencies_from_controls(audio_precision=True)),
+            "ap_limit_db": self.ap_limit_spin.value(),
         }
 
-    def _frequencies_from_text(self):
-        from core.pmu_test.psrr import parse_frequency_points
-        return parse_frequency_points(self.frequencies_edit.text())
+    def _frequencies_from_controls(self, audio_precision: bool = False):
+        from core.pmu_test.psrr import generate_frequency_points
+        prefix = "ap_" if audio_precision else ""
+        return generate_frequency_points(
+            getattr(self, f"{prefix}start_frequency_spin").value(),
+            getattr(self, f"{prefix}end_frequency_spin").value(),
+            getattr(self, f"{prefix}frequency_points_spin").value(),
+        )
 
     def _validated_config(self):
-        return config_from_dict(self.get_test_config())
+        config = self.get_test_config()
+        if config["measurement_method"] == "audio_precision":
+            return audio_precision_config_from_dict(config)
+        return config_from_dict(config)
 
     def _toggle_test(self):
         if self.is_test_running:
@@ -402,29 +497,34 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.set_system_status(str(exc), True)
             self.append_log(f"[ERROR] 配置校验失败：{exc}")
             return
-        if not DEBUG_MOCK and (not self.is_connected or self.n6705c is None):
-            self.set_system_status("请先连接 N6705C", True)
-            return
-        if not DEBUG_MOCK and (not self.scope_connected or self.get_scope_instance() is None):
-            self.set_system_status("请先连接示波器", True)
-            return
-        if self.n6705c is None or self.get_scope_instance() is None:
-            self.set_system_status("请先在两个连接面板中连接仪器", True)
-            return
+        is_audio_precision = self.method_combo.currentData() == "audio_precision"
+        if not is_audio_precision:
+            if not DEBUG_MOCK and (not self.is_connected or self.n6705c is None):
+                self.set_system_status("请先连接 N6705C", True)
+                return
+            if not DEBUG_MOCK and (not self.scope_connected or self.get_scope_instance() is None):
+                self.set_system_status("请先连接 MSO64B", True)
+                return
+            if self.n6705c is None or self.get_scope_instance() is None:
+                self.set_system_status("请先在两个连接面板中连接仪器", True)
+                return
 
         self.clear_results()
         self.is_test_running = True
         self._set_test_running(True)
         self.set_system_status("PSRR 测试进行中")
-        self.append_log("[INFO] 启动 PSRR 扫频测试")
+        self.append_log(f"[INFO] 启动 {self.method_combo.currentText()} PSRR 测试")
 
         self.test_thread = QThread(self)
-        self.test_worker = PSRRTestWorker(
-            config,
-            n6705c=self.n6705c,
-            oscilloscope=self.get_scope_instance(),
-            mock_mode=DEBUG_MOCK,
-        )
+        if is_audio_precision:
+            self.test_worker = AudioPrecisionPSRRWorker(config)
+        else:
+            self.test_worker = PSRRTestWorker(
+                config,
+                n6705c=self.n6705c,
+                oscilloscope=self.get_scope_instance(),
+                mock_mode=DEBUG_MOCK,
+            )
         self.test_worker.moveToThread(self.test_thread)
         self.test_thread.started.connect(self.test_worker.start)
         self.test_worker.log.connect(self.append_log)
@@ -475,9 +575,11 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.metric_values["pass"].setStyleSheet(
             f"color: {'#19f5c8' if passed else '#ff6f96'};"
         )
+        result_config = result.get("config", {})
+        limit_db = result_config.get("limit_db", result_config.get("ap_limit_db", 0.0))
         self.result_summary_label.setText(
             f"{summary['point_count']} points | Minimum {summary['min_psrr_db']:.2f} dB at "
-            f"{summary['min_frequency_hz']:g} Hz | Limit {self.limit_spin.value():.2f} dB"
+            f"{summary['min_frequency_hz']:g} Hz | Limit {limit_db:.2f} dB"
         )
 
     def _on_test_finished(self, success: bool, message: str):
@@ -498,13 +600,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             [point["frequency_hz"] for point in ordered],
             [point["psrr_db"] for point in ordered],
         )
-        self.limit_line.setValue(self.limit_spin.value())
+        self.limit_line.setValue(self._current_limit_db())
 
     def clear_results(self):
         self._points.clear()
         self._last_result = None
         self.psrr_curve.setData([], [])
-        self.limit_line.setValue(self.limit_spin.value())
+        self.limit_line.setValue(self._current_limit_db())
         for value in self.metric_values.values():
             value.setText("---")
         self.metric_values["pass"].setStyleSheet("")
@@ -611,49 +713,88 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 applied.append(key)
                 touched.append(combo)
 
-        def set_spin(spin: QDoubleSpinBox, key: str):
+        def set_spin(spin: QDoubleSpinBox | QSpinBox, key: str):
             if key not in cfg:
                 return
-            spin.setValue(float(cfg[key]))
+            value = int(cfg[key]) if isinstance(spin, QSpinBox) else float(cfg[key])
+            spin.setValue(value)
             applied.append(key)
             touched.append(spin)
 
+        def set_line(edit: QLineEdit, key: str):
+            if key not in cfg:
+                return
+            edit.setText(str(cfg[key]))
+            applied.append(key)
+            touched.append(edit)
+
+        def set_legacy_frequencies(start_spin, end_spin, points_spin, key: str):
+            if key not in cfg:
+                return
+            from core.pmu_test.psrr import parse_frequency_points
+            frequencies = parse_frequency_points(cfg[key])
+            if len(frequencies) < 2:
+                raise ValueError("旧频率列表至少需要两个频点才能转换为起止频率和点数")
+            start_spin.setValue(frequencies[0])
+            end_spin.setValue(frequencies[-1])
+            points_spin.setValue(len(frequencies))
+            applied.append(key)
+            touched.extend((start_spin, end_spin, points_spin))
+
+        if "measurement_method" in cfg:
+            index = self.method_combo.findData(str(cfg["measurement_method"]))
+            if index >= 0:
+                self.method_combo.setCurrentIndex(index)
+                applied.append("measurement_method")
+                touched.append(self.method_combo)
         set_combo(self.source_channel_combo, "source_channel")
         set_combo(self.input_channel_combo, "input_channel")
         set_combo(self.output_channel_combo, "output_channel")
         for spin, key in (
             (self.dc_voltage_spin, "dc_voltage"),
-            (self.ripple_spin, "ripple_mv_rms"),
             (self.cycles_spin, "cycles"),
             (self.output_scale_spin, "output_scale_mv"),
             (self.limit_spin, "limit_db"),
+            (self.start_frequency_spin, "start_frequency_hz"),
+            (self.end_frequency_spin, "end_frequency_hz"),
+            (self.frequency_points_spin, "frequency_points"),
+            (self.ap_start_frequency_spin, "ap_start_frequency_hz"),
+            (self.ap_end_frequency_spin, "ap_end_frequency_hz"),
+            (self.ap_frequency_points_spin, "ap_frequency_points"),
+            (self.ap_limit_spin, "ap_limit_db"),
         ):
             set_spin(spin, key)
-        if "frequencies_hz" in cfg:
-            frequencies = cfg["frequencies_hz"]
-            if isinstance(frequencies, str):
-                text = frequencies
-            else:
-                text = ", ".join(f"{float(value):g}" for value in frequencies)
-            self._frequencies_from_value(text)
-            self.frequencies_edit.setText(text)
-            applied.append("frequencies_hz")
-            touched.append(self.frequencies_edit)
+        if "afg_amplitude_mvpp" in cfg:
+            set_spin(self.afg_amplitude_spin, "afg_amplitude_mvpp")
+        elif "ripple_mv_rms" in cfg:
+            self.afg_amplitude_spin.setValue(
+                float(cfg["ripple_mv_rms"]) * 2.0 * math.sqrt(2.0)
+            )
+            applied.append("afg_amplitude_mvpp")
+            touched.append(self.afg_amplitude_spin)
+        set_legacy_frequencies(
+            self.start_frequency_spin, self.end_frequency_spin,
+            self.frequency_points_spin, "frequencies_hz"
+        )
+        set_legacy_frequencies(
+            self.ap_start_frequency_spin, self.ap_end_frequency_spin,
+            self.ap_frequency_points_spin, "ap_frequencies_hz"
+        )
+        set_line(self.ap_project_edit, "ap_project_path")
+        set_line(self.ap_signal_path_edit, "ap_signal_path")
+        set_line(self.ap_measurement_edit, "ap_measurement")
         if "close_channel_after" in cfg:
             self.close_channel_check.setChecked(bool(cfg["close_channel_after"]))
             applied.append("close_channel_after")
             touched.append(self.close_channel_check)
         if not applied:
             return False, "配置草案未包含任何可识别的 PSRR 配置项。"
+        self._on_method_changed()
         self._update_plot()
         if not silent:
             self._highlight_widgets(touched)
             self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
-
-    def _frequencies_from_value(self, text: str):
-        from core.pmu_test.psrr import parse_frequency_points
-        parse_frequency_points(text)
 
     @staticmethod
     def _highlight_widgets(widgets: list[QWidget]):

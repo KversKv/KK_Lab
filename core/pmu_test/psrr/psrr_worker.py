@@ -9,8 +9,10 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from log_config import get_logger
 from .psrr_analysis import (
+    AudioPrecisionPSRRConfig,
     PSRRConfig,
     acquisition_settle_seconds,
+    audio_precision_config_from_dict,
     calculate_psrr_db,
     config_from_dict,
     scope_timebase_seconds,
@@ -57,8 +59,9 @@ class PSRRTestWorker(QObject):
         message = "测试停止"
         try:
             self.log.emit(
-                f"[INFO] PSRR sweep: {len(self.config.frequencies_hz)} points, "
-                f"input ripple={self.config.ripple_mv_rms:g} mVrms"
+                f"[INFO] MSO64B + J2120A PSRR sweep: "
+                f"{len(self.config.frequencies_hz)} points, "
+                f"AFG amplitude={self.config.afg_amplitude_mvpp:g} mVpp"
             )
             if self.mock_mode:
                 self._run_mock()
@@ -86,11 +89,15 @@ class PSRRTestWorker(QObject):
 
     def _config_dict(self) -> dict:
         return {
+            "measurement_method": "mso64b_j2120a",
             "source_channel": self.config.source_channel,
             "input_channel": self.config.input_channel,
             "output_channel": self.config.output_channel,
             "dc_voltage": self.config.dc_voltage,
-            "ripple_mv_rms": self.config.ripple_mv_rms,
+            "afg_amplitude_mvpp": self.config.afg_amplitude_mvpp,
+            "start_frequency_hz": self.config.frequencies_hz[0],
+            "end_frequency_hz": self.config.frequencies_hz[-1],
+            "frequency_points": len(self.config.frequencies_hz),
             "frequencies_hz": list(self.config.frequencies_hz),
             "cycles": self.config.cycles,
             "output_scale_mv": self.config.output_scale_mv,
@@ -103,21 +110,22 @@ class PSRRTestWorker(QObject):
         for index, frequency in enumerate(self.config.frequencies_hz):
             if self._abort or not self._sleep(0.08):
                 break
-            point = simulate_psrr_point(frequency, self.config.ripple_vrms)
+            point = simulate_psrr_point(frequency, self.config.nominal_input_vrms)
             self._emit_point(point, index)
 
     def _run_real(self):
         if self.n6705c is None or self.oscilloscope is None:
-            raise RuntimeError("请先连接 N6705C 与示波器")
-        if not hasattr(self.n6705c, "set_arb_sine"):
-            raise RuntimeError("当前 N6705C 驱动不支持正弦 ARB 接口")
+            raise RuntimeError("请先连接 N6705C 与 MSO64B")
+        if not all(hasattr(self.oscilloscope, name) for name in ("set_afg_sine", "set_afg_output")):
+            raise RuntimeError("当前示波器不是受支持的 MSO64B，缺少 AFG 接口")
 
         channel = self.config.source_channel
         was_on = bool(self.n6705c.get_channel_state(channel))
         original_voltage = float(self.n6705c.measure_voltage(channel))
         self.log.emit(
             f"[INFO] Source CH{channel}: DC={self.config.dc_voltage:g} V, "
-            f"scope input CH{self.config.input_channel}, output CH{self.config.output_channel}"
+            f"MSO64B AFG → J2120A, scope input CH{self.config.input_channel}, "
+            f"output CH{self.config.output_channel}"
         )
         try:
             self.n6705c.set_voltage(channel, self.config.dc_voltage)
@@ -129,11 +137,11 @@ class PSRRTestWorker(QObject):
                 self._measure_real_point(frequency, index)
         finally:
             try:
-                self.n6705c.arb_stop(channel)
-                self.n6705c.wait_arb_idle(channel)
-                self.n6705c.set_arb_continuous(channel, False)
-                self.n6705c.set_arb_shape(channel, "NONE")
-                self.n6705c.exit_arb_voltage(channel)
+                self.oscilloscope.set_afg_output(False)
+            except Exception:
+                logger.error("PSRR 测试关闭 MSO64B AFG 失败", exc_info=True)
+                self.log.emit("[ERROR] MSO64B AFG 关闭失败，请检查仪器输出")
+            try:
                 self.n6705c.set_voltage(channel, original_voltage)
                 if self.config.close_channel_after or not was_on:
                     self.n6705c.channel_off(channel)
@@ -142,22 +150,15 @@ class PSRRTestWorker(QObject):
                 self.log.emit("[ERROR] N6705C 状态恢复失败，请检查仪器输出")
 
     def _measure_real_point(self, frequency: float, index: int):
-        channel = self.config.source_channel
-        self.n6705c.arb_stop(channel)
-        self.n6705c.wait_arb_idle(channel)
-        self.n6705c.set_arb_sine(
-            channel,
-            dc_offset=self.config.dc_voltage,
-            amplitude_vrms=self.config.ripple_vrms,
-            frequency=frequency,
+        self.oscilloscope.set_afg_sine(
+            amplitude_vpp=self.config.afg_amplitude_vpp,
+            frequency_hz=frequency,
+            offset_v=0.0,
+            output_on=True,
         )
-        self.n6705c.set_arb_continuous(channel, True)
-        self.n6705c.restore_arb_trigger_source()
-        self.n6705c.arb_on(channel)
-
         preview_timebase = 1.1 / frequency / 10.0
         final_timebase = scope_timebase_seconds(frequency, self.config.cycles)
-        input_scale = max(self.config.ripple_vrms * math.sqrt(2.0) / 2.0, 1e-6)
+        input_scale = max(self.config.afg_amplitude_vpp / 8.0, 1e-6)
         output_scale = self.config.output_scale_mv / 1000.0
         scope = self.oscilloscope
         scope.run()
@@ -201,3 +202,37 @@ class PSRRTestWorker(QObject):
             f"Vout={point['output_vrms'] * 1000:.4f} mVrms | "
             f"PSRR={point['psrr_db']:.3f} dB"
         )
+
+
+class AudioPrecisionPSRRWorker(QObject):
+    progress = Signal(int)
+    point_ready = Signal(object)
+    result_ready = Signal(object)
+    log = Signal(str)
+    finished = Signal(bool, str)
+
+    def __init__(self, config: dict | AudioPrecisionPSRRConfig,
+                 audio_precision=None, parent=None):
+        super().__init__(parent)
+        self.config = (
+            config if isinstance(config, AudioPrecisionPSRRConfig)
+            else audio_precision_config_from_dict(config)
+        )
+        self.config.validate()
+        self.audio_precision = audio_precision
+        self._abort = False
+
+    def stop(self):
+        self._abort = True
+
+    @Slot()
+    def start(self):
+        self.log.emit(
+            f"[INFO] Audio Precision framework: project={self.config.project_path or '<current>'}, "
+            f"signal path={self.config.signal_path}, measurement={self.config.measurement}, "
+            f"points={len(self.config.frequencies_hz)}"
+        )
+        message = "Audio Precision PSRR 测量适配器尚未接入，框架已预留"
+        self.log.emit(f"[WARN] {message}")
+        self.progress.emit(0)
+        self.finished.emit(False, message)
