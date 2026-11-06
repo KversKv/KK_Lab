@@ -29,6 +29,8 @@
     "ap_project_path": "",
     "ap_signal_path": "Signal Path1",
     "ap_measurement": "Signal Analyzer",
+    "ap_vin_input_channel": 1,
+    "ap_vout_input_channel": 2,
     "ap_output_channel": 1,
     "ap_amplitude_mvrms": 100.0,
     "ap_offset_v": 3.8,

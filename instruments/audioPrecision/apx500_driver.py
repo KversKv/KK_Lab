@@ -356,12 +356,9 @@ class APxConnection:
             raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
         generator = self.apx.SignalPathSetup.Generator
         generator_on = bool(generator.On)
+        active_measurement = str(self.apx.ActiveMeasurementName)
         try:
-            self.apx.ShowMeasurement(signal_path_name, resolved)
-            obj = self._get_active_measurement_object()
-            if obj is None or not hasattr(obj, "Start"):
-                raise RuntimeError(f"无法启动 DC Level: {resolved}")
-            obj.Start()
+            self.run_measurement(signal_path_name, resolved)
             values, _, _, channel_count = self.read_measurement_result(
                 signal_path_name, resolved, result_name="DC Level"
             )
@@ -373,6 +370,8 @@ class APxConnection:
             return input_dc_v, output_dc_v
         finally:
             generator.On = generator_on
+            if active_measurement and active_measurement != resolved:
+                self.apx.ShowMeasurement(signal_path_name, active_measurement)
 
     def resolve_measurement_name(self, signal_path_name, expected_name, auto_add=True):
         available = self.get_measurement_names(signal_path_name)
@@ -1690,7 +1689,12 @@ class APxConnection:
         if run:
             if obj is None or not hasattr(obj, "Start"):
                 raise RuntimeError(f"无法启动 Signal Analyzer: {resolved}")
-            obj.Start()
+            generator = self.apx.SignalPathSetup.Generator
+            generator_on = bool(generator.On)
+            try:
+                obj.Start()
+            finally:
+                generator.On = generator_on
         self.apx.ShowMeasurement(signal_path_name, resolved)
         obj = self._get_active_measurement_object()
         self.set_spectrum_unit_dbv(obj, log_success=False, log_failure=False)

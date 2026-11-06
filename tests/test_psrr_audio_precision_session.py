@@ -228,25 +228,29 @@ def test_dc_level_reads_both_input_channels_and_restores_generator():
     )
     generator = SimpleNamespace(On=True)
 
-    def start_dc_level():
-        generator.On = False
-
-    dc_level = SimpleNamespace(DCLevel=graph, Start=Mock(side_effect=start_dc_level))
+    dc_level = SimpleNamespace(DCLevel=graph)
+    sequence = SimpleNamespace(StartFromMeasurement=Mock(), Run=Mock())
     connection.apx = SimpleNamespace(
-        ActiveMeasurementName="DC Level",
+        ActiveMeasurementName="Signal Analyzer",
         DCLevel=dc_level,
+        Sequence=sequence,
         SignalPathSetup=SimpleNamespace(Generator=generator),
         ShowMeasurement=Mock(),
     )
 
-    with patch.object(
-        connection, "resolve_measurement_name", return_value="DC Level"
+    with (
+        patch.object(
+            connection, "resolve_measurement_name", return_value="DC Level"
+        ),
+        patch.object(connection, "_get_active_measurement_object", return_value=dc_level),
+        patch.object(connection, "_wait_for_sequence_done", return_value=True),
     ):
         values = connection.get_psrr_input_dc_levels("Signal Path1")
 
     assert values == (3.8, 1.8)
     assert generator.On
-    dc_level.Start.assert_called_once_with()
+    sequence.StartFromMeasurement.assert_called_once_with("Signal Path1", "DC Level")
+    connection.apx.ShowMeasurement.assert_called_with("Signal Path1", "Signal Analyzer")
     graph.GetValues.assert_called_once_with()
 
 
@@ -479,22 +483,31 @@ def test_fft_configuration_checks_spectrum_result():
     assert analyzer.UseDelayTimeInSeconds
 
 
-def test_signal_analyzer_starts_once_and_second_channel_reuses_frame():
+@pytest.mark.parametrize("initial_generator_on", [True, False])
+def test_signal_analyzer_starts_once_and_second_channel_reuses_frame(
+    initial_generator_on,
+):
     connection = APxConnection()
     graph = SimpleNamespace(
         Name="FFT Spectrum", Title="FFT Spectrum", GetXValues=Mock()
     )
+    generator = SimpleNamespace(On=initial_generator_on)
+
+    def start_signal_analyzer():
+        generator.On = False
+
     analyzer = SimpleNamespace(
         FFTSpectrum=graph,
         AcquisitionCount=1,
         Averages=7,
-        Start=Mock(),
+        Start=Mock(side_effect=start_signal_analyzer),
         Stop=Mock(),
         SequenceMeasurement=SimpleNamespace(Run=Mock()),
     )
     connection.apx = SimpleNamespace(
         ShowMeasurement=Mock(),
         Sequence=SimpleNamespace(StartFromMeasurement=Mock(), Run=Mock()),
+        SignalPathSetup=SimpleNamespace(Generator=generator),
     )
 
     with (
@@ -513,9 +526,11 @@ def test_signal_analyzer_starts_once_and_second_channel_reuses_frame():
         frequencies, levels = connection.get_signal_analyzer_fft_data(
             "Signal Path1", "Signal Analyzer", channel=0, run=True
         )
+        assert generator.On == initial_generator_on
         second_frequencies, second_levels = connection.get_signal_analyzer_fft_data(
             "Signal Path1", "Signal Analyzer", channel=1, run=False
         )
+        assert generator.On == initial_generator_on
 
     assert frequencies == second_frequencies == [100.0, 1000.0]
     assert levels == second_levels == [-20.0, -30.0]

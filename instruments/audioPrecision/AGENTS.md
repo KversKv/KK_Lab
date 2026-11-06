@@ -14,7 +14,7 @@
 - APx500 5.0 手动 OUTPUT 必须激活 Signal Path Setup，`AnalogOutput.ChannelCount` 固定为 1，CH1/CH2 仅通过 `OutputChannelIndex` 选择；依次配置 Analog Unbalanced、Acoustic Off、Output EQ None，再配置 Verify Connections 的 Sine、Test Channel、Level/Offset、100 Hz，最后才写 `SignalPathSetup.Generator.On`；扫频才激活 Signal Analyzer，不得用 `SignalAnalyzer.Generator.On=True` 或重置默认频率。
 - Signal Analyzer 必须显式置 `FFTSpectrum.Checked=True`；真机采集调用测量对象 `Start()`，返回后直接读取双通道，`AcquisitionCount=1` 不代表平均未完成，禁等待它达到 `Averages` 或调用不存在的 `Stop()`。
 - PSRR 配置 `vin_input_channel/vout_input_channel` 为 1 基 INPUT 映射，默认 1/2 且禁止相同；FFT API 转换为 0 基通道，VIN 通道 `run=True` 单次采集、VOUT 通道 `run=False` 复用同帧，DC Level 双路结果也按该映射归属，本地与 Guest 必须一致。
-- `DC Level.Start()` 可能按该测量的发生器设置关闭输出；`get_psrr_input_dc_levels()` 必须先保存 `SignalPathSetup.Generator.On`，并在 finally 恢复原状态，禁止扫频结束后固定改写 ON/OFF。
+- APx500 5.0 的 `IDCLevelMeasurement` 无 `Start()`；DC Level 必须走 `run_measurement()` 序列接口。Signal Analyzer / DC Level 采集可能关闭输出，必须在 finally 恢复 `SignalPathSetup.Generator.On`；DC 采集后还须恢复原活动测量，避免下一频点访问 `SignalAnalyzer` 时触发 `ElementNotActive`。
 - APx `Start()` / Sequence Batch 会触发模态窗口，SSH 会话 0 即使 `Visible=False` 也会失败；必须在 Guest 交互桌面运行，经 SSH 反向转发维持会话，详见 `03_GOTCHAS §41`。
 
 ## VM 交互式 DEBUG 调用链

@@ -582,3 +582,5 @@ app.installEventFilter(_WinFilter())
 **现象**：Signal Analyzer 抛出 `RunMeasurementError`，内部为 `InvalidOperationException: UserInteractive=False`；设置 `apx.Visible=False` 无效。
 
 **对策**：APx `Start()` / Sequence Batch 必须在 Guest 交互桌面执行；Host 通过交互式计划任务启动 Guest 进程，并用 SSH 反向转发保持命令会话。Signal Analyzer 保持 `FFTSpectrum.Checked=True`，调用测量对象 `Start()` 返回后直接读取双通道；`AcquisitionCount=1` 是正常状态，不等待它达到 `Averages`，也不调用不存在的 `Stop()`。Demo Mode 不得作为真机验证结果。
+
+**DC Level（PSRR）**：APx500 5.0 的 `IDCLevelMeasurement` 只有 `DCLevel/Graphs`，没有 `Start()`；须通过 `run_measurement()` 的 Sequence 路径运行后读取双路结果。采集结束除恢复 Generator 开关外，还要 `ShowMeasurement()` 恢复原活动测量，否则下一频点在 DC Level 仍活动时访问 `apx.SignalAnalyzer` 会抛 `ElementNotActive`。
