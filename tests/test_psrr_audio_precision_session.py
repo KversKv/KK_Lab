@@ -133,6 +133,8 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
     monkeypatch.setattr(pmu_psrr_ui, "ConfigMemory", _ConfigMemoryStub)
     app = QApplication.instance() or QApplication([])
     page = pmu_psrr_ui.PMUPSRRUI()
+    page.show()
+    app.processEvents()
 
     def wait_for_connection():
         deadline = time.monotonic() + 5.0
@@ -149,11 +151,19 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         page.method_combo.setCurrentIndex(
             page.method_combo.findData("audio_precision")
         )
+        page.ap_connect_btn.setFocus()
         page.ap_connect_btn.click()
+        assert page.ap_connection_toggle_btn.hasFocus()
+        assert not page.ap_project_edit.hasFocus()
         wait_for_connection()
         assert page.ap_connected
         assert page.audio_precision is not None
         assert page.audio_precision.connected
+        assert page.ap_connection_content.isHidden()
+        page.ap_connection_toggle_btn.click()
+        assert not page.ap_connection_content.isHidden()
+        page.ap_connection_toggle_btn.click()
+        assert page.ap_connection_content.isHidden()
         ap = page.audio_precision
 
         page.ap_connect_btn.click()

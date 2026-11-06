@@ -7,7 +7,7 @@
   <li><b>Measurement Method</b> — 选择 MSO64B + J2120A 或 Audio Precision，左侧配置区随测量方式切换</li>
   <li><b>Excitation</b> — 设置 N6705C 源通道、直流偏置、AFG 幅度（mVpp）、Start Frequency、End Frequency 和 Points；系统按对数等间隔生成频点并包含起止点</li>
   <li><b>Acquisition &amp; Limit</b> — 设置输入/输出示波器通道、捕获周期数、输出通道量程和最小 PSRR 判定限值</li>
-  <li><b>Audio Precision Connection</b> — 独立设置连接方式；Local AP Direct 在主机运行 APx500，Virtual Machine SSH 在 Guest 运行 APx500。点击 <b>Connect</b> 后台建立连接，状态变为 Connected 后锁定连接参数并允许启动测试；测试可复用该连接，点击 <b>Disconnect</b> 关闭发生器并释放本地 APx 或 SSH 会话。虚拟机默认使用已验证的 SSH Profile <b>testvm</b>，Guest IP <b>192.168.208.128</b> 作为无 Profile 时的回退，SSH 用户为 administrator、端口 22、Python 命令为 py -3.12</li>
+  <li><b>Audio Precision Connection</b> — 独立设置连接方式；Local AP Direct 在主机运行 APx500，Virtual Machine SSH 在 Guest 运行 APx500。点击 <b>Connect</b> 后台建立连接，状态变为 Connected 后锁定并自动折叠连接参数，可点击标题栏箭头重新展开；<b>Disconnect</b> 按钮始终保持可见。测试可复用该连接，点击 <b>Disconnect</b> 关闭发生器并释放本地 APx 或 SSH 会话。虚拟机默认使用已验证的 SSH Profile <b>testvm</b>，Guest IP <b>192.168.208.128</b> 作为无 Profile 时的回退，SSH 用户为 administrator、端口 22、Python 命令为 py -3.12</li>
   <li><b>Audio Precision Test Parameters</b> — 独立设置 Project Path（可选）、Signal Path、Signal Analyzer、输出通道、Output Amplitude、DC Offset、Start Frequency、End Frequency、Points 和判定限值；输入带宽自动覆盖最高测试频率</li>
   <li><b>Turn off source channel after test</b> — 勾选后在测试结束、停止或异常时关闭源通道；未勾选且通道测试前已开启时保持开启</li>
 </ul>

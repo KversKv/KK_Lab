@@ -120,7 +120,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.setStyleSheet("""
             QWidget { background-color: #050b1a; color: #e8eefc; }
             QWidget#leftPanelInner { background-color: transparent; }
-            QFrame#apSshFrame { background-color: transparent; border: none; }
+            QFrame#apSshFrame, QFrame#apConnectionContent {
+                background-color: transparent; border: none;
+            }
             QLabel { background-color: transparent; color: #dbe7ff; border: none; }
             QLabel#pageTitle { font-size: 18px; font-weight: 700; color: #f8fbff; }
             QLabel#pageSubtitle { font-size: 12px; color: #7da2d6; }
@@ -163,6 +165,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton#stopTestBtn {
                 min-height: 33px; max-height: 33px; padding: 0px 12px;
                 background-color: #3d1830; border: 1px solid #5f2748; color: #ff8ead;
+            }
+            QPushButton#apConnectionToggleBtn {
+                min-height: 20px; max-height: 20px; padding: 0px;
+                background-color: transparent; border: none; color: #8fa7d6;
+            }
+            QPushButton#apConnectionToggleBtn:hover {
+                background-color: #1a2748; color: #f4f7ff;
             }
             QFrame#resultContainer {
                 background-color: #09142e; border: 1px solid #1a2d57; border-radius: 16px;
@@ -278,12 +287,21 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_status_label = QLabel("● Ready")
         self.ap_status_label.setObjectName("statusOk")
         self.ap_connection_card.title_row.addWidget(self.ap_status_label)
+        self.ap_connection_toggle_btn = QPushButton("▼")
+        self.ap_connection_toggle_btn.setObjectName("apConnectionToggleBtn")
+        self.ap_connection_toggle_btn.setFixedWidth(24)
+        self.ap_connection_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.ap_connection_toggle_btn.setToolTip("Collapse")
+        self.ap_connection_card.title_row.addWidget(self.ap_connection_toggle_btn)
+        self.ap_connection_content = QFrame()
+        self.ap_connection_content.setObjectName("apConnectionContent")
+        ap_connection_layout = QVBoxLayout(self.ap_connection_content)
+        ap_connection_layout.setContentsMargins(0, 0, 0, 0)
+        ap_connection_layout.setSpacing(8)
         self.ap_connection_combo = QComboBox()
         self.ap_connection_combo.addItem("Virtual Machine SSH", "vm_ssh")
         self.ap_connection_combo.addItem("Local AP Direct", "local")
-        self._add_field(
-            self.ap_connection_card.main_layout, "Connection", self.ap_connection_combo
-        )
+        self._add_field(ap_connection_layout, "Connection", self.ap_connection_combo)
         self.ap_ssh_frame = QFrame()
         self.ap_ssh_frame.setObjectName("apSshFrame")
         ap_ssh_layout = QVBoxLayout(self.ap_ssh_frame)
@@ -302,7 +320,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._add_field(ap_ssh_layout, "SSH User", self.ap_ssh_user_edit)
         self._add_field(ap_ssh_layout, "SSH Port (IP fallback)", self.ap_ssh_port_spin)
         self._add_field(ap_ssh_layout, "Guest Python Command", self.ap_ssh_python_edit)
-        self.ap_connection_card.main_layout.addWidget(self.ap_ssh_frame)
+        ap_connection_layout.addWidget(self.ap_ssh_frame)
+        self.ap_connection_card.main_layout.addWidget(self.ap_connection_content)
         self.ap_connect_btn = QPushButton()
         update_connect_button_state(self.ap_connect_btn, connected=False)
         self.ap_connection_card.main_layout.addWidget(self.ap_connect_btn)
@@ -362,6 +381,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         ]
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         self.ap_connection_combo.currentIndexChanged.connect(self._on_ap_connection_changed)
+        self.ap_connection_toggle_btn.clicked.connect(self._toggle_ap_connection_collapsed)
         self.ap_connect_btn.clicked.connect(self._on_ap_connect_or_disconnect)
 
         button_row = QHBoxLayout()
@@ -506,6 +526,14 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _on_ap_connection_changed(self):
         self.ap_ssh_frame.setVisible(self.ap_connection_combo.currentData() == "vm_ssh")
 
+    def _toggle_ap_connection_collapsed(self):
+        self._set_ap_connection_collapsed(not self.ap_connection_content.isHidden())
+
+    def _set_ap_connection_collapsed(self, collapsed: bool):
+        self.ap_connection_content.setVisible(not collapsed)
+        self.ap_connection_toggle_btn.setText("▶" if collapsed else "▼")
+        self.ap_connection_toggle_btn.setToolTip("Expand" if collapsed else "Collapse")
+
     def _on_ap_connect_or_disconnect(self):
         if self._ap_connection_busy or self.is_test_running:
             return
@@ -551,6 +579,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 self.audio_precision = target
             self.ap_connected = True
             self._set_ap_status("● Connected")
+            self._set_ap_connection_collapsed(True)
             self.append_log(f"[INFO] Audio Precision connected: {self.ap_connection_combo.currentText()}")
         else:
             self._clear_ap_connection()
@@ -591,9 +620,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _sync_ap_connection_controls(self):
         enabled = not self.ap_connected and not self._ap_connection_busy and not self.is_test_running
+        connect_enabled = not self._ap_connection_busy and not self.is_test_running
+        if not connect_enabled and self.ap_connect_btn.hasFocus():
+            self.ap_connection_toggle_btn.setFocus(Qt.OtherFocusReason)
         for widget in self._ap_connection_widgets:
             widget.setEnabled(enabled)
-        self.ap_connect_btn.setEnabled(not self._ap_connection_busy and not self.is_test_running)
+        self.ap_connect_btn.setEnabled(connect_enabled)
 
     def _refresh_ap_connection(self):
         if not self.ap_connected:
