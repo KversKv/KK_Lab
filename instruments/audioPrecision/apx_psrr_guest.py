@@ -14,15 +14,17 @@ def _guest_emit(event_type, **payload):
     sys.stdout.flush()
 
 
-def run_psrr_guest(ap_class, config_base64):
-    config = json.loads(base64.b64decode(config_base64).decode("utf-8"))
-    ap = ap_class()
+def _connect_ap(ap):
+    ap.connect()
+    if bool(getattr(ap.apx, "IsDemoMode", False)):
+        raise RuntimeError("APx500 is in Demo Mode; connect the APx525 USB device to the Guest")
+    _guest_emit("log", message=f"Guest AP connected; version={ap.apx.Version}")
+
+
+def _run_sweep(ap, config):
     generator_may_be_on = False
-    failed = False
+    success = False
     try:
-        ap.connect()
-        if bool(getattr(ap.apx, "IsDemoMode", False)):
-            raise RuntimeError("APx500 is in Demo Mode; connect the APx525 USB device to the Guest")
         if config["project_path"]:
             ap.open_project(config["project_path"])
         generator_may_be_on = True
@@ -35,7 +37,7 @@ def run_psrr_guest(ap_class, config_base64):
             bandwidth_hz=config["bandwidth_hz"],
         )
         measurement = measurement or config["measurement"]
-        _guest_emit("log", message=f"Guest AP connected; measurement={measurement}")
+        _guest_emit("log", message=f"Guest AP measurement={measurement}")
         for index, frequency in enumerate(config["frequencies_hz"]):
             ap.set_psrr_generator_frequency(frequency)
             input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
@@ -61,19 +63,63 @@ def run_psrr_guest(ap_class, config_base64):
                 "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),
             }
             _guest_emit("point", point=point, index=index)
-        _guest_emit("complete")
+        success = True
     except Exception as exc:
-        failed = True
         _guest_emit("error", message=str(exc))
     finally:
         if generator_may_be_on:
             try:
                 ap.set_psrr_generator_off()
             except Exception as exc:
-                failed = True
+                success = False
                 _guest_emit("error", message=f"Failed to turn off AP generator: {exc}")
+    if success:
+        _guest_emit("complete")
+    return success
+
+
+def run_psrr_guest(ap_class, config_base64):
+    config = json.loads(base64.b64decode(config_base64).decode("utf-8"))
+    ap = ap_class()
+    failed = False
+    try:
+        _connect_ap(ap)
+        _run_sweep(ap, config)
+    except Exception as exc:
+        failed = True
+        _guest_emit("error", message=str(exc))
+    finally:
         try:
             ap.disconnect()
         except Exception as exc:
             if not failed:
                 _guest_emit("log", message=f"AP disconnect warning: {exc}")
+
+
+def run_psrr_guest_session(ap_class):
+    ap = ap_class()
+    connected = False
+    try:
+        _connect_ap(ap)
+        connected = True
+        _guest_emit("connected")
+        for raw_line in sys.stdin:
+            try:
+                request = json.loads(base64.b64decode(raw_line.strip()).decode("utf-8"))
+                command = request.get("command")
+                if command == "disconnect":
+                    break
+                if command != "sweep":
+                    raise ValueError(f"Unsupported command: {command}")
+                _run_sweep(ap, request["config"])
+            except Exception as exc:
+                _guest_emit("error", message=str(exc))
+    except Exception as exc:
+        _guest_emit("error", message=str(exc))
+    finally:
+        try:
+            ap.disconnect()
+        except Exception as exc:
+            if connected:
+                _guest_emit("log", message=f"AP disconnect warning: {exc}")
+        _guest_emit("disconnected")

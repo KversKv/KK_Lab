@@ -34,6 +34,7 @@ from core.ai.page_contract import (
     CAP_STOP_TEST,
 )
 from core.pmu_test.psrr import (
+    AudioPrecisionConnectionWorker,
     AudioPrecisionPSRRWorker,
     PSRRTestWorker,
     audio_precision_config_from_dict,
@@ -45,6 +46,7 @@ from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.widgets.config_memory import ConfigMemory
+from ui.widgets.button import update_connect_button_state
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 
 logger = get_logger(__name__)
@@ -84,6 +86,14 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._test_mode = "手动测试"
         self._test_id = "PMU_PSRR_001"
         self._config_widgets: list[QWidget] = []
+        self._ap_connection_widgets: list[QWidget] = []
+        self.audio_precision = None
+        self.ap_ssh_session = None
+        self.ap_connected = False
+        self._ap_connection_busy = False
+        self._ap_connection_operation = ""
+        self._ap_connection_thread = None
+        self._ap_connection_worker = None
 
         self._setup_style()
         self._create_layout()
@@ -110,6 +120,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.setStyleSheet("""
             QWidget { background-color: #050b1a; color: #e8eefc; }
             QWidget#leftPanelInner { background-color: transparent; }
+            QFrame#apSshFrame { background-color: transparent; border: none; }
             QLabel { background-color: transparent; color: #dbe7ff; border: none; }
             QLabel#pageTitle { font-size: 18px; font-weight: 700; color: #f8fbff; }
             QLabel#pageSubtitle { font-size: 12px; color: #7da2d6; }
@@ -263,12 +274,18 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.acquisition_card.main_layout.addWidget(self.close_channel_check)
         left.addWidget(self.acquisition_card)
 
-        self.ap_card = CardFrame("Audio Precision")
+        self.ap_connection_card = CardFrame("Audio Precision Connection")
+        self.ap_status_label = QLabel("● Ready")
+        self.ap_status_label.setObjectName("statusOk")
+        self.ap_connection_card.title_row.addWidget(self.ap_status_label)
         self.ap_connection_combo = QComboBox()
         self.ap_connection_combo.addItem("Virtual Machine SSH", "vm_ssh")
         self.ap_connection_combo.addItem("Local AP Direct", "local")
-        self._add_field(self.ap_card.main_layout, "Connection", self.ap_connection_combo)
+        self._add_field(
+            self.ap_connection_card.main_layout, "Connection", self.ap_connection_combo
+        )
         self.ap_ssh_frame = QFrame()
+        self.ap_ssh_frame.setObjectName("apSshFrame")
         ap_ssh_layout = QVBoxLayout(self.ap_ssh_frame)
         ap_ssh_layout.setContentsMargins(0, 0, 0, 0)
         ap_ssh_layout.setSpacing(6)
@@ -285,7 +302,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._add_field(ap_ssh_layout, "SSH User", self.ap_ssh_user_edit)
         self._add_field(ap_ssh_layout, "SSH Port (IP fallback)", self.ap_ssh_port_spin)
         self._add_field(ap_ssh_layout, "Guest Python Command", self.ap_ssh_python_edit)
-        self.ap_card.main_layout.addWidget(self.ap_ssh_frame)
+        self.ap_connection_card.main_layout.addWidget(self.ap_ssh_frame)
+        self.ap_connect_btn = QPushButton()
+        update_connect_button_state(self.ap_connect_btn, connected=False)
+        self.ap_connection_card.main_layout.addWidget(self.ap_connect_btn)
+        left.addWidget(self.ap_connection_card)
+
+        self.ap_card = CardFrame("Audio Precision Test Parameters")
         self.ap_project_edit = QLineEdit()
         self.ap_project_edit.setPlaceholderText("Optional APx project path")
         self.ap_signal_path_edit = QLineEdit("Signal Path1")
@@ -328,15 +351,18 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.afg_amplitude_spin, self.start_frequency_spin, self.end_frequency_spin,
             self.frequency_points_spin, self.input_channel_combo, self.output_channel_combo,
             self.cycles_spin, self.output_scale_spin, self.limit_spin,
-            self.close_channel_check, self.ap_connection_combo, self.ap_ssh_profile_edit,
-            self.ap_ssh_host_edit, self.ap_ssh_user_edit, self.ap_ssh_port_spin,
-            self.ap_ssh_python_edit, self.ap_project_edit, self.ap_signal_path_edit,
+            self.close_channel_check, self.ap_project_edit, self.ap_signal_path_edit,
             self.ap_measurement_edit, self.ap_output_channel_combo, self.ap_amplitude_spin,
             self.ap_offset_spin, self.ap_start_frequency_spin,
             self.ap_end_frequency_spin, self.ap_frequency_points_spin, self.ap_limit_spin,
         ]
+        self._ap_connection_widgets = [
+            self.ap_connection_combo, self.ap_ssh_profile_edit, self.ap_ssh_host_edit,
+            self.ap_ssh_user_edit, self.ap_ssh_port_spin, self.ap_ssh_python_edit,
+        ]
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         self.ap_connection_combo.currentIndexChanged.connect(self._on_ap_connection_changed)
+        self.ap_connect_btn.clicked.connect(self._on_ap_connect_or_disconnect)
 
         button_row = QHBoxLayout()
         self.start_test_btn = QPushButton("START TEST")
@@ -473,11 +499,113 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.n6705c_card, self.scope_card, self.excitation_card, self.acquisition_card
         ):
             card.setVisible(is_j2120a)
+        self.ap_connection_card.setVisible(not is_j2120a)
         self.ap_card.setVisible(not is_j2120a)
         self.limit_line.setValue(self._current_limit_db())
 
     def _on_ap_connection_changed(self):
         self.ap_ssh_frame.setVisible(self.ap_connection_combo.currentData() == "vm_ssh")
+
+    def _on_ap_connect_or_disconnect(self):
+        if self._ap_connection_busy or self.is_test_running:
+            return
+        operation = "disconnect" if self.ap_connected else "connect"
+        config = None
+        if operation == "connect":
+            try:
+                config = audio_precision_config_from_dict(self.get_test_config())
+            except (TypeError, ValueError) as exc:
+                self._set_ap_status("● Invalid configuration", "error")
+                self.append_log(f"[ERROR] AP 连接配置无效：{exc}")
+                return
+        self._ap_connection_operation = operation
+        self._ap_connection_busy = True
+        self._set_ap_status(
+            "● Disconnecting" if self.ap_connected else "● Connecting", "busy"
+        )
+        self._sync_ap_connection_controls()
+        target = self.audio_precision or self.ap_ssh_session
+        self._ap_connection_thread = QThread(self)
+        self._ap_connection_worker = AudioPrecisionConnectionWorker(
+            config=config, operation=operation, target=target
+        )
+        self._ap_connection_worker.moveToThread(self._ap_connection_thread)
+        self._ap_connection_thread.started.connect(self._ap_connection_worker.run)
+        self._ap_connection_worker.log.connect(self.append_log)
+        self._ap_connection_worker.succeeded.connect(self._on_ap_connection_succeeded)
+        self._ap_connection_worker.failed.connect(self._on_ap_connection_failed)
+        self._ap_connection_worker.succeeded.connect(self._ap_connection_thread.quit)
+        self._ap_connection_worker.failed.connect(self._ap_connection_thread.quit)
+        self._ap_connection_thread.finished.connect(self._ap_connection_worker.deleteLater)
+        self._ap_connection_thread.finished.connect(self._ap_connection_thread.deleteLater)
+        self._ap_connection_thread.finished.connect(self._on_ap_connection_thread_finished)
+        self._ap_connection_thread.start()
+
+    def _on_ap_connection_succeeded(self, target):
+        operation = self._ap_connection_operation
+        self._ap_connection_busy = False
+        if operation == "connect":
+            if self.ap_connection_combo.currentData() == "vm_ssh" and not DEBUG_MOCK:
+                self.ap_ssh_session = target
+            else:
+                self.audio_precision = target
+            self.ap_connected = True
+            self._set_ap_status("● Connected")
+            self.append_log(f"[INFO] Audio Precision connected: {self.ap_connection_combo.currentText()}")
+        else:
+            self._clear_ap_connection()
+            self._set_ap_status("● Ready")
+            self.append_log("[INFO] Audio Precision disconnected")
+        update_connect_button_state(self.ap_connect_btn, self.ap_connected)
+        self._sync_ap_connection_controls()
+
+    def _on_ap_connection_failed(self, message: str):
+        operation = self._ap_connection_operation
+        self._ap_connection_busy = False
+        if operation == "connect":
+            self._clear_ap_connection()
+        self._set_ap_status(
+            "● Disconnect failed" if operation == "disconnect" else "● Connection failed",
+            "error",
+        )
+        self.append_log(f"[ERROR] Audio Precision {operation} failed: {message}")
+        update_connect_button_state(self.ap_connect_btn, self.ap_connected)
+        self._sync_ap_connection_controls()
+
+    def _on_ap_connection_thread_finished(self):
+        self._ap_connection_thread = None
+        self._ap_connection_worker = None
+
+    def _clear_ap_connection(self):
+        self.audio_precision = None
+        self.ap_ssh_session = None
+        self.ap_connected = False
+
+    def _set_ap_status(self, status: str, state: str = "ok"):
+        self.ap_status_label.setText(status)
+        self.ap_status_label.setObjectName({
+            "ok": "statusOk", "busy": "statusWarn", "error": "statusErr",
+        }[state])
+        self.ap_status_label.style().unpolish(self.ap_status_label)
+        self.ap_status_label.style().polish(self.ap_status_label)
+
+    def _sync_ap_connection_controls(self):
+        enabled = not self.ap_connected and not self._ap_connection_busy and not self.is_test_running
+        for widget in self._ap_connection_widgets:
+            widget.setEnabled(enabled)
+        self.ap_connect_btn.setEnabled(not self._ap_connection_busy and not self.is_test_running)
+
+    def _refresh_ap_connection(self):
+        if not self.ap_connected:
+            return
+        target = self.audio_precision or self.ap_ssh_session
+        if target is not None and bool(getattr(target, "connected", False)):
+            return
+        self._clear_ap_connection()
+        update_connect_button_state(self.ap_connect_btn, connected=False)
+        self._set_ap_status("● Connection lost", "error")
+        self.append_log("[WARN] Audio Precision connection lost")
+        self._sync_ap_connection_controls()
 
     def _current_limit_db(self) -> float:
         if self.method_combo.currentData() == "audio_precision":
@@ -550,7 +678,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.append_log(f"[ERROR] 配置校验失败：{exc}")
             return
         is_audio_precision = self.method_combo.currentData() == "audio_precision"
-        if not is_audio_precision:
+        if is_audio_precision:
+            self._refresh_ap_connection()
+            if not self.ap_connected:
+                self.set_system_status("请先连接 Audio Precision", True)
+                self.append_log("[ERROR] 启动测试前请先连接 Audio Precision")
+                return
+        else:
             if not DEBUG_MOCK and (not self.is_connected or self.n6705c is None):
                 self.set_system_status("请先连接 N6705C", True)
                 return
@@ -569,7 +703,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         self.test_thread = QThread(self)
         if is_audio_precision:
-            self.test_worker = AudioPrecisionPSRRWorker(config, mock_mode=DEBUG_MOCK)
+            self.test_worker = AudioPrecisionPSRRWorker(
+                config,
+                audio_precision=self.audio_precision,
+                ssh_session=self.ap_ssh_session,
+                mock_mode=DEBUG_MOCK,
+            )
         else:
             self.test_worker = PSRRTestWorker(
                 config,
@@ -608,6 +747,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.stop_test_btn.setEnabled(running)
         for widget in self._config_widgets:
             widget.setEnabled(not running)
+        self._sync_ap_connection_controls()
 
     def _on_point_ready(self, point: dict):
         self._points.append(dict(point))
@@ -636,6 +776,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _on_test_finished(self, success: bool, message: str):
         self.is_test_running = False
+        self._refresh_ap_connection()
         self._set_test_running(False)
         self.result_status_label.setText("DONE" if success else "STOPPED")
         self.set_system_status(message, not success)
@@ -699,6 +840,11 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def cleanup(self):
         self.stop_test()
+        if self.ap_connected and not self.is_test_running:
+            self._on_ap_connect_or_disconnect()
+        elif self.ap_ssh_session is not None:
+            self.ap_ssh_session.terminate()
+            self._clear_ap_connection()
 
     def ai_capabilities(self) -> set[str]:
         return {CAP_GET_CONFIG, CAP_APPLY_CONFIG, CAP_START_TEST, CAP_STOP_TEST, CAP_GET_RESULT}
@@ -752,6 +898,14 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         if threading.current_thread() is not threading.main_thread():
             logger.error("PSRR 配置在非主线程回填，已拒绝")
             return False, "配置回填未在主线程执行，已拒绝。"
+        if self.ap_connected:
+            current = self.get_test_config()
+            connection_keys = (
+                "ap_connection_mode", "ap_ssh_profile", "ap_ssh_host",
+                "ap_ssh_user", "ap_ssh_port", "ap_ssh_python",
+            )
+            if any(key in cfg and cfg[key] != current[key] for key in connection_keys):
+                return False, "请先断开 Audio Precision，再修改连接参数。"
 
         applied: list[str] = []
         touched: list[QWidget] = []

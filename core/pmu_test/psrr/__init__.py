@@ -17,9 +17,14 @@ from .psrr_analysis import (
     spectrum_level_at_frequency,
     summarize_results,
 )
-from .psrr_worker import AudioPrecisionPSRRWorker, PSRRTestWorker
+from .psrr_worker import (
+    AudioPrecisionConnectionWorker,
+    AudioPrecisionPSRRWorker,
+    PSRRTestWorker,
+)
 
 __all__ = [
+    "AudioPrecisionConnectionWorker",
     "AudioPrecisionPSRRConfig",
     "AudioPrecisionPSRRWorker",
     "PSRRConfig",

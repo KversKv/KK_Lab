@@ -2,17 +2,18 @@
 """PSRR 扫频 Worker，仅依赖 QtCore。"""
 from __future__ import annotations
 
-import base64
-import json
 import math
-from pathlib import Path
 import subprocess
 import time
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from log_config import get_logger
-from resource_path import get_resource_base
+from .audio_precision_session import (
+    AudioPrecisionSSHSession,
+    build_remote_script,
+    ssh_command,
+)
 from .psrr_analysis import (
     AudioPrecisionPSRRConfig,
     PSRRConfig,
@@ -211,6 +212,76 @@ class PSRRTestWorker(QObject):
         )
 
 
+class AudioPrecisionConnectionWorker(QObject):
+    succeeded = Signal(object)
+    failed = Signal(str)
+    log = Signal(str)
+
+    def __init__(self, config: AudioPrecisionPSRRConfig | None = None,
+                 operation: str = "connect", target=None, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.operation = operation
+        self.target = target
+
+    @Slot()
+    def run(self):
+        try:
+            if self.operation == "disconnect":
+                self._disconnect()
+                self.succeeded.emit(None)
+                return
+            if self.config is None:
+                raise ValueError("Audio Precision connection config is required")
+            from debug_config import DEBUG_MOCK
+            if DEBUG_MOCK or self.config.connection_mode == "local":
+                target = self._connect_local()
+            else:
+                target = AudioPrecisionSSHSession(self.config)
+                target.connect(self._on_remote_event)
+            self.target = target
+            self.succeeded.emit(target)
+        except Exception as exc:
+            logger.error("Audio Precision 连接操作失败", exc_info=True)
+            self.failed.emit(str(exc))
+
+    def _connect_local(self):
+        from instruments.factory import create_audio_precision
+        ap = create_audio_precision()
+        try:
+            ap.connect()
+            if not ap.connected:
+                raise RuntimeError("Audio Precision did not enter the connected state")
+            if bool(getattr(getattr(ap, "apx", None), "IsDemoMode", False)):
+                raise RuntimeError("APx500 is in Demo Mode; check the APx USB connection")
+            return ap
+        except Exception:
+            try:
+                ap.disconnect()
+            except Exception:
+                logger.error("Audio Precision 连接失败后的清理失败", exc_info=True)
+            raise
+
+    def _disconnect(self):
+        if self.target is None:
+            return
+        if isinstance(self.target, AudioPrecisionSSHSession):
+            self.target.disconnect()
+            self.log.emit("[INFO] Audio Precision SSH disconnected")
+            return
+        try:
+            self.target.set_psrr_generator_off()
+        except Exception:
+            logger.error("Audio Precision 断连前关闭发生器失败", exc_info=True)
+            self.log.emit("[ERROR] AP generator off failed before disconnect")
+        self.target.disconnect()
+        self.log.emit("[INFO] Audio Precision disconnected")
+
+    def _on_remote_event(self, event: dict):
+        if event.get("type") == "log":
+            self.log.emit(f"[GUEST] {event.get('message', '')}")
+
+
 class AudioPrecisionPSRRWorker(QObject):
     progress = Signal(int)
     point_ready = Signal(object)
@@ -219,7 +290,8 @@ class AudioPrecisionPSRRWorker(QObject):
     finished = Signal(bool, str)
 
     def __init__(self, config: dict | AudioPrecisionPSRRConfig,
-                 audio_precision=None, mock_mode: bool = False, parent=None):
+                 audio_precision=None, mock_mode: bool = False,
+                 ssh_session: AudioPrecisionSSHSession | None = None, parent=None):
         super().__init__(parent)
         self.config = (
             config if isinstance(config, AudioPrecisionPSRRConfig)
@@ -227,6 +299,7 @@ class AudioPrecisionPSRRWorker(QObject):
         )
         self.config.validate()
         self.audio_precision = audio_precision
+        self.ssh_session = ssh_session
         self.mock_mode = mock_mode
         self._owns_audio_precision = False
         self._generator_may_be_on = False
@@ -236,6 +309,9 @@ class AudioPrecisionPSRRWorker(QObject):
 
     def stop(self):
         self._abort = True
+        if self.ssh_session is not None:
+            self.ssh_session.terminate()
+            return
         process = self._remote_process
         if process is not None and process.poll() is None:
             process.terminate()
@@ -347,40 +423,14 @@ class AudioPrecisionPSRRWorker(QObject):
         return f"{self.config.ssh_user}@{self.config.ssh_host}:{self.config.ssh_port}"
 
     def _remote_script(self) -> str:
-        project_root = Path(get_resource_base())
-        analysis_source = (
-            project_root / "core" / "pmu_test" / "psrr" / "psrr_analysis.py"
-        ).read_text(encoding="utf-8")
-        driver_source = (
-            project_root / "instruments" / "audioPrecision" / "apx500_driver.py"
-        ).read_text(encoding="utf-8")
-        guest_source = (
-            project_root / "instruments" / "audioPrecision" / "apx_psrr_guest.py"
-        ).read_text(encoding="utf-8")
-        config = {
-            "project_path": self.config.project_path,
-            "signal_path": self.config.signal_path,
-            "measurement": self.config.measurement,
-            "output_channel": self.config.output_channel,
-            "amplitude_vrms": self.config.amplitude_vrms,
-            "offset_v": self.config.offset_v,
-            "bandwidth_hz": self.config.bandwidth_hz,
-            "frequencies_hz": list(self.config.frequencies_hz),
-        }
-        encoded = base64.b64encode(json.dumps(config).encode("utf-8")).decode("ascii")
-        return (
-            f"{analysis_source}\n\n{driver_source}\n\n{guest_source}\n\n"
-            f"run_psrr_guest(APxConnection, {encoded!r})\n"
-        )
+        return build_remote_script(self.config)
 
     def _run_remote(self):
-        command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
-        if self.config.ssh_profile:
-            target = self.config.ssh_profile
-        else:
-            command.extend(("-p", str(self.config.ssh_port)))
-            target = f"{self.config.ssh_user}@{self.config.ssh_host}"
-        command.extend((target, f"{self.config.ssh_python} -u -"))
+        if self.ssh_session is not None:
+            self.log.emit(f"[INFO] Using connected Guest AP session: {self._connection_target()}")
+            self.ssh_session.run_sweep(self.config, self._on_remote_session_event)
+            return
+        command = ssh_command(self.config)
         self.log.emit(f"[INFO] Starting Guest AP worker: {self._connection_target()}")
         process = subprocess.Popen(
             command,
@@ -433,6 +483,13 @@ class AudioPrecisionPSRRWorker(QObject):
             if process.stdout is not None:
                 process.stdout.close()
             self._remote_process = None
+
+    def _on_remote_session_event(self, event: dict):
+        event_type = event.get("type")
+        if event_type == "point":
+            self._emit_point(event["point"], int(event["index"]))
+        elif event_type == "log":
+            self.log.emit(f"[GUEST] {event.get('message', '')}")
 
     def _measure_real_point(self, frequency: float, index: int, measurement: str):
         ap = self.audio_precision
