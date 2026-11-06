@@ -347,6 +347,33 @@ class APxConnection:
     def set_psrr_generator_off(self):
         self.apx.SignalPathSetup.Generator.On = False
 
+    def get_psrr_input_dc_levels(self, signal_path_name):
+        measurement_name = "DC Level"
+        resolved = self.resolve_measurement_name(
+            signal_path_name, measurement_name, auto_add=True
+        )
+        if resolved is None:
+            raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
+        generator = self.apx.SignalPathSetup.Generator
+        generator_on = bool(generator.On)
+        try:
+            self.apx.ShowMeasurement(signal_path_name, resolved)
+            obj = self._get_active_measurement_object()
+            if obj is None or not hasattr(obj, "Start"):
+                raise RuntimeError(f"无法启动 DC Level: {resolved}")
+            obj.Start()
+            values, _, _, channel_count = self.read_measurement_result(
+                signal_path_name, resolved, result_name="DC Level"
+            )
+            if channel_count < 2 or len(values) < 2:
+                raise RuntimeError("DC Level 未返回 INPUT1、INPUT2 两路结果")
+            input_dc_v, output_dc_v = float(values[0]), float(values[1])
+            if not all(math.isfinite(value) for value in (input_dc_v, output_dc_v)):
+                raise RuntimeError("DC Level 返回了无效的 INPUT DC 电压")
+            return input_dc_v, output_dc_v
+        finally:
+            generator.On = generator_on
+
     def resolve_measurement_name(self, signal_path_name, expected_name, auto_add=True):
         available = self.get_measurement_names(signal_path_name)
         if expected_name in available:

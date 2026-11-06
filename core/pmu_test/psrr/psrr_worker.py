@@ -389,6 +389,8 @@ class AudioPrecisionPSRRWorker(QObject):
                 f"[INFO] Audio Precision PSRR sweep: "
                 f"project={self.config.project_path or '<current>'}, "
                 f"signal path={self.config.signal_path}, measurement={self.config.measurement}, "
+                f"VIN=INPUT{self.config.vin_input_channel}, "
+                f"VOUT=INPUT{self.config.vout_input_channel}, "
                 f"output=CH{self.config.output_channel}, "
                 f"amplitude={self.config.amplitude_vrms * 1000:g} mVrms, "
                 f"offset={self.config.offset_v:g} V, "
@@ -429,6 +431,8 @@ class AudioPrecisionPSRRWorker(QObject):
             point.update({
                 "input_dbv": 20.0 * math.log10(point["input_vrms"]),
                 "output_dbv": 20.0 * math.log10(point["output_vrms"]),
+                "input_dc_v": self.config.offset_v,
+                "output_dc_v": 1.8,
                 "input_fft_frequency_hz": frequency,
                 "output_fft_frequency_hz": frequency,
             })
@@ -458,7 +462,8 @@ class AudioPrecisionPSRRWorker(QObject):
         )
         measurement = resolved or self.config.measurement
         self.log.emit(
-            "[INFO] AP INPUT1=DUT VIN, INPUT2=DUT VOUT; "
+            f"[INFO] AP VIN=INPUT{self.config.vin_input_channel}, "
+            f"VOUT=INPUT{self.config.vout_input_channel}; "
             "HP=DC, LP=ADC passband, Weighting=None, EQ=None"
         )
         for index, frequency in enumerate(self.config.frequencies_hz):
@@ -546,10 +551,12 @@ class AudioPrecisionPSRRWorker(QObject):
         ap = self.audio_precision
         ap.set_psrr_generator_frequency(frequency)
         input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
-            self.config.signal_path, measurement, channel=0, run=True
+            self.config.signal_path, measurement,
+            channel=self.config.vin_input_channel - 1, run=True,
         )
         output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
-            self.config.signal_path, measurement, channel=1, run=False
+            self.config.signal_path, measurement,
+            channel=self.config.vout_input_channel - 1, run=False,
         )
         input_bin_hz, input_dbv = spectrum_level_at_frequency(
             input_frequencies, input_levels, frequency
@@ -557,12 +564,17 @@ class AudioPrecisionPSRRWorker(QObject):
         output_bin_hz, output_dbv = spectrum_level_at_frequency(
             output_frequencies, output_levels, frequency
         )
+        dc_levels = ap.get_psrr_input_dc_levels(self.config.signal_path)
+        input_dc_v = dc_levels[self.config.vin_input_channel - 1]
+        output_dc_v = dc_levels[self.config.vout_input_channel - 1]
         point = {
             "frequency_hz": frequency,
             "input_dbv": input_dbv,
             "output_dbv": output_dbv,
             "input_vrms": 10.0 ** (input_dbv / 20.0),
             "output_vrms": 10.0 ** (output_dbv / 20.0),
+            "input_dc_v": input_dc_v,
+            "output_dc_v": output_dc_v,
             "input_fft_frequency_hz": input_bin_hz,
             "output_fft_frequency_hz": output_bin_hz,
             "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),
@@ -575,7 +587,10 @@ class AudioPrecisionPSRRWorker(QObject):
         self.progress.emit(round((index + 1) * 100 / len(self.config.frequencies_hz)))
         self.log.emit(
             f"[DATA] Freq={point['frequency_hz']:g} Hz | "
-            f"CH1={point['input_dbv']:.4f} dBV | CH2={point['output_dbv']:.4f} dBV | "
+            f"VIN(INPUT{self.config.vin_input_channel})={point['input_dbv']:.4f} dBV | "
+            f"VOUT(INPUT{self.config.vout_input_channel})={point['output_dbv']:.4f} dBV | "
+            f"VIN DC(INPUT{self.config.vin_input_channel})={point['input_dc_v']:.6f} V | "
+            f"VOUT DC(INPUT{self.config.vout_input_channel})={point['output_dc_v']:.6f} V | "
             f"PSRR={point['psrr_db']:.3f} dB"
         )
 
@@ -603,6 +618,8 @@ class AudioPrecisionPSRRWorker(QObject):
             "ap_ssh_user": self.config.ssh_user,
             "ap_ssh_port": self.config.ssh_port,
             "ap_ssh_python": self.config.ssh_python,
+            "ap_vin_input_channel": self.config.vin_input_channel,
+            "ap_vout_input_channel": self.config.vout_input_channel,
             "ap_output_channel": self.config.output_channel,
             "ap_amplitude_mvrms": self.config.amplitude_vrms * 1000.0,
             "ap_offset_v": self.config.offset_v,

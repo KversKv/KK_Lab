@@ -71,6 +71,8 @@ class AudioPrecisionPSRRConfig:
     ssh_user: str = "administrator"
     ssh_port: int = 22
     ssh_python: str = "py -3.12"
+    vin_input_channel: int = 1
+    vout_input_channel: int = 2
     output_channel: int = 1
     amplitude_vrms: float = 0.1
     offset_v: float = 3.8
@@ -95,6 +97,14 @@ class AudioPrecisionPSRRConfig:
                 raise ValueError("SSH Port 必须位于 1-65535")
             if not self.ssh_python.strip():
                 raise ValueError("Guest Python Command 不能为空")
+        for name, channel in (
+            ("VIN", self.vin_input_channel),
+            ("VOUT", self.vout_input_channel),
+        ):
+            if channel not in (1, 2):
+                raise ValueError(f"Audio Precision {name} INPUT Channel 必须为 1 或 2")
+        if self.vin_input_channel == self.vout_input_channel:
+            raise ValueError("Audio Precision VIN 与 VOUT INPUT Channel 不能相同")
         if self.output_channel not in (1, 2):
             raise ValueError("Audio Precision Output Channel 必须为 1 或 2")
         if not math.isfinite(self.amplitude_vrms) or self.amplitude_vrms <= 0:
@@ -193,6 +203,8 @@ def audio_precision_config_from_dict(data: dict) -> AudioPrecisionPSRRConfig:
         ssh_user=str(data.get("ap_ssh_user", "administrator")).strip(),
         ssh_port=int(data.get("ap_ssh_port", 22)),
         ssh_python=str(data.get("ap_ssh_python", "py -3.12")).strip(),
+        vin_input_channel=int(data.get("ap_vin_input_channel", 1)),
+        vout_input_channel=int(data.get("ap_vout_input_channel", 2)),
         output_channel=int(data.get("ap_output_channel", 1)),
         amplitude_vrms=float(data.get("ap_amplitude_mvrms", 100.0)) / 1000.0,
         offset_v=float(data.get("ap_offset_v", 3.8)),

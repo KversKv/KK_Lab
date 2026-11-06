@@ -40,10 +40,12 @@ def _run_sweep(ap, config):
         for index, frequency in enumerate(config["frequencies_hz"]):
             ap.set_psrr_generator_frequency(frequency)
             input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
-                config["signal_path"], measurement, channel=0, run=True
+                config["signal_path"], measurement,
+                channel=config["vin_input_channel"] - 1, run=True,
             )
             output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
-                config["signal_path"], measurement, channel=1, run=False
+                config["signal_path"], measurement,
+                channel=config["vout_input_channel"] - 1, run=False,
             )
             input_bin_hz, input_dbv = spectrum_level_at_frequency(
                 input_frequencies, input_levels, frequency
@@ -51,12 +53,17 @@ def _run_sweep(ap, config):
             output_bin_hz, output_dbv = spectrum_level_at_frequency(
                 output_frequencies, output_levels, frequency
             )
+            dc_levels = ap.get_psrr_input_dc_levels(config["signal_path"])
+            input_dc_v = dc_levels[config["vin_input_channel"] - 1]
+            output_dc_v = dc_levels[config["vout_input_channel"] - 1]
             point = {
                 "frequency_hz": frequency,
                 "input_dbv": input_dbv,
                 "output_dbv": output_dbv,
                 "input_vrms": 10.0 ** (input_dbv / 20.0),
                 "output_vrms": 10.0 ** (output_dbv / 20.0),
+                "input_dc_v": input_dc_v,
+                "output_dc_v": output_dc_v,
                 "input_fft_frequency_hz": input_bin_hz,
                 "output_fft_frequency_hz": output_bin_hz,
                 "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),

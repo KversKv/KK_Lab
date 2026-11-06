@@ -9,13 +9,18 @@ import pytest
 from core.pmu_test.psrr.audio_precision_session import (
     _PERSISTENT_PYTHON_BOOTSTRAP,
     AudioPrecisionSSHSession,
+    remote_config,
     ssh_command,
 )
-from core.pmu_test.psrr.psrr_analysis import AudioPrecisionPSRRConfig
+from core.pmu_test.psrr.psrr_analysis import (
+    AudioPrecisionPSRRConfig,
+    audio_precision_config_from_dict,
+)
 from core.pmu_test.psrr.psrr_worker import (
     AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
 )
+from instruments.audioPrecision import apx_psrr_guest
 from instruments.audioPrecision.apx500_driver import APxConnection
 from instruments.mock.mock_instruments import MockAudioPrecision
 
@@ -75,6 +80,24 @@ def test_persistent_ssh_command_uses_line_bootstrap():
     assert one_shot[-1] == "py -3.12 -u -"
 
 
+def test_audio_precision_input_channel_config_and_remote_payload():
+    config = audio_precision_config_from_dict({
+        "ap_vin_input_channel": 2,
+        "ap_vout_input_channel": 1,
+    })
+
+    assert config.vin_input_channel == 2
+    assert config.vout_input_channel == 1
+    payload = remote_config(config)
+    assert payload["vin_input_channel"] == 2
+    assert payload["vout_input_channel"] == 1
+
+    with pytest.raises(ValueError, match="VIN 与 VOUT INPUT Channel 不能相同"):
+        AudioPrecisionPSRRConfig(vin_input_channel=2, vout_input_channel=2).validate()
+    with pytest.raises(ValueError, match="VIN INPUT Channel 必须为 1 或 2"):
+        AudioPrecisionPSRRConfig(vin_input_channel=3).validate()
+
+
 def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
     config = AudioPrecisionPSRRConfig()
     session = AudioPrecisionSSHSession(config)
@@ -111,6 +134,9 @@ def test_local_output_stays_on_during_sweep_until_manual_off():
     ap.connect()
     output_results = []
     sweep_results = []
+    sweep_points = []
+    sweep_logs = []
+    sweep_payloads = []
 
     output_on = AudioPrecisionOutputWorker(config, True, audio_precision=ap)
     output_on.finished.connect(lambda *args: output_results.append(args))
@@ -121,11 +147,23 @@ def test_local_output_stays_on_during_sweep_until_manual_off():
 
     sweep = AudioPrecisionPSRRWorker(config, audio_precision=ap)
     sweep.finished.connect(lambda *args: sweep_results.append(args))
+    sweep.point_ready.connect(sweep_points.append)
+    sweep.log.connect(sweep_logs.append)
+    sweep.result_ready.connect(sweep_payloads.append)
     sweep.start()
 
     assert sweep_results == [(True, "测试完成")]
     assert ap.run_count == len(config.frequencies_hz)
     assert ap.generator_on
+    assert len(sweep_points) == len(config.frequencies_hz)
+    for point in sweep_points:
+        assert point["input_dc_v"] == pytest.approx(config.offset_v)
+        assert point["output_dc_v"] == pytest.approx(1.8)
+    assert sweep_payloads[0]["points"] == sweep_points
+    data_logs = [line for line in sweep_logs if line.startswith("[DATA]")]
+    assert len(data_logs) == len(config.frequencies_hz)
+    assert all("VIN DC(INPUT1)=3.800000 V" in line for line in data_logs)
+    assert all("VOUT DC(INPUT2)=1.800000 V" in line for line in data_logs)
 
     output_off = AudioPrecisionOutputWorker(config, False, audio_precision=ap)
     output_off.finished.connect(lambda *args: output_results.append(args))
@@ -133,6 +171,145 @@ def test_local_output_stays_on_during_sweep_until_manual_off():
 
     assert output_results[-1] == (True, False, "Audio Precision OUTPUT OFF")
     assert not ap.generator_on
+
+
+def test_local_sweep_uses_selected_vin_vout_channels():
+    config = AudioPrecisionPSRRConfig(
+        connection_mode="local",
+        vin_input_channel=2,
+        vout_input_channel=1,
+        frequencies_hz=(100.0,),
+    )
+    ap = MockAudioPrecision()
+    ap.connect()
+    fft_calls = []
+
+    def get_fft_data(signal_path, measurement_name, channel=0, run=True):
+        fft_calls.append((channel, run))
+        level_dbv = -10.0 if channel == 0 else -40.0
+        return [100.0], [level_dbv]
+
+    ap.get_signal_analyzer_fft_data = get_fft_data
+    ap.get_psrr_input_dc_levels = lambda signal_path: (3.8, 4.0)
+    points = []
+    logs = []
+    results = []
+    payloads = []
+    sweep = AudioPrecisionPSRRWorker(config, audio_precision=ap)
+    sweep.point_ready.connect(points.append)
+    sweep.log.connect(logs.append)
+    sweep.finished.connect(lambda *args: results.append(args))
+    sweep.result_ready.connect(payloads.append)
+
+    sweep.start()
+
+    assert results == [(True, "测试完成")]
+    assert fft_calls == [(1, True), (0, False)]
+    assert len(points) == 1
+    point = points[0]
+    assert point["input_dbv"] == pytest.approx(-40.0)
+    assert point["output_dbv"] == pytest.approx(-10.0)
+    assert point["psrr_db"] == pytest.approx(-30.0)
+    assert point["input_dc_v"] == pytest.approx(4.0)
+    assert point["output_dc_v"] == pytest.approx(3.8)
+    assert "VIN(INPUT2)=-40.0000 dBV" in logs[-1]
+    assert "VOUT DC(INPUT1)=3.800000 V" in logs[-1]
+    assert payloads[0]["config"]["ap_vin_input_channel"] == 2
+    assert payloads[0]["config"]["ap_vout_input_channel"] == 1
+
+
+def test_dc_level_reads_both_input_channels_and_restores_generator():
+    connection = APxConnection()
+    graph = SimpleNamespace(
+        Name="DC Level",
+        ChannelCount=2,
+        GetValues=Mock(return_value=(3.8, 1.8)),
+        GetText=Mock(return_value=("3.8 V", "1.8 V")),
+    )
+    generator = SimpleNamespace(On=True)
+
+    def start_dc_level():
+        generator.On = False
+
+    dc_level = SimpleNamespace(DCLevel=graph, Start=Mock(side_effect=start_dc_level))
+    connection.apx = SimpleNamespace(
+        ActiveMeasurementName="DC Level",
+        DCLevel=dc_level,
+        SignalPathSetup=SimpleNamespace(Generator=generator),
+        ShowMeasurement=Mock(),
+    )
+
+    with patch.object(
+        connection, "resolve_measurement_name", return_value="DC Level"
+    ):
+        values = connection.get_psrr_input_dc_levels("Signal Path1")
+
+    assert values == (3.8, 1.8)
+    assert generator.On
+    dc_level.Start.assert_called_once_with()
+    graph.GetValues.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "vin_input_channel,vout_input_channel,expected_dc",
+    ((1, 2, (3.8, 1.8)), (2, 1, (1.8, 3.8))),
+)
+def test_guest_sweep_records_selected_input_dc_for_each_point(
+    monkeypatch, vin_input_channel, vout_input_channel, expected_dc
+):
+    ap = MockAudioPrecision()
+    config = {
+        "project_path": "",
+        "signal_path": "Signal Path1",
+        "measurement": "Signal Analyzer",
+        "vin_input_channel": vin_input_channel,
+        "vout_input_channel": vout_input_channel,
+        "output_channel": 1,
+        "amplitude_vrms": 0.1,
+        "offset_v": 3.8,
+        "bandwidth_hz": 250000,
+        "frequencies_hz": [100.0, 1000.0],
+    }
+    events = []
+    fft_calls = []
+    original_fft_data = ap.get_signal_analyzer_fft_data
+
+    def get_fft_data(*args, **kwargs):
+        fft_calls.append((kwargs["channel"], kwargs["run"]))
+        return original_fft_data(*args, **kwargs)
+
+    monkeypatch.setattr(ap, "get_signal_analyzer_fft_data", get_fft_data)
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "spectrum_level_at_frequency",
+        lambda frequencies, levels, frequency: (frequency, levels[1]),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "calculate_psrr_from_dbv",
+        lambda input_dbv, output_dbv: input_dbv - output_dbv,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "_guest_emit",
+        lambda event_type, **payload: events.append(
+            {"type": event_type, **payload}
+        ),
+    )
+
+    assert apx_psrr_guest._run_sweep(ap, config)
+
+    points = [event["point"] for event in events if event["type"] == "point"]
+    assert len(points) == len(config["frequencies_hz"])
+    assert ap.run_count == len(config["frequencies_hz"])
+    assert fft_calls == [
+        (vin_input_channel - 1, True), (vout_input_channel - 1, False)
+    ] * len(config["frequencies_hz"])
+    for point in points:
+        assert point["input_dc_v"] == pytest.approx(expected_dc[0])
+        assert point["output_dc_v"] == pytest.approx(expected_dc[1])
 
 
 def test_persistent_session_connect_failure_terminates_process():
@@ -380,6 +557,8 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
     assert config["ap_project_path"] == ""
     assert config["ap_signal_path"] == "Signal Path1"
     assert config["ap_measurement"] == "Signal Analyzer"
+    assert config["ap_vin_input_channel"] == 1
+    assert config["ap_vout_input_channel"] == 2
 
     def wait_for_connection():
         deadline = time.monotonic() + 5.0
@@ -469,6 +648,15 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         assert page.ap_amplitude_spin.isEnabled()
         assert page.ap_offset_spin.isEnabled()
         assert page.method_combo.isEnabled()
+
+        applied, _ = page.apply_config_to_controls(
+            {"ap_vin_input_channel": 2, "ap_vout_input_channel": 1}, silent=True
+        )
+        assert applied
+        assert page.ap_vin_input_channel_combo.currentData() == 2
+        assert page.ap_vout_input_channel_combo.currentData() == 1
+        assert page.get_test_config()["ap_vin_input_channel"] == 2
+        assert page.get_test_config()["ap_vout_input_channel"] == 1
 
         page.ap_output_toggle_btn.click()
         wait_for_output()

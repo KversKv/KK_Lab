@@ -49,6 +49,8 @@ def remote_config(config: AudioPrecisionPSRRConfig) -> dict:
         "project_path": config.project_path,
         "signal_path": config.signal_path,
         "measurement": config.measurement,
+        "vin_input_channel": config.vin_input_channel,
+        "vout_input_channel": config.vout_input_channel,
         "output_channel": config.output_channel,
         "amplitude_vrms": config.amplitude_vrms,
         "offset_v": config.offset_v,

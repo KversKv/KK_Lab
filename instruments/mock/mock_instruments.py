@@ -2034,6 +2034,9 @@ class MockAudioPrecision:
     def set_psrr_generator_off(self):
         self.generator_on = False
 
+    def get_psrr_input_dc_levels(self, signal_path_name):
+        return float(self.psrr_settings["offset_v"]), 1.8
+
     def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
                                      channel=0, acquisition_number=1, run=True):
         if run:

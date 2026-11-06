@@ -359,12 +359,20 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         left.addWidget(self.ap_output_card)
 
         self.ap_card = CardFrame("Audio Precision Test Parameters")
+        self.ap_vin_input_channel_combo = self._ap_input_channel_combo()
+        self.ap_vout_input_channel_combo = self._ap_input_channel_combo(2)
         self.ap_start_frequency_spin = self._double_spin(0.1, 1e6, 100.0, 100.0, 3)
         self.ap_end_frequency_spin = self._double_spin(0.1, 1e6, 100000.0, 1000.0, 3)
         self.ap_frequency_points_spin = QSpinBox()
         self.ap_frequency_points_spin.setRange(2, 1001)
         self.ap_frequency_points_spin.setValue(4)
         self.ap_limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
+        self._add_field(
+            self.ap_card.main_layout, "VIN Input Channel", self.ap_vin_input_channel_combo
+        )
+        self._add_field(
+            self.ap_card.main_layout, "VOUT Input Channel", self.ap_vout_input_channel_combo
+        )
         self._add_field(
             self.ap_card.main_layout, "Start Frequency (Hz)", self.ap_start_frequency_spin
         )
@@ -383,7 +391,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.frequency_points_spin, self.input_channel_combo, self.output_channel_combo,
             self.cycles_spin, self.output_scale_spin, self.limit_spin,
             self.close_channel_check, self.ap_output_channel_combo, self.ap_amplitude_spin,
-            self.ap_offset_spin, self.ap_start_frequency_spin,
+            self.ap_offset_spin, self.ap_vin_input_channel_combo,
+            self.ap_vout_input_channel_combo, self.ap_start_frequency_spin,
             self.ap_end_frequency_spin, self.ap_frequency_points_spin, self.ap_limit_spin,
         ]
         self._ap_connection_widgets = [
@@ -487,6 +496,14 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         combo = QComboBox()
         for channel in range(1, 5):
             combo.addItem(f"CH {channel}", channel)
+        combo.setCurrentIndex(default - 1)
+        return combo
+
+    @staticmethod
+    def _ap_input_channel_combo(default: int = 1) -> QComboBox:
+        combo = QComboBox()
+        for channel in (1, 2):
+            combo.addItem(f"INPUT {channel}", channel)
         combo.setCurrentIndex(default - 1)
         return combo
 
@@ -774,6 +791,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             "ap_project_path": "",
             "ap_signal_path": "Signal Path1",
             "ap_measurement": "Signal Analyzer",
+            "ap_vin_input_channel": self.ap_vin_input_channel_combo.currentData(),
+            "ap_vout_input_channel": self.ap_vout_input_channel_combo.currentData(),
             "ap_output_channel": self.ap_output_channel_combo.currentData(),
             "ap_amplitude_mvrms": self.ap_amplitude_spin.value(),
             "ap_offset_v": self.ap_offset_spin.value(),
@@ -1118,6 +1137,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         set_combo(self.source_channel_combo, "source_channel")
         set_combo(self.input_channel_combo, "input_channel")
         set_combo(self.output_channel_combo, "output_channel")
+        set_combo(self.ap_vin_input_channel_combo, "ap_vin_input_channel")
+        set_combo(self.ap_vout_input_channel_combo, "ap_vout_input_channel")
         set_combo(self.ap_output_channel_combo, "ap_output_channel")
         for spin, key in (
             (self.dc_voltage_spin, "dc_voltage"),
