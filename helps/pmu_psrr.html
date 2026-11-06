@@ -8,7 +8,8 @@
   <li><b>Excitation</b> — 设置 N6705C 源通道、直流偏置、AFG 幅度（mVpp）、Start Frequency、End Frequency 和 Points；系统按对数等间隔生成频点并包含起止点</li>
   <li><b>Acquisition &amp; Limit</b> — 设置输入/输出示波器通道、捕获周期数、输出通道量程和最小 PSRR 判定限值</li>
   <li><b>Audio Precision Connection</b> — 独立设置连接方式；Local AP Direct 在主机运行 APx500，Virtual Machine SSH 在 Guest 运行 APx500。点击 <b>Connect</b> 后台建立连接，状态变为 Connected 后锁定并自动折叠连接参数，可点击标题栏箭头重新展开；<b>Disconnect</b> 按钮始终保持可见。测试可复用该连接，点击 <b>Disconnect</b> 关闭发生器并释放本地 APx 或 SSH 会话。虚拟机默认使用已验证的 SSH Profile <b>testvm</b>，Guest IP <b>192.168.208.128</b> 作为无 Profile 时的回退，SSH 用户为 administrator、端口 22、Python 命令为 py -3.12</li>
-  <li><b>Audio Precision Test Parameters</b> — 独立设置 Project Path（可选）、Signal Path、Signal Analyzer、输出通道、Output Amplitude、DC Offset、Start Frequency、End Frequency、Points 和判定限值；输入带宽自动覆盖最高测试频率</li>
+  <li><b>Audio Precision OUTPUT</b> — 独立设置输出通道、Output Amplitude 和 DC Offset。连接后点击 <b>TURN OUTPUT ON</b> 手动开启输出，开启期间锁定测量方式和输出参数；点击 <b>TURN OUTPUT OFF</b> 关闭输出后可重新修改。OUTPUT 的启停由用户独立控制，扫频不会自动开启或关闭它</li>
+  <li><b>Audio Precision Test Parameters</b> — 独立设置 Project Path（可选）、Signal Path、Signal Analyzer、Start Frequency、End Frequency、Points 和判定限值；输入带宽自动覆盖最高测试频率</li>
   <li><b>Turn off source channel after test</b> — 勾选后在测试结束、停止或异常时关闭源通道；未勾选且通道测试前已开启时保持开启</li>
 </ul>
 
@@ -25,10 +26,10 @@
 <ol>
   <li>选择 Local AP Direct 时，在主机安装 APx500 与 pythonnet 并连接 Audio Precision 仪器；选择 Virtual Machine SSH 时，在 Guest 安装 APx500 5.0 与 Python 3.12/pythonnet，并完成 APx525 USB 直通。将指定模拟输出通道接入 DUT VIN，AP INPUT 1、INPUT 2 分别接 DUT VIN、VOUT</li>
   <li>点击 <b>Connect</b>，确认状态显示 Connected；虚拟机模式通过 SSH stdin 发送当前驱动与测试脚本并保持远程会话，不依赖共享目录中的旧副本。Project Path 按实际运行 APx500 的主机或 Guest 文件系统解释，留空则使用当前 APx 项目</li>
-  <li>输出固定为 Analog Unbalanced Sine，默认 100 mVrms、3.8 VDC Offset；输入 High-pass=DC、Low-pass=ADC passband、Weighting=None、EQ=None</li>
-  <li>系统按最高扫频频率自动选择 20k/40k/80k/250k/500k/1M Hz 输入带宽，最高测试频率不能超过 1 MHz；点击 <b>START TEST</b> 开始扫频</li>
+  <li>在 <b>Audio Precision OUTPUT</b> 中设置 CH、Output Amplitude 和 DC Offset，点击 <b>TURN OUTPUT ON</b>；输出固定为 Analog Unbalanced Sine，默认 100 mVrms、3.8 VDC Offset。输入 High-pass=DC、Low-pass=ADC passband、Weighting=None、EQ=None</li>
+  <li>OUTPUT 开启后完成 DUT 配置，再设置扫频参数并点击 <b>START TEST</b>；未手动开启 OUTPUT 时测试不会启动。系统按最高扫频频率自动选择 20k/40k/80k/250k/500k/1M Hz 输入带宽，最高测试频率不能超过 1 MHz</li>
   <li>每个频点只执行一次 Signal Analyzer FFT 采集，再从同一帧 FFT Spectrum 分别读取 CH1、CH2 的最近频点 dBV 电平，按 PSRR=CH1(dBV)-CH2(dBV) 计算</li>
-  <li>测试结束、停止或异常时关闭 AP 发生器；正常测试结束后保持连接，完成全部测试后点击 <b>Disconnect</b>。关键仪器设置或 FFT 读取失败会中止测试并报告错误</li>
+  <li>测试结束、停止或异常后保持当前 OUTPUT 状态和连接；点击 <b>TURN OUTPUT OFF</b> 手动关闭输出，或点击 <b>Disconnect</b> 关闭发生器并释放连接。关键仪器设置或 FFT 读取失败会中止测试并报告错误</li>
 </ol>
 
 <h3>注意事项</h3>

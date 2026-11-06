@@ -35,6 +35,7 @@ from core.ai.page_contract import (
 )
 from core.pmu_test.psrr import (
     AudioPrecisionConnectionWorker,
+    AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
     PSRRTestWorker,
     audio_precision_config_from_dict,
@@ -94,6 +95,10 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._ap_connection_operation = ""
         self._ap_connection_thread = None
         self._ap_connection_worker = None
+        self._ap_output_busy = False
+        self._ap_output_on = False
+        self._ap_output_thread = None
+        self._ap_output_worker = None
 
         self._setup_style()
         self._create_layout()
@@ -165,6 +170,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton#stopTestBtn {
                 min-height: 33px; max-height: 33px; padding: 0px 12px;
                 background-color: #3d1830; border: 1px solid #5f2748; color: #ff8ead;
+            }
+            QPushButton#apOutputToggleBtn {
+                min-height: 33px; max-height: 33px; padding: 0px 12px;
+                background-color: #07463f; border: 1px solid #10bfa0; color: #72f4d7;
+            }
+            QPushButton#apOutputToggleBtn[outputOn="true"] {
+                background-color: #4a1730; border: 1px solid #d84578; color: #ff9abb;
             }
             QPushButton#apConnectionToggleBtn {
                 min-height: 20px; max-height: 20px; padding: 0px;
@@ -327,16 +339,32 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_connection_card.main_layout.addWidget(self.ap_connect_btn)
         left.addWidget(self.ap_connection_card)
 
-        self.ap_card = CardFrame("Audio Precision Test Parameters")
-        self.ap_project_edit = QLineEdit()
-        self.ap_project_edit.setPlaceholderText("Optional APx project path")
-        self.ap_signal_path_edit = QLineEdit("Signal Path1")
-        self.ap_measurement_edit = QLineEdit("Signal Analyzer")
+        self.ap_output_card = CardFrame("Audio Precision OUTPUT")
+        self.ap_output_status_label = QLabel("OFF")
+        self.ap_output_status_label.setObjectName("statusErr")
+        self.ap_output_card.title_row.addWidget(self.ap_output_status_label)
         self.ap_output_channel_combo = QComboBox()
         self.ap_output_channel_combo.addItem("CH 1", 1)
         self.ap_output_channel_combo.addItem("CH 2", 2)
         self.ap_amplitude_spin = self._double_spin(0.1, 1000.0, 100.0, 10.0, 2)
         self.ap_offset_spin = self._double_spin(0.1, 20.0, 3.8, 0.1, 3)
+        self._add_field(
+            self.ap_output_card.main_layout, "Output Channel", self.ap_output_channel_combo
+        )
+        self._add_field(
+            self.ap_output_card.main_layout, "Output Amplitude (mVrms)", self.ap_amplitude_spin
+        )
+        self._add_field(self.ap_output_card.main_layout, "DC Offset (V)", self.ap_offset_spin)
+        self.ap_output_toggle_btn = QPushButton("TURN OUTPUT ON")
+        self.ap_output_toggle_btn.setObjectName("apOutputToggleBtn")
+        self.ap_output_card.main_layout.addWidget(self.ap_output_toggle_btn)
+        left.addWidget(self.ap_output_card)
+
+        self.ap_card = CardFrame("Audio Precision Test Parameters")
+        self.ap_project_edit = QLineEdit()
+        self.ap_project_edit.setPlaceholderText("Optional APx project path")
+        self.ap_signal_path_edit = QLineEdit("Signal Path1")
+        self.ap_measurement_edit = QLineEdit("Signal Analyzer")
         self.ap_start_frequency_spin = self._double_spin(0.1, 1e6, 100.0, 100.0, 3)
         self.ap_end_frequency_spin = self._double_spin(0.1, 1e6, 100000.0, 1000.0, 3)
         self.ap_frequency_points_spin = QSpinBox()
@@ -346,13 +374,6 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._add_field(self.ap_card.main_layout, "Project Path", self.ap_project_edit)
         self._add_field(self.ap_card.main_layout, "Signal Path", self.ap_signal_path_edit)
         self._add_field(self.ap_card.main_layout, "Measurement", self.ap_measurement_edit)
-        self._add_field(
-            self.ap_card.main_layout, "Output Channel", self.ap_output_channel_combo
-        )
-        self._add_field(
-            self.ap_card.main_layout, "Output Amplitude (mVrms)", self.ap_amplitude_spin
-        )
-        self._add_field(self.ap_card.main_layout, "DC Offset (V)", self.ap_offset_spin)
         self._add_field(
             self.ap_card.main_layout, "Start Frequency (Hz)", self.ap_start_frequency_spin
         )
@@ -383,6 +404,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_connection_combo.currentIndexChanged.connect(self._on_ap_connection_changed)
         self.ap_connection_toggle_btn.clicked.connect(self._toggle_ap_connection_collapsed)
         self.ap_connect_btn.clicked.connect(self._on_ap_connect_or_disconnect)
+        self.ap_output_toggle_btn.clicked.connect(self._on_ap_output_toggle)
 
         button_row = QHBoxLayout()
         self.start_test_btn = QPushButton("START TEST")
@@ -520,8 +542,10 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         ):
             card.setVisible(is_j2120a)
         self.ap_connection_card.setVisible(not is_j2120a)
+        self.ap_output_card.setVisible(not is_j2120a)
         self.ap_card.setVisible(not is_j2120a)
         self.limit_line.setValue(self._current_limit_db())
+        self._sync_ap_output_controls()
 
     def _on_ap_connection_changed(self):
         self.ap_ssh_frame.setVisible(self.ap_connection_combo.currentData() == "vm_ssh")
@@ -535,7 +559,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_connection_toggle_btn.setToolTip("Expand" if collapsed else "Collapse")
 
     def _on_ap_connect_or_disconnect(self):
-        if self._ap_connection_busy or self.is_test_running:
+        if self._ap_connection_busy or self._ap_output_busy or self.is_test_running:
             return
         operation = "disconnect" if self.ap_connected else "connect"
         config = None
@@ -609,6 +633,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.audio_precision = None
         self.ap_ssh_session = None
         self.ap_connected = False
+        self._set_ap_output_state(False)
 
     def _set_ap_status(self, status: str, state: str = "ok"):
         self.ap_status_label.setText(status)
@@ -619,13 +644,20 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_status_label.style().polish(self.ap_status_label)
 
     def _sync_ap_connection_controls(self):
-        enabled = not self.ap_connected and not self._ap_connection_busy and not self.is_test_running
-        connect_enabled = not self._ap_connection_busy and not self.is_test_running
+        enabled = (
+            not self.ap_connected and not self._ap_connection_busy
+            and not self._ap_output_busy and not self.is_test_running
+        )
+        connect_enabled = (
+            not self._ap_connection_busy and not self._ap_output_busy
+            and not self.is_test_running
+        )
         if not connect_enabled and self.ap_connect_btn.hasFocus():
             self.ap_connection_toggle_btn.setFocus(Qt.OtherFocusReason)
         for widget in self._ap_connection_widgets:
             widget.setEnabled(enabled)
         self.ap_connect_btn.setEnabled(connect_enabled)
+        self._sync_ap_output_controls()
 
     def _refresh_ap_connection(self):
         if not self.ap_connected:
@@ -638,6 +670,89 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._set_ap_status("● Connection lost", "error")
         self.append_log("[WARN] Audio Precision connection lost")
         self._sync_ap_connection_controls()
+
+    def _on_ap_output_toggle(self):
+        if self._ap_output_busy or self.is_test_running:
+            return
+        self._refresh_ap_connection()
+        if not self.ap_connected:
+            self._set_ap_status("● Connect Audio Precision first", "error")
+            self.append_log("[ERROR] Connect Audio Precision before controlling OUTPUT")
+            return
+        try:
+            config = audio_precision_config_from_dict(self.get_test_config())
+        except (TypeError, ValueError) as exc:
+            self.append_log(f"[ERROR] Invalid Audio Precision OUTPUT configuration: {exc}")
+            return
+
+        self._ap_output_busy = True
+        self.ap_output_status_label.setText("UPDATING")
+        self.ap_output_status_label.setObjectName("statusWarn")
+        self.ap_output_status_label.style().unpolish(self.ap_output_status_label)
+        self.ap_output_status_label.style().polish(self.ap_output_status_label)
+        if self.ap_output_toggle_btn.hasFocus():
+            self.ap_connection_toggle_btn.setFocus(Qt.OtherFocusReason)
+        self._sync_ap_connection_controls()
+
+        self._ap_output_thread = QThread(self)
+        self._ap_output_worker = AudioPrecisionOutputWorker(
+            config,
+            enabled=not self._ap_output_on,
+            audio_precision=self.audio_precision,
+            ssh_session=self.ap_ssh_session,
+        )
+        self._ap_output_worker.moveToThread(self._ap_output_thread)
+        self._ap_output_thread.started.connect(self._ap_output_worker.run)
+        self._ap_output_worker.log.connect(self.append_log)
+        self._ap_output_worker.finished.connect(self._on_ap_output_finished)
+        self._ap_output_worker.finished.connect(self._ap_output_thread.quit)
+        self._ap_output_thread.finished.connect(self._ap_output_worker.deleteLater)
+        self._ap_output_thread.finished.connect(self._ap_output_thread.deleteLater)
+        self._ap_output_thread.finished.connect(self._on_ap_output_thread_finished)
+        self._ap_output_thread.start()
+
+    def _on_ap_output_finished(self, success: bool, enabled: bool, message: str):
+        self._ap_output_busy = False
+        if success:
+            self._set_ap_output_state(enabled)
+            self.append_log(f"[INFO] {message}")
+        else:
+            self.ap_output_status_label.setText("ERROR")
+            self.ap_output_status_label.setObjectName("statusErr")
+            self.ap_output_status_label.style().unpolish(self.ap_output_status_label)
+            self.ap_output_status_label.style().polish(self.ap_output_status_label)
+            self.append_log(f"[ERROR] Audio Precision OUTPUT operation failed: {message}")
+        self._sync_ap_connection_controls()
+
+    def _on_ap_output_thread_finished(self):
+        self._ap_output_thread = None
+        self._ap_output_worker = None
+
+    def _set_ap_output_state(self, enabled: bool):
+        self._ap_output_on = bool(enabled)
+        self.ap_output_status_label.setText("ON" if enabled else "OFF")
+        self.ap_output_status_label.setObjectName("statusOk" if enabled else "statusErr")
+        self.ap_output_status_label.style().unpolish(self.ap_output_status_label)
+        self.ap_output_status_label.style().polish(self.ap_output_status_label)
+        self.ap_output_toggle_btn.setText("TURN OUTPUT OFF" if enabled else "TURN OUTPUT ON")
+        self.ap_output_toggle_btn.setProperty("outputOn", bool(enabled))
+        self.ap_output_toggle_btn.style().unpolish(self.ap_output_toggle_btn)
+        self.ap_output_toggle_btn.style().polish(self.ap_output_toggle_btn)
+
+    def _sync_ap_output_controls(self):
+        parameters_enabled = (
+            not self.is_test_running and not self._ap_output_busy and not self._ap_output_on
+        )
+        for widget in (
+            self.ap_output_channel_combo, self.ap_amplitude_spin, self.ap_offset_spin
+        ):
+            widget.setEnabled(parameters_enabled)
+        self.method_combo.setEnabled(parameters_enabled)
+        self.ap_output_toggle_btn.setEnabled(
+            self.ap_connected and not self._ap_connection_busy
+            and not self._ap_output_busy and not self.is_test_running
+        )
+        self.start_test_btn.setEnabled(not self._ap_output_busy)
 
     def _current_limit_db(self) -> float:
         if self.method_combo.currentData() == "audio_precision":
@@ -716,6 +831,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 self.set_system_status("请先连接 Audio Precision", True)
                 self.append_log("[ERROR] 启动测试前请先连接 Audio Precision")
                 return
+            if self._ap_output_busy:
+                self.set_system_status("Audio Precision OUTPUT is being updated", True)
+                return
+            if not self._ap_output_on:
+                self.set_system_status("Turn on Audio Precision OUTPUT before starting", True)
+                self.append_log("[ERROR] Turn on Audio Precision OUTPUT before starting the test")
+                return
         else:
             if not DEBUG_MOCK and (not self.is_connected or self.n6705c is None):
                 self.set_system_status("请先连接 N6705C", True)
@@ -780,6 +902,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         for widget in self._config_widgets:
             widget.setEnabled(not running)
         self._sync_ap_connection_controls()
+        self._sync_ap_output_controls()
 
     def _on_point_ready(self, point: dict):
         self._points.append(dict(point))
@@ -938,6 +1061,17 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             )
             if any(key in cfg and cfg[key] != current[key] for key in connection_keys):
                 return False, "请先断开 Audio Precision，再修改连接参数。"
+        if self._ap_output_on or self._ap_output_busy:
+            current = self.get_test_config()
+            output_keys = (
+                "measurement_method", "ap_output_channel",
+                "ap_amplitude_mvrms", "ap_offset_v",
+            )
+            if any(key in cfg and cfg[key] != current[key] for key in output_keys):
+                return False, (
+                    "Turn off Audio Precision OUTPUT before changing "
+                    "measurement method or output parameters."
+                )
 
         applied: list[str] = []
         touched: list[QWidget] = []

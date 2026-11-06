@@ -318,7 +318,8 @@ class APxConnection:
         generator.Levels.OffsetUnit = "V"
         generator.Levels.SetValue(channel_index, float(amplitude_vrms))
         generator.Levels.SetOffsetValue(channel_index, float(offset_v))
-        generator.On = bool(generator_on)
+        if generator_on is not None:
+            generator.On = bool(generator_on)
 
     def set_psrr_generator_frequency(self, frequency_hz):
         frequency = float(frequency_hz)

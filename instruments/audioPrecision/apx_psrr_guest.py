@@ -22,12 +22,10 @@ def _connect_ap(ap):
 
 
 def _run_sweep(ap, config):
-    generator_may_be_on = False
     success = False
     try:
         if config["project_path"]:
             ap.open_project(config["project_path"])
-        generator_may_be_on = True
         measurement = ap.configure_psrr_measurement(
             config["signal_path"],
             config["measurement"],
@@ -35,6 +33,7 @@ def _run_sweep(ap, config):
             amplitude_vrms=config["amplitude_vrms"],
             offset_v=config["offset_v"],
             bandwidth_hz=config["bandwidth_hz"],
+            generator_on=None,
         )
         measurement = measurement or config["measurement"]
         _guest_emit("log", message=f"Guest AP measurement={measurement}")
@@ -66,16 +65,31 @@ def _run_sweep(ap, config):
         success = True
     except Exception as exc:
         _guest_emit("error", message=str(exc))
-    finally:
-        if generator_may_be_on:
-            try:
-                ap.set_psrr_generator_off()
-            except Exception as exc:
-                success = False
-                _guest_emit("error", message=f"Failed to turn off AP generator: {exc}")
     if success:
         _guest_emit("complete")
     return success
+
+
+def _set_output(ap, config, enabled):
+    try:
+        if enabled:
+            if config["project_path"]:
+                ap.open_project(config["project_path"])
+            ap.configure_psrr_measurement(
+                config["signal_path"],
+                config["measurement"],
+                output_channel=config["output_channel"],
+                amplitude_vrms=config["amplitude_vrms"],
+                offset_v=config["offset_v"],
+                bandwidth_hz=config["bandwidth_hz"],
+                generator_on=True,
+            )
+        else:
+            ap.set_psrr_generator_off()
+    except Exception as exc:
+        _guest_emit("error", message=str(exc))
+        return
+    _guest_emit("output_complete", enabled=enabled)
 
 
 def run_psrr_guest(ap_class, config_base64):
@@ -108,7 +122,11 @@ def run_psrr_guest_session(ap_class):
                 request = json.loads(base64.b64decode(raw_line.strip()).decode("utf-8"))
                 command = request.get("command")
                 if command == "disconnect":
+                    ap.set_psrr_generator_off()
                     break
+                if command == "output":
+                    _set_output(ap, request["config"], bool(request["enabled"]))
+                    continue
                 if command != "sweep":
                     raise ValueError(f"Unsupported command: {command}")
                 _run_sweep(ap, request["config"])

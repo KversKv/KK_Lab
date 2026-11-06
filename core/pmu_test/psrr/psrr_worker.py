@@ -282,6 +282,58 @@ class AudioPrecisionConnectionWorker(QObject):
             self.log.emit(f"[GUEST] {event.get('message', '')}")
 
 
+class AudioPrecisionOutputWorker(QObject):
+    log = Signal(str)
+    finished = Signal(bool, bool, str)
+
+    def __init__(self, config: AudioPrecisionPSRRConfig, enabled: bool,
+                 audio_precision=None,
+                 ssh_session: AudioPrecisionSSHSession | None = None, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.enabled = bool(enabled)
+        self.audio_precision = audio_precision
+        self.ssh_session = ssh_session
+
+    @Slot()
+    def run(self):
+        try:
+            if self.ssh_session is not None:
+                self.ssh_session.set_output(
+                    self.config, self.enabled, self._on_remote_event
+                )
+            else:
+                self._set_local_output()
+            state = "ON" if self.enabled else "OFF"
+            self.finished.emit(True, self.enabled, f"Audio Precision OUTPUT {state}")
+        except Exception as exc:
+            logger.error("Audio Precision OUTPUT 操作失败", exc_info=True)
+            self.finished.emit(False, self.enabled, str(exc))
+
+    def _set_local_output(self):
+        ap = self.audio_precision
+        if ap is None or not ap.connected:
+            raise RuntimeError("Audio Precision is not connected")
+        if not self.enabled:
+            ap.set_psrr_generator_off()
+            return
+        if self.config.project_path:
+            ap.open_project(self.config.project_path)
+        ap.configure_psrr_measurement(
+            self.config.signal_path,
+            self.config.measurement,
+            output_channel=self.config.output_channel,
+            amplitude_vrms=self.config.amplitude_vrms,
+            offset_v=self.config.offset_v,
+            bandwidth_hz=self.config.bandwidth_hz,
+            generator_on=True,
+        )
+
+    def _on_remote_event(self, event: dict):
+        if event.get("type") == "log":
+            self.log.emit(f"[GUEST] {event.get('message', '')}")
+
+
 class AudioPrecisionPSRRWorker(QObject):
     progress = Signal(int)
     point_ready = Signal(object)
@@ -302,7 +354,6 @@ class AudioPrecisionPSRRWorker(QObject):
         self.ssh_session = ssh_session
         self.mock_mode = mock_mode
         self._owns_audio_precision = False
-        self._generator_may_be_on = False
         self._remote_process = None
         self._abort = False
         self._points: list[dict] = []
@@ -396,7 +447,6 @@ class AudioPrecisionPSRRWorker(QObject):
             ap.connect()
         if self.config.project_path:
             ap.open_project(self.config.project_path)
-        self._generator_may_be_on = True
         resolved = ap.configure_psrr_measurement(
             self.config.signal_path,
             self.config.measurement,
@@ -404,6 +454,7 @@ class AudioPrecisionPSRRWorker(QObject):
             amplitude_vrms=self.config.amplitude_vrms,
             offset_v=self.config.offset_v,
             bandwidth_hz=self.config.bandwidth_hz,
+            generator_on=None,
         )
         measurement = resolved or self.config.measurement
         self.log.emit(
@@ -532,14 +583,6 @@ class AudioPrecisionPSRRWorker(QObject):
         ap = self.audio_precision
         if ap is None:
             return success, message
-        if self._generator_may_be_on:
-            try:
-                ap.set_psrr_generator_off()
-            except Exception:
-                logger.error("Audio Precision PSRR 发生器关闭失败", exc_info=True)
-                self.log.emit("[ERROR] AP 发生器关闭失败，请检查仪器输出")
-                success = False
-                message = f"{message}; AP 发生器关闭失败"
         if self._owns_audio_precision:
             try:
                 ap.disconnect()

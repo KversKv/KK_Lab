@@ -2012,7 +2012,8 @@ class MockAudioPrecision:
                                    offset_v=3.8, bandwidth_hz=250000,
                                    generator_on=True):
         self._amplitude_vrms = float(amplitude_vrms)
-        self.generator_on = bool(generator_on)
+        if generator_on is not None:
+            self.generator_on = bool(generator_on)
         self.psrr_settings = {
             "signal_path": signal_path_name,
             "measurement": measurement_name,

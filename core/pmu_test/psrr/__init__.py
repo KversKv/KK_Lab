@@ -19,12 +19,14 @@ from .psrr_analysis import (
 )
 from .psrr_worker import (
     AudioPrecisionConnectionWorker,
+    AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
     PSRRTestWorker,
 )
 
 __all__ = [
     "AudioPrecisionConnectionWorker",
+    "AudioPrecisionOutputWorker",
     "AudioPrecisionPSRRConfig",
     "AudioPrecisionPSRRWorker",
     "PSRRConfig",

@@ -130,6 +130,25 @@ class AudioPrecisionSSHSession:
             if event_type == "error":
                 raise RuntimeError(event.get("message", "APx sweep failed"))
 
+    def set_output(
+        self, config: AudioPrecisionPSRRConfig, enabled: bool, on_event
+    ) -> None:
+        if not self.connected:
+            raise RuntimeError("Audio Precision SSH session is not connected")
+        self._send_json({
+            "command": "output",
+            "config": remote_config(config),
+            "enabled": bool(enabled),
+        })
+        while True:
+            event = self._read_event()
+            on_event(event)
+            event_type = event.get("type")
+            if event_type == "output_complete":
+                return
+            if event_type == "error":
+                raise RuntimeError(event.get("message", "APx output operation failed"))
+
     def disconnect(self) -> None:
         process = self._process
         if process is None:
