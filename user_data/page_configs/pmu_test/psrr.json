@@ -33,13 +33,13 @@
     "ap_amplitude_mvrms": 100.0,
     "ap_offset_v": 3.8,
     "ap_start_frequency_hz": 100.0,
-    "ap_end_frequency_hz": 100000.0,
+    "ap_end_frequency_hz": 20000.0,
     "ap_frequency_points": 4,
     "ap_frequencies_hz": [
       100.0,
-      999.9999999999998,
-      9999.999999999996,
-      100000.0
+      584.8035476425731,
+      3419.951893353393,
+      20000.0
     ],
     "ap_limit_db": 0.0
   }

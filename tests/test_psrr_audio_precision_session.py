@@ -1,5 +1,6 @@
 import sys
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,7 @@ from core.pmu_test.psrr.psrr_worker import (
     AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
 )
+from instruments.audioPrecision.apx500_driver import APxConnection
 from instruments.mock.mock_instruments import MockAudioPrecision
 
 
@@ -152,6 +154,109 @@ sys.stdin.readline()
 
     assert not session.connected
     assert session._process is None
+
+
+@pytest.mark.parametrize("output_channel", (1, 2))
+def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
+    class _Generator:
+        def __init__(self, reject_on):
+            self.level_writes = []
+            self.Levels = SimpleNamespace(
+                TrackFirstChannel=True,
+                Unit="",
+                OffsetUnit="",
+                SetValue=lambda *args: self.level_writes.append(args),
+                SetOffsetValue=lambda *args: None,
+            )
+            self.Frequency = SimpleNamespace(Value=None)
+            self.on_writes = []
+            self._reject_on = reject_on
+
+        @property
+        def On(self):
+            return self.on_writes[-1] if self.on_writes else False
+
+        @On.setter
+        def On(self, value):
+            if value and self._reject_on:
+                raise RuntimeError("GeneratorOnNotAvailable")
+            self.on_writes.append(value)
+
+    analyzer_generator = _Generator(reject_on=True)
+    signal_path_generator = _Generator(reject_on=False)
+    eq_channels = [SimpleNamespace(Eq="") for _ in range(2)]
+    setup = SimpleNamespace(
+        OutputConnector=SimpleNamespace(Type=None),
+        AnalogInput=SimpleNamespace(ChannelCount=0),
+        AnalogOutput=SimpleNamespace(ChannelCount=0),
+        AcousticOutput=True,
+        OutputEq=SimpleNamespace(Eq=""),
+        InputEqChannels=SimpleNamespace(
+            TrackFirst=True, get_Item=lambda index: eq_channels[index]
+        ),
+        Generator=signal_path_generator,
+    )
+    connection = APxConnection()
+    shown_measurements = []
+    connection.apx = SimpleNamespace(
+        ShowMeasurement=lambda *args: shown_measurements.append(args),
+        SignalPathSetup=setup,
+        SignalAnalyzer=SimpleNamespace(Generator=analyzer_generator),
+    )
+    api = SimpleNamespace(
+        HighpassFilterMode=SimpleNamespace(DC="DC"),
+        InputBandwidthType=SimpleNamespace(Bw250k="Bw250k"),
+        LowpassFilterModeAnalog=SimpleNamespace(AdcPassband="AdcPassband"),
+        OutputChannelIndex=SimpleNamespace(Ch1="Ch1", Ch2="Ch2"),
+        OutputConnectorType=SimpleNamespace(AnalogUnbalanced="AnalogUnbalanced"),
+        SignalAnalyzerBandwidthType=SimpleNamespace(TrackSetup="TrackSetup"),
+        SignalPathWeightingFilterType=SimpleNamespace(wt_None="None"),
+    )
+
+    with (
+        patch.dict(
+            sys.modules,
+            {"AudioPrecision": SimpleNamespace(API=api), "AudioPrecision.API": api},
+        ),
+        patch.object(
+            connection, "resolve_measurement_name", return_value="Signal Analyzer"
+        ),
+        patch.object(connection, "configure_fft_settings"),
+    ):
+        resolved = connection.configure_psrr_measurement(
+            "Signal Path1",
+            "Signal Analyzer",
+            output_channel=output_channel,
+            generator_on=True,
+        )
+        assert analyzer_generator.Frequency.Value is None
+        assert signal_path_generator.Frequency.Value == 100.0
+
+        analyzer_generator.Frequency.Value = 1000.0
+        signal_path_generator.Frequency.Value = 1000.0
+        connection.configure_psrr_measurement(
+            "Signal Path1",
+            "Signal Analyzer",
+            output_channel=output_channel,
+            generator_on=None,
+        )
+
+    assert resolved == "Signal Analyzer"
+    assert shown_measurements == [
+        ("Signal Path1", "Signal Path Setup"),
+        ("Signal Path1", "Signal Analyzer"),
+    ]
+    assert setup.OutputConnector.Type == "AnalogUnbalanced"
+    assert setup.AnalogOutput.ChannelCount == 1
+    assert not setup.AcousticOutput
+    assert setup.OutputEq.Eq == "None"
+    assert analyzer_generator.Frequency.Value == 1000.0
+    assert signal_path_generator.Frequency.Value == 1000.0
+    expected_channel = f"Ch{output_channel}"
+    assert analyzer_generator.level_writes == [(expected_channel, 0.1)]
+    assert signal_path_generator.level_writes == [(expected_channel, 0.1)] * 2
+    assert analyzer_generator.on_writes == []
+    assert signal_path_generator.on_writes == [True]
 
 
 @pytest.mark.qt

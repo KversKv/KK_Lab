@@ -270,14 +270,23 @@ class APxConnection:
             OutputChannelIndex, OutputConnectorType, SignalAnalyzerBandwidthType,
             SignalPathWeightingFilterType,
         )
-        resolved = self.resolve_measurement_name(signal_path_name, measurement_name, auto_add=True)
-        if resolved is None:
-            raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
-        self.apx.ShowMeasurement(signal_path_name, resolved)
+        manual_output = generator_on is not None
+        resolved = measurement_name
+        if not manual_output:
+            resolved = self.resolve_measurement_name(
+                signal_path_name, measurement_name, auto_add=True
+            )
+            if resolved is None:
+                raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
+        self.apx.ShowMeasurement(
+            signal_path_name, "Signal Path Setup" if manual_output else resolved
+        )
         setup = self.apx.SignalPathSetup
         setup.OutputConnector.Type = OutputConnectorType.AnalogUnbalanced
+        setup.AnalogOutput.ChannelCount = 1
+        setup.AcousticOutput = False
+        setup.OutputEq.Eq = "None"
         setup.AnalogInput.ChannelCount = 2
-        setup.AnalogOutput.ChannelCount = int(output_channel)
         bandwidth_members = {
             20000: "Bw20k", 40000: "Bw40k", 80000: "Bw80k",
             250000: "Bw250k", 500000: "Bw500k", 1000000: "Bw1M",
@@ -293,16 +302,25 @@ class APxConnection:
         for channel in (0, 1):
             setup.InputEqChannels.get_Item(channel).Eq = "None"
 
-        analyzer = self.apx.SignalAnalyzer
-        analyzer.AnalogInputBandwidth = SignalAnalyzerBandwidthType.TrackSetup
         channel_index = getattr(OutputChannelIndex, f"Ch{int(output_channel)}")
-        self._configure_psrr_generator(
-            analyzer.Generator, channel_index, amplitude_vrms, offset_v, generator_on
-        )
-        self._configure_psrr_generator(
-            setup.Generator, channel_index, amplitude_vrms, offset_v, generator_on
-        )
-        self.configure_fft_settings(signal_path_name, resolved)
+        if manual_output:
+            generator = setup.Generator
+            self._configure_psrr_generator(
+                generator, channel_index, amplitude_vrms, offset_v, None
+            )
+            if generator_on:
+                generator.Frequency.Value = 100.0
+            generator.On = bool(generator_on)
+        else:
+            analyzer = self.apx.SignalAnalyzer
+            analyzer.AnalogInputBandwidth = SignalAnalyzerBandwidthType.TrackSetup
+            self._configure_psrr_generator(
+                analyzer.Generator, channel_index, amplitude_vrms, offset_v, None
+            )
+            self._configure_psrr_generator(
+                setup.Generator, channel_index, amplitude_vrms, offset_v, None
+            )
+            self.configure_fft_settings(signal_path_name, resolved)
         self._diag(
             f"[APController] PSRR: AnalogUnbalanced CH{output_channel}, "
             f"{amplitude_vrms:g} Vrms + {offset_v:g} VDC, bandwidth={member_name}, "
@@ -327,7 +345,6 @@ class APxConnection:
         self.apx.SignalPathSetup.Generator.Frequency.Value = frequency
 
     def set_psrr_generator_off(self):
-        self.apx.SignalAnalyzer.Generator.On = False
         self.apx.SignalPathSetup.Generator.On = False
 
     def resolve_measurement_name(self, signal_path_name, expected_name, auto_add=True):
