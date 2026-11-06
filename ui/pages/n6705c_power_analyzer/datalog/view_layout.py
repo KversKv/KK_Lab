@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QLineEdit,
     QMenu,
     QProgressBar,
@@ -640,13 +641,14 @@ class LayoutViewMixin:
 
         self.device_list_scroll = QScrollArea()
         self.device_list_scroll.setWidgetResizable(True)
-        self.device_list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.device_list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.device_list_scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }" + SCROLL_AREA_STYLE
         )
         self.device_list_container = QWidget()
         self.device_list_container.setStyleSheet("background: transparent;")
         self.device_list_layout = QVBoxLayout(self.device_list_container)
+        self.device_list_layout.setSizeConstraint(QLayout.SetMinimumSize)
         self.device_list_layout.setContentsMargins(0, 0, 0, 0)
         self.device_list_layout.setSpacing(6)
         self.device_list_layout.addStretch()

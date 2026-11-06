@@ -288,7 +288,7 @@ class ConnectionViewMixin:
         # 中间信息列（跨第 0、1 行）：型号 + IP
         info_widget = QWidget()
         info_widget.setStyleSheet("background: transparent; border: none;")
-        info_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        info_widget.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
         info_layout = QVBoxLayout(info_widget)
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
@@ -342,6 +342,7 @@ class ConnectionViewMixin:
         card.customContextMenuRequested.connect(
             lambda pos, c=card: self._on_device_card_context_menu(c, pos)
         )
+        card.setMinimumWidth(card.sizeHint().width())
 
         return card
 
