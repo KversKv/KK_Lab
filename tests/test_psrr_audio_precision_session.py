@@ -2,7 +2,7 @@ import subprocess
 import sys
 import time
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 
@@ -218,40 +218,20 @@ def test_local_sweep_uses_selected_vin_vout_channels():
     assert payloads[0]["config"]["ap_vout_input_channel"] == 1
 
 
-def test_dc_level_reads_both_input_channels_and_restores_generator():
+def test_dc_level_reads_live_signal_meters_without_changing_generator():
     connection = APxConnection()
-    graph = SimpleNamespace(
-        Name="DC Level",
-        ChannelCount=2,
-        GetValues=Mock(return_value=(3.8, 1.8)),
-        GetText=Mock(return_value=("3.8 V", "1.8 V")),
-    )
+    meter = SimpleNamespace(Count=2, get_Item=Mock(side_effect=(3.8, 1.8)))
     generator = SimpleNamespace(On=True)
-
-    dc_level = SimpleNamespace(DCLevel=graph)
-    sequence = SimpleNamespace(StartFromMeasurement=Mock(), Run=Mock())
     connection.apx = SimpleNamespace(
-        ActiveMeasurementName="Signal Analyzer",
-        DCLevel=dc_level,
-        Sequence=sequence,
+        SignalMeters=SimpleNamespace(LevelMeter=meter),
         SignalPathSetup=SimpleNamespace(Generator=generator),
-        ShowMeasurement=Mock(),
     )
 
-    with (
-        patch.object(
-            connection, "resolve_measurement_name", return_value="DC Level"
-        ),
-        patch.object(connection, "_get_active_measurement_object", return_value=dc_level),
-        patch.object(connection, "_wait_for_sequence_done", return_value=True),
-    ):
-        values = connection.get_psrr_input_dc_levels("Signal Path1")
+    values = connection.get_psrr_input_dc_levels("Signal Path1")
 
     assert values == (3.8, 1.8)
     assert generator.On
-    sequence.StartFromMeasurement.assert_called_once_with("Signal Path1", "DC Level")
-    connection.apx.ShowMeasurement.assert_called_with("Signal Path1", "Signal Analyzer")
-    graph.GetValues.assert_called_once_with()
+    assert meter.get_Item.call_args_list == [call(0), call(1)]
 
 
 @pytest.mark.parametrize(
@@ -368,7 +348,6 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
                 raise RuntimeError("GeneratorOnNotAvailable")
             self.on_writes.append(value)
 
-    analyzer_generator = _Generator(reject_on=True)
     signal_path_generator = _Generator(reject_on=False)
     eq_channels = [SimpleNamespace(Eq="") for _ in range(2)]
     setup = SimpleNamespace(
@@ -387,7 +366,6 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
     connection.apx = SimpleNamespace(
         ShowMeasurement=lambda *args: shown_measurements.append(args),
         SignalPathSetup=setup,
-        SignalAnalyzer=SimpleNamespace(Generator=analyzer_generator),
     )
     api = SimpleNamespace(
         HighpassFilterMode=SimpleNamespace(DC="DC"),
@@ -395,7 +373,6 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
         LowpassFilterModeAnalog=SimpleNamespace(AdcPassband="AdcPassband"),
         OutputChannelIndex=SimpleNamespace(Ch1="Ch1", Ch2="Ch2"),
         OutputConnectorType=SimpleNamespace(AnalogUnbalanced="AnalogUnbalanced"),
-        SignalAnalyzerBandwidthType=SimpleNamespace(TrackSetup="TrackSetup"),
         SignalPathWeightingFilterType=SimpleNamespace(wt_None="None"),
     )
 
@@ -404,10 +381,7 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
             sys.modules,
             {"AudioPrecision": SimpleNamespace(API=api), "AudioPrecision.API": api},
         ),
-        patch.object(
-            connection, "resolve_measurement_name", return_value="Signal Analyzer"
-        ),
-        patch.object(connection, "configure_fft_settings"),
+        patch.object(connection, "configure_psrr_signal_monitors"),
     ):
         resolved = connection.configure_psrr_measurement(
             "Signal Path1",
@@ -415,10 +389,8 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
             output_channel=output_channel,
             generator_on=True,
         )
-        assert analyzer_generator.Frequency.Value is None
         assert signal_path_generator.Frequency.Value == 100.0
 
-        analyzer_generator.Frequency.Value = 1000.0
         signal_path_generator.Frequency.Value = 1000.0
         connection.configure_psrr_measurement(
             "Signal Path1",
@@ -430,18 +402,15 @@ def test_psrr_output_on_uses_unbalanced_signal_path_at_100hz(output_channel):
     assert resolved == "Signal Analyzer"
     assert shown_measurements == [
         ("Signal Path1", "Signal Path Setup"),
-        ("Signal Path1", "Signal Analyzer"),
+        ("Signal Path1", "Signal Path Setup"),
     ]
     assert setup.OutputConnector.Type == "AnalogUnbalanced"
     assert setup.AnalogOutput.ChannelCount == 1
     assert not setup.AcousticOutput
     assert setup.OutputEq.Eq == "None"
-    assert analyzer_generator.Frequency.Value == 1000.0
     assert signal_path_generator.Frequency.Value == 1000.0
     expected_channel = f"Ch{output_channel}"
-    assert analyzer_generator.level_writes == [(expected_channel, 0.1)]
     assert signal_path_generator.level_writes == [(expected_channel, 0.1)] * 2
-    assert analyzer_generator.on_writes == []
     assert signal_path_generator.on_writes == [True]
 
 
@@ -484,44 +453,44 @@ def test_fft_configuration_checks_spectrum_result():
 
 
 @pytest.mark.parametrize("initial_generator_on", [True, False])
-def test_signal_analyzer_starts_once_and_second_channel_reuses_frame(
-    initial_generator_on,
-):
+def test_fft_monitor_reads_one_frame_without_changing_generator(initial_generator_on):
     connection = APxConnection()
     graph = SimpleNamespace(
-        Name="FFT Spectrum", Title="FFT Spectrum", GetXValues=Mock()
+        GetXValues=Mock(side_effect=lambda channel: [100.0, 1000.0]),
+        GetValues=Mock(side_effect=(
+            (
+                [SimpleNamespace(X=100.0, Y=-20.0),
+                 SimpleNamespace(X=1000.0, Y=-30.0)],
+                [SimpleNamespace(X=100.0, Y=-40.0),
+                 SimpleNamespace(X=1000.0, Y=-50.0)],
+            )
+        )),
+    )
+    monitor = SimpleNamespace(
+        FFTSpectrum=graph,
+        FFTLength=None,
+        WindowType=None,
+        Averages=0,
+        ResetAverages=Mock(),
     )
     generator = SimpleNamespace(On=initial_generator_on)
-
-    def start_signal_analyzer():
-        generator.On = False
-
-    analyzer = SimpleNamespace(
-        FFTSpectrum=graph,
-        AcquisitionCount=1,
-        Averages=7,
-        Start=Mock(side_effect=start_signal_analyzer),
-        Stop=Mock(),
-        SequenceMeasurement=SimpleNamespace(Run=Mock()),
-    )
     connection.apx = SimpleNamespace(
-        ShowMeasurement=Mock(),
-        Sequence=SimpleNamespace(StartFromMeasurement=Mock(), Run=Mock()),
+        SignalMonitorsEnabled=False,
+        FftSpectrumSignalMonitor=monitor,
         SignalPathSetup=SimpleNamespace(Generator=generator),
+    )
+    api = SimpleNamespace(
+        FFTLength=SimpleNamespace(FFT_48000="FFT_48000"),
+        WindowType=SimpleNamespace(Equiripple="Equiripple"),
     )
 
     with (
-        patch.object(
-            connection, "resolve_measurement_name", return_value="Signal Analyzer"
+        patch.dict(
+            sys.modules,
+            {"AudioPrecision": SimpleNamespace(API=api), "AudioPrecision.API": api},
         ),
-        patch.object(connection, "configure_fft_settings"),
-        patch.object(connection, "_get_active_measurement_object", return_value=analyzer),
         patch.object(connection, "set_spectrum_unit_dbv", return_value=[]),
-        patch.object(
-            connection,
-            "_get_xy_data_from_graph",
-            return_value=([100.0, 1000.0], [-20.0, -30.0]),
-        ),
+        patch("instruments.audioPrecision.apx500_driver.time.sleep"),
     ):
         frequencies, levels = connection.get_signal_analyzer_fft_data(
             "Signal Path1", "Signal Analyzer", channel=0, run=True
@@ -533,12 +502,15 @@ def test_signal_analyzer_starts_once_and_second_channel_reuses_frame(
         assert generator.On == initial_generator_on
 
     assert frequencies == second_frequencies == [100.0, 1000.0]
-    assert levels == second_levels == [-20.0, -30.0]
-    analyzer.Start.assert_called_once_with()
-    analyzer.Stop.assert_not_called()
-    analyzer.SequenceMeasurement.Run.assert_not_called()
-    connection.apx.Sequence.StartFromMeasurement.assert_not_called()
-    connection.apx.Sequence.Run.assert_not_called()
+    assert levels == [-20.0, -30.0]
+    assert second_levels == [-40.0, -50.0]
+    assert connection.apx.SignalMonitorsEnabled
+    assert monitor.FFTLength == "FFT_48000"
+    assert monitor.WindowType == "Equiripple"
+    assert monitor.Averages == 7
+    monitor.ResetAverages.assert_called_once_with()
+    assert graph.GetXValues.call_count == 2
+    assert graph.GetValues.call_count == 2
 
 
 @pytest.mark.qt

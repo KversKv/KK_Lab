@@ -108,6 +108,7 @@ class APxConnection:
     def __init__(self):
         self.apx = None
         self.log_callback = None
+        self._psrr_fft_frame = {}
 
     def _diag(self, msg):
         try:
@@ -267,20 +268,9 @@ class APxConnection:
                                    generator_on=True):
         from AudioPrecision.API import (
             HighpassFilterMode, InputBandwidthType, LowpassFilterModeAnalog,
-            OutputChannelIndex, OutputConnectorType, SignalAnalyzerBandwidthType,
-            SignalPathWeightingFilterType,
+            OutputChannelIndex, OutputConnectorType, SignalPathWeightingFilterType,
         )
-        manual_output = generator_on is not None
-        resolved = measurement_name
-        if not manual_output:
-            resolved = self.resolve_measurement_name(
-                signal_path_name, measurement_name, auto_add=True
-            )
-            if resolved is None:
-                raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
-        self.apx.ShowMeasurement(
-            signal_path_name, "Signal Path Setup" if manual_output else resolved
-        )
+        self.apx.ShowMeasurement(signal_path_name, "Signal Path Setup")
         setup = self.apx.SignalPathSetup
         setup.OutputConnector.Type = OutputConnectorType.AnalogUnbalanced
         setup.AnalogOutput.ChannelCount = 1
@@ -303,30 +293,22 @@ class APxConnection:
             setup.InputEqChannels.get_Item(channel).Eq = "None"
 
         channel_index = getattr(OutputChannelIndex, f"Ch{int(output_channel)}")
-        if manual_output:
-            generator = setup.Generator
-            self._configure_psrr_generator(
-                generator, channel_index, amplitude_vrms, offset_v, None
-            )
+        generator = setup.Generator
+        self._configure_psrr_generator(
+            generator, channel_index, amplitude_vrms, offset_v, None
+        )
+        if generator_on is not None:
             if generator_on:
                 generator.Frequency.Value = 100.0
             generator.On = bool(generator_on)
         else:
-            analyzer = self.apx.SignalAnalyzer
-            analyzer.AnalogInputBandwidth = SignalAnalyzerBandwidthType.TrackSetup
-            self._configure_psrr_generator(
-                analyzer.Generator, channel_index, amplitude_vrms, offset_v, None
-            )
-            self._configure_psrr_generator(
-                setup.Generator, channel_index, amplitude_vrms, offset_v, None
-            )
-            self.configure_fft_settings(signal_path_name, resolved)
+            self.configure_psrr_signal_monitors()
         self._diag(
             f"[APController] PSRR: AnalogUnbalanced CH{output_channel}, "
             f"{amplitude_vrms:g} Vrms + {offset_v:g} VDC, bandwidth={member_name}, "
             "HP=DC, LP=AdcPassband, Weighting/EQ=None"
         )
-        return resolved
+        return measurement_name
 
     def _configure_psrr_generator(self, generator, channel_index, amplitude_vrms,
                                   offset_v, generator_on):
@@ -340,38 +322,31 @@ class APxConnection:
             generator.On = bool(generator_on)
 
     def set_psrr_generator_frequency(self, frequency_hz):
-        frequency = float(frequency_hz)
-        self.apx.SignalAnalyzer.Generator.Frequency.Value = frequency
-        self.apx.SignalPathSetup.Generator.Frequency.Value = frequency
+        self.apx.SignalPathSetup.Generator.Frequency.Value = float(frequency_hz)
 
     def set_psrr_generator_off(self):
         self.apx.SignalPathSetup.Generator.On = False
 
-    def get_psrr_input_dc_levels(self, signal_path_name):
-        measurement_name = "DC Level"
-        resolved = self.resolve_measurement_name(
-            signal_path_name, measurement_name, auto_add=True
+    def configure_psrr_signal_monitors(self):
+        from AudioPrecision.API import FFTLength, WindowType
+        self.apx.SignalMonitorsEnabled = True
+        monitor = self.apx.FftSpectrumSignalMonitor
+        monitor.FFTLength = FFTLength.FFT_48000
+        monitor.WindowType = WindowType.Equiripple
+        monitor.Averages = 7
+        self.set_spectrum_unit_dbv(
+            monitor.FFTSpectrum, log_success=False, log_failure=False
         )
-        if resolved is None:
-            raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
-        generator = self.apx.SignalPathSetup.Generator
-        generator_on = bool(generator.On)
-        active_measurement = str(self.apx.ActiveMeasurementName)
-        try:
-            self.run_measurement(signal_path_name, resolved)
-            values, _, _, channel_count = self.read_measurement_result(
-                signal_path_name, resolved, result_name="DC Level"
-            )
-            if channel_count < 2 or len(values) < 2:
-                raise RuntimeError("DC Level 未返回 INPUT1、INPUT2 两路结果")
-            input_dc_v, output_dc_v = float(values[0]), float(values[1])
-            if not all(math.isfinite(value) for value in (input_dc_v, output_dc_v)):
-                raise RuntimeError("DC Level 返回了无效的 INPUT DC 电压")
-            return input_dc_v, output_dc_v
-        finally:
-            generator.On = generator_on
-            if active_measurement and active_measurement != resolved:
-                self.apx.ShowMeasurement(signal_path_name, active_measurement)
+        return monitor
+
+    def get_psrr_input_dc_levels(self, signal_path_name):
+        meter = self.apx.SignalMeters.LevelMeter
+        if meter.Count < 2:
+            raise RuntimeError("Signal Meters 未返回 INPUT1、INPUT2 两路 Level 结果")
+        values = tuple(float(meter.get_Item(index)) for index in range(2))
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError("Signal Meters 返回了无效的 INPUT Level 电压")
+        return values
 
     def resolve_measurement_name(self, signal_path_name, expected_name, auto_add=True):
         available = self.get_measurement_names(signal_path_name)
@@ -1679,138 +1654,23 @@ class APxConnection:
 
     def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
                                      channel=0, acquisition_number=1, run=True):
-        resolved = self.resolve_measurement_name(signal_path_name, measurement_name, auto_add=True)
-        if resolved is None:
-            raise RuntimeError(f"无法找到或添加测量: {measurement_name}")
-        self.apx.ShowMeasurement(signal_path_name, resolved)
         if run:
-            self.configure_fft_settings(signal_path_name, resolved)
-        obj = self._get_active_measurement_object()
-        if run:
-            if obj is None or not hasattr(obj, "Start"):
-                raise RuntimeError(f"无法启动 Signal Analyzer: {resolved}")
-            generator = self.apx.SignalPathSetup.Generator
-            generator_on = bool(generator.On)
-            try:
-                obj.Start()
-            finally:
-                generator.On = generator_on
-        self.apx.ShowMeasurement(signal_path_name, resolved)
-        obj = self._get_active_measurement_object()
-        self.set_spectrum_unit_dbv(obj, log_success=False, log_failure=False)
-        graph_candidates = []
-        seen_ids = set()
-
-        def add_graph(g):
-            if g is None:
-                return
-            try:
-                gid = id(g)
-            except Exception:
-                gid = None
-            if gid is not None and gid in seen_ids:
-                return
-            if gid is not None:
-                seen_ids.add(gid)
-            graph_candidates.append(g)
-
-        if obj is not None:
-            for attr_name in ("FFTSpectrum", "FftSpectrum", "Spectrum",
-                              "FrequencyResponse", "Graph"):
-                try:
-                    attr = getattr(obj, attr_name, None)
-                    if attr is not None:
-                        add_graph(attr)
-                except Exception:
-                    pass
-            try:
-                if hasattr(obj, "Graphs"):
-                    graphs = obj.Graphs
-                    cnt = 0
-                    try:
-                        cnt = int(graphs.Count)
-                    except Exception:
-                        cnt = 0
-                    for gi in range(cnt):
-                        try:
-                            add_graph(graphs.get_Item(gi))
-                        except Exception:
-                            try:
-                                add_graph(graphs[gi])
-                            except Exception:
-                                continue
-            except Exception:
-                pass
-            try:
-                for attr_name in sorted(dir(obj)):
-                    if attr_name.startswith("_"):
-                        continue
-                    try:
-                        attr = getattr(obj, attr_name)
-                    except Exception:
-                        continue
-                    if attr is None:
-                        continue
-                    if hasattr(attr, "GetXValues") or hasattr(attr, "GetFrequencyValues") \
-                            or hasattr(attr, "GetMeasuredValues"):
-                        add_graph(attr)
-            except Exception:
-                pass
-
-        try:
-            descs = ", ".join(self._describe_graph(g) for g in graph_candidates[:8])
-            self._diag(f"[APController] Signal Analyzer 候选图 {len(graph_candidates)} 个: {descs}")
-        except Exception:
-            pass
-
-        all_errors = []
-        best_data = None
-        best_score = -10**9
-        best_desc = ""
-        best_info = None
-        unit_logged = False
-        for graph in graph_candidates:
-            try:
-                gname = ""
-                try:
-                    gname = str(getattr(graph, "Name", "")).lower()
-                except Exception:
-                    gname = ""
-                if any(k in gname for k in ("scope", "waveform", "time")):
-                    self._diag(f"[APController] FFT候选跳过时域图 {self._describe_graph(graph)}")
-                    continue
-                if "density" in gname:
-                    continue
-                if not (hasattr(graph, "GetXValues") or hasattr(graph, "GetFrequencyValues") or hasattr(graph, "GetAllXValues")):
-                    continue
-                applied = self.set_spectrum_unit_dbv(graph, log_success=False, log_failure=False)
-                if applied and not unit_logged:
-                    self._diag(f"[APController] AP频谱单位设置为 dBV: {applied[:8]}")
-                    unit_logged = True
-                x_vals, y_vals = self._get_xy_data_from_graph(graph, channel, acquisition_number, prefer="frequency")
-                score, info = self._score_graph_data("fft", x_vals, y_vals)
-                score += self._score_spectrum_graph_candidate(graph)
-                self._diag(f"[APController] FFT候选 {self._describe_graph(graph)} -> score={score}, n={info['n']}, x={info['x_min']}~{info['x_max']}, y={info['y_min']}~{info['y_max']}")
-                if score > best_score:
-                    best_score = score
-                    best_data = (x_vals, y_vals)
-                    best_desc = self._describe_graph(graph)
-                    best_info = info
-            except Exception as e:
-                msg = f"{self._describe_graph(graph)}: {e}"
-                all_errors.append(msg)
-                self._diag(f"[APController] FFT候选读取失败 {msg}")
-
-        if best_data is not None:
-            if not unit_logged:
-                self._diag("[APController] AP频谱单位 dBV 未找到图表轴可写属性，保留AP当前显示单位")
-            self._diag(f"[APController] FFT最终选择 {best_desc} -> score={best_score}, n={best_info['n']}, x={best_info['x_min']}~{best_info['x_max']}")
-            if best_info and best_info.get('x_max') is not None and best_info.get('x_max') <= 1.5:
-                raise RuntimeError(f"读取到的FFT横轴范围异常: {best_info['x_min']}~{best_info['x_max']}，疑似不是频率轴")
-            return best_data
-
-        diag = "; ".join(all_errors[-3:]) if all_errors else "无候选图"
-        raise RuntimeError(f"无法读取FFT频谱数据 ({diag})")
+            monitor = self.configure_psrr_signal_monitors()
+            monitor.ResetAverages()
+            time.sleep(2.0)
+            graph = monitor.FFTSpectrum
+            self._psrr_fft_frame = {}
+            for index in range(2):
+                self._psrr_fft_frame[index] = (
+                    [float(value) for value in graph.GetXValues(index)],
+                    [float(point.Y) for point in graph.GetValues(index)],
+                )
+        if channel not in self._psrr_fft_frame:
+            raise RuntimeError(f"FFT Spectrum Monitor 未提供 INPUT{channel + 1} 数据")
+        frequencies, levels = self._psrr_fft_frame[channel]
+        if not frequencies or len(frequencies) != len(levels):
+            raise RuntimeError("FFT Spectrum Monitor 返回了无效频谱数据")
+        return frequencies, levels
 
     def get_signal_acquisition_data(self, signal_path_name, measurement_name="Signal Acquisition", channel=0, acquisition_number=1, acquisition_time=None):
         resolved = self.resolve_measurement_name(signal_path_name, measurement_name, auto_add=True)

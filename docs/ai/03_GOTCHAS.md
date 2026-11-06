@@ -583,4 +583,4 @@ app.installEventFilter(_WinFilter())
 
 **对策**：APx `Start()` / Sequence Batch 必须在 Guest 交互桌面执行；Host 通过交互式计划任务启动 Guest 进程，并用 SSH 反向转发保持命令会话。Signal Analyzer 保持 `FFTSpectrum.Checked=True`，调用测量对象 `Start()` 返回后直接读取双通道；`AcquisitionCount=1` 是正常状态，不等待它达到 `Averages`，也不调用不存在的 `Stop()`。Demo Mode 不得作为真机验证结果。
 
-**DC Level（PSRR）**：APx500 5.0 的 `IDCLevelMeasurement` 只有 `DCLevel/Graphs`，没有 `Start()`；须通过 `run_measurement()` 的 Sequence 路径运行后读取双路结果。采集结束除恢复 Generator 开关外，还要 `ShowMeasurement()` 恢复原活动测量，否则下一频点在 DC Level 仍活动时访问 `apx.SignalAnalyzer` 会抛 `ElementNotActive`。
+**PSRR 实时监控**：切换到 Signal Analyzer / DC Level Sequence 可能关闭 Signal Path Setup Generator。PSRR 必须始终停留 Signal Path Setup，以 `SignalMeters.LevelMeter` 读取双路 Level，以 `FftSpectrumSignalMonitor.FFTSpectrum` 读取实时频谱，不调用 `Start()` / Sequence，也不使用 Bench Mode。VIN 首次读取时 ResetAverages 并缓存双通道，VOUT 复用同帧；`GetXValues(channel)` 返回浮点频率，`GetValues(channel)` 返回 `GraphPoint`，电平取 `point.Y`。扫频不得改写 OUTPUT 开关，只能由显式 OUTPUT OFF 或 Disconnect 关闭。
