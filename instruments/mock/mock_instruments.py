@@ -1986,6 +1986,8 @@ class MockAudioPrecision:
         self.psrr_settings = None
         self.generator_on = False
         self.run_count = 0
+        self.fft_reset_count = 0
+        self.fft_settings = None
 
     @property
     def connected(self):
@@ -2038,9 +2040,13 @@ class MockAudioPrecision:
         return float(self.psrr_settings["offset_v"]), 1.8
 
     def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
-                                     channel=0, acquisition_number=1, run=True):
+                                     channel=0, acquisition_number=1, run=True,
+                                     fft_length=48000, fft_window="Equiripple",
+                                     fft_averages=5):
         if run:
             self.run_count += 1
+            self.fft_reset_count += 1
+            self.fft_settings = (int(fft_length), str(fft_window), int(fft_averages))
         input_dbv = 20.0 * math.log10(self._amplitude_vrms)
         psrr_db = 70.0 - 20.0 * math.log10(1.0 + self._frequency_hz / 1000.0)
         level_dbv = input_dbv if channel == 0 else input_dbv - psrr_db

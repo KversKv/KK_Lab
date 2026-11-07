@@ -55,6 +55,9 @@ def remote_config(config: AudioPrecisionPSRRConfig) -> dict:
         "amplitude_vrms": config.amplitude_vrms,
         "offset_v": config.offset_v,
         "bandwidth_hz": config.bandwidth_hz,
+        "fft_length": config.fft_length,
+        "fft_window": config.fft_window,
+        "fft_averages": config.fft_averages,
         "frequencies_hz": list(config.frequencies_hz),
     }
 

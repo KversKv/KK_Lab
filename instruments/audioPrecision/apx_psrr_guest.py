@@ -42,6 +42,9 @@ def _run_sweep(ap, config):
             input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
                 config["signal_path"], measurement,
                 channel=config["vin_input_channel"] - 1, run=True,
+                fft_length=config.get("fft_length", 48000),
+                fft_window=config.get("fft_window", "Equiripple"),
+                fft_averages=config.get("fft_averages", 5),
             )
             output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
                 config["signal_path"], measurement,

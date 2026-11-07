@@ -327,13 +327,14 @@ class APxConnection:
     def set_psrr_generator_off(self):
         self.apx.SignalPathSetup.Generator.On = False
 
-    def configure_psrr_signal_monitors(self):
+    def configure_psrr_signal_monitors(self, fft_length=48000, fft_window="Equiripple",
+                                       fft_averages=5):
         from AudioPrecision.API import FFTLength, WindowType
         self.apx.SignalMonitorsEnabled = True
         monitor = self.apx.FftSpectrumSignalMonitor
-        monitor.FFTLength = FFTLength.FFT_48000
-        monitor.WindowType = WindowType.Equiripple
-        monitor.Averages = 7
+        monitor.FFTLength = getattr(FFTLength, f"FFT_{int(fft_length)}")
+        monitor.WindowType = getattr(WindowType, str(fft_window))
+        monitor.Averages = int(fft_averages)
         self.set_spectrum_unit_dbv(
             monitor.FFTSpectrum, log_success=False, log_failure=False
         )
@@ -1653,10 +1654,16 @@ class APxConnection:
         return score, info
 
     def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
-                                     channel=0, acquisition_number=1, run=True):
+                                     channel=0, acquisition_number=1, run=True,
+                                     fft_length=48000, fft_window="Equiripple",
+                                     fft_averages=5):
         if run:
             from AudioPrecision.API import VerticalAxis
-            monitor = self.configure_psrr_signal_monitors()
+            monitor = self.configure_psrr_signal_monitors(
+                fft_length=fft_length,
+                fft_window=fft_window,
+                fft_averages=fft_averages,
+            )
             monitor.ResetAverages()
             time.sleep(2.0)
             graph = monitor.FFTSpectrum

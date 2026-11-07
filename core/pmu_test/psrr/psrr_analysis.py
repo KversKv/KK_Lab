@@ -12,6 +12,16 @@ _FREQUENCY_RE = re.compile(
     r"^((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([kKmM]?)\s*(?:[hH][zZ])?$"
 )
 
+AUDIO_PRECISION_FFT_LENGTHS = (
+    256, 512, 1024, 2048, 4096, 8192, 12000, 16384, 24000, 32768, 48000,
+    65536, 96000, 131072, 192000, 262144, 312000, 524288, 624000, 1048576,
+    1248000,
+)
+AUDIO_PRECISION_FFT_WINDOWS = (
+    "Equiripple", "BlackmanHarris", "BlackmanHarris4", "Dolph150", "Dolph200",
+    "Dolph250", "FlatTop", "Hann", "None",
+)
+
 
 @dataclass(frozen=True)
 class PSRRConfig:
@@ -76,6 +86,9 @@ class AudioPrecisionPSRRConfig:
     output_channel: int = 1
     amplitude_vrms: float = 0.1
     offset_v: float = 3.8
+    fft_length: int = 48000
+    fft_window: str = "Equiripple"
+    fft_averages: int = 5
     frequencies_hz: tuple[float, ...] = (100.0, 1000.0, 10000.0, 100000.0)
     limit_db: float = 0.0
 
@@ -113,6 +126,12 @@ class AudioPrecisionPSRRConfig:
             raise ValueError("Audio Precision DC Offset 必须大于 0 V")
         if self.amplitude_vrms * math.sqrt(2.0) >= self.offset_v:
             raise ValueError("正弦峰值不能超过 DC Offset，避免输出过零")
+        if self.fft_length not in AUDIO_PRECISION_FFT_LENGTHS:
+            raise ValueError("Audio Precision FFT Length 不是受支持的档位")
+        if self.fft_window not in AUDIO_PRECISION_FFT_WINDOWS:
+            raise ValueError("Audio Precision FFT Window 不是受支持的类型")
+        if not 1 <= self.fft_averages <= 100:
+            raise ValueError("Audio Precision FFT Averages 必须位于 1-100")
         if not self.frequencies_hz:
             raise ValueError("至少配置一个扫频点")
         if any(not math.isfinite(f) or f <= 0 for f in self.frequencies_hz):
@@ -216,6 +235,9 @@ def audio_precision_config_from_dict(data: dict) -> AudioPrecisionPSRRConfig:
         output_channel=int(data.get("ap_output_channel", 1)),
         amplitude_vrms=float(data.get("ap_amplitude_mvrms", 100.0)) / 1000.0,
         offset_v=float(data.get("ap_offset_v", 3.8)),
+        fft_length=int(data.get("ap_fft_length", 48000)),
+        fft_window=str(data.get("ap_fft_window", "Equiripple")),
+        fft_averages=int(data.get("ap_fft_averages", 5)),
         frequencies_hz=parse_frequency_points(data["ap_frequencies_hz"])
         if "ap_frequencies_hz" in data else generate_frequency_points(
             float(data.get("ap_start_frequency_hz", 100.0)),

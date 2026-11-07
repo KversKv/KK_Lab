@@ -114,13 +114,23 @@ def test_audio_precision_input_channel_config_and_remote_payload():
     config = audio_precision_config_from_dict({
         "ap_vin_input_channel": 2,
         "ap_vout_input_channel": 1,
+        "ap_fft_length": 24000,
+        "ap_fft_window": "Hann",
+        "ap_fft_averages": 9,
     })
 
     assert config.vin_input_channel == 2
     assert config.vout_input_channel == 1
+    assert (config.fft_length, config.fft_window, config.fft_averages) == (
+        24000, "Hann", 9
+    )
     payload = remote_config(config)
     assert payload["vin_input_channel"] == 2
     assert payload["vout_input_channel"] == 1
+    assert payload["fft_length"] == 24000
+    assert payload["fft_window"] == "Hann"
+    assert payload["fft_averages"] == 9
+    assert AudioPrecisionPSRRConfig().fft_averages == 5
 
     with pytest.raises(ValueError, match="VIN 与 VOUT INPUT Channel 不能相同"):
         AudioPrecisionPSRRConfig(vin_input_channel=2, vout_input_channel=2).validate()
@@ -158,7 +168,8 @@ def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
 
 def test_local_output_stays_on_during_sweep_until_manual_off():
     config = AudioPrecisionPSRRConfig(
-        connection_mode="local", frequencies_hz=(100.0, 1000.0)
+        connection_mode="local", frequencies_hz=(100.0, 1000.0),
+        fft_length=24000, fft_window="Hann", fft_averages=9,
     )
     ap = MockAudioPrecision()
     ap.connect()
@@ -184,6 +195,8 @@ def test_local_output_stays_on_during_sweep_until_manual_off():
 
     assert sweep_results == [(True, "测试完成")]
     assert ap.run_count == len(config.frequencies_hz)
+    assert ap.fft_reset_count == len(config.frequencies_hz)
+    assert ap.fft_settings == (24000, "Hann", 9)
     assert ap.generator_on
     assert len(sweep_points) == len(config.frequencies_hz)
     for point in sweep_points:
@@ -214,7 +227,7 @@ def test_local_sweep_uses_selected_vin_vout_channels():
     ap.connect()
     fft_calls = []
 
-    def get_fft_data(signal_path, measurement_name, channel=0, run=True):
+    def get_fft_data(signal_path, measurement_name, channel=0, run=True, **kwargs):
         fft_calls.append((channel, run))
         level_dbv = -10.0 if channel == 0 else -40.0
         return [100.0], [level_dbv]
@@ -282,6 +295,9 @@ def test_guest_sweep_records_selected_input_dc_for_each_point(
         "amplitude_vrms": 0.1,
         "offset_v": 3.8,
         "bandwidth_hz": 250000,
+        "fft_length": 24000,
+        "fft_window": "Hann",
+        "fft_averages": 9,
         "frequencies_hz": [100.0, 1000.0],
     }
     events = []
@@ -318,6 +334,8 @@ def test_guest_sweep_records_selected_input_dc_for_each_point(
     points = [event["point"] for event in events if event["type"] == "point"]
     assert len(points) == len(config["frequencies_hz"])
     assert ap.run_count == len(config["frequencies_hz"])
+    assert ap.fft_reset_count == len(config["frequencies_hz"])
+    assert ap.fft_settings == (24000, "Hann", 9)
     assert fft_calls == [
         (vin_input_channel - 1, True), (vout_input_channel - 1, False)
     ] * len(config["frequencies_hz"])
@@ -539,10 +557,40 @@ def test_fft_monitor_reads_raw_frame_without_changing_generator(initial_generato
     assert connection.apx.SignalMonitorsEnabled
     assert monitor.FFTLength == "FFT_48000"
     assert monitor.WindowType == "Equiripple"
-    assert monitor.Averages == 7
+    assert monitor.Averages == 5
     monitor.ResetAverages.assert_called_once_with()
     assert graph.GetAllXValues.call_args_list == [call(0, "Left"), call(1, "Left")]
     assert graph.GetAllYValues.call_args_list == [call(0, "Left"), call(1, "Left")]
+
+
+def test_fft_monitor_applies_selected_configuration():
+    connection = APxConnection()
+    monitor = SimpleNamespace(
+        FFTSpectrum=object(), FFTLength=None, WindowType=None, Averages=0
+    )
+    connection.apx = SimpleNamespace(
+        SignalMonitorsEnabled=False, FftSpectrumSignalMonitor=monitor
+    )
+    api = SimpleNamespace(
+        FFTLength=SimpleNamespace(FFT_24000="FFT_24000"),
+        WindowType=SimpleNamespace(Hann="Hann"),
+    )
+
+    with (
+        patch.dict(
+            sys.modules,
+            {"AudioPrecision": SimpleNamespace(API=api), "AudioPrecision.API": api},
+        ),
+        patch.object(connection, "set_spectrum_unit_dbv", return_value=[]),
+    ):
+        connection.configure_psrr_signal_monitors(
+            fft_length=24000, fft_window="Hann", fft_averages=9
+        )
+
+    assert connection.apx.SignalMonitorsEnabled
+    assert monitor.FFTLength == "FFT_24000"
+    assert monitor.WindowType == "Hann"
+    assert monitor.Averages == 9
 
 
 @pytest.mark.qt
@@ -652,11 +700,21 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         assert page.ap_amplitude_spin.value() == pytest.approx(120.0)
 
         page.ap_frequency_points_spin.setValue(2)
+        page.ap_fft_length_combo.setCurrentIndex(
+            page.ap_fft_length_combo.findData(24000)
+        )
+        page.ap_fft_window_combo.setCurrentIndex(
+            page.ap_fft_window_combo.findData("Hann")
+        )
+        page.ap_fft_averages_spin.setValue(9)
         page.start_test_btn.click()
         wait_for_test()
         assert page.result_status_label.text() == "DONE"
         assert page._ap_output_on
         assert ap.generator_on
+        assert page._last_result["config"]["ap_fft_length"] == 24000
+        assert page._last_result["config"]["ap_fft_window"] == "Hann"
+        assert page._last_result["config"]["ap_fft_averages"] == 9
         assert page.ap_output_toggle_btn.isEnabled()
 
         page.ap_output_toggle_btn.click()
@@ -669,11 +727,21 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         assert page.method_combo.isEnabled()
 
         applied, _ = page.apply_config_to_controls(
-            {"ap_vin_input_channel": 2, "ap_vout_input_channel": 1}, silent=True
+            {
+                "ap_vin_input_channel": 2,
+                "ap_vout_input_channel": 1,
+                "ap_fft_length": 12000,
+                "ap_fft_window": "FlatTop",
+                "ap_fft_averages": 3,
+            },
+            silent=True,
         )
         assert applied
         assert page.ap_vin_input_channel_combo.currentData() == 2
         assert page.ap_vout_input_channel_combo.currentData() == 1
+        assert page.ap_fft_length_combo.currentData() == 12000
+        assert page.ap_fft_window_combo.currentData() == "FlatTop"
+        assert page.ap_fft_averages_spin.value() == 3
         assert page.get_test_config()["ap_vin_input_channel"] == 2
         assert page.get_test_config()["ap_vout_input_channel"] == 1
 

@@ -42,6 +42,8 @@ from core.ai.page_contract import (
     CAP_STOP_TEST,
 )
 from core.pmu_test.psrr import (
+    AUDIO_PRECISION_FFT_LENGTHS,
+    AUDIO_PRECISION_FFT_WINDOWS,
     AudioPrecisionConnectionWorker,
     AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
@@ -417,6 +419,18 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_frequency_points_spin.setValue(4)
         self.ap_include_endpoints_check = QCheckBox("Include Start/End Points")
         self.ap_include_endpoints_check.setChecked(True)
+        self.ap_fft_length_combo = QComboBox()
+        for length in AUDIO_PRECISION_FFT_LENGTHS:
+            self.ap_fft_length_combo.addItem(str(length), length)
+        self.ap_fft_length_combo.setCurrentIndex(
+            self.ap_fft_length_combo.findData(48000)
+        )
+        self.ap_fft_window_combo = QComboBox()
+        for window in AUDIO_PRECISION_FFT_WINDOWS:
+            self.ap_fft_window_combo.addItem(window, window)
+        self.ap_fft_averages_spin = QSpinBox()
+        self.ap_fft_averages_spin.setRange(1, 100)
+        self.ap_fft_averages_spin.setValue(5)
         self.ap_limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
         self._add_field(
             self.ap_card.main_layout, "VIN Input Channel", self.ap_vin_input_channel_combo
@@ -432,6 +446,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         )
         self._add_field(self.ap_card.main_layout, "Points", self.ap_frequency_points_spin)
         self.ap_card.main_layout.addWidget(self.ap_include_endpoints_check)
+        self._add_field(self.ap_card.main_layout, "FFT Length", self.ap_fft_length_combo)
+        self._add_field(self.ap_card.main_layout, "FFT Window", self.ap_fft_window_combo)
+        self._add_field(self.ap_card.main_layout, "Averages", self.ap_fft_averages_spin)
         self._add_field(
             self.ap_card.main_layout, "Minimum PSRR Limit (dB)", self.ap_limit_spin
         )
@@ -447,7 +464,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.ap_offset_spin, self.ap_vin_input_channel_combo,
             self.ap_vout_input_channel_combo, self.ap_start_frequency_spin,
             self.ap_end_frequency_spin, self.ap_frequency_points_spin,
-            self.ap_include_endpoints_check, self.ap_limit_spin,
+            self.ap_include_endpoints_check, self.ap_fft_length_combo,
+            self.ap_fft_window_combo, self.ap_fft_averages_spin, self.ap_limit_spin,
         ]
         self._ap_connection_widgets = [
             self.ap_connection_combo, self.ap_ssh_profile_edit, self.ap_ssh_host_edit,
@@ -1239,6 +1257,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             "ap_end_frequency_hz": self.ap_end_frequency_spin.value(),
             "ap_frequency_points": self.ap_frequency_points_spin.value(),
             "ap_include_endpoints": self.ap_include_endpoints_check.isChecked(),
+            "ap_fft_length": self.ap_fft_length_combo.currentData(),
+            "ap_fft_window": self.ap_fft_window_combo.currentData(),
+            "ap_fft_averages": self.ap_fft_averages_spin.value(),
             "ap_frequencies_hz": list(self._frequencies_from_controls(audio_precision=True)),
             "ap_limit_db": self.ap_limit_spin.value(),
         }
@@ -1646,6 +1667,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         set_combo(self.ap_vin_input_channel_combo, "ap_vin_input_channel")
         set_combo(self.ap_vout_input_channel_combo, "ap_vout_input_channel")
         set_combo(self.ap_output_channel_combo, "ap_output_channel")
+        set_combo(self.ap_fft_length_combo, "ap_fft_length")
+        if "ap_fft_window" in cfg:
+            index = self.ap_fft_window_combo.findData(str(cfg["ap_fft_window"]))
+            if index >= 0:
+                self.ap_fft_window_combo.setCurrentIndex(index)
+                applied.append("ap_fft_window")
+                touched.append(self.ap_fft_window_combo)
         for spin, key in (
             (self.dc_voltage_spin, "dc_voltage"),
             (self.cycles_spin, "cycles"),
@@ -1660,6 +1688,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             (self.ap_start_frequency_spin, "ap_start_frequency_hz"),
             (self.ap_end_frequency_spin, "ap_end_frequency_hz"),
             (self.ap_frequency_points_spin, "ap_frequency_points"),
+            (self.ap_fft_averages_spin, "ap_fft_averages"),
             (self.ap_limit_spin, "ap_limit_db"),
         ):
             set_spin(spin, key)

@@ -2,6 +2,8 @@
 """PSRR 测试：纯算法与后台扫频 Worker。"""
 
 from .psrr_analysis import (
+    AUDIO_PRECISION_FFT_LENGTHS,
+    AUDIO_PRECISION_FFT_WINDOWS,
     AudioPrecisionPSRRConfig,
     PSRRConfig,
     acquisition_settle_seconds,
@@ -25,6 +27,8 @@ from .psrr_worker import (
 )
 
 __all__ = [
+    "AUDIO_PRECISION_FFT_LENGTHS",
+    "AUDIO_PRECISION_FFT_WINDOWS",
     "AudioPrecisionConnectionWorker",
     "AudioPrecisionOutputWorker",
     "AudioPrecisionPSRRConfig",

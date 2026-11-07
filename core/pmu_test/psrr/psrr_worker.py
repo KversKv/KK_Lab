@@ -395,6 +395,9 @@ class AudioPrecisionPSRRWorker(QObject):
                 f"amplitude={self.config.amplitude_vrms * 1000:g} mVrms, "
                 f"offset={self.config.offset_v:g} V, "
                 f"bandwidth={self.config.bandwidth_hz:g} Hz, "
+                f"FFT length={self.config.fft_length}, "
+                f"window={self.config.fft_window}, "
+                f"averages={self.config.fft_averages}, "
                 f"points={len(self.config.frequencies_hz)}"
             )
             if self.mock_mode:
@@ -553,6 +556,9 @@ class AudioPrecisionPSRRWorker(QObject):
         input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
             self.config.signal_path, measurement,
             channel=self.config.vin_input_channel - 1, run=True,
+            fft_length=self.config.fft_length,
+            fft_window=self.config.fft_window,
+            fft_averages=self.config.fft_averages,
         )
         output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
             self.config.signal_path, measurement,
@@ -623,6 +629,9 @@ class AudioPrecisionPSRRWorker(QObject):
             "ap_output_channel": self.config.output_channel,
             "ap_amplitude_mvrms": self.config.amplitude_vrms * 1000.0,
             "ap_offset_v": self.config.offset_v,
+            "ap_fft_length": self.config.fft_length,
+            "ap_fft_window": self.config.fft_window,
+            "ap_fft_averages": self.config.fft_averages,
             "ap_bandwidth_hz": self.config.bandwidth_hz,
             "ap_start_frequency_hz": self.config.frequencies_hz[0],
             "ap_end_frequency_hz": self.config.frequencies_hz[-1],
