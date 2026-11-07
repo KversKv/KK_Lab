@@ -1,3 +1,6 @@
+import base64
+import io
+import json
 import subprocess
 import sys
 import time
@@ -186,6 +189,100 @@ def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
 
         session.disconnect()
         assert not session.connected
+
+
+def test_stop_sweep_sends_cancel_without_closing_session():
+    session = AudioPrecisionSSHSession(AudioPrecisionPSRRConfig())
+    session._process = Mock()
+    session._process.poll.return_value = None
+    session._connected = True
+    session._send_json = Mock()
+
+    with patch.object(session, "terminate") as terminate:
+        session.stop_sweep()
+
+    session._send_json.assert_called_once_with({"command": "stop_sweep"})
+    terminate.assert_not_called()
+    assert session.connected
+
+
+def test_worker_stop_cancels_sweep_without_terminating_ssh_session():
+    session = Mock()
+    worker = AudioPrecisionPSRRWorker(
+        AudioPrecisionPSRRConfig(), ssh_session=session
+    )
+
+    worker.stop()
+
+    assert worker._abort
+    session.stop_sweep.assert_called_once_with()
+    session.terminate.assert_not_called()
+
+
+def test_guest_stop_sweep_preserves_session_for_disconnect(monkeypatch):
+    ap = MockAudioPrecision()
+    config = remote_config(AudioPrecisionPSRRConfig(frequencies_hz=(100.0, 1000.0)))
+    requests = (
+        {"command": "sweep", "config": config},
+        {"command": "stop_sweep"},
+        {"command": "disconnect"},
+    )
+    stdin = "".join(
+        base64.b64encode(json.dumps(request).encode("utf-8")).decode("ascii") + "\n"
+        for request in requests
+    )
+    events = []
+    monkeypatch.setattr(apx_psrr_guest.sys, "stdin", io.StringIO(stdin))
+    monkeypatch.setattr(apx_psrr_guest, "_connect_ap", lambda ap: time.sleep(0.05))
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "_guest_emit",
+        lambda event_type, **payload: events.append(
+            {"type": event_type, **payload}
+        ),
+    )
+
+    apx_psrr_guest.run_psrr_guest_session(lambda: ap)
+
+    assert [event["type"] for event in events] == [
+        "connected", "complete", "disconnected",
+    ]
+    assert events[1] == {"type": "complete", "stopped": True}
+
+
+def test_guest_sweep_stops_at_frequency_boundary(monkeypatch):
+    ap = MockAudioPrecision()
+    ap.generator_on = True
+    config = remote_config(AudioPrecisionPSRRConfig(frequencies_hz=(100.0, 1000.0)))
+    events = []
+    stop_check = Mock(side_effect=[False, False, True])
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "spectrum_level_at_frequency",
+        lambda frequencies, levels, frequency: (frequency, levels[1]),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "calculate_psrr_from_dbv",
+        lambda input_dbv, output_dbv: input_dbv - output_dbv,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        apx_psrr_guest,
+        "_guest_emit",
+        lambda event_type, **payload: events.append(
+            {"type": event_type, **payload}
+        ),
+    )
+
+    assert not apx_psrr_guest._run_sweep(ap, config, stop_check=stop_check)
+
+    points = [event for event in events if event["type"] == "point"]
+    assert len(points) == 1
+    assert events[-1] == {"type": "complete", "stopped": True}
+    assert ap.run_count == 1
+    assert ap.generator_on
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -674,6 +771,7 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
     page = pmu_psrr_ui.PMUPSRRUI()
     page.show()
     app.processEvents()
+    assert not hasattr(page, "stop_test_btn")
     config = page.get_test_config()
     assert config["ap_project_path"] == ""
     assert config["ap_signal_path"] == "Signal Path1"

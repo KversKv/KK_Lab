@@ -132,7 +132,6 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.bind_n6705c_signals()
         self.bind_oscilloscope_signals()
         self.start_test_btn.clicked.connect(self._toggle_test)
-        self.stop_test_btn.clicked.connect(self.stop_test)
         self.sync_n6705c_from_top()
         self._sync_scope_from_top()
         self.clear_results()
@@ -194,10 +193,6 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             }
             QPushButton#startTestBtn[running="true"] {
                 background-color: #4a1730; border: 1px solid #d84578; color: #ff9abb;
-            }
-            QPushButton#stopTestBtn {
-                min-height: 33px; max-height: 33px; padding: 0px 12px;
-                background-color: #3d1830; border: 1px solid #5f2748; color: #ff8ead;
             }
             QPushButton#apOutputToggleBtn {
                 min-height: 33px; max-height: 33px; padding: 0px 12px;
@@ -531,15 +526,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_connect_btn.clicked.connect(self._on_ap_connect_or_disconnect)
         self.ap_output_toggle_btn.clicked.connect(self._on_ap_output_toggle)
 
-        button_row = QHBoxLayout()
         self.start_test_btn = QPushButton("START TEST")
         self.start_test_btn.setObjectName("startTestBtn")
-        self.stop_test_btn = QPushButton("STOP")
-        self.stop_test_btn.setObjectName("stopTestBtn")
-        self.stop_test_btn.setEnabled(False)
-        button_row.addWidget(self.start_test_btn, 1)
-        button_row.addWidget(self.stop_test_btn)
-        left.addLayout(button_row)
+        left.addWidget(self.start_test_btn)
         left.addStretch()
 
         right = QVBoxLayout()
@@ -1424,14 +1413,13 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.append_log("[WARN] 请求停止测试")
         if self.test_worker is not None:
             self.test_worker.stop()
-        self.stop_test_btn.setEnabled(False)
+        self.start_test_btn.setEnabled(False)
 
     def _set_test_running(self, running: bool):
         self.start_test_btn.setText("STOP TEST" if running else "START TEST")
         self.start_test_btn.setProperty("running", running)
         self.start_test_btn.style().unpolish(self.start_test_btn)
         self.start_test_btn.style().polish(self.start_test_btn)
-        self.stop_test_btn.setEnabled(running)
         for widget in self._config_widgets:
             widget.setEnabled(not running)
         for widget in (

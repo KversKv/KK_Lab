@@ -11,6 +11,7 @@
 - APx500 5.0 PSRR 配置：通道数写 `AnalogInput/AnalogOutput.ChannelCount`，输入 EQ 写 `InputEqChannels[i].Eq="None"`，输出 EQ 写 `OutputEq.Eq="None"`，波形写 `Generator.Waveform="Sine"`；`InputChannelCount`、`InputEq`、`OutputEq`、`Generator.Type/AnalogType` 不可直接赋值。
 - `apx_psrr_guest.py` 由 SSH Worker 拼接 `psrr_analysis.py` 与本驱动后执行，依赖拼接后的算法全局函数，禁止当作可独立导入运行的 Guest 脚本。
 - PSRR 手动 OUTPUT 与扫频解耦：`configure_psrr_measurement(..., generator_on=None)` 只配置电平并保持当前发生器开关；手动 ON 走持久会话 `output` 命令，扫频不得自动改 ON/OFF，Disconnect 前显式关闭。
+- PSRR 持久会话的 `stop_sweep` 仅取消当前扫频：独立读取线程设置取消 Event，APx 调用保持主线程执行，`_run_sweep` 在频点边界返回 `complete(stopped=True)`；禁止用 Stop 断开会话或改变 OUTPUT。
 - APx500 5.0 PSRR 手动 OUTPUT 与扫频始终停留 Signal Path Setup，禁止切换 Signal Analyzer、DC Level 或 Bench Mode；`AnalogOutput.ChannelCount=1`，CH1/CH2 通过 `OutputChannelIndex` 选择，OUTPUT ON 前配置 Sine、Level/Offset 和 100 Hz，扫频只改 `SignalPathSetup.Generator.Frequency`。
 - PSRR 实时采集必须启用 `SignalMonitorsEnabled`，DC/Level 读 `SignalMeters.LevelMeter`，FFT 读 `FftSpectrumSignalMonitor.FFTSpectrum`；不得调用 `Start()` / Sequence。VIN `run=True` 时应用 `fft_length/fft_window/fft_averages`（默认 48000/Equiripple/5）、ResetAverages 并读取双通道，VOUT `run=False` 复用同帧；每次 OUTPUT 切频均须重新执行该采集顺序。
 - PSRR 配置 `vin_input_channel/vout_input_channel` 为 1 基 INPUT 映射，默认 1/2 且禁止相同；FFT API 转换为 0 基通道，LevelMeter 双路结果也按该映射归属，本地与 Guest 必须一致。

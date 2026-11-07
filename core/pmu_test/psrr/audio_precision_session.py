@@ -153,6 +153,10 @@ class AudioPrecisionSSHSession:
             if event_type == "error":
                 raise RuntimeError(event.get("message", "APx sweep failed"))
 
+    def stop_sweep(self) -> None:
+        if self.connected:
+            self._send_json({"command": "stop_sweep"})
+
     def set_output(
         self, config: AudioPrecisionPSRRConfig, enabled: bool, on_event
     ) -> None:

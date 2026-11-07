@@ -385,7 +385,7 @@ class AudioPrecisionPSRRWorker(QObject):
     def stop(self):
         self._abort = True
         if self.ssh_session is not None:
-            self.ssh_session.terminate()
+            self.ssh_session.stop_sweep()
             return
         process = self._remote_process
         if process is not None and process.poll() is None:

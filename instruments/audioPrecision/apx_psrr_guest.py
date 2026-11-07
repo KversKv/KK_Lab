@@ -2,7 +2,9 @@
 """APx PSRR Guest 执行器；由 SSH Worker 与驱动源码组合后运行。"""
 import base64
 import json
+import queue
 import sys
+import threading
 
 
 def _guest_emit(event_type, **payload):
@@ -21,61 +23,70 @@ def _connect_ap(ap):
     _guest_emit("log", message=f"Guest AP connected; version={ap.apx.Version}")
 
 
-def _run_sweep(ap, config):
+def _run_sweep(ap, config, stop_check=None):
     success = False
+    stopped = False
     try:
-        if config["project_path"]:
-            ap.open_project(config["project_path"])
-        measurement = ap.configure_psrr_measurement(
-            config["signal_path"],
-            config["measurement"],
-            output_channel=config["output_channel"],
-            amplitude_vrms=config["amplitude_vrms"],
-            offset_v=config["offset_v"],
-            bandwidth_hz=config["bandwidth_hz"],
-            generator_on=None,
-        )
-        measurement = measurement or config["measurement"]
-        _guest_emit("log", message=f"Guest AP measurement={measurement}")
-        for index, frequency in enumerate(config["frequencies_hz"]):
-            ap.set_psrr_generator_frequency(frequency)
-            input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
-                config["signal_path"], measurement,
-                channel=config["vin_input_channel"] - 1, run=True,
-                fft_length=config.get("fft_length", 48000),
-                fft_window=config.get("fft_window", "Equiripple"),
-                fft_averages=config.get("fft_averages", 5),
+        if stop_check is not None:
+            stopped = bool(stop_check())
+        if not stopped:
+            if config["project_path"]:
+                ap.open_project(config["project_path"])
+            measurement = ap.configure_psrr_measurement(
+                config["signal_path"],
+                config["measurement"],
+                output_channel=config["output_channel"],
+                amplitude_vrms=config["amplitude_vrms"],
+                offset_v=config["offset_v"],
+                bandwidth_hz=config["bandwidth_hz"],
+                generator_on=None,
             )
-            output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
-                config["signal_path"], measurement,
-                channel=config["vout_input_channel"] - 1, run=False,
-            )
-            input_bin_hz, input_dbv = spectrum_level_at_frequency(
-                input_frequencies, input_levels, frequency
-            )
-            output_bin_hz, output_dbv = spectrum_level_at_frequency(
-                output_frequencies, output_levels, frequency
-            )
-            dc_levels = ap.get_psrr_input_dc_levels(config["signal_path"])
-            input_dc_v = dc_levels[config["vin_input_channel"] - 1]
-            output_dc_v = dc_levels[config["vout_input_channel"] - 1]
-            point = {
-                "frequency_hz": frequency,
-                "input_dbv": input_dbv,
-                "output_dbv": output_dbv,
-                "input_vrms": 10.0 ** (input_dbv / 20.0),
-                "output_vrms": 10.0 ** (output_dbv / 20.0),
-                "input_dc_v": input_dc_v,
-                "output_dc_v": output_dc_v,
-                "input_fft_frequency_hz": input_bin_hz,
-                "output_fft_frequency_hz": output_bin_hz,
-                "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),
-            }
-            _guest_emit("point", point=point, index=index)
-        success = True
+            measurement = measurement or config["measurement"]
+            _guest_emit("log", message=f"Guest AP measurement={measurement}")
+            for index, frequency in enumerate(config["frequencies_hz"]):
+                if stop_check is not None and stop_check():
+                    stopped = True
+                    break
+                ap.set_psrr_generator_frequency(frequency)
+                input_frequencies, input_levels = ap.get_signal_analyzer_fft_data(
+                    config["signal_path"], measurement,
+                    channel=config["vin_input_channel"] - 1, run=True,
+                    fft_length=config.get("fft_length", 48000),
+                    fft_window=config.get("fft_window", "Equiripple"),
+                    fft_averages=config.get("fft_averages", 5),
+                )
+                output_frequencies, output_levels = ap.get_signal_analyzer_fft_data(
+                    config["signal_path"], measurement,
+                    channel=config["vout_input_channel"] - 1, run=False,
+                )
+                input_bin_hz, input_dbv = spectrum_level_at_frequency(
+                    input_frequencies, input_levels, frequency
+                )
+                output_bin_hz, output_dbv = spectrum_level_at_frequency(
+                    output_frequencies, output_levels, frequency
+                )
+                dc_levels = ap.get_psrr_input_dc_levels(config["signal_path"])
+                input_dc_v = dc_levels[config["vin_input_channel"] - 1]
+                output_dc_v = dc_levels[config["vout_input_channel"] - 1]
+                point = {
+                    "frequency_hz": frequency,
+                    "input_dbv": input_dbv,
+                    "output_dbv": output_dbv,
+                    "input_vrms": 10.0 ** (input_dbv / 20.0),
+                    "output_vrms": 10.0 ** (output_dbv / 20.0),
+                    "input_dc_v": input_dc_v,
+                    "output_dc_v": output_dc_v,
+                    "input_fft_frequency_hz": input_bin_hz,
+                    "output_fft_frequency_hz": output_bin_hz,
+                    "psrr_db": calculate_psrr_from_dbv(input_dbv, output_dbv),
+                }
+                _guest_emit("point", point=point, index=index)
+            success = not stopped
     except Exception as exc:
         _guest_emit("error", message=str(exc))
-    if success:
+    if stopped:
+        _guest_emit("complete", stopped=True)
+    elif success:
         _guest_emit("complete")
     return success
 
@@ -123,13 +134,43 @@ def run_psrr_guest(ap_class, config_base64):
 def run_psrr_guest_session(ap_class):
     ap = ap_class()
     connected = False
+    requests = queue.Queue()
+    stop_sweep = threading.Event()
+
+    def read_requests():
+        try:
+            for raw_line in sys.stdin:
+                try:
+                    request = json.loads(
+                        base64.b64decode(raw_line.strip()).decode("utf-8")
+                    )
+                except Exception as exc:
+                    requests.put(exc)
+                    continue
+                command = request.get("command")
+                if command == "stop_sweep":
+                    stop_sweep.set()
+                    continue
+                if command == "sweep":
+                    stop_sweep.clear()
+                requests.put(request)
+        except Exception as exc:
+            requests.put(exc)
+        finally:
+            requests.put(None)
+
+    threading.Thread(target=read_requests, daemon=True).start()
     try:
         _connect_ap(ap)
         connected = True
         _guest_emit("connected")
-        for raw_line in sys.stdin:
+        while True:
+            request = requests.get()
+            if request is None:
+                break
             try:
-                request = json.loads(base64.b64decode(raw_line.strip()).decode("utf-8"))
+                if isinstance(request, Exception):
+                    raise request
                 command = request.get("command")
                 if command == "disconnect":
                     ap.set_psrr_generator_off()
@@ -142,7 +183,7 @@ def run_psrr_guest_session(ap_class):
                     continue
                 if command != "sweep":
                     raise ValueError(f"Unsupported command: {command}")
-                _run_sweep(ap, request["config"])
+                _run_sweep(ap, request["config"], stop_check=stop_sweep.is_set)
             except Exception as exc:
                 _guest_emit("error", message=str(exc))
     except Exception as exc:
