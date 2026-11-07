@@ -137,6 +137,9 @@ def run_psrr_guest_session(ap_class):
                 if command == "output":
                     _set_output(ap, request["config"], bool(request["enabled"]))
                     continue
+                if command == "output_state":
+                    _guest_emit("output_state", enabled=ap.get_psrr_generator_state())
+                    continue
                 if command != "sweep":
                     raise ValueError(f"Unsupported command: {command}")
                 _run_sweep(ap, request["config"])

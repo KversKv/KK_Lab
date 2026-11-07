@@ -48,6 +48,8 @@ for raw_line in sys.stdin:
         break
     if request["command"] == "output":
         emit("output_complete", enabled=request["enabled"])
+    if request["command"] == "output_state":
+        emit("output_state", enabled=True)
     if request["command"] == "sweep":
         emit("point", point={"frequency_hz": 100.0}, index=0)
         emit("complete")
@@ -160,6 +162,7 @@ def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
     session = AudioPrecisionSSHSession(config)
     connection_events = []
     output_events = []
+    state_events = []
     sweep_events = []
 
     with patch.object(
@@ -171,6 +174,8 @@ def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
 
         session.set_output(config, True, output_events.append)
         assert output_events == [{"type": "output_complete", "enabled": True}]
+        assert session.get_output_state(state_events.append)
+        assert state_events == [{"type": "output_state", "enabled": True}]
 
         session.run_sweep(config, sweep_events.append)
         assert [event["type"] for event in sweep_events] == ["point", "complete"]
@@ -181,6 +186,25 @@ def test_persistent_session_connect_sweep_and_disconnect_without_stdin_eof():
 
         session.disconnect()
         assert not session.connected
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_local_output_query_synchronizes_state_without_reconfiguration(enabled):
+    ap = MockAudioPrecision()
+    ap.connect()
+    ap.generator_on = enabled
+    results = []
+    worker = AudioPrecisionOutputWorker(
+        None, audio_precision=ap, query_only=True
+    )
+    worker.finished.connect(lambda *args: results.append(args))
+
+    worker.run()
+
+    state = "ON" if enabled else "OFF"
+    assert results == [(True, enabled, f"Audio Precision OUTPUT synchronized: {state}")]
+    assert ap.generator_on is enabled
+    assert ap.psrr_settings is None
 
 
 def test_local_output_stays_on_during_sweep_until_manual_off():
@@ -700,15 +724,29 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         page.method_combo.setCurrentIndex(
             page.method_combo.findData("audio_precision")
         )
+        initial_ap = MockAudioPrecision()
+        initial_ap.generator_on = True
+        monkeypatch.setattr(
+            "instruments.factory.create_audio_precision", lambda: initial_ap
+        )
         page.ap_connect_btn.setFocus()
         page.ap_connect_btn.click()
         assert page.ap_connection_toggle_btn.hasFocus()
         wait_for_connection()
+        wait_for_output()
         assert page.ap_connected
-        assert page.audio_precision is not None
+        assert page.audio_precision is initial_ap
         assert page.audio_precision.connected
         assert page.ap_connection_content.isHidden()
+        assert page._ap_output_on
+        assert page.ap_output_status_label.text() == "ON"
+        assert page.get_capture_widget() is page.result_container
         ap = page.audio_precision
+
+        page.ap_output_toggle_btn.click()
+        wait_for_output()
+        assert not page._ap_output_on
+        assert not ap.generator_on
 
         page.start_test_btn.click()
         assert not page.is_test_running

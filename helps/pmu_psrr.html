@@ -8,7 +8,7 @@
   <li><b>Excitation</b> — 设置 N6705C 源通道、直流偏置、AFG 幅度（mVpp）、Start Frequency、End Frequency 和 Points；系统按对数等间隔生成频点。Include Start/End Points 默认勾选并包含起止点，取消勾选时仅生成两者之间的 Points 个内部点</li>
   <li><b>Acquisition &amp; Limit</b> — 设置输入/输出示波器通道、捕获周期数、输出通道量程和最小 PSRR 判定限值</li>
   <li><b>Audio Precision Connection</b> — 独立设置连接方式；Local AP Direct 在主机运行 APx500，Virtual Machine SSH 在 Guest 运行 APx500。点击 <b>Connect</b> 后台建立连接，状态变为 Connected 后锁定并自动折叠连接参数，可点击标题栏箭头重新展开；<b>Disconnect</b> 按钮始终保持可见。测试可复用该连接，点击 <b>Disconnect</b> 关闭发生器并释放本地 APx 或 SSH 会话。虚拟机默认使用已验证的 SSH Profile <b>testvm</b>，Guest IP <b>192.168.208.128</b> 作为无 Profile 时的回退，SSH 用户为 administrator、端口 22、Python 命令为 py -3.12</li>
-  <li><b>Audio Precision OUTPUT</b> — 独立设置输出通道、Output Amplitude 和 DC Offset。连接后点击 <b>TURN OUTPUT ON</b> 手动开启输出，开启期间锁定测量方式和输出参数；点击 <b>TURN OUTPUT OFF</b> 关闭输出后可重新修改。OUTPUT 的启停由用户独立控制，扫频不会自动开启或关闭它</li>
+  <li><b>Audio Precision OUTPUT</b> — 独立设置输出通道、Output Amplitude 和 DC Offset。连接成功后自动以只读方式同步一次仪器的实际 OUTPUT 状态，不改变输出或测量配置。点击 <b>TURN OUTPUT ON</b> 手动开启输出，开启期间锁定测量方式和输出参数；点击 <b>TURN OUTPUT OFF</b> 关闭输出后可重新修改。OUTPUT 的启停由用户独立控制，扫频不会自动开启或关闭它</li>
   <li><b>Audio Precision Test Parameters</b> — 分别选择 DUT VIN、VOUT 对应的 AP INPUT 通道（默认 INPUT1 / INPUT2，不能相同），并设置 Start Frequency、End Frequency、Points、Include Start/End Points 和判定限值；端点选项与 MSO64B + J2120A 方式相同。FFT Length、FFT Window 和 Averages 可独立选择，默认分别为 48000、Equiripple、5。固定使用当前 APx 项目的 Signal Path1 / Signal Analyzer，输入带宽自动覆盖最高测试频率</li>
   <li><b>Turn off source channel after test</b> — 勾选后在测试结束、停止或异常时关闭源通道；未勾选且通道测试前已开启时保持开启</li>
 </ul>
@@ -43,6 +43,7 @@
 <h3>注意事项</h3>
 <ul>
   <li>测量数据日志首行为带单位的表头，后续每行使用定宽数值和 Tab 分列；复制原始日志后可直接粘贴到表格软件</li>
+  <li>快速截图仅截取 <b>MEASUREMENT RESULT</b> 区域，包含指标卡、PSRR 曲线和结果摘要，不包含 TEST LOG 与 Recent Tests 面板</li>
   <li>低频点的正式采集需要等待 16 倍时基，单个频点可能耗时较长</li>
   <li>测试结束后框架会关闭 MSO64B AFG，并恢复 N6705C 测试前电压和通道状态；仍建议在真机测试前确认 DUT 供电与 J2120A 接线</li>
   <li>SSH 连通不代表 APx525 USB 已直通；若 APx500 处于 Demo Mode，测试会在开启发生器前明确失败</li>

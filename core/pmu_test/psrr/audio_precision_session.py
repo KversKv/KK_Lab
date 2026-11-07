@@ -172,6 +172,19 @@ class AudioPrecisionSSHSession:
             if event_type == "error":
                 raise RuntimeError(event.get("message", "APx output operation failed"))
 
+    def get_output_state(self, on_event) -> bool:
+        if not self.connected:
+            raise RuntimeError("Audio Precision SSH session is not connected")
+        self._send_json({"command": "output_state"})
+        while True:
+            event = self._read_event()
+            on_event(event)
+            event_type = event.get("type")
+            if event_type == "output_state":
+                return bool(event.get("enabled", False))
+            if event_type == "error":
+                raise RuntimeError(event.get("message", "APx output state query failed"))
+
     def disconnect(self) -> None:
         if self._process is None:
             return

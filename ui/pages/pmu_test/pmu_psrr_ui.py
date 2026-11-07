@@ -114,6 +114,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._ap_connection_thread = None
         self._ap_connection_worker = None
         self._ap_output_busy = False
+        self._ap_output_operation = ""
         self._ap_output_on = False
         self._ap_output_thread = None
         self._ap_output_worker = None
@@ -544,9 +545,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         right = QVBoxLayout()
         right.setSpacing(0)
         content.addLayout(right, 1)
-        result_container = QFrame()
-        result_container.setObjectName("resultContainer")
-        result_layout = QVBoxLayout(result_container)
+        self.result_container = QFrame()
+        self.result_container.setObjectName("resultContainer")
+        result_layout = QVBoxLayout(self.result_container)
         result_layout.setContentsMargins(12, 12, 12, 12)
         result_layout.setSpacing(10)
 
@@ -619,7 +620,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         result_layout.addWidget(self.result_summary_label)
 
         self.execution_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
-            result_container, show_progress=True, stretch=(4, 1)
+            self.result_container, show_progress=True, stretch=(4, 1)
         )
         self.recent_curve_splitter = QSplitter(Qt.Horizontal)
         self.recent_curve_splitter.setObjectName("recentCurveSplitter")
@@ -631,6 +632,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.recent_curve_splitter.widget(1).setVisible(False)
         right.addWidget(self.recent_curve_splitter)
         self._on_method_changed()
+
+    def get_capture_widget(self):
+        return self.result_container
 
     @staticmethod
     def _channel_combo(default: int = 1) -> QComboBox:
@@ -1122,6 +1126,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.append_log("[INFO] Audio Precision disconnected")
         update_connect_button_state(self.ap_connect_btn, self.ap_connected)
         self._sync_ap_connection_controls()
+        if operation == "connect":
+            self._start_ap_output_operation(query_only=True)
 
     def _on_ap_connection_failed(self, message: str):
         operation = self._ap_connection_operation
@@ -1196,8 +1202,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.append_log(f"[ERROR] Invalid Audio Precision OUTPUT configuration: {exc}")
             return
 
+        self._start_ap_output_operation(config, enabled=not self._ap_output_on)
+
+    def _start_ap_output_operation(self, config=None, *, enabled=False, query_only=False):
         self._ap_output_busy = True
-        self.ap_output_status_label.setText("UPDATING")
+        self._ap_output_operation = "query" if query_only else "set"
+        self.ap_output_status_label.setText("SYNCING" if query_only else "UPDATING")
         self.ap_output_status_label.setObjectName("statusWarn")
         self.ap_output_status_label.style().unpolish(self.ap_output_status_label)
         self.ap_output_status_label.style().polish(self.ap_output_status_label)
@@ -1208,9 +1218,10 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._ap_output_thread = QThread(self)
         self._ap_output_worker = AudioPrecisionOutputWorker(
             config,
-            enabled=not self._ap_output_on,
+            enabled=enabled,
             audio_precision=self.audio_precision,
             ssh_session=self.ap_ssh_session,
+            query_only=query_only,
         )
         self._ap_output_worker.moveToThread(self._ap_output_thread)
         self._ap_output_thread.started.connect(self._ap_output_worker.run)
@@ -1223,16 +1234,19 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._ap_output_thread.start()
 
     def _on_ap_output_finished(self, success: bool, enabled: bool, message: str):
+        operation = self._ap_output_operation
         self._ap_output_busy = False
+        self._ap_output_operation = ""
         if success:
             self._set_ap_output_state(enabled)
             self.append_log(f"[INFO] {message}")
         else:
-            self.ap_output_status_label.setText("ERROR")
+            self.ap_output_status_label.setText("UNKNOWN" if operation == "query" else "ERROR")
             self.ap_output_status_label.setObjectName("statusErr")
             self.ap_output_status_label.style().unpolish(self.ap_output_status_label)
             self.ap_output_status_label.style().polish(self.ap_output_status_label)
-            self.append_log(f"[ERROR] Audio Precision OUTPUT operation failed: {message}")
+            action = "synchronization" if operation == "query" else "operation"
+            self.append_log(f"[ERROR] Audio Precision OUTPUT {action} failed: {message}")
         self._sync_ap_connection_controls()
 
     def _on_ap_output_thread_finished(self):

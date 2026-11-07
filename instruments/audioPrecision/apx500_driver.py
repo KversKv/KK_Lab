@@ -327,6 +327,9 @@ class APxConnection:
     def set_psrr_generator_off(self):
         self.apx.SignalPathSetup.Generator.On = False
 
+    def get_psrr_generator_state(self):
+        return bool(self.apx.SignalPathSetup.Generator.On)
+
     def configure_psrr_signal_monitors(self, fft_length=48000, fft_window="Equiripple",
                                        fft_averages=5):
         from AudioPrecision.API import FFTLength, WindowType

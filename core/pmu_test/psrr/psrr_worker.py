@@ -291,18 +291,27 @@ class AudioPrecisionOutputWorker(QObject):
     log = Signal(str)
     finished = Signal(bool, bool, str)
 
-    def __init__(self, config: AudioPrecisionPSRRConfig, enabled: bool,
+    def __init__(self, config: AudioPrecisionPSRRConfig | None, enabled: bool = False,
                  audio_precision=None,
-                 ssh_session: AudioPrecisionSSHSession | None = None, parent=None):
+                 ssh_session: AudioPrecisionSSHSession | None = None, parent=None,
+                 query_only: bool = False):
         super().__init__(parent)
         self.config = config
         self.enabled = bool(enabled)
         self.audio_precision = audio_precision
         self.ssh_session = ssh_session
+        self.query_only = bool(query_only)
 
     @Slot()
     def run(self):
         try:
+            if self.query_only:
+                enabled = self._get_output_state()
+                state = "ON" if enabled else "OFF"
+                self.finished.emit(
+                    True, enabled, f"Audio Precision OUTPUT synchronized: {state}"
+                )
+                return
             if self.ssh_session is not None:
                 self.ssh_session.set_output(
                     self.config, self.enabled, self._on_remote_event
@@ -315,6 +324,14 @@ class AudioPrecisionOutputWorker(QObject):
             logger.error("Audio Precision OUTPUT 操作失败", exc_info=True)
             self.finished.emit(False, self.enabled, str(exc))
 
+    def _get_output_state(self) -> bool:
+        if self.ssh_session is not None:
+            return self.ssh_session.get_output_state(self._on_remote_event)
+        ap = self.audio_precision
+        if ap is None or not ap.connected:
+            raise RuntimeError("Audio Precision is not connected")
+        return ap.get_psrr_generator_state()
+
     def _set_local_output(self):
         ap = self.audio_precision
         if ap is None or not ap.connected:
@@ -322,6 +339,8 @@ class AudioPrecisionOutputWorker(QObject):
         if not self.enabled:
             ap.set_psrr_generator_off()
             return
+        if self.config is None:
+            raise ValueError("Audio Precision OUTPUT config is required")
         if self.config.project_path:
             ap.open_project(self.config.project_path)
         ap.configure_psrr_measurement(
