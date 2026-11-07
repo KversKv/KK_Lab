@@ -1655,6 +1655,7 @@ class APxConnection:
     def get_signal_analyzer_fft_data(self, signal_path_name, measurement_name="Signal Analyzer",
                                      channel=0, acquisition_number=1, run=True):
         if run:
+            from AudioPrecision.API import VerticalAxis
             monitor = self.configure_psrr_signal_monitors()
             monitor.ResetAverages()
             time.sleep(2.0)
@@ -1662,8 +1663,12 @@ class APxConnection:
             self._psrr_fft_frame = {}
             for index in range(2):
                 self._psrr_fft_frame[index] = (
-                    [float(value) for value in graph.GetXValues(index)],
-                    [float(point.Y) for point in graph.GetValues(index)],
+                    [float(value) for value in graph.GetAllXValues(
+                        index, VerticalAxis.Left
+                    )],
+                    [float(value) for value in graph.GetAllYValues(
+                        index, VerticalAxis.Left
+                    )],
                 )
         if channel not in self._psrr_fft_frame:
             raise RuntimeError(f"FFT Spectrum Monitor 未提供 INPUT{channel + 1} 数据")

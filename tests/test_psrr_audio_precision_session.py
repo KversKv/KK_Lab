@@ -15,6 +15,8 @@ from core.pmu_test.psrr.audio_precision_session import (
 from core.pmu_test.psrr.psrr_analysis import (
     AudioPrecisionPSRRConfig,
     audio_precision_config_from_dict,
+    generate_frequency_points,
+    spectrum_level_at_frequency,
 )
 from core.pmu_test.psrr.psrr_worker import (
     AudioPrecisionOutputWorker,
@@ -68,6 +70,34 @@ def _local_transport(session, script):
         session._send_script(script)
 
     return open_transport
+
+
+def test_generate_frequency_points_can_exclude_endpoints():
+    included = generate_frequency_points(10.0, 20000.0, 20)
+    excluded = generate_frequency_points(10.0, 20000.0, 20, include_endpoints=False)
+
+    assert included == generate_frequency_points(
+        10.0, 20000.0, 20, include_endpoints=True
+    )
+    assert included[0] == pytest.approx(10.0)
+    assert included[-1] == pytest.approx(20000.0)
+    assert len(excluded) == 20
+    assert 10.0 < excluded[0] < excluded[-1] < 20000.0
+    step_ratio = 2000.0 ** (1.0 / 21.0)
+    assert excluded[0] == pytest.approx(10.0 * step_ratio)
+    assert excluded[-1] == pytest.approx(10.0 * step_ratio**20)
+    assert [later / earlier for earlier, later in zip(excluded, excluded[1:])] == (
+        pytest.approx([step_ratio] * 19)
+    )
+
+
+def test_spectrum_level_at_frequency_accepts_raw_fft_dc_bin():
+    frequencies = [0.0, 1.0, 10.0, 20.0]
+    levels = [-120.0, -80.0, -20.0, -40.0]
+
+    assert spectrum_level_at_frequency(frequencies, levels, 10.0) == (10.0, -20.0)
+    with pytest.raises(ValueError, match="超出 FFT 频率范围"):
+        spectrum_level_at_frequency(frequencies, levels, 0.5)
 
 
 def test_persistent_ssh_command_uses_line_bootstrap():
@@ -453,16 +483,16 @@ def test_fft_configuration_checks_spectrum_result():
 
 
 @pytest.mark.parametrize("initial_generator_on", [True, False])
-def test_fft_monitor_reads_one_frame_without_changing_generator(initial_generator_on):
+def test_fft_monitor_reads_raw_frame_without_changing_generator(initial_generator_on):
     connection = APxConnection()
     graph = SimpleNamespace(
-        GetXValues=Mock(side_effect=lambda channel: [100.0, 1000.0]),
-        GetValues=Mock(side_effect=(
+        GetAllXValues=Mock(
+            side_effect=lambda channel, axis: [0.0, 10.0, 100.0, 1000.0]
+        ),
+        GetAllYValues=Mock(side_effect=(
             (
-                [SimpleNamespace(X=100.0, Y=-20.0),
-                 SimpleNamespace(X=1000.0, Y=-30.0)],
-                [SimpleNamespace(X=100.0, Y=-40.0),
-                 SimpleNamespace(X=1000.0, Y=-50.0)],
+                [-120.0, -80.0, -20.0, -30.0],
+                [-140.0, -100.0, -40.0, -50.0],
             )
         )),
     )
@@ -482,6 +512,7 @@ def test_fft_monitor_reads_one_frame_without_changing_generator(initial_generato
     api = SimpleNamespace(
         FFTLength=SimpleNamespace(FFT_48000="FFT_48000"),
         WindowType=SimpleNamespace(Equiripple="Equiripple"),
+        VerticalAxis=SimpleNamespace(Left="Left"),
     )
 
     with (
@@ -501,16 +532,17 @@ def test_fft_monitor_reads_one_frame_without_changing_generator(initial_generato
         )
         assert generator.On == initial_generator_on
 
-    assert frequencies == second_frequencies == [100.0, 1000.0]
-    assert levels == [-20.0, -30.0]
-    assert second_levels == [-40.0, -50.0]
+    assert frequencies == second_frequencies == [0.0, 10.0, 100.0, 1000.0]
+    assert levels == [-120.0, -80.0, -20.0, -30.0]
+    assert second_levels == [-140.0, -100.0, -40.0, -50.0]
+    assert spectrum_level_at_frequency(frequencies, levels, 10.0) == (10.0, -80.0)
     assert connection.apx.SignalMonitorsEnabled
     assert monitor.FFTLength == "FFT_48000"
     assert monitor.WindowType == "Equiripple"
     assert monitor.Averages == 7
     monitor.ResetAverages.assert_called_once_with()
-    assert graph.GetXValues.call_count == 2
-    assert graph.GetValues.call_count == 2
+    assert graph.GetAllXValues.call_args_list == [call(0, "Left"), call(1, "Left")]
+    assert graph.GetAllYValues.call_args_list == [call(0, "Left"), call(1, "Left")]
 
 
 @pytest.mark.qt

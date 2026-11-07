@@ -260,6 +260,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.frequency_points_spin = QSpinBox()
         self.frequency_points_spin.setRange(2, 1001)
         self.frequency_points_spin.setValue(4)
+        self.include_endpoints_check = QCheckBox("Include Start/End Points")
+        self.include_endpoints_check.setChecked(True)
         self._add_field(self.excitation_card.main_layout, "Source Channel", self.source_channel_combo)
         self._add_field(self.excitation_card.main_layout, "DC Voltage (V)", self.dc_voltage_spin)
         self._add_field(
@@ -272,6 +274,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.excitation_card.main_layout, "End Frequency (Hz)", self.end_frequency_spin
         )
         self._add_field(self.excitation_card.main_layout, "Points", self.frequency_points_spin)
+        self.excitation_card.main_layout.addWidget(self.include_endpoints_check)
         left.addWidget(self.excitation_card)
 
         self.acquisition_card = CardFrame("Acquisition & Limit")
@@ -366,6 +369,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_frequency_points_spin = QSpinBox()
         self.ap_frequency_points_spin.setRange(2, 1001)
         self.ap_frequency_points_spin.setValue(4)
+        self.ap_include_endpoints_check = QCheckBox("Include Start/End Points")
+        self.ap_include_endpoints_check.setChecked(True)
         self.ap_limit_spin = self._double_spin(-100.0, 200.0, 0.0, 1.0, 2)
         self._add_field(
             self.ap_card.main_layout, "VIN Input Channel", self.ap_vin_input_channel_combo
@@ -380,6 +385,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.ap_card.main_layout, "End Frequency (Hz)", self.ap_end_frequency_spin
         )
         self._add_field(self.ap_card.main_layout, "Points", self.ap_frequency_points_spin)
+        self.ap_card.main_layout.addWidget(self.ap_include_endpoints_check)
         self._add_field(
             self.ap_card.main_layout, "Minimum PSRR Limit (dB)", self.ap_limit_spin
         )
@@ -388,18 +394,25 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._config_widgets = [
             self.method_combo, self.source_channel_combo, self.dc_voltage_spin,
             self.afg_amplitude_spin, self.start_frequency_spin, self.end_frequency_spin,
-            self.frequency_points_spin, self.input_channel_combo, self.output_channel_combo,
+            self.frequency_points_spin, self.include_endpoints_check,
+            self.input_channel_combo, self.output_channel_combo,
             self.cycles_spin, self.output_scale_spin, self.limit_spin,
             self.close_channel_check, self.ap_output_channel_combo, self.ap_amplitude_spin,
             self.ap_offset_spin, self.ap_vin_input_channel_combo,
             self.ap_vout_input_channel_combo, self.ap_start_frequency_spin,
-            self.ap_end_frequency_spin, self.ap_frequency_points_spin, self.ap_limit_spin,
+            self.ap_end_frequency_spin, self.ap_frequency_points_spin,
+            self.ap_include_endpoints_check, self.ap_limit_spin,
         ]
         self._ap_connection_widgets = [
             self.ap_connection_combo, self.ap_ssh_profile_edit, self.ap_ssh_host_edit,
             self.ap_ssh_user_edit, self.ap_ssh_port_spin, self.ap_ssh_python_edit,
         ]
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
+        for spin in (
+            self.start_frequency_spin, self.end_frequency_spin,
+            self.ap_start_frequency_spin, self.ap_end_frequency_spin,
+        ):
+            spin.valueChanged.connect(self._update_frequency_ticks)
         self.ap_connection_combo.currentIndexChanged.connect(self._on_ap_connection_changed)
         self.ap_connection_toggle_btn.clicked.connect(self._toggle_ap_connection_collapsed)
         self.ap_connect_btn.clicked.connect(self._on_ap_connect_or_disconnect)
@@ -552,6 +565,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_output_card.setVisible(not is_j2120a)
         self.ap_card.setVisible(not is_j2120a)
         self.limit_line.setValue(self._current_limit_db())
+        self._update_frequency_ticks()
         self._sync_ap_output_controls()
 
     def _on_ap_connection_changed(self):
@@ -777,6 +791,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             "start_frequency_hz": self.start_frequency_spin.value(),
             "end_frequency_hz": self.end_frequency_spin.value(),
             "frequency_points": self.frequency_points_spin.value(),
+            "include_endpoints": self.include_endpoints_check.isChecked(),
             "frequencies_hz": list(self._frequencies_from_controls()),
             "cycles": self.cycles_spin.value(),
             "output_scale_mv": self.output_scale_spin.value(),
@@ -799,6 +814,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             "ap_start_frequency_hz": self.ap_start_frequency_spin.value(),
             "ap_end_frequency_hz": self.ap_end_frequency_spin.value(),
             "ap_frequency_points": self.ap_frequency_points_spin.value(),
+            "ap_include_endpoints": self.ap_include_endpoints_check.isChecked(),
             "ap_frequencies_hz": list(self._frequencies_from_controls(audio_precision=True)),
             "ap_limit_db": self.ap_limit_spin.value(),
         }
@@ -810,6 +826,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             getattr(self, f"{prefix}start_frequency_spin").value(),
             getattr(self, f"{prefix}end_frequency_spin").value(),
             getattr(self, f"{prefix}frequency_points_spin").value(),
+            include_endpoints=getattr(self, f"{prefix}include_endpoints_check").isChecked(),
         )
 
     def _validated_config(self):
@@ -950,6 +967,37 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _cleanup_test_thread(self):
         self.test_thread = None
         self.test_worker = None
+
+    @staticmethod
+    def _frequency_tick_values(start_hz: float, end_hz: float) -> list[float]:
+        start_hz, end_hz = sorted((float(start_hz), float(end_hz)))
+        if start_hz <= 0:
+            return []
+        preferred = (10, 100, 1000, 20000, 50000, 100000, 1e6, 2e6)
+        ticks = [start_hz, end_hz]
+        ticks.extend(
+            frequency for frequency in preferred
+            if start_hz < frequency < end_hz and not (20000 < end_hz < 100000 and frequency == 20000)
+        )
+        return sorted(set(ticks))
+
+    @staticmethod
+    def _format_frequency_tick(frequency_hz: float) -> str:
+        if frequency_hz >= 1e6:
+            return f"{frequency_hz / 1e6:.6g}M"
+        if frequency_hz >= 1e3:
+            return f"{frequency_hz / 1e3:.6g}k"
+        return f"{frequency_hz:.6g}"
+
+    def _update_frequency_ticks(self):
+        prefix = "ap_" if self.method_combo.currentData() == "audio_precision" else ""
+        start_hz = getattr(self, f"{prefix}start_frequency_spin").value()
+        end_hz = getattr(self, f"{prefix}end_frequency_spin").value()
+        ticks = [
+            (math.log10(frequency), self._format_frequency_tick(frequency))
+            for frequency in self._frequency_tick_values(start_hz, end_hz)
+        ]
+        self.plot_widget.getAxis("bottom").setTicks([ticks])
 
     def _update_plot(self):
         ordered = sorted(self._points, key=lambda point: point["frequency_hz"])
@@ -1165,18 +1213,32 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             )
             applied.append("afg_amplitude_mvpp")
             touched.append(self.afg_amplitude_spin)
-        set_legacy_frequencies(
-            self.start_frequency_spin, self.end_frequency_spin,
-            self.frequency_points_spin, "frequencies_hz"
-        )
-        set_legacy_frequencies(
-            self.ap_start_frequency_spin, self.ap_end_frequency_spin,
-            self.ap_frequency_points_spin, "ap_frequencies_hz"
-        )
+        if not all(key in cfg for key in (
+            "start_frequency_hz", "end_frequency_hz", "frequency_points"
+        )):
+            set_legacy_frequencies(
+                self.start_frequency_spin, self.end_frequency_spin,
+                self.frequency_points_spin, "frequencies_hz"
+            )
+        if not all(key in cfg for key in (
+            "ap_start_frequency_hz", "ap_end_frequency_hz", "ap_frequency_points"
+        )):
+            set_legacy_frequencies(
+                self.ap_start_frequency_spin, self.ap_end_frequency_spin,
+                self.ap_frequency_points_spin, "ap_frequencies_hz"
+            )
         set_line(self.ap_ssh_profile_edit, "ap_ssh_profile")
         set_line(self.ap_ssh_host_edit, "ap_ssh_host")
         set_line(self.ap_ssh_user_edit, "ap_ssh_user")
         set_line(self.ap_ssh_python_edit, "ap_ssh_python")
+        for checkbox, key in (
+            (self.include_endpoints_check, "include_endpoints"),
+            (self.ap_include_endpoints_check, "ap_include_endpoints"),
+        ):
+            if key in cfg:
+                checkbox.setChecked(bool(cfg[key]))
+                applied.append(key)
+                touched.append(checkbox)
         if "close_channel_after" in cfg:
             self.close_channel_check.setChecked(bool(cfg["close_channel_after"]))
             applied.append("close_channel_after")

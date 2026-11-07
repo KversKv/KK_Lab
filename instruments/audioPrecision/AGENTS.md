@@ -14,7 +14,7 @@
 - APx500 5.0 PSRR 手动 OUTPUT 与扫频始终停留 Signal Path Setup，禁止切换 Signal Analyzer、DC Level 或 Bench Mode；`AnalogOutput.ChannelCount=1`，CH1/CH2 通过 `OutputChannelIndex` 选择，OUTPUT ON 前配置 Sine、Level/Offset 和 100 Hz，扫频只改 `SignalPathSetup.Generator.Frequency`。
 - PSRR 实时采集必须启用 `SignalMonitorsEnabled`，DC/Level 读 `SignalMeters.LevelMeter`，FFT 读 `FftSpectrumSignalMonitor.FFTSpectrum`；不得调用 `Start()` / Sequence。VIN `run=True` 时 ResetAverages 并读取双通道，VOUT `run=False` 复用同帧。
 - PSRR 配置 `vin_input_channel/vout_input_channel` 为 1 基 INPUT 映射，默认 1/2 且禁止相同；FFT API 转换为 0 基通道，LevelMeter 双路结果也按该映射归属，本地与 Guest 必须一致。
-- FFT Monitor 的 `GetXValues(channel)` 返回浮点频率，`GetValues(channel)` 返回 `GraphPoint`，电平必须读 `point.Y`，禁止直接 `float(point)`。
+- PSRR FFT Monitor 必须用 `GetAllXValues/GetAllYValues(channel, VerticalAxis.Left)` 读取原始频谱；`GetXValues/GetValues` 受当前图表显示范围裁剪，会漏掉显示下限以下的目标频点。原始频率轴可含 0 Hz DC bin，算法允许该 bin，但目标频率不得低于首个正频率 bin。
 - 其他 APx `Start()` / Sequence Batch 会触发模态窗口，SSH 会话 0 即使 `Visible=False` 也会失败；必须在 Guest 交互桌面运行，经 SSH 反向转发维持会话，详见 `03_GOTCHAS §41`。
 
 ## VM 交互式 DEBUG 调用链

@@ -146,8 +146,10 @@ def parse_frequency_points(text: str | Iterable[float]) -> tuple[float, ...]:
     return tuple(sorted(set(values)))
 
 
-def generate_frequency_points(start_hz: float, end_hz: float, points: int) -> tuple[float, ...]:
-    """生成包含起止点的对数等间隔频点。"""
+def generate_frequency_points(
+    start_hz: float, end_hz: float, points: int, *, include_endpoints: bool = True
+) -> tuple[float, ...]:
+    """生成对数等间隔频点，可选择是否包含起止点。"""
     if not math.isfinite(start_hz) or start_hz <= 0:
         raise ValueError("Start Frequency 必须为大于 0 的有限数值")
     if not math.isfinite(end_hz) or end_hz <= start_hz:
@@ -155,6 +157,11 @@ def generate_frequency_points(start_hz: float, end_hz: float, points: int) -> tu
     if points < 2:
         raise ValueError("Points 不能小于 2")
     ratio = end_hz / start_hz
+    if not include_endpoints:
+        return tuple(
+            start_hz * ratio ** (index / (points + 1))
+            for index in range(1, points + 1)
+        )
     values = tuple(
         start_hz * ratio ** (index / (points - 1)) for index in range(points)
     )
@@ -169,6 +176,7 @@ def config_from_dict(data: dict) -> PSRRConfig:
             float(data.get("start_frequency_hz", 100.0)),
             float(data.get("end_frequency_hz", 100000.0)),
             int(data.get("frequency_points", 4)),
+            include_endpoints=bool(data.get("include_endpoints", True)),
         )
     if "afg_amplitude_mvpp" in data:
         amplitude_mvpp = float(data["afg_amplitude_mvpp"])
@@ -213,6 +221,7 @@ def audio_precision_config_from_dict(data: dict) -> AudioPrecisionPSRRConfig:
             float(data.get("ap_start_frequency_hz", 100.0)),
             float(data.get("ap_end_frequency_hz", 100000.0)),
             int(data.get("ap_frequency_points", 4)),
+            include_endpoints=bool(data.get("ap_include_endpoints", True)),
         ),
         limit_db=float(data.get("ap_limit_db", 0.0)),
     )
@@ -245,9 +254,12 @@ def spectrum_level_at_frequency(
     levels = tuple(float(value) for value in levels_dbv)
     if not frequencies or len(frequencies) != len(levels):
         raise ValueError("FFT 频率与电平数据为空或长度不一致")
-    if any(not math.isfinite(value) or value <= 0 for value in frequencies):
+    if any(not math.isfinite(value) or value < 0 for value in frequencies):
         raise ValueError("FFT 频率轴包含无效数值")
-    if target_hz < frequencies[0] or target_hz > frequencies[-1]:
+    first_positive_hz = next((value for value in frequencies if value > 0), None)
+    if first_positive_hz is None:
+        raise ValueError("FFT 频率轴不包含有效正频率")
+    if target_hz < first_positive_hz or target_hz > frequencies[-1]:
         raise ValueError(f"目标频率 {target_hz:g} Hz 超出 FFT 频率范围")
     index = min(range(len(frequencies)), key=lambda i: abs(frequencies[i] - target_hz))
     level = levels[index]
