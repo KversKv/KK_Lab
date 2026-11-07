@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import datetime
 import math
+import os
 import threading
 from typing import Any
 
@@ -53,6 +54,7 @@ from core.pmu_test.psrr import (
 )
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
+from resource_path import get_resource_base
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
@@ -144,7 +146,10 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
-        self.setStyleSheet("""
+        icons_dir = os.path.join(get_resource_base(), "resources", "icons")
+        checkbox_checked = os.path.join(icons_dir, "checked_4f46e5.svg").replace("\\", "/")
+        checkbox_unchecked = os.path.join(icons_dir, "unchecked_4f46e5.svg").replace("\\", "/")
+        page_qss = ("""
             QWidget { background-color: #050b1a; color: #e8eefc; }
             QWidget#leftPanelInner { background-color: transparent; }
             QFrame#apSshFrame, QFrame#apConnectionContent {
@@ -220,6 +225,18 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QLabel[role="resultCaption"] { color: #7d94c5; font-size: 10px; }
             QLabel#resultSummary { color: #9bb6e8; font-size: 11px; }
             QCheckBox { background-color: transparent; color: #a9bde2; }
+            QCheckBox#includeEndpointsCheckbox {
+                background-color: transparent;
+                border: none;
+            }
+            QCheckBox#includeEndpointsCheckbox::indicator {
+                width: 16px;
+                height: 16px;
+                image: url("__UNCHECKED__");
+            }
+            QCheckBox#includeEndpointsCheckbox::indicator:checked {
+                image: url("__CHECKED__");
+            }
             QFrame#recentPanel {
                 background-color: #0d1833; border: 1px solid #1a2a52; border-radius: 12px;
             }
@@ -244,7 +261,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QSplitter#recentCurveSplitter::handle:horizontal { width: 3px; }
             QSplitter#recentCurveSplitter::handle:horizontal:hover { background-color: #1a2d57; }
             QSplitter#recentCurveSplitter::handle:horizontal:pressed { background-color: #5b9cf5; }
-        """ + SCROLLBAR_STYLE)
+        """).replace("__UNCHECKED__", checkbox_unchecked).replace("__CHECKED__", checkbox_checked)
+        self.setStyleSheet(page_qss + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         root = QVBoxLayout(self)
@@ -308,8 +326,20 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.frequency_points_spin = QSpinBox()
         self.frequency_points_spin.setRange(2, 1001)
         self.frequency_points_spin.setValue(4)
-        self.include_endpoints_check = QCheckBox("Include Start/End Points")
+        include_endpoints_label = QLabel("Include Start/End Points")
+        include_endpoints_label.setObjectName("fieldLabel")
+        include_endpoints_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.include_endpoints_check = QCheckBox()
+        self.include_endpoints_check.setObjectName("includeEndpointsCheckbox")
+        self.include_endpoints_check.setFixedSize(22, 22)
+        self.include_endpoints_check.setCursor(Qt.PointingHandCursor)
         self.include_endpoints_check.setChecked(True)
+        include_endpoints_row = QHBoxLayout()
+        include_endpoints_row.setContentsMargins(0, 0, 0, 0)
+        include_endpoints_row.setSpacing(8)
+        include_endpoints_row.addWidget(include_endpoints_label)
+        include_endpoints_row.addStretch()
+        include_endpoints_row.addWidget(self.include_endpoints_check)
         self._add_field(self.excitation_card.main_layout, "Source Channel", self.source_channel_combo)
         self._add_field(self.excitation_card.main_layout, "DC Voltage (V)", self.dc_voltage_spin)
         self._add_field(
@@ -322,7 +352,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.excitation_card.main_layout, "End Frequency (Hz)", self.end_frequency_spin
         )
         self._add_field(self.excitation_card.main_layout, "Points", self.frequency_points_spin)
-        self.excitation_card.main_layout.addWidget(self.include_endpoints_check)
+        self.excitation_card.main_layout.addLayout(include_endpoints_row)
         left.addWidget(self.excitation_card)
 
         self.acquisition_card = CardFrame("Acquisition & Limit")
@@ -417,11 +447,29 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_frequency_points_spin = QSpinBox()
         self.ap_frequency_points_spin.setRange(2, 1001)
         self.ap_frequency_points_spin.setValue(4)
-        self.ap_include_endpoints_check = QCheckBox("Include Start/End Points")
+        ap_include_endpoints_label = QLabel("Include Start/End Points")
+        ap_include_endpoints_label.setObjectName("fieldLabel")
+        ap_include_endpoints_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.ap_include_endpoints_check = QCheckBox()
+        self.ap_include_endpoints_check.setObjectName("includeEndpointsCheckbox")
+        self.ap_include_endpoints_check.setFixedSize(22, 22)
+        self.ap_include_endpoints_check.setCursor(Qt.PointingHandCursor)
         self.ap_include_endpoints_check.setChecked(True)
+        ap_include_endpoints_row = QHBoxLayout()
+        ap_include_endpoints_row.setContentsMargins(0, 0, 0, 0)
+        ap_include_endpoints_row.setSpacing(8)
+        ap_include_endpoints_row.addWidget(ap_include_endpoints_label)
+        ap_include_endpoints_row.addStretch()
+        ap_include_endpoints_row.addWidget(self.ap_include_endpoints_check)
         self.ap_fft_length_combo = QComboBox()
         for length in AUDIO_PRECISION_FFT_LENGTHS:
-            self.ap_fft_length_combo.addItem(str(length), length)
+            if length < 1000:
+                label = str(length)
+            elif length % 1000 == 0:
+                label = f"{length // 1000}k"
+            else:
+                label = f"{length // 1024}k"
+            self.ap_fft_length_combo.addItem(label, length)
         self.ap_fft_length_combo.setCurrentIndex(
             self.ap_fft_length_combo.findData(48000)
         )
@@ -445,7 +493,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.ap_card.main_layout, "End Frequency (Hz)", self.ap_end_frequency_spin
         )
         self._add_field(self.ap_card.main_layout, "Points", self.ap_frequency_points_spin)
-        self.ap_card.main_layout.addWidget(self.ap_include_endpoints_check)
+        self.ap_card.main_layout.addLayout(ap_include_endpoints_row)
         self._add_field(self.ap_card.main_layout, "FFT Length", self.ap_fft_length_combo)
         self._add_field(self.ap_card.main_layout, "FFT Window", self.ap_fft_window_combo)
         self._add_field(self.ap_card.main_layout, "Averages", self.ap_fft_averages_spin)
@@ -1443,13 +1491,17 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _update_frequency_ticks(self):
         prefix = "ap_" if self.method_combo.currentData() == "audio_precision" else ""
-        start_hz = getattr(self, f"{prefix}start_frequency_spin").value()
-        end_hz = getattr(self, f"{prefix}end_frequency_spin").value()
+        start_hz, end_hz = sorted((
+            getattr(self, f"{prefix}start_frequency_spin").value(),
+            getattr(self, f"{prefix}end_frequency_spin").value(),
+        ))
         ticks = [
             (math.log10(frequency), self._format_frequency_tick(frequency))
             for frequency in self._frequency_tick_values(start_hz, end_hz)
         ]
         self.plot_widget.getAxis("bottom").setTicks([ticks])
+        if start_hz < end_hz:
+            self.plot_widget.setXRange(math.log10(start_hz), math.log10(end_hz), padding=0.02)
 
     def _update_frequency_ticks_for_points(self, points: list[dict]):
         frequencies = [point["frequency_hz"] for point in points if point["frequency_hz"] > 0]

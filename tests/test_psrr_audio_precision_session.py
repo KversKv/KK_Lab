@@ -21,6 +21,7 @@ from core.pmu_test.psrr.psrr_analysis import (
 from core.pmu_test.psrr.psrr_worker import (
     AudioPrecisionOutputWorker,
     AudioPrecisionPSRRWorker,
+    PSRRTestWorker,
 )
 from instruments.audioPrecision import apx_psrr_guest
 from instruments.audioPrecision.apx500_driver import APxConnection
@@ -98,6 +99,22 @@ def test_spectrum_level_at_frequency_accepts_raw_fft_dc_bin():
     assert spectrum_level_at_frequency(frequencies, levels, 10.0) == (10.0, -20.0)
     with pytest.raises(ValueError, match="超出 FFT 频率范围"):
         spectrum_level_at_frequency(frequencies, levels, 0.5)
+
+
+def test_scope_sweep_logs_aligned_tabular_data():
+    worker = PSRRTestWorker({"frequencies_hz": [30.0, 1000.0]}, mock_mode=True)
+    logs = []
+    worker.log.connect(logs.append)
+
+    worker.start()
+
+    table_logs = [line for line in logs if "\t" in line]
+    assert len(table_logs) == 3
+    assert [cell.strip() for cell in table_logs[0].split("\t")] == [
+        "Freq (Hz)", "VIN (mVrms)", "VOUT (mVrms)", "PSRR (dB)",
+    ]
+    for line in table_logs:
+        assert [len(cell) for cell in line.split("\t")] == [12, 18, 18, 12]
 
 
 def test_persistent_ssh_command_uses_line_bootstrap():
@@ -203,10 +220,17 @@ def test_local_output_stays_on_during_sweep_until_manual_off():
         assert point["input_dc_v"] == pytest.approx(config.offset_v)
         assert point["output_dc_v"] == pytest.approx(1.8)
     assert sweep_payloads[0]["points"] == sweep_points
-    data_logs = [line for line in sweep_logs if line.startswith("[DATA]")]
-    assert len(data_logs) == len(config.frequencies_hz)
-    assert all("VIN DC(INPUT1)=3.800000 V" in line for line in data_logs)
-    assert all("VOUT DC(INPUT2)=1.800000 V" in line for line in data_logs)
+    table_logs = [line for line in sweep_logs if "\t" in line]
+    assert len(table_logs) == len(config.frequencies_hz) + 1
+    assert [cell.strip() for cell in table_logs[0].split("\t")] == [
+        "Freq (Hz)", "VIN (dBV, INPUT1)", "VOUT (dBV, INPUT2)",
+        "VIN DC (V, INPUT1)", "VOUT DC (V, INPUT2)", "PSRR (dB)",
+    ]
+    for line in table_logs[1:]:
+        cells = line.split("\t")
+        assert len(cells) == 6
+        assert cells[3].strip() == "3.800000"
+        assert cells[4].strip() == "1.800000"
 
     output_off = AudioPrecisionOutputWorker(config, False, audio_precision=ap)
     output_off.finished.connect(lambda *args: output_results.append(args))
@@ -255,8 +279,14 @@ def test_local_sweep_uses_selected_vin_vout_channels():
     assert point["psrr_db"] == pytest.approx(-30.0)
     assert point["input_dc_v"] == pytest.approx(4.0)
     assert point["output_dc_v"] == pytest.approx(3.8)
-    assert "VIN(INPUT2)=-40.0000 dBV" in logs[-1]
-    assert "VOUT DC(INPUT1)=3.800000 V" in logs[-1]
+    header_cells = [cell.strip() for cell in logs[-2].split("\t")]
+    data_cells = [cell.strip() for cell in logs[-1].split("\t")]
+    assert header_cells[1:] == [
+        "VIN (dBV, INPUT2)", "VOUT (dBV, INPUT1)",
+        "VIN DC (V, INPUT2)", "VOUT DC (V, INPUT1)", "PSRR (dB)",
+    ]
+    assert data_cells[1] == "-40.0000"
+    assert data_cells[4] == "3.800000"
     assert payloads[0]["config"]["ap_vin_input_channel"] == 2
     assert payloads[0]["config"]["ap_vout_input_channel"] == 1
 
@@ -661,6 +691,12 @@ def test_psrr_page_mock_connect_and_disconnect(monkeypatch):
         assert page.test_thread is None
 
     try:
+        cases = ((256, "256"), (1024, "1k"), (16384, "16k"), (48000, "48k"))
+        for value, label in cases:
+            index = page.ap_fft_length_combo.findData(value)
+            assert page.ap_fft_length_combo.itemText(index) == label
+            assert page.ap_fft_length_combo.itemData(index) == value
+
         page.method_combo.setCurrentIndex(
             page.method_combo.findData("audio_precision")
         )

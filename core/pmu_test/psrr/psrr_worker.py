@@ -204,11 +204,16 @@ class PSRRTestWorker(QObject):
         self._points.append(point)
         self.point_ready.emit(dict(point))
         self.progress.emit(round((index + 1) * 100 / len(self.config.frequencies_hz)))
+        if index == 0:
+            self.log.emit(
+                f"{'Freq (Hz)':>12}\t{'VIN (mVrms)':>18}\t"
+                f"{'VOUT (mVrms)':>18}\t{'PSRR (dB)':>12}"
+            )
         self.log.emit(
-            f"[DATA] Freq={point['frequency_hz']:g} Hz | "
-            f"Vin={point['input_vrms'] * 1000:.4f} mVrms | "
-            f"Vout={point['output_vrms'] * 1000:.4f} mVrms | "
-            f"PSRR={point['psrr_db']:.3f} dB"
+            f"{point['frequency_hz']:>12.6g}\t"
+            f"{point['input_vrms'] * 1000:>18.4f}\t"
+            f"{point['output_vrms'] * 1000:>18.4f}\t"
+            f"{point['psrr_db']:>12.3f}"
         )
 
 
@@ -591,13 +596,22 @@ class AudioPrecisionPSRRWorker(QObject):
         self._points.append(point)
         self.point_ready.emit(dict(point))
         self.progress.emit(round((index + 1) * 100 / len(self.config.frequencies_hz)))
+        if index == 0:
+            self.log.emit(
+                f"{'Freq (Hz)':>12}\t"
+                f"{f'VIN (dBV, INPUT{self.config.vin_input_channel})':>20}\t"
+                f"{f'VOUT (dBV, INPUT{self.config.vout_input_channel})':>20}\t"
+                f"{f'VIN DC (V, INPUT{self.config.vin_input_channel})':>22}\t"
+                f"{f'VOUT DC (V, INPUT{self.config.vout_input_channel})':>22}\t"
+                f"{'PSRR (dB)':>12}"
+            )
         self.log.emit(
-            f"[DATA] Freq={point['frequency_hz']:g} Hz | "
-            f"VIN(INPUT{self.config.vin_input_channel})={point['input_dbv']:.4f} dBV | "
-            f"VOUT(INPUT{self.config.vout_input_channel})={point['output_dbv']:.4f} dBV | "
-            f"VIN DC(INPUT{self.config.vin_input_channel})={point['input_dc_v']:.6f} V | "
-            f"VOUT DC(INPUT{self.config.vout_input_channel})={point['output_dc_v']:.6f} V | "
-            f"PSRR={point['psrr_db']:.3f} dB"
+            f"{point['frequency_hz']:>12.6g}\t"
+            f"{point['input_dbv']:>20.4f}\t"
+            f"{point['output_dbv']:>20.4f}\t"
+            f"{point['input_dc_v']:>22.6f}\t"
+            f"{point['output_dc_v']:>22.6f}\t"
+            f"{point['psrr_db']:>12.3f}"
         )
 
     def _cleanup_audio_precision(self, success: bool, message: str) -> tuple[bool, str]:
