@@ -3,25 +3,33 @@
 """PMU PSRR 扫频测试页面。"""
 from __future__ import annotations
 
+import copy
+import datetime
 import math
 import threading
 from typing import Any
 
 import pyqtgraph as pg
 from PySide6.QtCore import QThread, Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QAction, QBrush, QColor, QFont
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -75,6 +83,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
     sequence_execution_finished = Signal(bool, str)
 
+    RECENT_TEST_LIMIT = 10
+    _COMPARE_PALETTE = [
+        "#19d9c0", "#f0a040", "#5b9cf5", "#e05c5c",
+        "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
+    ]
+
     def __init__(self, n6705c_top=None, mso64b_top=None, instrument_manager=None):
         super().__init__()
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
@@ -99,6 +113,14 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._ap_output_on = False
         self._ap_output_thread = None
         self._ap_output_worker = None
+        self._recent_test_records: list[dict] = []
+        self._recent_test_seq = 0
+        self._loaded_record = None
+        self._comparison_records: list[dict] = []
+        self._comparison_curves = []
+        self._comparison_limit_lines = []
+        self._recent_panel_sizes = [1200, 280]
+        self._highlight_record_id = None
 
         self._setup_style()
         self._create_layout()
@@ -196,6 +218,30 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QLabel[role="resultCaption"] { color: #7d94c5; font-size: 10px; }
             QLabel#resultSummary { color: #9bb6e8; font-size: 11px; }
             QCheckBox { background-color: transparent; color: #a9bde2; }
+            QFrame#recentPanel {
+                background-color: #0d1833; border: 1px solid #1a2a52; border-radius: 12px;
+            }
+            QPushButton#recentToolBtn {
+                min-height: 20px; max-height: 20px; padding: 0px 7px;
+                border-radius: 6px; background-color: #1a2748; color: #dce8ff;
+            }
+            QPushButton#recentToolBtn:checked {
+                background-color: #1a3260; border: 1px solid #5b9cf5;
+            }
+            QListWidget#recentTestList {
+                background-color: #020b22; color: #b7c8ea; border: 1px solid #1a2d57;
+                border-radius: 8px; padding: 4px; outline: none;
+            }
+            QListWidget#recentTestList::item {
+                background: transparent; border: none; border-radius: 4px; padding: 5px 4px;
+            }
+            QListWidget#recentTestList::item:hover { background-color: #122448; }
+            QListWidget#recentTestList::item:selected { background-color: #1a3260; }
+            QLabel#recentHint { color: #7d94c5; font-size: 10px; }
+            QSplitter#recentCurveSplitter::handle { background-color: transparent; }
+            QSplitter#recentCurveSplitter::handle:horizontal { width: 3px; }
+            QSplitter#recentCurveSplitter::handle:horizontal:hover { background-color: #1a2d57; }
+            QSplitter#recentCurveSplitter::handle:horizontal:pressed { background-color: #5b9cf5; }
         """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
@@ -471,6 +517,12 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         plot_title.setObjectName("cardTitle")
         plot_header.addWidget(plot_title)
         plot_header.addStretch()
+        self.toggle_recent_btn = QPushButton("Recent ▶")
+        self.toggle_recent_btn.setObjectName("recentToolBtn")
+        self.toggle_recent_btn.setCheckable(True)
+        self.toggle_recent_btn.setToolTip("Show or hide recent test records")
+        self.toggle_recent_btn.toggled.connect(self._on_toggle_recent_panel)
+        plot_header.addWidget(self.toggle_recent_btn)
         plot_layout.addLayout(plot_header)
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground("#020b22")
@@ -478,6 +530,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.plot_widget.setLogMode(x=True, y=False)
         self.plot_widget.setLabel("bottom", "Frequency (Hz)")
         self.plot_widget.setLabel("left", "PSRR (dB)")
+        self.plot_widget.addLegend(offset=(10, 10))
         for axis_name in ("left", "bottom"):
             axis = self.plot_widget.getAxis(axis_name)
             axis.setPen(pg.mkPen("#6e88b6"))
@@ -485,6 +538,7 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.psrr_curve = self.plot_widget.plot(
             [], [], pen=pg.mkPen("#19d9c0", width=2),
             symbol="o", symbolSize=7, symbolBrush="#19d9c0", symbolPen="#b8fff2",
+            name="Current",
         )
         self.limit_line = pg.InfiniteLine(
             angle=0, movable=False, pen=pg.mkPen("#ffb84d", width=1, style=Qt.DashLine)
@@ -501,7 +555,15 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.execution_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
             result_container, show_progress=True, stretch=(4, 1)
         )
-        right.addWidget(self.execution_splitter)
+        self.recent_curve_splitter = QSplitter(Qt.Horizontal)
+        self.recent_curve_splitter.setObjectName("recentCurveSplitter")
+        self.recent_curve_splitter.addWidget(self.execution_splitter)
+        self.recent_curve_splitter.addWidget(self._create_recent_tests_panel())
+        self.recent_curve_splitter.setStretchFactor(0, 1)
+        self.recent_curve_splitter.setStretchFactor(1, 0)
+        self.recent_curve_splitter.setSizes(self._recent_panel_sizes)
+        self.recent_curve_splitter.widget(1).setVisible(False)
+        right.addWidget(self.recent_curve_splitter)
         self._on_method_changed()
 
     @staticmethod
@@ -552,6 +614,367 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         layout.addWidget(caption_label)
         return box, value
 
+    def _create_recent_tests_panel(self):
+        panel = QFrame()
+        panel.setObjectName("recentPanel")
+        panel.setMinimumWidth(260)
+        panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(5)
+        title = QLabel("Recent Tests")
+        title.setObjectName("cardTitle")
+        title_row.addWidget(title)
+        title_row.addStretch()
+        self.compare_recent_btn = QPushButton("Compare")
+        self.load_recent_btn = QPushButton("Load")
+        self.clear_recent_btn = QPushButton("Clear")
+        for button, tooltip in (
+            (self.compare_recent_btn, "Plot two or more checked records on the same chart"),
+            (self.load_recent_btn, "Load the first checked record"),
+            (self.clear_recent_btn, "Clear all recent test records"),
+        ):
+            button.setObjectName("recentToolBtn")
+            button.setToolTip(tooltip)
+            title_row.addWidget(button)
+        layout.addLayout(title_row)
+
+        self.recent_test_list = QListWidget()
+        self.recent_test_list.setObjectName("recentTestList")
+        self.recent_test_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.recent_test_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.recent_test_list.setToolTip(
+            "Check records to compare; double-click to load; right-click for more actions"
+        )
+        layout.addWidget(self.recent_test_list, 1)
+        hint = QLabel("Check 2+ records and click Compare. Double-click a record to load it.")
+        hint.setObjectName("recentHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self.compare_recent_btn.clicked.connect(self._on_compare_recent_tests)
+        self.load_recent_btn.clicked.connect(self._on_load_recent_test)
+        self.clear_recent_btn.clicked.connect(self._on_clear_recent_tests)
+        self.recent_test_list.itemDoubleClicked.connect(self._on_recent_item_double_clicked)
+        self.recent_test_list.itemSelectionChanged.connect(self._on_recent_selection_changed)
+        self.recent_test_list.customContextMenuRequested.connect(self._show_recent_item_menu)
+        return panel
+
+    def _on_toggle_recent_panel(self, checked: bool):
+        panel = self.recent_curve_splitter.widget(1)
+        if checked:
+            panel.setVisible(True)
+            self.recent_curve_splitter.setSizes(self._recent_panel_sizes)
+            self.toggle_recent_btn.setText("Recent ◀")
+        else:
+            self._recent_panel_sizes = self.recent_curve_splitter.sizes()
+            panel.setVisible(False)
+            self.toggle_recent_btn.setText("Recent ▶")
+
+    def _record_color(self, record_id: int) -> str:
+        return self._COMPARE_PALETTE[record_id % len(self._COMPARE_PALETTE)]
+
+    @staticmethod
+    def _record_display_name(record: dict) -> str:
+        return record.get("label") or record["name"]
+
+    @staticmethod
+    def _result_limit_db(result: dict) -> float:
+        config = result.get("config") or {}
+        return float(config.get("limit_db", config.get("ap_limit_db", 0.0)))
+
+    def _record_tooltip(self, record: dict) -> str:
+        result = record["result"]
+        summary = result.get("summary") or {}
+        method = "Audio Precision" if record["method"] == "audio_precision" else "MSO64B + J2120A"
+        return "\n".join((
+            self._record_display_name(record),
+            f"Time: {record['time'].strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Method: {method}",
+            f"Points: {summary.get('point_count', 0)}",
+            f"Minimum: {summary.get('min_psrr_db', 0.0):.2f} dB",
+            f"Average: {summary.get('average_psrr_db', 0.0):.2f} dB",
+            f"Worst Frequency: {summary.get('min_frequency_hz', 0.0):g} Hz",
+            f"Limit: {self._result_limit_db(result):.2f} dB",
+            f"Result: {'PASS' if summary.get('passed') else 'FAIL'}",
+        ))
+
+    def _record_recent_test(self, result: dict | None):
+        if not result or not result.get("points"):
+            return
+        self._recent_test_seq += 1
+        config = result.get("config") or {}
+        summary = result.get("summary") or {}
+        method = config.get("measurement_method", "mso64b_j2120a")
+        record = {
+            "id": self._recent_test_seq,
+            "time": datetime.datetime.now(),
+            "name": f"PSRR_{self._recent_test_seq:03d}",
+            "label": "",
+            "method": method,
+            "result": copy.deepcopy(result),
+        }
+        self._recent_test_records.append(record)
+        while len(self._recent_test_records) > self.RECENT_TEST_LIMIT:
+            self._recent_test_records.pop(0)
+        self._refresh_recent_test_list()
+        self.append_log(
+            f"[INFO] Saved recent test #{record['id']} {record['name']} "
+            f"({summary.get('point_count', 0)} points)"
+        )
+
+    def _refresh_recent_test_list(self):
+        checked_ids = set()
+        for index in range(self.recent_test_list.count()):
+            item = self.recent_test_list.item(index)
+            record = item.data(Qt.UserRole)
+            if item.checkState() == Qt.Checked and record is not None:
+                checked_ids.add(record["id"])
+        self.recent_test_list.blockSignals(True)
+        self.recent_test_list.clear()
+        for record in self._recent_test_records:
+            summary = record["result"].get("summary") or {}
+            method = "AP" if record["method"] == "audio_precision" else "MSO"
+            text = (
+                f"● #{record['id']} {self._record_display_name(record)} | {method} | "
+                f"{record['time'].strftime('%m-%d %H:%M:%S')}\n"
+                f"{summary.get('point_count', 0)} pts | Min "
+                f"{summary.get('min_psrr_db', 0.0):.2f} dB | "
+                f"{'PASS' if summary.get('passed') else 'FAIL'}"
+            )
+            item = QListWidgetItem(text)
+            item.setForeground(QBrush(QColor(self._record_color(record["id"]))))
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if record["id"] in checked_ids else Qt.Unchecked)
+            item.setData(Qt.UserRole, record)
+            item.setToolTip(self._record_tooltip(record))
+            self.recent_test_list.addItem(item)
+            if record["id"] == self._highlight_record_id:
+                self.recent_test_list.setCurrentItem(item)
+        self.recent_test_list.blockSignals(False)
+
+    def _get_checked_records(self) -> list[dict]:
+        records = []
+        for index in range(self.recent_test_list.count()):
+            item = self.recent_test_list.item(index)
+            record = item.data(Qt.UserRole)
+            if item.checkState() == Qt.Checked and record is not None:
+                records.append(record)
+        return records
+
+    def _on_recent_selection_changed(self):
+        items = self.recent_test_list.selectedItems()
+        record = items[0].data(Qt.UserRole) if items else None
+        self._highlight_record_id = record["id"] if record is not None else None
+        checked = self._get_checked_records()
+        if len(checked) >= 2:
+            self._plot_comparison_curves(checked)
+
+    def _on_compare_recent_tests(self):
+        records = self._get_checked_records()
+        if len(records) < 2:
+            self.append_log("[WARN] Check at least two recent records to compare")
+            return
+        self._plot_comparison_curves(records)
+
+    def _on_load_recent_test(self):
+        records = self._get_checked_records()
+        if not records:
+            items = self.recent_test_list.selectedItems()
+            records = [items[0].data(Qt.UserRole)] if items else []
+        if not records:
+            self.append_log("[WARN] Check or select one recent record to load")
+            return
+        if len(records) > 1:
+            self.append_log("[WARN] Load supports one record; using the first checked record")
+        self._load_recent_record(records[0])
+
+    def _on_recent_item_double_clicked(self, item):
+        record = item.data(Qt.UserRole)
+        if record is not None:
+            self._load_recent_record(record)
+
+    def _load_recent_record(self, record: dict):
+        result = copy.deepcopy(record["result"])
+        self._comparison_records = []
+        self._clear_comparison_items()
+        self._loaded_record = record
+        self._points = copy.deepcopy(result.get("points") or [])
+        self._last_result = result
+        self._update_plot(self._record_display_name(record))
+        self._on_result_ready(result)
+        self._update_frequency_ticks_for_points(self._points)
+        self.result_status_label.setText("LOADED")
+        self.append_log(f"[INFO] Loaded recent record #{record['id']} {self._record_display_name(record)}")
+
+    def _show_recent_item_menu(self, pos):
+        item = self.recent_test_list.itemAt(pos)
+        menu = QMenu(self)
+        if item is not None:
+            record = item.data(Qt.UserRole)
+            rename_action = QAction("Rename...", menu)
+            rename_action.triggered.connect(lambda: self._rename_recent_record(record))
+            menu.addAction(rename_action)
+            load_action = QAction("Load Curve", menu)
+            load_action.triggered.connect(lambda: self._load_recent_record(record))
+            menu.addAction(load_action)
+            check_action = QAction(
+                "Uncheck" if item.checkState() == Qt.Checked else "Check for Compare", menu
+            )
+            check_action.triggered.connect(
+                lambda: item.setCheckState(
+                    Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked
+                )
+            )
+            menu.addAction(check_action)
+            menu.addSeparator()
+            remove_action = QAction("Remove", menu)
+            remove_action.triggered.connect(lambda: self._delete_recent_record(record))
+            menu.addAction(remove_action)
+            menu.addSeparator()
+        clear_action = QAction("Clear All", menu)
+        clear_action.triggered.connect(self._on_clear_recent_tests)
+        menu.addAction(clear_action)
+        menu.exec(self.recent_test_list.mapToGlobal(pos))
+
+    def _rename_recent_record(self, record: dict):
+        text, accepted = QInputDialog.getText(
+            self, "Rename Recent Test", "Display name:",
+            text=self._record_display_name(record),
+        )
+        if not accepted:
+            return
+        record["label"] = text.strip()
+        self._refresh_recent_test_list()
+        if record in self._comparison_records:
+            self._plot_comparison_curves(self._comparison_records)
+        elif self._loaded_record is record:
+            self._update_plot(self._record_display_name(record))
+        self.append_log(f"[INFO] Renamed recent record #{record['id']}")
+
+    def _delete_recent_record(self, record: dict):
+        try:
+            self._recent_test_records.remove(record)
+        except ValueError:
+            return
+        was_loaded = self._loaded_record is record
+        remaining_comparison = [r for r in self._comparison_records if r is not record]
+        if self._highlight_record_id == record["id"]:
+            self._highlight_record_id = None
+        self._refresh_recent_test_list()
+        if was_loaded:
+            self.clear_results()
+        elif remaining_comparison != self._comparison_records:
+            if len(remaining_comparison) >= 2:
+                self._plot_comparison_curves(remaining_comparison)
+            elif remaining_comparison:
+                self._load_recent_record(remaining_comparison[0])
+            else:
+                self.clear_results()
+        self.append_log(f"[INFO] Removed recent record #{record['id']}")
+
+    def _on_clear_recent_tests(self):
+        if not self._recent_test_records:
+            return
+        showing_history = self._loaded_record is not None or bool(self._comparison_records)
+        self._recent_test_records.clear()
+        self.recent_test_list.clear()
+        self._highlight_record_id = None
+        self._loaded_record = None
+        self._comparison_records = []
+        if showing_history:
+            self.clear_results()
+        self.append_log("[INFO] Cleared all recent test records")
+
+    def _clear_comparison_items(self):
+        for curve in self._comparison_curves:
+            self.plot_widget.removeItem(curve)
+        for line in self._comparison_limit_lines:
+            self.plot_widget.removeItem(line)
+        self._comparison_curves.clear()
+        self._comparison_limit_lines.clear()
+        self.psrr_curve.setVisible(True)
+        self.limit_line.setVisible(True)
+        legend = self.plot_widget.plotItem.legend
+        if legend is not None:
+            legend.clear()
+
+    def _update_comparison_metrics(self, records: list[dict]):
+        summaries = [
+            record["result"].get("summary") or {}
+            for record in records
+            if (record["result"].get("summary") or {}).get("point_count")
+        ]
+        if not summaries:
+            return
+        worst = min(summaries, key=lambda summary: summary["min_psrr_db"])
+        average = sum(summary["average_psrr_db"] for summary in summaries) / len(summaries)
+        passed = all(summary.get("passed") for summary in summaries)
+        self.metric_values["min"].setText(f"{worst['min_psrr_db']:.2f}")
+        self.metric_values["avg"].setText(f"{average:.2f}")
+        self.metric_values["freq"].setText(f"{worst['min_frequency_hz']:g}")
+        self.metric_values["pass"].setText("PASS" if passed else "FAIL")
+        self.metric_values["pass"].setStyleSheet(
+            f"color: {'#19f5c8' if passed else '#ff6f96'};"
+        )
+
+    def _plot_comparison_curves(self, records: list[dict]):
+        self._loaded_record = None
+        self._comparison_records = list(records)
+        self._clear_comparison_items()
+        self.psrr_curve.setVisible(False)
+        self.limit_line.setVisible(False)
+        highlight_id = self._highlight_record_id
+        dim_others = highlight_id is not None and any(r["id"] == highlight_id for r in records)
+        all_points = []
+        plotted = 0
+        for record in records:
+            points = sorted(
+                record["result"].get("points") or [], key=lambda point: point["frequency_hz"]
+            )
+            if not points:
+                continue
+            all_points.extend(points)
+            color = QColor(self._record_color(record["id"]))
+            symbol_color = QColor(color)
+            if dim_others and record["id"] != highlight_id:
+                color.setAlpha(90)
+                symbol_color.setAlpha(90)
+            curve = self.plot_widget.plot(
+                [point["frequency_hz"] for point in points],
+                [point["psrr_db"] for point in points],
+                pen=pg.mkPen(color, width=3 if record["id"] == highlight_id else 2),
+                symbol="o", symbolSize=6, symbolBrush=symbol_color, symbolPen=None,
+                name=f"#{record['id']} {self._record_display_name(record)}",
+            )
+            self._comparison_curves.append(curve)
+            limit_color = QColor(color)
+            limit_color.setAlpha(150)
+            limit_line = pg.InfiniteLine(
+                angle=0, movable=False,
+                pen=pg.mkPen(limit_color, width=1, style=Qt.DashLine),
+            )
+            limit_line.setValue(self._result_limit_db(record["result"]))
+            limit_line.setToolTip(f"#{record['id']} limit")
+            self.plot_widget.addItem(limit_line)
+            self._comparison_limit_lines.append(limit_line)
+            plotted += 1
+        if not plotted:
+            self.append_log("[WARN] The checked records contain no curve data")
+            return
+        self._update_frequency_ticks_for_points(all_points)
+        self._update_comparison_metrics(records)
+        self.result_status_label.setText("COMPARE")
+        self.result_summary_label.setText(
+            f"Comparing {plotted} records | Select a record to highlight its curve; "
+            "double-click to load a single result."
+        )
+        self.plot_widget.autoRange()
+        self.append_log(f"[INFO] Plotted {plotted} recent PSRR records for comparison")
+
     def _sync_scope_from_top(self):
         self.sync_oscilloscope_from_top()
 
@@ -564,8 +987,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ap_connection_card.setVisible(not is_j2120a)
         self.ap_output_card.setVisible(not is_j2120a)
         self.ap_card.setVisible(not is_j2120a)
-        self.limit_line.setValue(self._current_limit_db())
-        self._update_frequency_ticks()
+        if not self._comparison_records and self._loaded_record is None:
+            self.limit_line.setValue(self._current_limit_db())
+            self._update_frequency_ticks()
         self._sync_ap_output_controls()
 
     def _on_ap_connection_changed(self):
@@ -927,6 +1351,11 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.stop_test_btn.setEnabled(running)
         for widget in self._config_widgets:
             widget.setEnabled(not running)
+        for widget in (
+            self.recent_test_list, self.compare_recent_btn,
+            self.load_recent_btn, self.clear_recent_btn,
+        ):
+            widget.setEnabled(not running)
         self._sync_ap_connection_controls()
         self._sync_ap_output_controls()
 
@@ -962,6 +1391,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.result_status_label.setText("DONE" if success else "STOPPED")
         self.set_system_status(message, not success)
         self.append_log(f"[{'RESULT' if success else 'WARN'}] {message}")
+        if success:
+            self._record_recent_test(self._last_result)
         self.sequence_execution_finished.emit(success, message)
 
     def _cleanup_test_thread(self):
@@ -999,19 +1430,46 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         ]
         self.plot_widget.getAxis("bottom").setTicks([ticks])
 
-    def _update_plot(self):
+    def _update_frequency_ticks_for_points(self, points: list[dict]):
+        frequencies = [point["frequency_hz"] for point in points if point["frequency_hz"] > 0]
+        if not frequencies:
+            self._update_frequency_ticks()
+            return
+        ticks = [
+            (math.log10(frequency), self._format_frequency_tick(frequency))
+            for frequency in self._frequency_tick_values(min(frequencies), max(frequencies))
+        ]
+        self.plot_widget.getAxis("bottom").setTicks([ticks])
+
+    def _update_plot(self, name: str = "Current"):
         ordered = sorted(self._points, key=lambda point: point["frequency_hz"])
         self.psrr_curve.setData(
             [point["frequency_hz"] for point in ordered],
             [point["psrr_db"] for point in ordered],
         )
-        self.limit_line.setValue(self._current_limit_db())
+        self.psrr_curve.setVisible(True)
+        self.limit_line.setVisible(True)
+        legend = self.plot_widget.plotItem.legend
+        if legend is not None:
+            legend.clear()
+            if ordered:
+                legend.addItem(self.psrr_curve, name)
+        limit_db = (
+            self._result_limit_db(self._last_result)
+            if self._loaded_record is not None and self._last_result is not None
+            else self._current_limit_db()
+        )
+        self.limit_line.setValue(limit_db)
 
     def clear_results(self):
         self._points.clear()
         self._last_result = None
+        self._loaded_record = None
+        self._comparison_records = []
+        self._clear_comparison_items()
         self.psrr_curve.setData([], [])
         self.limit_line.setValue(self._current_limit_db())
+        self._update_frequency_ticks()
         for value in self.metric_values.values():
             value.setText("---")
         self.metric_values["pass"].setStyleSheet("")
@@ -1247,7 +1705,8 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             return False, "配置草案未包含任何可识别的 PSRR 配置项。"
         self._on_method_changed()
         self._on_ap_connection_changed()
-        self._update_plot()
+        if not self._comparison_records and self._loaded_record is None:
+            self._update_plot()
         if not silent:
             self._highlight_widgets(touched)
             self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")

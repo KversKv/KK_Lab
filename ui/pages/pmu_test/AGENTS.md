@@ -73,3 +73,4 @@
 - **worker 线程禁直调 `set_system_status`**（2026-08 实测整进程 SIGABRT / "Fatal Python error: Aborted"，现场仅主线程栈停在 `app.exec()`）：Mixin 原实现直接 `setText/setObjectName/unpolish/polish`，跨线程改 QWidget 破坏线程亲和性；GPADCTestUI 已重写为经 `system_status_requested` 信号队列化回主线程（`_apply_system_status` 槽），页面内直接 `self.set_system_status(...)` 即可，勿绕过重写。
 - **PSRR Audio Precision 手动连接**：页面必须先 Connect 再启动；本地复用 `audio_precision`，SSH 复用 `AudioPrecisionSSHSession`，连接/断连均走 `AudioPrecisionConnectionWorker + QThread`。正常测试结束保持手动会话；停止 SSH 测试会终止会话，UI 必须回退未连接态。连接中禁用 Connect 前若其持焦，须先把焦点移到折叠按钮，避免 Qt 将焦点顺移到 Project Path。
 - **PSRR Audio Precision 独立 OUTPUT**：CH/Amplitude/Offset 与 ON/OFF 独立于 Test Parameters，经 `AudioPrecisionOutputWorker + QThread` 操作；必须先手动 OUTPUT ON 再启动扫频，ON 时锁定测量方式与输出参数（含配置回填），扫频保持发生器状态，不自动启停；Disconnect 仍先关发生器。SSH 走会话 `output` 命令，禁 UI 阻塞。
+- **PSRR Recent Tests**：仅成功且有频点的结果深拷贝入会话记录（上限 10），勾选 ≥2 条 Compare 同图叠加，各记录固定色+独立限值线；Load/双击恢复单次曲线与指标。历史图显示期间切测量方式或回填配置不得覆盖其频率刻度与限值。
