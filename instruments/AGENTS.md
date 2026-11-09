@@ -23,7 +23,7 @@
 - 示波器统一走 [scopes/base.py](./scopes/base.py) 的 `OscilloscopeBase`；新增品牌型号须保持 `capture_screen` / `measure_channel` 等基类 API 兼容。
 - 业务异常统一抛 [base/exceptions.py](./base/exceptions.py) 中定义的类型。
 - N6705C / IT2705 经 factory 创建后必须刷新 `channel_module_models` 并提供 `is_channel_supported(ch)`；空槽、未知型号或单通道查询失败仅禁用该通道，Mock 同步实现。
-- N6705C / IT2705 模块型号查询统一用 `SYST:CHAN:MOD? (@ch)`，禁用 `SYST:MOD:MOD?`；IT2705 空槽会查询超时，按空型号安全禁用。
+- N6705C 逐通道用 `:SYSTem:CHANnel:MODel? (@ch)` 查询型号；IT2705 先批量 `:SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)`，仅对状态 `1` 的通道查型号，空槽禁止再查 `MODel?`；禁用短格式和 `SYST:MOD:MOD?`。
 
 ## 局部约定
 

@@ -26,13 +26,16 @@ def main():
         logger.info("REAL_PROBE resource=%s", args.resource)
         logger.info("REAL_PROBE IDN=%s", idn)
         for channel in instance.VALID_CHANNELS:
-            try:
-                raw = instance.instr.query(f"SYST:CHAN:MOD? (@{channel})")
-            except Exception as exc:
-                raw = f"ERROR: {exc}"
-                logger.warning(
-                    "REAL_PROBE CH%d raw query failed", channel, exc_info=True
-                )
+            if models.get(channel, ""):
+                try:
+                    raw = instance.instr.query(f":SYSTem:CHANnel:MODel? (@{channel})")
+                except Exception as exc:
+                    raw = f"ERROR: {exc}"
+                    logger.warning(
+                        "REAL_PROBE CH%d raw query failed", channel, exc_info=True
+                    )
+            else:
+                raw = "SKIPPED (no installed module)"
             logger.info(
                 "REAL_PROBE CH%d raw=%r normalized=%r supported=%s",
                 channel,

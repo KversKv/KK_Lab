@@ -50,7 +50,7 @@ def test_it2705_eight_channel_ui_and_model(monkeypatch):
 
 
 @pytest.mark.qt
-def test_module_whitelist_disables_channels_across_both_pages(monkeypatch):
+def test_module_whitelist_hides_channels_across_both_pages(monkeypatch):
     from instruments.mock.mock_instruments import MockIT2705, MockN6705C
     from ui.pages.power_anaalyzer.datalog.datalog_ui import N6705CDatalogUI
     from ui.pages.power_anaalyzer.datalog import view_recording
@@ -84,19 +84,31 @@ def test_module_whitelist_disables_channels_across_both_pages(monkeypatch):
         label = btn.property("device_label")
         channel = btn.property("channel")
         assert btn.isEnabled() == (channel in expected_tabs[label])
+        assert btn.isHidden() == (channel not in expected_tabs[label])
         assert btn.isChecked() == (label == "A" and channel == 1)
+    assert not analyser.setting_frame.isHidden()
 
     for label, channel, btn in analyser.batch_channel_buttons:
         supported = channel in expected_tabs[label]
         assert btn.isEnabled() == supported
+        assert btn.isHidden() == (not supported)
         if not supported:
             assert not btn.isChecked()
+    for label, inputs in (
+        ("A", analyser.batch_voltage_inputs["A"]),
+        ("A", analyser.batch_current_inputs["A"]),
+        ("B", analyser.batch_voltage_inputs["B"]),
+        ("B", analyser.batch_current_inputs["B"]),
+    ):
+        for channel, edit in enumerate(inputs, 1):
+            assert edit.isHidden() == (channel not in expected_tabs[label])
     analyser.batch_channel_buttons[2][2].setChecked(True)
     assert 3 not in analyser._get_selected_batch_channels("A")
 
     for (label, channel), card in analyser.ct_channel_cards.items():
         supported = channel in expected_tabs[label]
         assert card["checkbox"].isEnabled() == supported
+        assert card["card"].isHidden() == (not supported)
         if not supported:
             assert not card["checkbox"].isChecked()
 
@@ -110,6 +122,8 @@ def test_module_whitelist_disables_channels_across_both_pages(monkeypatch):
                 assert btn.isEnabled() == supported
                 assert btn.property("scale_edit").isEnabled() == supported
                 assert btn.property("offset_edit").isEnabled() == supported
+                channel_frame = btn.parentWidget().parentWidget()
+                assert channel_frame.isHidden() == (not supported)
 
     captured = {}
 
@@ -185,9 +199,13 @@ def test_module_whitelist_disables_channels_across_both_pages(monkeypatch):
     assert not analyser._supported_channels_for_device("A")
     assert not analyser._supported_channels_for_device("B")
     assert all(not btn.isEnabled() for btn in analyser.channel_tab_buttons)
+    assert all(btn.isHidden() for btn in analyser.channel_tab_buttons)
     assert all(not btn.isChecked() for btn in analyser.channel_tab_buttons)
+    assert analyser.setting_frame.isHidden()
+    assert all(button.isHidden() for _, _, button in analyser.batch_channel_buttons)
+    assert all(card["card"].isHidden() for card in analyser.ct_channel_cards.values())
     assert all(
-        not btn.isEnabled()
+        not btn.isEnabled() and btn.parentWidget().parentWidget().isHidden()
         for group in (
             datalog.ch_current_cbs_a, datalog.ch_voltage_cbs_a, datalog.ch_power_cbs_a,
             datalog.ch_current_cbs_b, datalog.ch_voltage_cbs_b, datalog.ch_power_cbs_b,

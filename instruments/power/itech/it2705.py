@@ -40,9 +40,25 @@ class IT2705(VisaInstrument):
 
     def refresh_channel_modules(self):
         self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
-        for channel in self.VALID_CHANNELS:
+        channel_list = ",".join(str(ch) for ch in self.VALID_CHANNELS)
+        try:
+            response = self.query(f":SYSTem:CHANnel:STATus? (@{channel_list})")
+            statuses = [value.strip() for value in str(response).split(",")]
+            if len(statuses) != len(self.VALID_CHANNELS):
+                raise ValueError(f"unexpected channel status response: {response!r}")
+        except Exception:
+            logger.warning(
+                "IT2705 channel status query failed; all channels disabled",
+                exc_info=True,
+            )
+            return dict(self.channel_module_models)
+
+        for channel, status in zip(self.VALID_CHANNELS, statuses):
+            if status != "1":
+                logger.debug("IT2705 CH%d module: EMPTY", channel)
+                continue
             try:
-                response = self.query(f"SYST:CHAN:MOD? (@{channel})")
+                response = self.query(f":SYSTem:CHANnel:MODel? (@{channel})")
                 model = str(response).strip().strip("\"'").strip().upper()
                 self.channel_module_models[channel] = model
                 logger.debug("IT2705 CH%d module: %s", channel, model or "EMPTY")

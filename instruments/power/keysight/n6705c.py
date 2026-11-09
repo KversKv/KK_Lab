@@ -77,7 +77,7 @@ class N6705C:
         self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
         for channel in self.VALID_CHANNELS:
             try:
-                response = self.instr.query(f"SYST:CHAN:MOD? (@{channel})")
+                response = self.instr.query(f":SYSTem:CHANnel:MODel? (@{channel})")
                 model = str(response).strip().strip("\"'").strip().upper()
                 self.channel_module_models[channel] = model
                 logger.debug("N6705C CH%d module: %s", channel, model or "EMPTY")

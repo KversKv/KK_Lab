@@ -386,7 +386,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         for dev_label, ch, button in getattr(self, "batch_channel_buttons", []):
             supported = self._is_channel_supported(dev_label, ch)
             button.setEnabled(supported)
+            button.setVisible(supported)
             button.setToolTip(self._channel_module_tooltip(dev_label, ch))
+            channels = self._channels_for_device(dev_label)
+            grid = button.parentWidget().layout()
+            if grid is not None and ch in channels:
+                grid.setColumnStretch(channels.index(ch) + 1, int(supported))
             if not supported:
                 button.setChecked(False)
         for input_group in ("batch_voltage_inputs", "batch_current_inputs"):
@@ -396,10 +401,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                     if idx < len(channels):
                         supported = self._is_channel_supported(dev_label, channels[idx])
                         edit.setEnabled(supported)
+                        edit.setVisible(supported)
                         edit.setToolTip(self._channel_module_tooltip(dev_label, channels[idx]))
         for (dev_label, ch), card_data in getattr(self, "ct_channel_cards", {}).items():
             supported = self._is_channel_supported(dev_label, ch)
             card_data["card"].setEnabled(supported)
+            card_data["card"].setVisible(supported)
             checkbox = card_data["checkbox"]
             checkbox.setEnabled(supported)
             checkbox.setToolTip(self._channel_module_tooltip(dev_label, ch))
@@ -1474,10 +1481,19 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 and self._is_channel_supported(dev_label, int(ch))
             )
             btn.setEnabled(supported)
+            btn.setVisible(supported)
             if dev_label and ch is not None:
                 btn.setToolTip(self._channel_module_tooltip(dev_label, int(ch)))
 
+        if self._channel_tab_separator is not None:
+            self._channel_tab_separator.setVisible(all(
+                any(self._is_channel_supported(label, ch)
+                    for ch in self._channels_for_device(label))
+                for label in ("A", "B")
+            ))
+
         self.setting_frame.setEnabled(active_channel_enabled)
+        self.setting_frame.setVisible(active_channel_enabled)
 
         disabled_border = DISABLED_BORDER
         disabled_bg = DISABLED_BG

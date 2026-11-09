@@ -140,6 +140,16 @@ class ChannelConfigViewMixin:
 
         self.no_instrument_label.hide()
 
+        last_visible_slot = next(
+            (
+                label for label in reversed(connected_slots)
+                if any(
+                    self._is_channel_supported(label, ch)
+                    for ch in self._channels_for_slot(label)
+                )
+            ),
+            None,
+        )
         for slot_char in connected_slots:
             slot = self.slot_frames[slot_char]
             serial = slot.property("assigned_serial")
@@ -166,6 +176,13 @@ class ChannelConfigViewMixin:
             edit_style = dss.SCALE_OFFSET_EDIT_STYLE
 
             channels = self._channels_for_slot(slot_char)
+            last_visible_channel = next(
+                (
+                    ch_num for ch_num in reversed(channels)
+                    if self._is_channel_supported(slot_char, ch_num)
+                ),
+                None,
+            )
             for ch, ch_num in enumerate(channels):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
                 supported = self._is_channel_supported(slot_char, ch_num)
@@ -173,10 +190,10 @@ class ChannelConfigViewMixin:
 
                 out_frame = QFrame()
                 out_frame.setToolTip(module_tooltip)
-                # 仅整行最末槽的最末通道单元格去掉右边框，避免与卡片右边框形成"双线"
+                # 仅整行最末槽的最末可见通道单元格去掉右边框，避免与卡片右边框形成"双线"
                 out_frame.setStyleSheet(
                     dss.OUT_FRAME_LAST_STYLE if (
-                        ch == len(channels) - 1 and slot_char == connected_slots[-1]
+                        ch_num == last_visible_channel and slot_char == last_visible_slot
                     ) else dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
                 out_vbox.setContentsMargins(4, 1, 4, 1)
@@ -266,6 +283,7 @@ class ChannelConfigViewMixin:
                         power_cbs.append(btn)
 
                 outputs_row.addWidget(out_frame, 1)
+                out_frame.setVisible(supported)
 
             if slot_char == "A":
                 self.ch_checkboxes_a = current_cbs

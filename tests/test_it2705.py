@@ -14,7 +14,10 @@ class FakeSession:
         self.encoding = None
         self.closed = False
         self.commands = []
-        self.responses = {"*IDN?": "ITECH,IT2705,TEST,1.0"}
+        self.responses = {
+            "*IDN?": "ITECH,IT2705,TEST,1.0",
+            ":SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)": "1,1,1,1,1,1,1,1",
+        }
 
     def write(self, command):
         self.commands.append(command)
@@ -82,6 +85,8 @@ def test_n6705c_probe_configures_socket_terminations(monkeypatch):
 def test_channel_module_whitelist_and_empty_slots(connected_driver, monkeypatch):
     driver, resource_manager = connected_driver
     session = resource_manager.session
+    status_command = ":SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)"
+    session.responses[status_command] = "1,1,1,0,0,1,1,1"
     models = {
         1: '"IT27814"',
         2: "IT27814E",
@@ -92,25 +97,60 @@ def test_channel_module_whitelist_and_empty_slots(connected_driver, monkeypatch)
         7: "IT27814",
     }
     for channel, model in models.items():
-        session.responses[f"SYST:CHAN:MOD? (@{channel})"] = model
+        session.responses[f":SYSTem:CHANnel:MODel? (@{channel})"] = model
     original_query = session.query
 
     def query_with_failure(command):
-        if command == "SYST:CHAN:MOD? (@8)":
+        if command == ":SYSTem:CHANnel:MODel? (@8)":
+            session.commands.append(command)
             raise RuntimeError("query failed")
         return original_query(command)
 
     monkeypatch.setattr(session, "query", query_with_failure)
+    session.commands.clear()
     assert driver.refresh_channel_modules() == {
-        **models,
         1: "IT27814",
+        2: "IT27814E",
+        3: "IT27812",
+        4: "",
+        5: "",
         6: "IT27814E",
+        7: "IT27814",
         8: "",
     }
+    assert session.commands == [
+        status_command,
+        ":SYSTem:CHANnel:MODel? (@1)",
+        ":SYSTem:CHANnel:MODel? (@2)",
+        ":SYSTem:CHANnel:MODel? (@3)",
+        ":SYSTem:CHANnel:MODel? (@6)",
+        ":SYSTem:CHANnel:MODel? (@7)",
+        ":SYSTem:CHANnel:MODel? (@8)",
+    ]
     assert [
         channel for channel in driver.VALID_CHANNELS
         if driver.is_channel_supported(channel)
     ] == [1, 2, 6, 7]
+
+
+def test_channel_status_failure_disables_all_channels(connected_driver, monkeypatch):
+    driver, resource_manager = connected_driver
+    session = resource_manager.session
+    status_command = ":SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)"
+    original_query = session.query
+
+    def query_with_status_failure(command):
+        if command == status_command:
+            session.commands.append(command)
+            raise RuntimeError("status query failed")
+        return original_query(command)
+
+    monkeypatch.setattr(session, "query", query_with_status_failure)
+    session.commands.clear()
+    assert driver.refresh_channel_modules() == {
+        channel: "" for channel in driver.VALID_CHANNELS
+    }
+    assert session.commands == [status_command]
 
 
 def test_channel_voltage_current_and_output_commands(connected_driver):

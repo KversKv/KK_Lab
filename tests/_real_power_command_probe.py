@@ -12,7 +12,11 @@ from log_config import get_logger, setup_logging
 logger = get_logger("real_power_command_probe")
 
 COMMANDS = (
-    "SYST:CHAN:MOD? (@1)",
+    ":SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)",
+    ":SYSTem:CHANnel:STATus? (@1)",
+    ":SYSTem:CHANnel:STATus? (@4)",
+    ":SYSTem:CHANnel:MODel? (@1)",
+    "SYSTem:CHANnel:MODel? (@1)",
     "SYST:MOD:SLOT1?",
     "SOUR:CHAN:IDN? 1",
     "SOUR:CHAN:IDN? (@1)",

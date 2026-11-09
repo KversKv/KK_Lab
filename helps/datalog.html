@@ -8,7 +8,7 @@
   <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C / IT2705，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP 或 USB），连接后通过 IDN 自动识别真实型号。</li>
   <li><b>配置采集参数</b> — 点击左侧 <b>Settings</b> 图标，在 <b>DATALOG CONFIG</b> 中设置 <b>Sampling Period (μs)</b> 与 <b>Monitoring Time (s)</b> 监控时长。N6705C 使用原生 DLOG 采样周期；IT2705 使用该值作为软件采样目标间隔，实际间隔受查询耗时影响。</li>
   <li><b>选择测量项</b> — 在 <b>Measurement Settings</b> 中勾选需要统计的指标（Minimum / Average / Maximum / Peak to Peak / Charge / Energy）。</li>
-  <li><b>勾选采集通道</b> — 在下方 <b>Channel Config</b> 的 Active 页签中，为每个受支持通道勾选 <b>I</b>（电流）/ <b>V</b>（电压）/ <b>P</b>（功率），必要时调整 Scale / Offset。N6705C 仅支持 N6781A / N6784A 模块，IT2705 仅支持 IT27814 / IT27814E 模块；其他模块及空插槽对应的通道会自动禁用。</li>
+  <li><b>勾选采集通道</b> — 在下方 <b>Channel Config</b> 的 Active 页签中，为每个受支持通道勾选 <b>I</b>（电流）/ <b>V</b>（电压）/ <b>P</b>（功率），必要时调整 Scale / Offset。N6705C 仅支持 N6781A / N6784A 模块，IT2705 仅支持 IT27814 / IT27814E 模块；其他模块及空插槽对应的通道会自动隐藏。</li>
   <li><b>开始采集</b> — 点击底部 <b>Start Recording</b>，采集过程显示进度条，完成后波形自动绘制到图表中。</li>
   <li><b>分析数据</b> — 使用图表工具栏的 Marker A / B 圈选区间，测量表自动统计区间内数据；悬停波形可查看各通道瞬时值。</li>
   <li><b>导出数据</b> — 点击底部 <b>Export Datalog</b> 导出 CSV 或 DLOG 文件。</li>
@@ -56,7 +56,7 @@
 <h3>仪器通道与双仪器模式</h3>
 <ul>
   <li>单台 N6705C 提供 4 个通道，单台 IT2705 提供 8 个通道；两台仪器可混合连接，分别占用插槽 A 和 B，最多显示 16 个通道。</li>
-  <li>连接后自动查询各通道模块：N6705C 仅启用 N6781A / N6784A，IT2705 仅启用 IT27814 / IT27814E；其他模块、空插槽或模块查询失败的通道均禁用，不参与采集。</li>
+  <li>连接后自动查询各通道模块：N6705C 仅启用 N6781A / N6784A，IT2705 仅启用 IT27814 / IT27814E；其他模块、空插槽或模块查询失败的通道均不显示，不参与采集。</li>
   <li>N6705C 使用仪器原生 DLOG 采集与文件下载；IT2705 通过实时测量进行软件采样，以实际测量时刻生成时间序列。</li>
   <li>通道名自动加 <b>A-</b> / <b>B-</b> 前缀区分来源。</li>
   <li>使用 <b>Time Offset</b> 对齐两台仪器的时间基准。</li>

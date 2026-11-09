@@ -1448,7 +1448,7 @@ class LayoutViewMixin:
             {
                 "target": self.channel_config_outer,
                 "title": "第 5 步：勾选采集通道",
-                "text": "在 Channel Config 的 Active 页签中，为每个受支持通道勾选需要采集的类型：I（电流）/ V（电压）/ P（功率）。\nN6705C 仅支持 N6781A / N6784A，IT2705 仅支持 IT27814 / IT27814E；其他模块和空插槽的通道会禁用。\n波形显示超出范围时可调整各通道的 Scale / Offset。",
+                "text": "在 Channel Config 的 Active 页签中，为每个受支持通道勾选需要采集的类型：I（电流）/ V（电压）/ P（功率）。\nN6705C 仅支持 N6781A / N6784A，IT2705 仅支持 IT27814 / IT27814E；其他模块和空插槽的通道不会显示。\n波形显示超出范围时可调整各通道的 Scale / Offset。",
                 "on_enter": lambda: show_panel(None),
             },
             {

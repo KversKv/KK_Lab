@@ -2090,9 +2090,13 @@ class _MockIT2705Session:
         self.dlog_time = 1.0
 
     @staticmethod
-    def _channel(command):
+    def _channels(command):
         channel_list = command.rsplit("(@", 1)[1].split(")", 1)[0]
-        return int(channel_list.split(",", 1)[0])
+        return tuple(int(channel) for channel in channel_list.split(","))
+
+    @staticmethod
+    def _channel(command):
+        return _MockIT2705Session._channels(command)[0]
 
     @staticmethod
     def _value(command):
@@ -2126,7 +2130,12 @@ class _MockIT2705Session:
         upper = command.upper().strip()
         if upper == "*IDN?":
             return "ITECH,IT2705,MOCK,1.0"
-        if upper.startswith("SYST:CHAN:MOD?"):
+        if upper.startswith(":SYSTEM:CHANNEL:STATUS?"):
+            return ",".join(
+                "1" if channel in self.module_models else "0"
+                for channel in self._channels(command)
+            )
+        if upper.startswith(":SYSTEM:CHANNEL:MODEL?"):
             return self.module_models[self._channel(command)]
         if upper.startswith("OUTP?"):
             return "1" if self.output_states[self._channel(command)] else "0"
