@@ -640,6 +640,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             row_layout, widgets = build_n6705c_inline_row(
                 label, parent=self, default_resource=default_addresses[label]
             )
+            widgets["combo"].setEditable(True)
+            widgets["combo"].lineEdit().setPlaceholderText("Select or enter a VISA address")
             widgets["connect_btn"].clicked.connect(
                 lambda _checked=False, lb=label: self._on_toggle_connection(lb)
             )

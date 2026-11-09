@@ -1,7 +1,7 @@
 {
   "n6705c": {
     "A": "TCPIP0::10.31.71.98::hislip0::INSTR",
-    "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
+    "B": "TCPIP0::10.31.71.168::30000::SOCKET",
     "debug": "TCPIP0::192.168.3.99::hislip0::INSTR"
   },
   "oscilloscope": {

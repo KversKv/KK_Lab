@@ -150,8 +150,9 @@ File ".../pyvisa_py/protocols/usbtmc.py", line 199, in __init__
 
 - 驱动层禁止写死 `'@py'`；默认调用 `pyvisa.ResourceManager()`，由系统自动选择 NI-VISA 等后端。
 - 构造函数需提供 `visa_library` 可选参数，允许外部显式指定（`'@ni'` / `'@py'` / `r'C:\Windows\System32\visa64.dll'`）。
-- 打开失败（`OSError` / `ValueError`）时回退到 `'@py'`，并 `logger.warning` 记录。
+- 打开失败（`OSError` / `ValueError` / `pyvisa.errors.VisaIOError`）时回退到 `'@py'`，并 `logger.warning` 记录。
 - 连接成功后 `logger.debug("<Class> visalib=%s", self.rm.visalib)`，便于日志快速判定后端。
+- Raw Socket 必须配置 `read_termination = write_termination = "\n"`；自动识别复用其他型号驱动探测时也要配置，否则 `*IDN?` 可能因命令未结束而读取超时。
 
 **参考实现**：
 - [keysight_53230A.py:20-38](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/frequencyCounter/keysight_53230A.py#L20-L38)

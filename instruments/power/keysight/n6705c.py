@@ -46,7 +46,7 @@ class N6705C:
                 self.rm = pyvisa.ResourceManager(visa_library)
             else:
                 self.rm = pyvisa.ResourceManager()
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, pyvisa.errors.VisaIOError) as e:
             logger.warning(
                 "N6705C: 系统 VISA 不可用(%s)，回退到 pyvisa-py('@py')", e
             )
@@ -66,6 +66,8 @@ class N6705C:
             self.instr = self.rm.open_resource(f'TCPIP0::{resource_str}::inst0::INSTR')
         self.instr.timeout = 10000
         self.instr.encoding = 'utf-8'
+        self.instr.read_termination = '\n'
+        self.instr.write_termination = '\n'
         logger.debug("N6705C connected, timeout=%d ms", self.instr.timeout)
 
 

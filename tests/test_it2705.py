@@ -64,6 +64,21 @@ def test_connect_identify_and_disconnect(connected_driver):
     assert not driver.is_connected()
 
 
+def test_n6705c_probe_configures_socket_terminations(monkeypatch):
+    import instruments.power.keysight.n6705c as n6705c_module
+
+    resource_manager = FakeResourceManager()
+    resource_manager.visalib = "MOCK"
+    monkeypatch.setattr(
+        n6705c_module.pyvisa, "ResourceManager", lambda *args: resource_manager
+    )
+    driver = n6705c_module.N6705C("TCPIP0::MOCK::30000::SOCKET")
+
+    assert driver.instr.read_termination == "\n"
+    assert driver.instr.write_termination == "\n"
+    driver.disconnect()
+
+
 def test_channel_voltage_current_and_output_commands(connected_driver):
     driver, resource_manager = connected_driver
     driver.set_voltage(2, 3.3)
