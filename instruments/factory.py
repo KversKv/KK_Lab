@@ -1,6 +1,7 @@
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.power.keysight.n6705c import N6705C
+from instruments.power.itech.it2705 import IT2705
 from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
 from instruments.chambers.wt2040_chamber import WT2040
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 
 _INSTRUMENT_CREATORS = {
     "n6705c": lambda **kw: N6705C(kw["resource"]),
+    "it2705": lambda **kw: IT2705(kw["resource"], visa_library=kw.get("visa_library")),
     "mso64b": lambda **kw: MSO64B(kw["resource"]),
     "dsox4034a": lambda **kw: DSOX4034A(kw["resource"]),
     "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
@@ -60,9 +62,28 @@ def create_oscilloscope(osc_type: str, resource: str):
         raise ValueError(f"Unknown oscilloscope type: {osc_type}")
 
 
-def create_power_analyzer(resource: str):
-    logger.debug("create_power_analyzer: resource=%s", resource)
-    return N6705C(resource)
+def create_power_analyzer(
+    resource: str,
+    analyzer_type: str = "n6705c",
+    visa_library=None,
+):
+    from debug_config import DEBUG_MOCK
+
+    key = str(analyzer_type).strip().lower()
+    logger.debug(
+        "create_power_analyzer: type=%s, resource=%s", key, resource
+    )
+    if key == "n6705c":
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockN6705C
+            return MockN6705C()
+        return N6705C(resource, visa_library=visa_library)
+    if key == "it2705":
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockIT2705
+            return MockIT2705(resource or "MOCK")
+        return IT2705(resource, visa_library=visa_library)
+    raise ValueError(f"Unknown power analyzer type: {analyzer_type}")
 
 
 def create_audio_precision():

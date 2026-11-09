@@ -267,10 +267,13 @@ instruments/
 │       └── mso64b.py        # MSO64B 混合信号示波器驱动
 │
 ├── power/                   # 电源分析仪驱动
-│   └── keysight/
-│       ├── n6705c.py              # N6705C 直流电源分析仪驱动
-│       │                          # (电压/电流设置、通道控制、Datalog 采集等)
-│       └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
+│   ├── keysight/
+│   │   ├── n6705c.py              # N6705C 直流电源分析仪驱动
+│   │   │                          # (电压/电流设置、通道控制、Datalog 采集等)
+│   │   └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
+│   └── itech/
+│       └── it2705.py              # IT2705 多通道源载系统 SCPI 驱动
+│                                  # (电压/电流、ARB、DLOG 统计采集)
 │
 ├── audioPrecision/          # Audio Precision APx500 .NET API 驱动与 Guest 执行器
 │   ├── apx500_driver.py     # APx500 连接、PSRR 配置与双通道 FFT 采集（pythonnet）

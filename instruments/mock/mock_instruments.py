@@ -3,6 +3,8 @@ import random
 import time
 from contextlib import contextmanager
 
+from instruments.power.itech.it2705 import IT2705
+
 
 class MockInstr:
     def write(self, cmd):
@@ -2057,3 +2059,106 @@ class MockAudioPrecision:
             [self._frequency_hz / 2.0, self._frequency_hz, self._frequency_hz * 2.0],
             [-120.0, level_dbv, -120.0],
         )
+
+
+class _MockIT2705Session:
+    def __init__(self):
+        self.timeout = 10000
+        self.encoding = "utf-8"
+        self.closed = False
+        self.commands = []
+        self.voltages = {channel: 0.0 for channel in IT2705.VALID_CHANNELS}
+        self.currents = {channel: 0.0 for channel in IT2705.VALID_CHANNELS}
+        self.voltage_limits = {channel: 20.0 for channel in IT2705.VALID_CHANNELS}
+        self.current_limits = {channel: 1.0 for channel in IT2705.VALID_CHANNELS}
+        self.output_states = {channel: False for channel in IT2705.VALID_CHANNELS}
+        self.output_off_modes = {channel: "LOWZ" for channel in IT2705.VALID_CHANNELS}
+        self.modes = {channel: "FIX" for channel in IT2705.VALID_CHANNELS}
+        self.dlog_time = 1.0
+
+    @staticmethod
+    def _channel(command):
+        channel_list = command.rsplit("(@", 1)[1].split(")", 1)[0]
+        return int(channel_list.split(",", 1)[0])
+
+    @staticmethod
+    def _value(command):
+        return float(command.split(None, 1)[1].split(",", 1)[0])
+
+    def write(self, command):
+        self.commands.append(command)
+        upper = command.upper()
+        if upper.startswith("VOLT:LIM:HIGH "):
+            self.voltage_limits[self._channel(command)] = self._value(command)
+        elif upper.startswith("CURR:LIM "):
+            self.current_limits[self._channel(command)] = self._value(command)
+        elif upper.startswith("VOLT "):
+            self.voltages[self._channel(command)] = self._value(command)
+        elif upper.startswith("CURR "):
+            self.currents[self._channel(command)] = self._value(command)
+        elif upper.startswith("OUTP ON,"):
+            self.output_states[self._channel(command)] = True
+        elif upper.startswith("OUTP OFF,"):
+            self.output_states[self._channel(command)] = False
+        elif upper.startswith("OUTP:TMOD "):
+            self.output_off_modes[self._channel(command)] = command.split()[1].split(",", 1)[0].upper()
+        elif upper.startswith("EMUL "):
+            self.modes[self._channel(command)] = command.split()[1].split(",", 1)[0].upper()
+        elif upper.startswith("SENS:DLOG:TIME "):
+            self.dlog_time = float(command.split(None, 1)[1])
+        return 0
+
+    def query(self, command):
+        self.commands.append(command)
+        upper = command.upper().strip()
+        if upper == "*IDN?":
+            return "ITECH,IT2705,MOCK,1.0"
+        if upper.startswith("OUTP?"):
+            return "1" if self.output_states[self._channel(command)] else "0"
+        if upper.startswith("OUTP:TMOD?"):
+            return self.output_off_modes[self._channel(command)]
+        if upper.startswith("EMUL?"):
+            return self.modes[self._channel(command)]
+        if upper.startswith("VOLT:LIM:HIGH?"):
+            return str(self.voltage_limits[self._channel(command)])
+        if upper.startswith("CURR:LIM?"):
+            return str(self.current_limits[self._channel(command)])
+        if upper.startswith("STAT:OPER:COND?"):
+            return "0"
+        channel = self._channel(command)
+        voltage = self.voltages[channel]
+        current = self.currents[channel]
+        if upper.startswith(("MEAS:VOLT?", "FETC:VOLT?")):
+            return str(voltage)
+        if upper.startswith(("MEAS:CURR?", "FETC:CURR?")):
+            return str(current)
+        if upper.startswith("MEAS:POW?"):
+            return str(voltage * current)
+        if upper.startswith("FETC:DLOG:CURR?"):
+            return str(current)
+        if upper.startswith("FETC:DLOG:VOLT?"):
+            return str(voltage)
+        if upper.startswith("FETC:DLOG:ALL?"):
+            ahour = current * self.dlog_time / 3600.0
+            whour = voltage * ahour
+            values = (
+                ahour, whour, current, voltage, current, voltage,
+                current, voltage, 0.0, 0.0,
+            )
+            return ",".join(str(value) for value in values)
+        raise ValueError(f"Unsupported MockIT2705 query: {command}")
+
+    def close(self):
+        self.closed = True
+
+
+class MockIT2705(IT2705):
+    def __init__(self, resource="MOCK", visa_library=None, timeout_ms=10000):
+        super().__init__(resource, visa_library=visa_library, timeout_ms=timeout_ms)
+
+    def connect(self, device_address=None):
+        if device_address is not None:
+            self.resource = str(device_address).strip() or "MOCK"
+        IT2705.disconnect(self)
+        self.instrument = _MockIT2705Session()
+        return True
