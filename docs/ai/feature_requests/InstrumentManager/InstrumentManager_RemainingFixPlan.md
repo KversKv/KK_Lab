@@ -228,7 +228,7 @@ manager.connect_async(InstrumentSpec(
 ### 验收标准
 
 1. 搜索 `rg -n "N6705C\\(" ui`，N6705C 主流程不再命中。
-2. 搜索 `rg -n "attach_external\\(" ui/pages/n6705c_power_analyzer ui/modules/n6705c_module_frame.py`，主流程不再命中。
+2. 搜索 `rg -n "attach_external\\(" ui/pages/power_anaalyzer ui/modules/n6705c_module_frame.py`，主流程不再命中。
 3. `main.py` 连接 N6705C 后，Analyzer / Datalog 均同步显示。
 4. Datalog Active 在连接 / 断开 A/B 后正确刷新。
 5. 连接错误资源时 UI 不冻结，且按钮恢复。
@@ -445,7 +445,7 @@ serial_port:COMx
 涉及页面时追加对应文件，例如：
 
 ```powershell
-.venv\Scripts\python.exe -m py_compile ui\main_window.py ui\instrument_status.py ui\pages\n6705c_power_analyzer\n6705c_top.py ui\pages\n6705c_power_analyzer\n6705c_analyser_ui.py ui\pages\n6705c_power_analyzer\n6705c_datalog_ui.py
+.venv\Scripts\python.exe -m py_compile ui\main_window.py ui\instrument_status.py ui\pages\power_anaalyzer\power_anaalyzer_top.py ui\pages\power_anaalyzer\power_anaalyzer_analyser_ui.py ui\pages\power_anaalyzer\power_anaalyzer_datalog_ui.py
 ```
 
 ### 5.2 架构搜索

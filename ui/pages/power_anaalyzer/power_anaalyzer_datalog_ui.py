@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # run cmd:
-# python ui\pages\n6705c_power_analyzer\n6705c_datalog_ui.py
+# python ui\pages\power_anaalyzer\power_anaalyzer_datalog_ui.py
 
 
 import sys
@@ -25,7 +25,7 @@ if sys.stderr is None:
 sys.path.append(get_resource_base())
 
 # 拆分后实现位于 datalog/ 子包；此处保留旧入口的导入面兼容 re-export。
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer.datalog.helpers import (
     _make_svg_icon,
     CHANNEL_COLORS,
     CHANNEL_LABEL_COLORS,
@@ -53,7 +53,7 @@ from ui.pages.n6705c_power_analyzer.datalog.helpers import (
     _build_summary_stages,
     _render_waveform_summary_image,
 )
-from ui.pages.n6705c_power_analyzer.datalog.widgets import (
+from ui.pages.power_anaalyzer.datalog.widgets import (
     PairAnnotationItem,
     ToggleLabel,
     ScaleOffsetEdit,
@@ -63,13 +63,13 @@ from ui.pages.n6705c_power_analyzer.datalog.widgets import (
     ClickableHeader,
     FixedPopupComboBox,
 )
-from ui.pages.n6705c_power_analyzer.datalog.workers import (
+from ui.pages.power_anaalyzer.datalog.workers import (
     _ScanWorker,
     _ConnectWorker,
     _DatalogWorker,
 )
-from ui.pages.n6705c_power_analyzer.datalog.datalog_ui import N6705CDatalogUI
-from ui.pages.n6705c_power_analyzer.datalog.standalone import _StandaloneTitleBar, _StandaloneDatalogWindow
+from ui.pages.power_anaalyzer.datalog.datalog_ui import N6705CDatalogUI
+from ui.pages.power_anaalyzer.datalog.standalone import _StandaloneTitleBar, _StandaloneDatalogWindow
 
 
 if __name__ == "__main__":

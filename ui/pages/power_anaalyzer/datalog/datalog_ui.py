@@ -4,18 +4,18 @@
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QButtonGroup, QRadioButton, QWidget
 from debug_config import DEBUG_MOCK
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
+from ui.pages.power_anaalyzer import datalog_style as dss
 from ui.widgets.config_memory import ConfigMemory
-from ui.pages.n6705c_power_analyzer.datalog.helpers import _ANN_DEFAULT_FONT
-from ui.pages.n6705c_power_analyzer.datalog.view_connection import ConnectionViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_layout import LayoutViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_channel_config import ChannelConfigViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_plot import PlotViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_recording import RecordingViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_markers import MarkersViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_labels import LabelsViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_time_offset import TimeOffsetViewMixin
-from ui.pages.n6705c_power_analyzer.datalog.view_import_export import ImportExportViewMixin
+from ui.pages.power_anaalyzer.datalog.helpers import _ANN_DEFAULT_FONT
+from ui.pages.power_anaalyzer.datalog.view_connection import ConnectionViewMixin
+from ui.pages.power_anaalyzer.datalog.view_layout import LayoutViewMixin
+from ui.pages.power_anaalyzer.datalog.view_channel_config import ChannelConfigViewMixin
+from ui.pages.power_anaalyzer.datalog.view_plot import PlotViewMixin
+from ui.pages.power_anaalyzer.datalog.view_recording import RecordingViewMixin
+from ui.pages.power_anaalyzer.datalog.view_markers import MarkersViewMixin
+from ui.pages.power_anaalyzer.datalog.view_labels import LabelsViewMixin
+from ui.pages.power_anaalyzer.datalog.view_time_offset import TimeOffsetViewMixin
+from ui.pages.power_anaalyzer.datalog.view_import_export import ImportExportViewMixin
 from log_config import get_logger
 
 logger = get_logger(__name__)

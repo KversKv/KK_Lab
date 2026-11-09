@@ -8,7 +8,7 @@
 4. Waveform Summary —— 波形摘要事件算法与分段参数（AISettings + 本模块设置）
 5. About            —— 版本信息 / 配置目录 / RESET JSON 还原默认配置
 
-本模块不 import 主页面模块（n6705c_datalog_ui），仅持有其引用调用公共方法，
+本模块不 import 主页面模块（power_anaalyzer_datalog_ui），仅持有其引用调用公共方法，
 避免循环依赖；设置存取为模块级函数，供主页面热路径（波形摘要渲染 /
 录制收尾自动保存）直接读取。
 """
@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
 from core.ai.config import AISettings
 from log_config import get_logger
 from resource_path import get_user_data_dir, is_frozen
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
+from ui.pages.power_anaalyzer import datalog_style as dss
 
 logger = get_logger(__name__)
 

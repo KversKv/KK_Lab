@@ -16,7 +16,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from bisect import bisect_left, bisect_right
 from instruments.power.keysight.n6705c_datalog_process import parse_channel_label, unit_for_label
-from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import waveform_summary_params
+from ui.pages.power_anaalyzer.power_anaalyzer_settings_dialog import waveform_summary_params
 from resource_path import get_resource_base
 
 def _make_svg_icon(svg_file, color="#dfe8ff", size=18, zoom=1.0):

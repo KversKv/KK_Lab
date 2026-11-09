@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from instruments.power.keysight.n6705c_datalog_process import calc_power_for_ch
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.datalog.helpers import (
     CHANNEL_COLORS,
     _display_label,
     _make_svg_icon,
@@ -28,7 +28,7 @@ from ui.pages.n6705c_power_analyzer.datalog.helpers import (
     _sort_key_for_label,
     _unit_for_label,
 )
-from ui.pages.n6705c_power_analyzer.datalog.widgets import ScaleOffsetEdit, ToggleLabel
+from ui.pages.power_anaalyzer.datalog.widgets import ScaleOffsetEdit, ToggleLabel
 
 class ChannelConfigViewMixin:
     """Datalog 页通道配置视图：Active/导入页签 / 通道开关 / Scale-Offset / 通道名面板。"""

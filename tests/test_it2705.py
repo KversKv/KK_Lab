@@ -300,7 +300,7 @@ def test_power_profile_verify_uses_idn_identity():
 
 
 def test_datalog_worker_samples_it2705_in_real_units():
-    from ui.pages.n6705c_power_analyzer.datalog.workers import _DatalogWorker
+    from ui.pages.power_anaalyzer.datalog.workers import _DatalogWorker
 
     class SoftwarePower:
         def measure_voltage(self, channel):
@@ -336,7 +336,7 @@ def test_datalog_worker_samples_it2705_in_real_units():
 
 
 def test_datalog_worker_mixes_native_and_software_units(monkeypatch):
-    from ui.pages.n6705c_power_analyzer.datalog import workers as datalog_workers
+    from ui.pages.power_anaalyzer.datalog import workers as datalog_workers
 
     class NativeInstr:
         def __init__(self):

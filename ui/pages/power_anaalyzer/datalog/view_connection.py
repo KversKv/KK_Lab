@@ -24,13 +24,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from debug_config import DEBUG_MOCK
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import load_datalog_app_settings
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.power_anaalyzer_settings_dialog import load_datalog_app_settings
 from resource_path import get_resource_base
 from core.instruments.address_presets import get_address_preset
 from ui.widgets.button import update_connect_button_state
-from ui.pages.n6705c_power_analyzer.datalog.helpers import _make_svg_icon
-from ui.pages.n6705c_power_analyzer.datalog.workers import _ConnectWorker, _ScanWorker
+from ui.pages.power_anaalyzer.datalog.helpers import _make_svg_icon
+from ui.pages.power_anaalyzer.datalog.workers import _ConnectWorker, _ScanWorker
 from log_config import get_logger
 
 logger = get_logger(__name__)

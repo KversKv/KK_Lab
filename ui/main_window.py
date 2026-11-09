@@ -93,8 +93,8 @@ if sys.platform == "win32":
     _WINDOW_BORDER_COLOR = 0x00403420  # COLORREF 0x00BBGGRR -> 边框 #203440
 from PySide6.QtGui import QPalette, QColor, QFont, QPixmap
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
-from ui.pages.n6705c_power_analyzer.n6705c_suite_ui import N6705CSuiteWindow
-from ui.pages.n6705c_power_analyzer.n6705c_top import N6705CTop
+from ui.pages.power_anaalyzer.power_anaalyzer_suite_ui import N6705CSuiteWindow
+from ui.pages.power_anaalyzer.power_anaalyzer_top import N6705CTop
 from ui.pages.oscilloscope.mso64b_top import MSO64BTop
 from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.chamber_control_ui import ChamberControlUI
@@ -1323,8 +1323,8 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
             "pmu_test": "ui.pages.pmu_test",
             "charger_test": "ui.pages.charger_test",
             "module_test": "ui.pages.module_test",
-            "power_analyser": "ui.pages.n6705c_power_analyzer",
-            "datalog": "ui.pages.n6705c_power_analyzer",
+            "power_analyser": "ui.pages.power_anaalyzer",
+            "datalog": "ui.pages.power_anaalyzer",
             "oscilloscope": "ui.pages.oscilloscope",
             "consumption_test": "ui.pages.consumption_test",
             "orchestrator": "ui.pages.orchestrator",

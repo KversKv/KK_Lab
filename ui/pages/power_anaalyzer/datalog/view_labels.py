@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer.datalog.helpers import (
     _auto_format,
     _color_for_label,
     _display_label,

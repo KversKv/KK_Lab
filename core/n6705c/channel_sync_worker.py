@@ -2,7 +2,7 @@
 """
 N6705C 通道同步 Worker（仅依赖 QtCore，无 QtWidgets）。
 
-从 ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py 平移而来，
+从 ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py 平移而来，
 行为零变更。
 """
 

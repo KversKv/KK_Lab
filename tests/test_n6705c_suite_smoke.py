@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pa
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 
-from ui.pages.n6705c_power_analyzer.n6705c_suite_ui import (
+from ui.pages.power_anaalyzer.power_anaalyzer_suite_ui import (
     N6705CSuiteWindow, N6705CTop,
 )
 
@@ -20,7 +20,7 @@ from ui.pages.n6705c_power_analyzer.n6705c_suite_ui import (
 @pytest.mark.qt
 def test_it2705_eight_channel_ui_and_model(monkeypatch):
     from instruments.mock.mock_instruments import MockIT2705
-    from ui.pages.n6705c_power_analyzer.datalog.datalog_ui import N6705CDatalogUI
+    from ui.pages.power_anaalyzer.datalog.datalog_ui import N6705CDatalogUI
 
     monkeypatch.setattr(
         N6705CDatalogUI, "_auto_connect_enabled_cards", lambda self: None

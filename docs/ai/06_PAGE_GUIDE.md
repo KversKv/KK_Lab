@@ -12,7 +12,7 @@
 
 ```
 ui/pages/
-├── n6705c_power_analyzer/   # 以 N6705C 为主的页面
+├── power_anaalyzer/   # 以 N6705C 为主的页面
 ├── oscilloscope/            # 示波器相关
 ├── pmu/                     # PMU 芯片控制页（如 pmu_1811）
 ├── pmu_test/                # PMU 子测试
@@ -138,7 +138,7 @@ def on_start_clicked(self):
 
 | 需求 | 参考 |
 |---|---|
-| N6705C 单台连接 | [n6705c_analyser_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py) |
+| N6705C 单台连接 | [power_anaalyzer_analyser_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py) |
 | 示波器自动识别 | [oscilloscope_base_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/oscilloscope/oscilloscope_base_ui.py) |
 | Tab 多子测试整合 | [pmu_test_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/pmu_test/pmu_test_ui.py)、[charger_test_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/charger_test/charger_test_ui.py) |
 | 温箱 + 电源联动 | [consumption_test.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/consumption_test/consumption_test.py) |

@@ -69,7 +69,7 @@ MODULE_VERSION = "0.0.0"
 | charger_test | `ui/pages/charger_test/__init__.py` |
 | consumption_test | `ui/pages/consumption_test/__init__.py` |
 | module_test | `ui/pages/module_test/__init__.py` |
-| n6705c_power_analyzer | `ui/pages/n6705c_power_analyzer/__init__.py` |
+| power_anaalyzer | `ui/pages/power_anaalyzer/__init__.py` |
 | orchestrator | `ui/pages/orchestrator/__init__.py` |
 | oscilloscope | `ui/pages/oscilloscope/__init__.py` |
 | pmu | `ui/pages/pmu/__init__.py` |

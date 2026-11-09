@@ -16,8 +16,8 @@ from PySide6.QtWidgets import QApplication
 def main():
     app = QApplication.instance() or QApplication([])
 
-    from ui.pages.n6705c_power_analyzer.datalog import N6705CDatalogUI
-    from ui.pages.n6705c_power_analyzer import n6705c_settings_dialog as sm
+    from ui.pages.power_anaalyzer.datalog import N6705CDatalogUI
+    from ui.pages.power_anaalyzer import power_anaalyzer_settings_dialog as sm
 
     ui = N6705CDatalogUI()
     busy_cards = [

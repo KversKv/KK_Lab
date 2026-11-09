@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.datalog.helpers import _make_svg_icon, _parse_ch_label
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.datalog.helpers import _make_svg_icon, _parse_ch_label
 
 class TimeOffsetViewMixin:
     """Datalog 页时间对齐视图：B 机 / 导入文件时间偏移。"""

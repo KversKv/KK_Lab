@@ -280,7 +280,7 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 
 ## 25. Tab 状态样式的盒模型必须一致
 
-**现象**：`n6705c_analyser_ui.py` 中，连接 N6705C 后切换通道标签到 CH4，页面内容会向上偏移几个像素，底部控件看起来被牵动；CH1~CH3 切换不明显。
+**现象**：`power_anaalyzer_analyser_ui.py` 中，连接 N6705C 后切换通道标签到 CH4，页面内容会向上偏移几个像素，底部控件看起来被牵动；CH1~CH3 切换不明显。
 
 **根因**：通道标签使用 `QPushButton` 模拟 tab，`checked` 与未选中状态的 QSS 盒模型不一致：
 
@@ -294,7 +294,7 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 - 需要做"选中 tab 与内容区连成一体"的视觉效果时，不要用 `border-bottom: none`；改用 `border-bottom: 1px solid <内容区背景色>`。
 - 不要为了修这种几像素跳动而全局固定父区域或底部控件高度，否则容易造成页面底部控件截断。
 
-**参考实现**：[n6705c_analyser_ui.py:_build_channel_tab_style](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py)
+**参考实现**：[power_anaalyzer_analyser_ui.py:_build_channel_tab_style](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py)
 
 ## 26. AI Agent「上下文自我污染」与「强制重试启新 worker 的时序闪退」
 
@@ -540,7 +540,7 @@ app.installEventFilter(_WinFilter())
 - `mouseClickEvent` 里 `menu.exec()` 弹模态菜单是安全既有模式（同 `InfiniteLine.sigClicked` 链）；注意 `ev.screenPos()` 返回 `pg.Point`（QPointF 子类），`QMenu.exec` 只接受 `QPoint`，须先 `QPoint(int(sp.x()), int(sp.y()))` 转换，否则抛 `TypeError: wrong argument types`。
 - 页面若对 ViewBox 挂了 `eventFilter` 抢左键（如通道拖拽/marker 拖拽），须先 hit-test 自定义 item 并放行，否则两套拖拽逻辑打架。
 
-**参考**：[n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) `PairAnnotationItem`。
+**参考**：[power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) `PairAnnotationItem`。
 
 ## 38. 无边框主窗最大化→还原后标题栏顶部白条（WM_NCCALCSIZE 时序坑）
 

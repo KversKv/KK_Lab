@@ -27,7 +27,7 @@ from log_config import get_logger
 from ui.theme import FONT_MONO
 from core.n6705c import SearchThread as _SearchThread
 from core.instruments.address_presets import get_address_preset
-from ui.pages.n6705c_power_analyzer.widgets import (
+from ui.pages.power_anaalyzer.widgets import (
     ChannelTabBar, SlideToggle, _ZAP_ICON_PATH,
     CHANNEL_THEMES, CONTENT_BG, ROOT_BG, PANEL_BG, PANEL_BORDER,
     INPUT_BG, INPUT_BORDER,
@@ -37,9 +37,9 @@ from ui.pages.n6705c_power_analyzer.widgets import (
     VALUE_OFF_COLOR, MODE_INACTIVE_TEXT,
     WIDGET_RADIUS, CONTAINER_RADIUS,
 )
-from ui.pages.n6705c_power_analyzer.analyser_view_setting import SettingViewMixin
-from ui.pages.n6705c_power_analyzer.analyser_view_batch import BatchViewMixin
-from ui.pages.n6705c_power_analyzer.analyser_view_consumption import ConsumptionViewMixin
+from ui.pages.power_anaalyzer.analyser_view_setting import SettingViewMixin
+from ui.pages.power_anaalyzer.analyser_view_batch import BatchViewMixin
+from ui.pages.power_anaalyzer.analyser_view_consumption import ConsumptionViewMixin
 
 logger = get_logger(__name__)
 

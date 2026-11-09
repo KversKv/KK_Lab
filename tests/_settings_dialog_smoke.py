@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""n6705c_settings_dialog 无头冒烟测试（临时调试用）。"""
+"""power_anaalyzer_settings_dialog 无头冒烟测试（临时调试用）。"""
 import os
 import sys
 
@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtWidgets import QApplication
 
-from ui.pages.n6705c_power_analyzer import n6705c_settings_dialog as m
+from ui.pages.power_anaalyzer import power_anaalyzer_settings_dialog as m
 
 
 def test_settings_roundtrip():

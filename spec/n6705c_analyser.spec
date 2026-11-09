@@ -2,7 +2,7 @@
 import os
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
-ENTRY_SCRIPT = os.path.join(PROJECT_ROOT, 'ui', 'pages', 'n6705c_power_analyzer', 'n6705c_analyser_ui.py')
+ENTRY_SCRIPT = os.path.join(PROJECT_ROOT, 'ui', 'pages', 'power_anaalyzer', 'power_anaalyzer_analyser_ui.py')
 APP_NAME = 'N6705C_Analyser'
 ICON_PATH = os.path.join(PROJECT_ROOT, 'resources', 'icons', 'n6705c_analyser.ico')
 

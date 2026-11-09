@@ -2,14 +2,14 @@
 
 - **状态**：Accepted
 - **日期**：2026-06-24
-- **范围**：`ui/` 红区巨石文件（serialCom_module_frame / n6705c_analyser_ui / n6705c_datalog_ui / pmu_test/* / oscilloscope / consumption_test / main_window / ai_assist_panel）、新增 `core/pmu_test/`、`core/controllers/`、`core/n6705c/`、`core/serial_script/`、`core/consumption_test/`、`core/instruments/connection_hub.py`、`ui/ai/transcript_exporter.py`、`ui/styles/serial_tokens.py` 等
+- **范围**：`ui/` 红区巨石文件（serialCom_module_frame / power_anaalyzer_analyser_ui / power_anaalyzer_datalog_ui / pmu_test/* / oscilloscope / consumption_test / main_window / ai_assist_panel）、新增 `core/pmu_test/`、`core/controllers/`、`core/n6705c/`、`core/serial_script/`、`core/consumption_test/`、`core/instruments/connection_hub.py`、`ui/ai/transcript_exporter.py`、`ui/styles/serial_tokens.py` 等
 - **关联**：[Codebase_RefactorAssessment.md](../feature_requests/Codebase/Codebase_RefactorAssessment.md)、[04_ARCHITECTURE.md §2.1](../04_ARCHITECTURE.md)
 
 ---
 
 ## 背景
 
-盘点全量 Python 源码（~97,800 行 / 313 文件）发现 31 个 >800 行的红区文件几乎全部落在 `ui/`，根因是 PySide6 的 `QWidget` 子类被当成"上帝对象"：单个类同时承担视图构建、业务编排、数据处理、后台 Worker、设备 IO、弹窗与样式字符串。典型如 `serialCom_module_frame.py`（8564 行）单类承载 8+ 职责，`n6705c_analyser_ui.py`（7234 行）Worker 与 UI 同住。
+盘点全量 Python 源码（~97,800 行 / 313 文件）发现 31 个 >800 行的红区文件几乎全部落在 `ui/`，根因是 PySide6 的 `QWidget` 子类被当成"上帝对象"：单个类同时承担视图构建、业务编排、数据处理、后台 Worker、设备 IO、弹窗与样式字符串。典型如 `serialCom_module_frame.py`（8564 行）单类承载 8+ 职责，`power_anaalyzer_analyser_ui.py`（7234 行）Worker 与 UI 同住。
 
 这导致：算法/解析被 Qt 文件绑架、无法脱离 UI 单测；视图构建函数动辄 150~500 行；样式字符串散落重复；`main_window` 把导航 + 连接共享 + Signal 宿主混在一起。
 
@@ -61,4 +61,4 @@
 
 - `serialCom_module_frame.py` 主壳仍有 6 个对话框/控件类未搬到 `widgets.py`（见评估文档 §12.2），后续按需继续拆。
 - `consumption_test.py` UI 本体仍较大，可在下一轮按 view_config / view_results 继续切。
-- 评估文档中部分行数为早期快照（如 `n6705c_datalog_ui.py` 标 2065，实际 7234），以代码现状为准。
+- 评估文档中部分行数为早期快照（如 `power_anaalyzer_datalog_ui.py` 标 2065，实际 7234），以代码现状为准。

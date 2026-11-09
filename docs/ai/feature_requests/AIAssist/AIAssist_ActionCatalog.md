@@ -390,7 +390,7 @@
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
 | `save_scope_screenshot` | ✅ 已完成 | `handlers/export.py` | medium；复用 `_run_read_action` 调 `capture_screen_png`，落盘到 `_resolve_export_dir` 校验目录，登记 artifact |
-| `export_datalog_csv` | ✅ 已完成 | `handlers/export.py` + `n6705c_datalog_ui.export_combined_csv_to_path` | medium；经 `datalog_export_callback` 非交互导出，复用 `_write_combined_csv` 核心 |
+| `export_datalog_csv` | ✅ 已完成 | `handlers/export.py` + `power_anaalyzer_datalog_ui.export_combined_csv_to_path` | medium；经 `datalog_export_callback` 非交互导出，复用 `_write_combined_csv` 核心 |
 | `export_waveform_csv` | ✅ 已完成 | `handlers/export.py` | 读类 low；`waveform_full_data_getter` + `slice_channel_fast` 切片写 CSV |
 | `get_artifact_list` | ✅ 已完成 | `handlers/export.py` + `core/ai/artifact_registry.py` | 读类 low；回灌 `ArtifactRegistry.list()` 摘要 |
 

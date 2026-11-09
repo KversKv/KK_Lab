@@ -7,10 +7,10 @@ import time
 from PySide6.QtCore import QThread, QTimer
 from debug_config import DEBUG_MOCK
 from instruments.power.keysight.n6705c_datalog_process import compute_power_channels
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import build_auto_save_paths, load_datalog_app_settings, save_datalog_app_settings
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.power_anaalyzer_settings_dialog import build_auto_save_paths, load_datalog_app_settings, save_datalog_app_settings
 from ui.widgets.toast_notification import ToastNotification
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer.datalog.helpers import (
     _auto_format,
     _color_for_label,
     _make_svg_icon,
@@ -18,7 +18,7 @@ from ui.pages.n6705c_power_analyzer.datalog.helpers import (
     _sort_key_for_label,
     _unit_for_label,
 )
-from ui.pages.n6705c_power_analyzer.datalog.workers import _DatalogWorker
+from ui.pages.power_anaalyzer.datalog.workers import _DatalogWorker
 from log_config import get_logger
 
 logger = get_logger(__name__)

@@ -27,11 +27,11 @@
 | 行数 | 文件 | 层 | 类数 | 体检结论 |
 |---:|---|---|---:|---|
 | 8564 | [serialCom_module_frame.py](../../../ui/modules/serialCom_module/serialCom_module_frame.py) | ui/modules | 21 | 🔴 **必拆**（单 `SerialComMixin` 类 6262 行 + 17 个内联控件/对话框 + 3 Worker） |
-| 7234 | [n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) | ui/pages | 12 | 🔴 **必拆**（8 个内联控件 + 3 Worker + 主 UI） |
+| 7234 | [power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | ui/pages | 12 | 🔴 **必拆**（8 个内联控件 + 3 Worker + 主 UI） |
 | 3986 | [consumption_test.py](../../../ui/pages/consumption_test/consumption_test.py) | ui/pages | 6 | 🟠 Worker 已部分外移，UI 仍过大 + 3 个内联 Toggle 控件 |
 | 3031 | [oscilloscope_base_ui.py](../../../ui/pages/oscilloscope/oscilloscope_base_ui.py) | ui/pages | — | 🔴 **建议拆**（测量编排/截图/波形处理混装） |
 | 2192 | [clk_test_ui.py](../../../ui/pages/pmu_test/clk_test_ui.py) | ui/pages | 3 | 🔴 **建议拆**（`_CLKTestWorker` 870 行含纯算法 + UI 1287 行） |
-| 2065 | [n6705c_analyser_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py) | ui/pages | — | 🟠 关注（内联 `SlideToggle` 等控件） |
+| 2065 | [power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py) | ui/pages | — | 🟠 关注（内联 `SlideToggle` 等控件） |
 | 1998 | [gpadc_test_ui.py](../../../ui/pages/pmu_test/gpadc_test_ui.py) | ui/pages | — | 🔴 同 clk（Worker+算法+UI 混装） |
 | 1981 | [pmu_dcdc_efficiency.py](../../../ui/pages/pmu_test/pmu_dcdc_efficiency.py) | ui/pages | — | 🔴 同 clk |
 | 1881 | [serialCom_apple_gpt5p5_style.py](../../../ui/modules/serialCom_module/serialCom_apple_gpt5p5_style.py) | ui/modules | — | 🟠 样式常量集中文件（可接受，但应裁剪去重） |
@@ -50,7 +50,7 @@
 | 1155 | [ai_service.py](../../../core/ai/ai_service.py) | core/ai | — | 🟢 单一职责，可接受 |
 | 1134 | [wt2040_chamber.py](../../../instruments/chambers/wt2040_chamber.py) | instruments | — | 🟢 单驱动，可接受 |
 
-> **勘误**：原 [Codebase_RefactorAssessment.md §0.1](./Codebase_RefactorAssessment.md) 将 `n6705c_analyser_ui.py` 标为 7234 行、`n6705c_datalog_ui.py` 标为 2065 行，实测**两者对调**。本文件已修正。
+> **勘误**：原 [Codebase_RefactorAssessment.md §0.1](./Codebase_RefactorAssessment.md) 将 `power_anaalyzer_analyser_ui.py` 标为 7234 行、`power_anaalyzer_datalog_ui.py` 标为 2065 行，实测**两者对调**。本文件已修正。
 
 ---
 
@@ -64,7 +64,7 @@
 3. **部分页面已经开始正确拆分**：
    - `consumption_test/consumption_test_workers/`：把 5 个 QThread Worker 拆出去了（`auto_test_worker` / `chip_check_worker` / `consumption_worker` / `download_worker` / `force_worker`）。
    - `pmu_test/` 各测试项独立成文件，没有挤进一个 god page。
-   - `n6705c_power_analyzer/`：`n6705c_top.py`（连接共享）/ `n6705c_analyser_ui.py`（分析页）/ `n6705c_datalog_ui.py`（采集页）已做功能切分。
+   - `power_anaalyzer/`：`power_anaalyzer_top.py`（连接共享）/ `power_anaalyzer_analyser_ui.py`（分析页）/ `power_anaalyzer_datalog_ui.py`（采集页）已做功能切分。
 4. **Mixin 复用连接区域 UI** 的思路是合理的（避免每个页面重复写 VISA/串口搜索+连接+状态指示）。
 5. **配置数据外置**：芯片参数走 `chips/*.yaml`，没有把魔法数字写死在业务代码里。
 6. **`core/controllers/` 包已预留**（当前空），可直接承接 controller 化的产物，无需新建顶层目录。
@@ -94,8 +94,8 @@
 
 ### 2.3 内联自定义控件遍地开花（重复造轮子）
 多个红区文件在文件内部定义了本应放 `ui/widgets/` 的通用控件，导致：
-- **重复实现**：`SlideToggle`（n6705c_analyser_ui）、`_MiniSlideToggle`（serialCom）、`DownloadModeToggle`/`ControlMethodToggle`/`PolarityToggle`（consumption_test）功能高度重叠。
-- **无法复用**：`CardFrame` / `ClickableHeader` / `ChannelConfigTabBar` / `VerticalTextButton`（n6705c_datalog_ui）是通用容器，却被锁死在页面文件里。
+- **重复实现**：`SlideToggle`（power_anaalyzer_analyser_ui）、`_MiniSlideToggle`（serialCom）、`DownloadModeToggle`/`ControlMethodToggle`/`PolarityToggle`（consumption_test）功能高度重叠。
+- **无法复用**：`CardFrame` / `ClickableHeader` / `ChannelConfigTabBar` / `VerticalTextButton`（power_anaalyzer_datalog_ui）是通用容器，却被锁死在页面文件里。
 - **命名混乱**：同类控件有的带下划线前缀（`_MiniSlideToggle`），有的不带（`SlideToggle`），无统一规范。
 
 ### 2.4 视图构建函数过长
@@ -126,7 +126,7 @@ Worker 已外移到 `consumption_test_workers/`，但**UI 本体仍是巨石**�
 | 文件 | 拆出什么 | 去向 |
 |---|---|---|
 | serialCom_module_frame.py (8564) | 见 §4.1 专项方案 | 拆为 `serialCom_module/` 子包：mixins/ + widgets/ + workers/ + styles/ |
-| n6705c_datalog_ui.py (7234) | 8 个内联控件→`ui/widgets/`；3 Worker→`core/`；UI 拆 view 构建子模块 | widgets 复用 + Worker 下沉 + UI 瘦身 |
+| power_anaalyzer_datalog_ui.py (7234) | 8 个内联控件→`ui/widgets/`；3 Worker→`core/`；UI 拆 view 构建子模块 | widgets 复用 + Worker 下沉 + UI 瘦身 |
 
 ### P1（强烈建议，逻辑与 UI 耦合）
 | 文件 | 拆出什么 | 去向 |
@@ -141,7 +141,7 @@ Worker 已外移到 `consumption_test_workers/`，但**UI 本体仍是巨石**�
 | 文件 | 动作 |
 |---|---|
 | consumption_test.py (3986) | 继续按 §4.2 把 UI 本体拆成 view + 流程控制器；残留 Worker/Toggle 外移 |
-| n6705c_analyser_ui.py (2065) | 内联 `SlideToggle` 等控件→`ui/widgets/` |
+| power_anaalyzer_analyser_ui.py (2065) | 内联 `SlideToggle` 等控件→`ui/widgets/` |
 | ai_assist_panel.py (1657) | 拆 panel 子组件（已有 chat_view 等可继续） |
 | main_window.py (1360) | Win32 ctypes→`ui/utils/win32_frameless.py`；"连接共享中枢"抽出 |
 | serialCom_*_style.py | 合入统一主题 token，去重 |
@@ -212,10 +212,10 @@ ui/modules/serialCom_module/
 ```
 > 脚本执行引擎（`_sc_script_*` 一大坨）逻辑部分应进一步下沉 `core/serialcom/script_engine.py`，UI 仅做表格渲染与按钮。
 
-### 4.2 专项：n6705c_datalog_ui.py 拆解蓝图
+### 4.2 专项：power_anaalyzer_datalog_ui.py 拆解蓝图
 ```
-ui/pages/n6705c_power_analyzer/
-  ├─ n6705c_datalog_ui.py        # 仅保留 N6705CDatalogUI 视图装配（目标 < 800 行）
+ui/pages/power_anaalyzer/
+  ├─ power_anaalyzer_datalog_ui.py        # 仅保留 N6705CDatalogUI 视图装配（目标 < 800 行）
   ├─ n6705c_datalog_views/       # 视图子构建器
   │   ├─ __init__.py
   │   ├─ channel_tab_view.py     # 通道配置 Tab 区
@@ -316,7 +316,7 @@ core/instruments/
 | **Phase 1** | 通用控件收口 | serialCom / n6705c_datalog / consumption / n6705c_analyser | `ui/widgets/` 统一 Toggle/CardFrame/TabBar | 中 | Phase 0 | ⬜ | 0% | — | — |
 | **Phase 2** | PMU 算法/Worker 下沉 | clk / gpadc / dcdc / isGain / oscp | `core/pmu_test/*` analysis+worker | 中 | Phase 0 | ⬜ | 0% | — | — |
 | **Phase 3** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ⬜ | 0% | — | — |
-| **Phase 4** | n6705c_datalog 拆分（P0） | n6705c_datalog_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ⬜ | 0% | — | — |
+| **Phase 4** | n6705c_datalog 拆分（P0） | power_anaalyzer_datalog_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ⬜ | 0% | — | — |
 | **Phase 5** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + dialogs/ + workers/ + 脚本引擎下沉 | 高 | Phase 1 | ⬜ | 0% | — | — |
 | **Phase 6** | consumption_test 收尾 | consumption_test | controller + 残留 Worker/Toggle 外移 | 中 | Phase 1, Phase 4 | ⬜ | 0% | — | — |
 | **Phase 7** | main_window 瘦身 + 样式统一 + 收尾 | main_window / serialCom_*_style / ai_panel / mcu_io | Win32 抽出 + 连接中枢 + 皮肤 token 合并 | 中 | Phase 5, Phase 6 | ⬜ | 0% | — | — |
@@ -383,8 +383,8 @@ core/instruments/
 | 🆕✂️ | `ui/widgets/scale_offset_edit.py` | `ScaleOffsetEdit` |
 | 🆕✂️ | `ui/widgets/channel_name_label.py` | `ChannelNameLabel` |
 | 🆕✂️ | `ui/widgets/fixed_popup_combobox.py` | `FixedPopupComboBox` |
-| ♻️✂️ | [n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) | 删除 8 个内联控件类，改 `from ui.widgets.* import`；旧名 re-export |
-| ♻️✂️ | [n6705c_analyser_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py) | 删除 `SlideToggle`，改 import |
+| ♻️✂️ | [power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | 删除 8 个内联控件类，改 `from ui.widgets.* import`；旧名 re-export |
+| ♻️✂️ | [power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py) | 删除 `SlideToggle`，改 import |
 | ♻️✂️ | [serialCom_module_frame.py](../../../ui/modules/serialCom_module/serialCom_module_frame.py) | 删除 `_MiniSlideToggle` / `_ProjectTabBar`，改 import |
 | ♻️✂️ | [consumption_test.py](../../../ui/pages/consumption_test/consumption_test.py) | 删除 3 个 Toggle，改 import |
 | 🧪🆕 | `tests/refactor/test_widgets_import.py` | 校验 `ui.widgets.*` 可独立 import 且无业务依赖 |
@@ -457,14 +457,14 @@ core/instruments/
 
 ### Phase 4 — n6705c_datalog 拆分（P0）
 
-**目标**：把 7234 行的 `n6705c_datalog_ui.py` 拆成 view + workers + 复用控件（控件已在 Phase 1 迁出）。目标主文件 < 800 行。
+**目标**：把 7234 行的 `power_anaalyzer_datalog_ui.py` 拆成 view + workers + 复用控件（控件已在 Phase 1 迁出）。目标主文件 < 800 行。
 
 **进度看板**
 
 | # | 子任务 | 状态 | 备注 |
 |---|---|---|---|
 | 4-1 | 🆕 `core/n6705c_datalog/` 包：3 Worker 下沉 | ⬜ | `_ScanWorker`/`_ConnectWorker`/`_DatalogWorker` |
-| 4-2 | 🆕 `ui/pages/n6705c_power_analyzer/n6705c_datalog_views/` 视图子构建器 | ⬜ | 按 channel_tab/scan/toolbar 分文件 |
+| 4-2 | 🆕 `ui/pages/power_anaalyzer/n6705c_datalog_views/` 视图子构建器 | ⬜ | 按 channel_tab/scan/toolbar 分文件 |
 | 4-3 | ♻️ 主文件改 import + 装配 | ⬜ | 仅保留 N6705CDatalogUI 视图壳 |
 | 4-4 | 🧪 Worker 单测（mock） | ⬜ | — |
 | 4-5 | 验收：datalog 采集/扫描/连接行为不变 | ⬜ | 退出 Phase 门禁 |
@@ -475,11 +475,11 @@ core/instruments/
 | 🆕✂️ | `core/n6705c_datalog/scan_worker.py` | 搬 `_ScanWorker` + `_ConnectWorker`（仅 QtCore） |
 | 🆕✂️ | `core/n6705c_datalog/datalog_worker.py` | 搬 `_DatalogWorker`（仅 QtCore） |
 | 🆕✂️ | `core/n6705c_datalog/datalog_analysis.py` | 若有纯数据处理/导出函数，搬此（无 Qt） |
-| 🆕 | `ui/pages/n6705c_power_analyzer/n6705c_datalog_views/__init__.py` | 视图子构建器包 |
+| 🆕 | `ui/pages/power_anaalyzer/n6705c_datalog_views/__init__.py` | 视图子构建器包 |
 | 🆕✂️ | `n6705c_datalog_views/channel_tab_view.py` | 搬通道配置 Tab 区构建逻辑 |
 | 🆕✂️ | `n6705c_datalog_views/scan_view.py` | 搬扫描/连接区构建逻辑 |
 | 🆕✂️ | `n6705c_datalog_views/datalog_toolbar_view.py` | 搬工具栏构建逻辑 |
-| ♻️✂️ | [n6705c_datalog_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py) | 删除 Worker + 视图构建代码，改 import；仅保留 `N6705CDatalogUI` 装配与信号订阅 |
+| ♻️✂️ | [power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | 删除 Worker + 视图构建代码，改 import；仅保留 `N6705CDatalogUI` 装配与信号订阅 |
 | 🧪🆕 | `tests/refactor/test_n6705c_datalog_worker.py` | Worker mock 单测 |
 
 **验收**：主文件 7234 → < 800 行；3 Worker 在 `core/` 可单测；采集行为不变。
@@ -653,7 +653,7 @@ ui/
   │   ├─ workers/   (3 个)
   │   └─ styles/    (token 化)
   └─ pages/
-      ├─ n6705c_power_analyzer/n6705c_datalog_ui.py  (< 800 行)
+      ├─ power_anaalyzer/power_anaalyzer_datalog_ui.py  (< 800 行)
       ├─ consumption_test/consumption_test.py        (< 1000 行)
       └─ pmu_test/clk_test_ui.py 等                  (仅视图)
 

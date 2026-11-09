@@ -78,7 +78,7 @@ main.py
 - 作为 Signal/Slot 的顶层宿主，把 `n6705c_top` / `mso64b_top` / `instrument_manager` 共享给各页面。
 
 ### 3.3 `ui/pages/`
-- 按仪器 / 功能分包：`n6705c_power_analyzer/`、`oscilloscope/`、`pmu/`、`pmu_test/`、`charger_test/`、`chamber/`、`consumption_test/`、`module_test/`、`orchestrator/`、`vmin_hunter/`。
+- 按仪器 / 功能分包：`power_anaalyzer/`、`oscilloscope/`、`pmu/`、`pmu_test/`、`charger_test/`、`chamber/`、`consumption_test/`、`module_test/`、`orchestrator/`、`vmin_hunter/`。
 - 每个页面负责：UI 布局 + 用户交互 + 调用 `core/` 执行业务 + 订阅结果信号刷新图表/表格。
 
 ### 3.4 `ui/styles/` 与 `ui/modules/`

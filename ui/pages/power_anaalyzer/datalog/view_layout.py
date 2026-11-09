@@ -38,15 +38,15 @@ from PySide6.QtWidgets import (
 )
 from core.ai.ui_action_registry import UIActionSpec
 from instruments.power.keysight.n6705c_datalog_process import parse_channel_label
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.n6705c_datalog_help import DatalogHelpDialog, GuideTourOverlay
-from ui.pages.n6705c_power_analyzer.n6705c_settings_dialog import N6705CSettingsDialog
-from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.power_anaalyzer_datalog_help import DatalogHelpDialog, GuideTourOverlay
+from ui.pages.power_anaalyzer.power_anaalyzer_settings_dialog import N6705CSettingsDialog
+from ui.pages.power_anaalyzer.widgets import SelectAllLineEdit
 from resource_path import get_resource_base
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton
-from ui.pages.n6705c_power_analyzer.datalog.helpers import _build_summary_stages, _make_svg_icon, _render_waveform_summary_image
-from ui.pages.n6705c_power_analyzer.datalog.widgets import CardFrame, ChannelConfigTabBar, ClickableHeader, FixedPopupComboBox
+from ui.pages.power_anaalyzer.datalog.helpers import _build_summary_stages, _make_svg_icon, _render_waveform_summary_image
+from ui.pages.power_anaalyzer.datalog.widgets import CardFrame, ChannelConfigTabBar, ClickableHeader, FixedPopupComboBox
 from log_config import get_logger
 
 logger = get_logger(__name__)

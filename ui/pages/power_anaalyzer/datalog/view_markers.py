@@ -15,9 +15,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from bisect import bisect_left, bisect_right
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.widgets import SelectAllLineEdit
+from ui.pages.power_anaalyzer.datalog.helpers import (
     EXTRA_MARKER_COLORS,
     _ANN_DEFAULT_FONT,
     _ANN_FONT_SIZES,
@@ -30,7 +30,7 @@ from ui.pages.n6705c_power_analyzer.datalog.helpers import (
     _parse_ch_label,
     _sort_key_for_label,
 )
-from ui.pages.n6705c_power_analyzer.datalog.widgets import PairAnnotationItem
+from ui.pages.power_anaalyzer.datalog.widgets import PairAnnotationItem
 
 class MarkersViewMixin:
     """Datalog 页 Marker 视图：A/B 与额外成对 Marker / 区间注释 / Measurement 表。"""

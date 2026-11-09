@@ -24,7 +24,7 @@ from instruments.power.keysight.n6705c_datalog_process import (
     parse_csv_text,
 )
 from ui.pages.consumption_test.high_low_temp_test_ui import _HighLowTempTestWorker
-from ui.pages.n6705c_power_analyzer.datalog.view_import_export import (
+from ui.pages.power_anaalyzer.datalog.view_import_export import (
     ImportExportViewMixin,
     QFileDialog,
 )

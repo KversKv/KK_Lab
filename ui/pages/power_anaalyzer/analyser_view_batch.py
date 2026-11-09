@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from log_config import get_logger
-from ui.pages.n6705c_power_analyzer.widgets import (
+from ui.pages.power_anaalyzer.widgets import (
     _batch_channel_button_style,
     collapsible_header_style,
     SelectAllLineEdit,

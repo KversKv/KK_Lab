@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QCursor, QFont, QTransform
 from bisect import bisect_left, bisect_right
-from ui.pages.n6705c_power_analyzer.datalog.helpers import (
+from ui.pages.power_anaalyzer.datalog.helpers import (
     _BAND_CEILING,
     _auto_format,
     _color_for_label,

@@ -22,8 +22,8 @@ from instruments.power.keysight.n6705c_datalog_process import (
     import_edlg_file,
     paired_samples,
 )
-from ui.pages.n6705c_power_analyzer import datalog_style as dss
-from ui.pages.n6705c_power_analyzer.datalog.helpers import _display_label, _parse_ch_label, _sort_key_for_label
+from ui.pages.power_anaalyzer import datalog_style as dss
+from ui.pages.power_anaalyzer.datalog.helpers import _display_label, _parse_ch_label, _sort_key_for_label
 from log_config import get_logger
 
 logger = get_logger(__name__)
