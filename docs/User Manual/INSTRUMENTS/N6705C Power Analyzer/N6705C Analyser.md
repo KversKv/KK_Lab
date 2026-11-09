@@ -5,7 +5,7 @@ N6705C Analyser 是 Keysight N6705C 直流电源分析仪的**实时控制台**�
 ## 页面入口
 
 - 导航栏 → `INSTRUMENTS` → `N6705C` → 子菜单 `N6705C Analyser`
-- 对应源码：`ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py`
+- 对应源码：`ui/pages/power_analyzer/power_analyzer_analyser_ui.py`
 
 ## 界面布局
 

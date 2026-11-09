@@ -247,7 +247,7 @@ stateDiagram-v2
 | W3 | `ui/widgets` 存量（dark_combobox/button/sidebar*/scrollbar/toast/plot…） | ~12 | `grep setStyleSheet` 清零 | ☐ |
 | W4 | 顶层壳 + `ui/ai`（main_window/nav/top_bar/instrument_status/chat_view…） | ~10 | 同上 | ☐ |
 | W5 | serialCom_module 全家（dark/apple style 290+ 色值、mixin ~190 处） | 最大单波 | 样式定义文件迁入 theme/，原路径 re-export 薄壳 | ☐ |
-| W6 | 其余页面逐个：power_anaalyzer/oscilloscope/consumption/orchestrator/pmu*/charger/chamber/vmin | ~35 | 逐页小 commit，视觉零变化 | ☐ |
+| W6 | 其余页面逐个：power_analyzer/oscilloscope/consumption/orchestrator/pmu*/charger/chamber/vmin | ~35 | 逐页小 commit，视觉零变化 | ☐ |
 
 全 ui/ 终验命令：
 ```powershell

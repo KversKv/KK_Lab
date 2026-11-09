@@ -5,8 +5,8 @@ N6705C Datalog 是基于 PySide6 + pyqtgraph 的**长时间数据采集与波形
 ## 页面入口
 
 - 导航栏 → `INSTRUMENTS` → `N6705C` → 子菜单 `N6705C Datalog`
-- 对应源码：`ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py`
-- 也可独立运行调试：`python ui\pages\power_anaalyzer\power_anaalyzer_datalog_ui.py`（独立窗口标题 `N6705C Datalog - Debug`，默认 1400×900）
+- 对应源码：`ui/pages/power_analyzer/power_analyzer_datalog_ui.py`
+- 也可独立运行调试：`python ui\pages\power_analyzer\power_analyzer_datalog_ui.py`（独立窗口标题 `N6705C Datalog - Debug`，默认 1400×900）
 
 ## 界面布局
 

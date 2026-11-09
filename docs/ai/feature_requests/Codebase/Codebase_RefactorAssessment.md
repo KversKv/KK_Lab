@@ -24,11 +24,11 @@
 | 行数 | 文件 | 层 | 体检结论 |
 |---:|---|---|---|
 | 8564 | [serialCom_module_frame.py](../../../ui/modules/serialCom_module/serialCom_module_frame.py) | ui/modules | 🔴 **必拆**（单文件承载 7+ 职责） |
-| 7234 | [power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py) | ui/pages | 🔴 **必拆** |
+| 7234 | [power_analyzer_analyser_ui.py](../../../ui/pages/power_analyzer/power_analyzer_analyser_ui.py) | ui/pages | 🔴 **必拆** |
 | 3986 | [consumption_test.py](../../../ui/pages/consumption_test/consumption_test.py) | ui/pages | 🟠 部分已拆(workers/)，UI 仍过大 |
 | 3031 | [oscilloscope_base_ui.py](../../../ui/pages/oscilloscope/oscilloscope_base_ui.py) | ui/pages | 🔴 **建议拆** |
 | 2192 | [clk_test_ui.py](../../../ui/pages/pmu_test/clk_test_ui.py) | ui/pages | 🔴 **建议拆**（Worker+解析+UI 混装） |
-| 2065 | [power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | ui/pages | 🟠 关注 |
+| 2065 | [power_analyzer_datalog_ui.py](../../../ui/pages/power_analyzer/power_analyzer_datalog_ui.py) | ui/pages | 🟠 关注 |
 | 1998 | [gpadc_test_ui.py](../../../ui/pages/pmu_test/gpadc_test_ui.py) | ui/pages | 🔴 同 clk |
 | 1981 | [pmu_dcdc_efficiency.py](../../../ui/pages/pmu_test/pmu_dcdc_efficiency.py) | ui/pages | 🔴 同 clk |
 | 1881 | [serialCom_apple_gpt5p5_style.py](../../../ui/modules/serialCom_module/serialCom_apple_gpt5p5_style.py) | ui/modules | 🟠 样式常量集中文件（可接受，但应裁剪） |
@@ -58,7 +58,7 @@
 3. **部分页面已经开始正确拆分**：
    - `consumption_test/consumption_test_workers/`：把 5 个 QThread Worker 拆出去了。
    - `pmu_test/` 各测试项独立成文件，没有挤进一个 god page。
-   - `power_anaalyzer/`：`*_top.py`（连接共享）/`*_analyser_ui.py`（页面）/`*_datalog_ui.py`（采集）已经做了功能切分。
+   - `power_analyzer/`：`*_top.py`（连接共享）/`*_analyser_ui.py`（页面）/`*_datalog_ui.py`（采集）已经做了功能切分。
 4. **Mixin 复用连接区域 UI** 的思路是合理的（避免每个页面重复写 VISA/串口搜索+连接+状态指示）。
 5. **配置数据外置**：芯片参数走 `chips/*.yaml`，没有把魔法数字写死在业务代码里。
 
@@ -107,7 +107,7 @@ Worker 已外移，但**UI 本体仍是巨石**：页面布局、流程编排、
 | 文件 | 拆出什么 | 去向 |
 |---|---|---|
 | serialCom_module_frame.py (8564) | 见 §4.1 专项方案 | 拆为一个 `serialCom_module/` 子包多文件 |
-| power_anaalyzer_analyser_ui.py (7234) | Worker（`_ChannelSyncWorker`/`_ConsumptionTestWorker`）、通道快照逻辑、批量工具逻辑 | Worker→`core/`；UI 拆 view 构建子模块 |
+| power_analyzer_analyser_ui.py (7234) | Worker（`_ChannelSyncWorker`/`_ConsumptionTestWorker`）、通道快照逻辑、批量工具逻辑 | Worker→`core/`；UI 拆 view 构建子模块 |
 
 ### P1（强烈建议，逻辑与 UI 耦合）
 | 文件 | 拆出什么 | 去向 |
@@ -122,7 +122,7 @@ Worker 已外移，但**UI 本体仍是巨石**：页面布局、流程编排、
 | 文件 | 动作 |
 |---|---|
 | consumption_test.py (3986) | 继续按 §4.2 把 UI 本体拆成 view + 流程控制器 |
-| power_anaalyzer_datalog_ui.py (2065) | 解析与导出逻辑下沉 `instruments/power/keysight/n6705c_datalog_process.py` 复用 |
+| power_analyzer_datalog_ui.py (2065) | 解析与导出逻辑下沉 `instruments/power/keysight/n6705c_datalog_process.py` 复用 |
 | ai_assist_panel.py (1657) | 拆 panel 子组件（已有 chat_view 等可继续） |
 | main_window.py (1360) | "连接共享中枢"抽出为独立模块 |
 | serialCom_*_style.py | 合入统一主题 token，去重 |
@@ -232,7 +232,7 @@ ui/modules/serialCom_module/
 | **Phase 0** | 立基线 + 测试网 | 全局 | 行数基线快照 + 冒烟脚本 + smoke 测试占位 | 低 | 无 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 1** | PMU 算法/Worker 下沉 | clk / gpadc / dcdc / isGain / oscp | `core/pmu_test/*` analysis+worker | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 2** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
-| **Phase 3** | n6705c_analyser 拆分（P0） | power_anaalyzer_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
+| **Phase 3** | n6705c_analyser 拆分（P0） | power_analyzer_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | 🔁 | 85% | AI | 2026-06-24 |
 | **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | 🔁 | 60% | AI | 2026-06-24 |
 | **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ✅ | 100% | AI | 2026-06-24 |
@@ -328,7 +328,7 @@ ui/modules/serialCom_module/
 ---
 
 ### Phase 3 — n6705c_analyser 拆分（P0，高风险）
-**目标**：7234 行 → 主 UI < 2000 行。基于已确认结构（[power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py)）。
+**目标**：7234 行 → 主 UI < 2000 行。基于已确认结构（[power_analyzer_analyser_ui.py](../../../ui/pages/power_analyzer/power_analyzer_analyser_ui.py)）。
 
 **进度看板**
 
@@ -347,11 +347,11 @@ ui/modules/serialCom_module/
 | 🆕✂️ | `core/n6705c/channel_sync_worker.py` | 搬 `_ChannelSyncWorker`（L324-356） |
 | 🆕✂️ | `core/n6705c/consumption_worker.py` | 搬 `_ConsumptionTestWorker`（L359-393） |
 | 🆕✂️ | `core/n6705c/search_worker.py` | 搬 `_SearchThread`（L280-322） |
-| 🆕✂️ | `ui/pages/power_anaalyzer/widgets.py` | 搬 `SlideToggle`(L33) / `ChannelTabBar`(L186) / `_get_checkmark_path` / `_format_current` / `_batch_channel_button_style` |
-| 🆕✂️ | `ui/pages/power_anaalyzer/analyser_view_setting.py` | 搬 `_create_setting_widget`(L911,~160行) / `_create_unified_input` / 模式与样式构建块 |
-| 🆕✂️ | `ui/pages/power_anaalyzer/analyser_view_batch.py` | 搬 `_create_batch_tools_panel` / `_build_batch_columns` / 批量回调（`_on_batch_*`，L2186-2284） |
-| 🆕✂️ | `ui/pages/power_anaalyzer/analyser_view_consumption.py` | 搬 `_create_consumption_test_panel` / `_build_ct_cards` / `_ct_*`（L1300-1432, L2285-2400） |
-| ♻️✂️ | [power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py) | 保留 `N6705CAnalyserUI` 主壳：状态机/连接/通道切换/装配；视图块改 mixin 或委托调用 |
+| 🆕✂️ | `ui/pages/power_analyzer/widgets.py` | 搬 `SlideToggle`(L33) / `ChannelTabBar`(L186) / `_get_checkmark_path` / `_format_current` / `_batch_channel_button_style` |
+| 🆕✂️ | `ui/pages/power_analyzer/analyser_view_setting.py` | 搬 `_create_setting_widget`(L911,~160行) / `_create_unified_input` / 模式与样式构建块 |
+| 🆕✂️ | `ui/pages/power_analyzer/analyser_view_batch.py` | 搬 `_create_batch_tools_panel` / `_build_batch_columns` / 批量回调（`_on_batch_*`，L2186-2284） |
+| 🆕✂️ | `ui/pages/power_analyzer/analyser_view_consumption.py` | 搬 `_create_consumption_test_panel` / `_build_ct_cards` / `_ct_*`（L1300-1432, L2285-2400） |
+| ♻️✂️ | [power_analyzer_analyser_ui.py](../../../ui/pages/power_analyzer/power_analyzer_analyser_ui.py) | 保留 `N6705CAnalyserUI` 主壳：状态机/连接/通道切换/装配；视图块改 mixin 或委托调用 |
 | 🧪🆕 | `tests/refactor/test_n6705c_worker.py` | 三个 Worker 在 mock 下单测 |
 | 🗂️ | `DIRECTORY_STRUCTURE.txt` | 新增 `core/n6705c/` 与页面子文件 |
 
@@ -466,7 +466,7 @@ ui/modules/serialCom_module/
 | 🆕✂️ | `core/instruments/connection_hub.py` | 从 [main_window.py](../../../ui/main_window.py) 抽"双 N6705C/示波器/温箱连接状态共享中枢" |
 | ♻️✂️ | [main_window.py](../../../ui/main_window.py) | 仅保留导航 + QStackedWidget + 订阅 hub 信号 |
 | ✂️♻️ | [ai_assist_panel.py](../../../ui/ai/ai_assist_panel.py) | 继续拆 panel 子组件（沿用现有 `chat_view`/`config_preview`/`script_preview` 风格） |
-| ♻️✂️ | [power_anaalyzer_datalog_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | 解析/导出逻辑复用 [n6705c_datalog_process.py](../../../instruments/power/keysight/n6705c_datalog_process.py)，删 UI 内重复解析 |
+| ♻️✂️ | [power_analyzer_datalog_ui.py](../../../ui/pages/power_analyzer/power_analyzer_datalog_ui.py) | 解析/导出逻辑复用 [n6705c_datalog_process.py](../../../instruments/power/keysight/n6705c_datalog_process.py)，删 UI 内重复解析 |
 | 🗂️ | `DIRECTORY_STRUCTURE.txt` / `helps/` / `spec/kk_lab.spec` | 全量同步目录、帮助、打包资源 |
 | 🗂️ | `docs/ai/04_ARCHITECTURE.md` | 把 §4.3 强化铁律正式并入架构文档 |
 | 🗂️ | `docs/ai/decisions/005-monolith-refactor.md` | 记录本次重构决策（ADR） |
@@ -490,7 +490,7 @@ core/n6705c/{__init__.py, channel_sync_worker.py, consumption_worker.py, search_
 core/serial_script/{__init__.py, script_engine.py}
 core/consumption_test/{__init__.py, consumption_controller.py}
 core/instruments/connection_hub.py
-ui/pages/power_anaalyzer/{widgets.py, analyser_view_setting.py, analyser_view_batch.py, analyser_view_consumption.py}
+ui/pages/power_analyzer/{widgets.py, analyser_view_setting.py, analyser_view_batch.py, analyser_view_consumption.py}
 ui/modules/serialCom_module/mixins/{__init__.py, connection_mixin.py, toolbar_mixin.py, log_panel_mixin.py, filter_save_mixin.py, send_mixin.py, chart_mixin.py, script_mixin.py}
 ui/modules/serialCom_module/widgets.py
 ui/pages/consumption_test/{widgets.py, view_config.py, view_results.py}
@@ -509,8 +509,8 @@ ui/pages/pmu_test/pmu_isGain_ui.py
 ui/pages/pmu_test/pmu_oscp_ui.py
 ui/pages/oscilloscope/oscilloscope_base_ui.py
 ui/pages/oscilloscope/mso64b_top.py
-ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py
-ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py
+ui/pages/power_analyzer/power_analyzer_analyser_ui.py
+ui/pages/power_analyzer/power_analyzer_datalog_ui.py
 ui/modules/serialCom_module/serialCom_module_frame.py
 ui/modules/serialCom_module/serialCom_apple_gpt5p5_style.py
 ui/modules/serialCom_module/serialCom_dark_style.py
@@ -593,7 +593,7 @@ Phase 4、Phase 6 核心目标（Mixin 拆分、算法下沉无 Qt、re-export �
 
 - **7-1 连接中枢抽出**：`core/instruments/connection_hub.py` 新建 `ConnectionHub(QObject)`，仅依赖 `QtCore`、无 `QtWidgets`、不反向 import `ui`（符合 `core/` 分层铁律）。`ui/main_window.py` L282 构造 hub、L877 单点订阅 `connection_changed`、L1492 统一 `shutdown()`，原分散三处（N6705C / 示波器 / manager）连线已收敛为一处 hub 订阅。
 - **7-2 ai_assist_panel 拆子组件**：导出 Markdown 逻辑下沉为 `ui/ai/transcript_exporter.py` 的 `build_export_markdown()`（纯逻辑，无 Qt 控件依赖）；`ai_assist_panel.py` L51 import、L1415 委托调用。
-- **7-3 n6705c_datalog 复用**：`_build_marker_dlog_bytes` 下沉为 `instruments/power/keysight/n6705c_datalog_process.py:L558` 的 `build_marker_dlog_bytes`；`power_anaalyzer_datalog_ui.py` L53 import 复用、L8148 调用，UI 内已无重复 dlog 构建函数（仅剩 `_export_marker_dlog` 编排壳），dlog 读/写格式知识合一。
+- **7-3 n6705c_datalog 复用**：`_build_marker_dlog_bytes` 下沉为 `instruments/power/keysight/n6705c_datalog_process.py:L558` 的 `build_marker_dlog_bytes`；`power_analyzer_datalog_ui.py` L53 import 复用、L8148 调用，UI 内已无重复 dlog 构建函数（仅剩 `_export_marker_dlog` 编排壳），dlog 读/写格式知识合一。
 - **7-5 架构铁律 + ADR**：`docs/ai/04_ARCHITECTURE.md §2.1`「强化铁律」已正式并入（禁 UI 出现纯算法、connection_hub 单点订阅）；`docs/ai/decisions/005-monolith-refactor.md`（ADR 005）状态 Accepted。
 - **7-6 全量回归全绿**：`tests/refactor/test_phase7_connection_dlog.py`（6 单测：build_marker_dlog_bytes valid/empty/no_window + connection_hub properties/wiring/shutdown/signal_aggregation）与 `tests/test_smoke_import.py`（compile_all + import_core_modules）以独立入口运行全部通过。
 

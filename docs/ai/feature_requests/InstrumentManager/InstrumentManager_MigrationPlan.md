@@ -57,7 +57,7 @@
    - `try_set_busy`
    - `shutdown`
 6. `main_window.py` 已创建全局 `InstrumentManager`，并传给部分页面。
-7. `power_anaalyzer_top.py` 和 `mso64b_top.py` 已经可以把 legacy top 中的外部实例 `attach_external` 到 manager。
+7. `power_analyzer_top.py` 和 `mso64b_top.py` 已经可以把 legacy top 中的外部实例 `attach_external` 到 manager。
 
 当前仍未完善的关键缺口：
 
@@ -176,8 +176,8 @@ N6705C 链路跑通后，再迁移 scope、chamber、counter、serial、i2c。
 
 3. 列出每个迁移阶段必须 smoke 的页面：
    - `main.py`
-   - `power_anaalyzer_analyser_ui.py`
-   - `power_anaalyzer_datalog_ui.py`
+   - `power_analyzer_analyser_ui.py`
+   - `power_analyzer_datalog_ui.py`
    - `oscilloscope_base_ui.py`
    - `vt6002_chamber_ui.py`
    - `charger_test_ui.py`
@@ -589,10 +589,10 @@ serial_port:uart_log_1
 
 | 文件 | 目标 |
 |---|---|
-| `ui/pages/power_anaalyzer/power_anaalyzer_top.py` | 降级为 manager-backed 兼容视图 |
+| `ui/pages/power_analyzer/power_analyzer_top.py` | 降级为 manager-backed 兼容视图 |
 | `ui/modules/n6705c_module_frame.py` | 连接控件只调用 manager，不 owning 仪器 |
-| `ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py` | manager 优先；连接后异步同步通道 |
-| `ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py` | manager 优先；Active 从 snapshot 构建；采集 busy |
+| `ui/pages/power_analyzer/power_analyzer_analyser_ui.py` | manager 优先；连接后异步同步通道 |
+| `ui/pages/power_analyzer/power_analyzer_datalog_ui.py` | manager 优先；Active 从 snapshot 构建；采集 busy |
 
 ### 示波器
 
@@ -724,8 +724,8 @@ finally:
 
 | 页面 | 预期 |
 |---|---|
-| `power_anaalyzer_analyser_ui.py` | local manager 搜索、连接、同步通道 |
-| `power_anaalyzer_datalog_ui.py` | local manager 搜索、连接、Active 显示通道 |
+| `power_analyzer_analyser_ui.py` | local manager 搜索、连接、同步通道 |
+| `power_analyzer_datalog_ui.py` | local manager 搜索、连接、Active 显示通道 |
 | `oscilloscope_base_ui.py` | local manager 连接 scope，不阻塞 UI |
 | `vt6002_chamber_ui.py` | local manager 枚举串口、连接、读温度 |
 | 频率计模块 demo | local manager 搜索、连接、测量入口可用 |
@@ -754,7 +754,7 @@ finally:
 迁移阶段涉及页面时追加对应页面：
 
 ```powershell
-.venv\Scripts\python.exe -m py_compile ui\main_window.py ui\instrument_status.py ui\pages\power_anaalyzer\power_anaalyzer_top.py ui\pages\power_anaalyzer\power_anaalyzer_analyser_ui.py ui\pages\power_anaalyzer\power_anaalyzer_datalog_ui.py
+.venv\Scripts\python.exe -m py_compile ui\main_window.py ui\instrument_status.py ui\pages\power_analyzer\power_analyzer_top.py ui\pages\power_analyzer\power_analyzer_analyser_ui.py ui\pages\power_analyzer\power_analyzer_datalog_ui.py
 ```
 
 ### Mock smoke

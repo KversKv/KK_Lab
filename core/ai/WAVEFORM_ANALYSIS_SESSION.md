@@ -156,11 +156,11 @@
 
 ---
 
-## 6. 当前本地代码流程（实读 `waveform_provider.py` / `power_anaalyzer_datalog_ui.py` 后）
+## 6. 当前本地代码流程（实读 `waveform_provider.py` / `power_analyzer_datalog_ui.py` 后）
 
 ### 6.1 数据从哪来 → 怎么进内存
 
-事实源：`ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py`。
+事实源：`ui/pages/power_analyzer/power_analyzer_datalog_ui.py`。
 
 ```
 仪器 datalog / 导入 CSV
@@ -169,7 +169,7 @@
 all_data = { label: {"time": [float, ...], "values": [float, ...]} }   ← 全量驻留内存
         │  UI 线程持有 self.datalog_data
         ▼
-build_waveform_digest(x_range, marker)   （UI 线程，power_anaalyzer_datalog_ui.py:5312）
+build_waveform_digest(x_range, marker)   （UI 线程，power_analyzer_datalog_ui.py:5312）
 ```
 
 - 原始点是**全量常驻 Python list**；mock 路径有 `total_points = min(total_points, 50000)` 的硬上限保护，真机/导入路径无此上限。

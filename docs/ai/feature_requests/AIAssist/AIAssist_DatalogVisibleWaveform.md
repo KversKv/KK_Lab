@@ -28,7 +28,7 @@
 | 环节 | 位置 | 现行为 |
 |---|---|---|
 | 注入回调 | [main_window.py `_provide_ai_waveform_digest`](../../ui/main_window.py) | datalog 页注入 `build_waveform_digest` |
-| 构建摘要 | [power_anaalyzer_datalog_ui.py `build_waveform_digest`](../../ui/pages/power_anaalyzer/power_anaalyzer_datalog_ui.py) | `build_digest(dict(self.datalog_data))` —— **全量** |
+| 构建摘要 | [power_analyzer_datalog_ui.py `build_waveform_digest`](../../ui/pages/power_analyzer/power_analyzer_datalog_ui.py) | `build_digest(dict(self.datalog_data))` —— **全量** |
 | 后台执行 | [ai_assist_panel.py `_DigestWorker.run`](../../ui/ai/ai_assist_panel.py) | 在**子线程**调用 `callback()` |
 | drill-down | [query.py `get_waveform_window`](../../core/ai/actions/handlers/query.py) | 用 `deps.waveform_data_getter()` 切片，但该 getter **当前未在 `ActionDeps` 接线**，实际拿不到数据 |
 
@@ -73,7 +73,7 @@
 
 | 层 | 文件 | 职责 | 禁忌 |
 |---|---|---|---|
-| `ui/pages` | `power_anaalyzer_datalog_ui.py` | 读 `viewRange()`/Marker（UI 线程）；按窗口构建 digest | — |
+| `ui/pages` | `power_analyzer_datalog_ui.py` | 读 `viewRange()`/Marker（UI 线程）；按窗口构建 digest | — |
 | `ui/ai` | `ai_assist_panel.py` | UI 线程取范围快照 → 传子线程 worker | 子线程禁读 Qt |
 | `ui` | `main_window.py` | 回调接线、补 `waveform_data_getter` | — |
 | `core/ai` | `waveform_provider.py` / `schemas.py` / `prompt_manager.py` | 纯算法切片、digest 结构、prompt 文本化 | 禁 import Qt |
@@ -146,7 +146,7 @@ class WaveformDigest:
   - 顶部输出分析范围（`window`）：`分析范围：1.000~4.000 s（屏幕可见区）` 或 `分析范围：全程`；
   - 若有 `marker_segment`，追加 `[Marker A→B 区间]` 段：时长 + 各通道均值/峰峰。
 
-### 4.3 `ui/pages/.../power_anaalyzer_datalog_ui.py`（UI 线程）
+### 4.3 `ui/pages/.../power_analyzer_datalog_ui.py`（UI 线程）
 - 新增 `get_visible_x_range() -> tuple[float,float] | None`：
   - 读 `self.plot_widget.getPlotItem().getViewBox().viewRange()[0]`；
   - 与数据全程 `[t_min,t_max]` 求交并裁剪；
@@ -197,7 +197,7 @@ class WaveformDigest:
 | D4 | `build_window_digest()` 逐通道切片 + 填 window | 同上 | D2,D1 | ☑ |
 | D5 | `marker_segment_stats()` A→B 区间统计 | 同上 | D2,D1 | ☑ |
 | D6 | `format_waveform_digest()` 输出范围 + Marker 段 | `core/ai/prompt_manager.py` | D1 | ☑ |
-| D7 | `get_visible_x_range()` / `get_marker_window()` | `ui/pages/.../power_anaalyzer_datalog_ui.py` | — | ☑ |
+| D7 | `get_visible_x_range()` / `get_marker_window()` | `ui/pages/.../power_analyzer_datalog_ui.py` | — | ☑ |
 | D8 | `build_waveform_digest(x_range,marker)` 升级 | 同上 | D4,D5,D7 | ☑ |
 | D9 | `get_waveform_data_windowed()`（drill-down 数据源） | 同上 | D7 | ☑ |
 | D10 | 回调升级 `callback(x_range,marker)` + range/marker getter | `ui/ai/ai_assist_panel.py` | — | ☑ |

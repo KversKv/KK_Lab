@@ -11,14 +11,14 @@
 现有代码大致存在几类“仪器管理”逻辑：
 
 1. 顶层状态容器
-   - 例如 `ui/pages/power_anaalyzer/power_anaalyzer_top.py`；
+   - 例如 `ui/pages/power_analyzer/power_analyzer_top.py`；
    - 作为 `main.py` 场景下的共享状态；
    - 保存 `n6705c_a / n6705c_b / visa_resource_a / serial_a` 等具体字段；
    - 类型和 slot 写死在类里，不适合扩展到其它仪器。
 
 2. 子页面自身逻辑
-   - `power_anaalyzer_analyser_ui.py` 有自己的搜索、连接、断开、同步通道状态流程；
-   - `power_anaalyzer_datalog_ui.py` 有自己的设备卡片、slot、Active 通道配置、datalog 采集流程；
+   - `power_analyzer_analyser_ui.py` 有自己的搜索、连接、断开、同步通道状态流程；
+   - `power_analyzer_datalog_ui.py` 有自己的设备卡片、slot、Active 通道配置、datalog 采集流程；
    - `vt6002_chamber_ui.py`、示波器页面、PMU/Charger 页面也各自维护连接或同步逻辑；
    - 页面之间共享顶层仪器时，需要手动 `_sync_from_top()`。
 
@@ -1006,15 +1006,15 @@ ui/modules/
   n6705c_connection_panel.py      # N6705C 特化显示，不 owning 仪器
   scope_connection_panel.py       # 示波器特化显示，不 owning 仪器
 
-ui/pages/power_anaalyzer/
-  power_anaalyzer_analyser_ui.py           # Analyzer 页面业务
-  power_anaalyzer_datalog_ui.py            # Datalog 页面业务
+ui/pages/power_analyzer/
+  power_analyzer_analyser_ui.py           # Analyzer 页面业务
+  power_analyzer_datalog_ui.py            # Datalog 页面业务
 ```
 
 旧文件：
 
 ```text
-ui/pages/power_anaalyzer/power_anaalyzer_top.py
+ui/pages/power_analyzer/power_analyzer_top.py
 ```
 
 保留为兼容层，最终可废弃。
@@ -1069,8 +1069,8 @@ if __name__ == "__main__":
 
 - `main.py` 中连接 N6705C 后，Analyzer / Datalog / PMU / Charger 页面都能同步看到；
 - `main.py` 中连接示波器、温箱、频率计、串口/I2C 适配器后，相关页面都能通过 manager 同步看到；
-- 单独运行 `power_anaalyzer_analyser_ui.py` 可以独立搜索、连接、同步通道状态；
-- 单独运行 `power_anaalyzer_datalog_ui.py` 可以独立搜索、连接、显示 Active 通道；
+- 单独运行 `power_analyzer_analyser_ui.py` 可以独立搜索、连接、同步通道状态；
+- 单独运行 `power_analyzer_datalog_ui.py` 可以独立搜索、连接、显示 Active 通道；
 - 单独运行示波器、温箱、频率计、串口相关页面时，可以创建 local manager 并独立工作；
 - 连接、搜索、断开不阻塞 UI；
 - 同一台仪器不会被多个 owner 重复关闭；

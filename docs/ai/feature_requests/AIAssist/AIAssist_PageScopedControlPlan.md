@@ -358,7 +358,7 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 | 页面（page_key） | 状态 | 文件 | 未接入原因 / 风险点 | 后续接入工作量预估 |
 |---|---|---|---|---|
 | `consumption_test`（高低温度功耗测试） | ◐ 评估后推迟 | [high_low_temp_test_ui.py](../../../ui/pages/consumption_test/high_low_temp_test_ui.py) `HighLowTempConsumptionTestUI` | ① 双 N6705C（A/B 两路）+ 温箱三仪器协同；② 契约方法命名与既有页面差异较大（`_on_start_clicked` / `_test_worker` 而非 `_on_start_test` / `test_worker`）；③ 多阶段温度循环测试逻辑复杂，配置项维度高（温度点列表、保持时间、采样窗口、双通道量程）；④ 结果摘要需聚合多温度点 × 双通道数据，结构与非多阶段页差异大，硬套既有 `ai_get_result_summary` 模板会丢信息 | 中-高：需为该页定制 `apply_config_to_controls`（多温度点表格回填）+ `ai_get_result_summary`（多温度点聚合摘要），约 1 个独立迭代 |
-| `power_analyser`（N6705C 分析仪） | ☐ 未评估 | `ui/pages/power_anaalyzer/*` | 本页为仪器直控页（非测试序列页），「启动测试」语义不明确（无独立测试流程，只有数据采集）。Phase 6 `ui_invoke` 路线更适合覆盖其 `auto_set` 等无接口按钮 | 低：Phase 6 完成后即覆盖，无需单开契约接入 |
+| `power_analyser`（N6705C 分析仪） | ☐ 未评估 | `ui/pages/power_analyzer/*` | 本页为仪器直控页（非测试序列页），「启动测试」语义不明确（无独立测试流程，只有数据采集）。Phase 6 `ui_invoke` 路线更适合覆盖其 `auto_set` 等无接口按钮 | 低：Phase 6 完成后即覆盖，无需单开契约接入 |
 | `datalog`（N6705C 数据记录） | ☐ 未评估 | `ui/pages/n6705c_datalog/*` | 同上，为长时数据记录页，非测试序列；配置项（通道/采样率/时长）可走契约，但「启动/停止」语义为「开始记录/停止记录」而非测试 | 低-中：如需 AI 控制记录起停可补契约，否则 Phase 6 覆盖 |
 | `oscilloscope`（示波器） | ☐ 未评估 | `ui/pages/oscilloscope/*` | 仪器直控页，AI 已有完整示波器动作集（§1.6 `scope_*`），无需重复走页级契约 | —：不计划接入，已有等价能力 |
 | `thermal_chamber`（温箱） | ☐ 未评估 | `ui/pages/thermal_chamber/*` | 仪器直控页，AI 已有完整温箱动作集（§1.7 `chamber_*`），无需重复走页级契约 | —：不计划接入，已有等价能力 |
@@ -389,7 +389,7 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 | 6.2 | 新增 `list_ui_actions` / `ui_invoke` 两个通用动作 handler | `core/ai/actions/handlers/` | ☑ |
 | 6.3 | 枢纽按当前页 `page_key` 路由 + enabled_when 校验 + 主线程 Slot 调 handler | `ui/main_window.py` | ☑ |
 | 6.4 | `ui_invoke` 接入 PermissionChecker / Confirm / AuditLog | `core/ai/...` | ☑ |
-| 6.5 | N6705C 页登记 `auto_set` 等无接口按钮（handler 复用原槽） | `ui/pages/power_anaalyzer/*` | ☑ |
+| 6.5 | N6705C 页登记 `auto_set` 等无接口按钮（handler 复用原槽） | `ui/pages/power_analyzer/*` | ☑ |
 | 6.6 | 触发后执行日志 `[AI] ...` + 控件经原信号/轮询投影刷新验证 | — | ☑ |
 | 6.7 | 端到端：AI `list_ui_actions` → `ui_invoke("n6705c.auto_set")` → 确认 → 生效 | — | ☑ |
 
@@ -413,7 +413,7 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 >   `ActionDispatcher.dispatch` 的 PermissionChecker → `confirm_action` 确认框 → AuditLog 审计闭环
 >   （与专用写动作同级）。目标项 `risk`（high 等）写入 `UIActionSpec.risk` 供 `list_ui_actions` 展示
 >   与确认引导，dispatcher 层 medium+确认 为保守统一策略（§5b.5 白名单制 + 复用受控闭环）。
-> - **6.5**：[`N6705CAnalyserUI._register_ai_ui_actions`](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py)
+> - **6.5**：[`N6705CAnalyserUI._register_ai_ui_actions`](../../../ui/pages/power_analyzer/power_analyzer_analyser_ui.py)
 >   登记 `power_analyser.auto_set` / `power_analyser.auto_set_20mv`，`handler` 经 `_wrap()` 复用
 >   `_on_batch_auto_set` / `_on_batch_auto_20mv` 原槽（行为与人点完全一致），`enabled_when` 校验
 >   至少一台 N6705C 已连接。registry 经 `MainWindow._setup_ai_action_system` 创建，构造 analyser UI 时注入。

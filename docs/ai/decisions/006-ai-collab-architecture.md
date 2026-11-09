@@ -47,7 +47,7 @@
 ## 遗留 / 后续（第二批）
 
 - `ui/widgets/`、`lib/i2c/`、`ui/ai/`、`spec/` 子模块 AGENTS.md 尚未建，根地图已标"无 · 第二批"。
-- 页级下沉（如 `ui/pages/power_anaalyzer/` 的 Tab 盒模型 §25、`ui/pages/pmu/` 等主力页）列入第二批。
+- 页级下沉（如 `ui/pages/power_analyzer/` 的 Tab 盒模型 §25、`ui/pages/pmu/` 等主力页）列入第二批。
 - 既有就近文档保持原样、仅被引用不合并：`ui/pages/pmu/pmu_1811/README.md + RULES.md`、`ui/modules/serialCom_module/*.md`、`core/ai/DEBUG_WORKBENCH.md` 等。
 
 ## 相关

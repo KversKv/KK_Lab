@@ -18,13 +18,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
 _zeroconf_hiddenimports = collect_submodules('zeroconf') + ['ifaddr']
 
 a = Analysis(
-    [os.path.join(PROJECT_ROOT, 'ui', 'pages', 'power_anaalyzer', 'power_anaalyzer_datalog_ui.py')],
+    [os.path.join(PROJECT_ROOT, 'ui', 'pages', 'power_analyzer', 'power_analyzer_datalog_ui.py')],
     pathex=[PROJECT_ROOT],
     binaries=[],
     datas=[
         # Include SVG icons
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
-        # Include page-specific SVGs used by power_anaalyzer_datalog_ui.py (sparkles.svg, n6705c_thumb.svg, etc.)
+        # Include page-specific SVGs used by power_analyzer_datalog_ui.py (sparkles.svg, n6705c_thumb.svg, etc.)
         (
             os.path.join(PROJECT_ROOT, 'resources', 'pages', 'n6705c_power_analyzer_SVGs'),
             os.path.join('resources', 'pages', 'n6705c_power_analyzer_SVGs'),

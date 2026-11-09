@@ -109,7 +109,7 @@
   - 在 theme.py 中定义 `FONT_MONO` 常量
   - 修改 N6705C Analyser、Consumption Test、PMU Test 等数值 QLabel
   - 确保 `font-variant-numeric: tabular-nums` 或固定宽度
-- **涉及文件**: `power_anaalyzer_analyser_ui.py`, `consumption_test.py`, `pmu_isGain_ui.py`, `pmu_dcdc_efficiency.py`, `pmu_output_voltage.py`, `gpadc_test_ui.py`, `clk_test_ui.py`, `oscilloscope_base_ui.py`, `vt6002_chamber_ui.py`
+- **涉及文件**: `power_analyzer_analyser_ui.py`, `consumption_test.py`, `pmu_isGain_ui.py`, `pmu_dcdc_efficiency.py`, `pmu_output_voltage.py`, `gpadc_test_ui.py`, `clk_test_ui.py`, `oscilloscope_base_ui.py`, `vt6002_chamber_ui.py`
 - **依赖**: Task 1.1
 - **预计会话**: 会话 3
 - **状态**: ✅ 已完成
@@ -282,7 +282,7 @@
 - **预计会话**: 会话 12
 - **状态**: ✅ 已完成
 - **完成日期**: 2026-05-21
-- **实际变更**: 修复 8 处 QPixmap 缺失 DPI 感知: oscilloscope_base_ui.py, node_palette.py, sidebar_nav_button.py, sequence_canvas.py, custom_test_ui.py, power_anaalyzer_datalog_ui.py, vt6002_chamber_ui.py, power_anaalyzer_analyser_ui.py; 统一模式: dpr=app.devicePixelRatio(); QPixmap(size*dpr); setDevicePixelRatio(dpr)
+- **实际变更**: 修复 8 处 QPixmap 缺失 DPI 感知: oscilloscope_base_ui.py, node_palette.py, sidebar_nav_button.py, sequence_canvas.py, custom_test_ui.py, power_analyzer_datalog_ui.py, vt6002_chamber_ui.py, power_analyzer_analyser_ui.py; 统一模式: dpr=app.devicePixelRatio(); QPixmap(size*dpr); setDevicePixelRatio(dpr)
 
 ---
 

@@ -224,7 +224,7 @@
 无 `ai_capabilities`（非测试序列页），有典型「无专用接口的页面按钮」，是 `ui_invoke` 的主要受益者。
 构造已透传 `ui_action_registry`（见 [main_window.py](../../../ui/main_window.py#L1365)）。
 
-**已登记 UI 动作**（[power_anaalyzer_analyser_ui.py](../../../ui/pages/power_anaalyzer/power_anaalyzer_analyser_ui.py#L101)，已落地 ☑）
+**已登记 UI 动作**（[power_analyzer_analyser_ui.py](../../../ui/pages/power_analyzer/power_analyzer_analyser_ui.py#L101)，已落地 ☑）
 
 | action_id | label | handler | risk | enabled_when |
 |---|---|---|---|---|
@@ -286,8 +286,8 @@ if self._ui_action_registry is not None:
 | 5.2 | 各 PMU 子页 Profile 写入可写参数词表 | `core/ai/profiles.py` | ☐ |
 | 5.3 | `pmu_dcdc_efficiency` 登记导出/导入/图表自适应 UI 动作 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☑ |
 | 5.4 | 其余 PMU 子页登记（`pmu_is_gain` 导出 / `pmu_gpadc` 导出，含 registry 透传 `pmu_test_ui.py`） | 各页面 | ☑ |
-| 5.5 | `power_analyser` 登记 Auto Set / Auto Set (+20mV) | `ui/pages/power_anaalyzer/*` | ☑ |
-| 5.6 | `datalog` 登记 Auto Fit / 导出 / 导入（含 registry 透传） | `ui/pages/power_anaalyzer/*` | ☑ |
+| 5.5 | `power_analyser` 登记 Auto Set / Auto Set (+20mV) | `ui/pages/power_analyzer/*` | ☑ |
+| 5.6 | `datalog` 登记 Auto Fit / 导出 / 导入（含 registry 透传） | `ui/pages/power_analyzer/*` | ☑ |
 | 5.7 | Charger 4 子页登记导出 CSV（含 registry 透传 `charger_test_ui.py`） | `ui/pages/charger_test/*` | ☑ |
 | 5.8 | 各 Charger 子页 Profile 写入可写参数词表 | `core/ai/profiles.py` | ☑ |
 | 5.9 | 端到端：dcdc 改参数 + `ui_invoke` 触发 Auto Set 验证 | — | ◐ (py_compile + diagnostics 全过；仪器/交互验证待人工) |

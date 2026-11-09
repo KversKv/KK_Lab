@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from ui.theme import FONT_MONO
-from ui.pages.power_anaalyzer.widgets import (
+from ui.pages.power_analyzer.widgets import (
     SlideToggle,
     SelectAllLineEdit,
     INPUT_BG, INPUT_BORDER, WIDGET_RADIUS, PREFIX_TEXT, UNIT_TEXT,

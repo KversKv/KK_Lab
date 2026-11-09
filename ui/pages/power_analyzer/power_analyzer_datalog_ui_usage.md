@@ -2,7 +2,7 @@
 
 ## 概述
 
-`power_anaalyzer_datalog_ui.py` 是一个基于 PySide6 + pyqtgraph 的图形化界面工具，用于对 **Keysight N6705C 直流电源分析仪**进行数据采集（Datalog）、波形查看、数据分析和导入/导出操作。
+`power_analyzer_datalog_ui.py` 是一个基于 PySide6 + pyqtgraph 的图形化界面工具，用于对 **Keysight N6705C 直流电源分析仪**进行数据采集（Datalog）、波形查看、数据分析和导入/导出操作。
 
 ---
 
@@ -11,7 +11,7 @@
 ### 独立运行
 
 ```bash
-python d:\CodeProject\TRAE_Projects\KK_Lab\ui\pages\power_anaalyzer\power_anaalyzer_datalog_ui.py
+python d:\CodeProject\TRAE_Projects\KK_Lab\ui\pages\power_analyzer\power_analyzer_datalog_ui.py
 ```
 
 直接运行时会打开一个独立窗口（标题为 "N6705C Datalog - Debug"，默认分辨率 1400×900）。
@@ -21,7 +21,7 @@ python d:\CodeProject\TRAE_Projects\KK_Lab\ui\pages\power_anaalyzer\power_anaaly
 在主程序中通过 `N6705CDatalogUI` 类实例化并嵌入到其他 UI：
 
 ```python
-from ui.pages.power_anaalyzer.power_anaalyzer_datalog_ui import N6705CDatalogUI
+from ui.pages.power_analyzer.power_analyzer_datalog_ui import N6705CDatalogUI
 
 widget = N6705CDatalogUI(n6705c_top=top_instance)
 ```

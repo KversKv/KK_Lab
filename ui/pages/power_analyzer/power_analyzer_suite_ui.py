@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # run cmd:
-# python ui\pages\power_anaalyzer\power_anaalyzer_suite_ui.py
+# python ui\pages\power_analyzer\power_analyzer_suite_ui.py
 
 import sys
 import os
@@ -28,9 +28,9 @@ from PySide6.QtGui import QPixmap, QCursor, QCloseEvent
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.toast_notification import ToastNotification
-from ui.pages.power_anaalyzer.power_anaalyzer_top import N6705CTop
-from ui.pages.power_anaalyzer.power_anaalyzer_analyser_ui import N6705CAnalyserUI
-from ui.pages.power_anaalyzer.datalog import N6705CDatalogUI
+from ui.pages.power_analyzer.power_analyzer_top import N6705CTop
+from ui.pages.power_analyzer.power_analyzer_analyser_ui import N6705CAnalyserUI
+from ui.pages.power_analyzer.datalog import N6705CDatalogUI
 
 logger = get_logger(__name__)
 
@@ -361,7 +361,7 @@ class _SuiteTitleBar(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# 无边框窗口：方案与 ui/main_window.py、power_anaalyzer_datalog_ui.py 独立运行态一致——
+# 无边框窗口：方案与 ui/main_window.py、power_analyzer_datalog_ui.py 独立运行态一致——
 # Win32 下保留原生 WS_CAPTION / WS_THICKFRAME，WM_NCCALCSIZE 返回 0 抹掉原生
 # 非客户区，标题栏自绘；原生边框缩放 / Aero Snap 保留。
 # ---------------------------------------------------------------------------

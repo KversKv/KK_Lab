@@ -16,14 +16,14 @@ from PySide6.QtWidgets import (
 from resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.toast_notification import ToastNotification
-from ui.pages.power_anaalyzer.datalog.datalog_ui import N6705CDatalogUI
-from ui.pages.power_anaalyzer.datalog.helpers import _make_svg_icon
+from ui.pages.power_analyzer.datalog.datalog_ui import N6705CDatalogUI
+from ui.pages.power_analyzer.datalog.helpers import _make_svg_icon
 from log_config import get_logger
 
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# 独立运行（python power_anaalyzer_datalog_ui.py）专用：无边框窗口 + 自建标题栏
+# 独立运行（python power_analyzer_datalog_ui.py）专用：无边框窗口 + 自建标题栏
 # 方案与 ui/main_window.py 一致：Win32 下保留原生 WS_CAPTION / WS_THICKFRAME，
 # WM_NCCALCSIZE 返回 0 抹掉原生非客户区，标题栏自绘；原生边框缩放 / Aero Snap 保留。
 # ---------------------------------------------------------------------------

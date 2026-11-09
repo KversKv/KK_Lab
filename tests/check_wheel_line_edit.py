@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from ui.widgets.wheel_line_edit import (  # noqa: E402
     HexWheelLineEdit, UnitWheelLineEdit, WheelLineEdit,
 )
-from ui.pages.power_anaalyzer.widgets import SelectAllLineEdit  # noqa: E402
+from ui.pages.power_analyzer.widgets import SelectAllLineEdit  # noqa: E402
 
 FAILURES: list[str] = []
 

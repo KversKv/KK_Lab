@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread
 from log_config import get_logger
-from ui.pages.power_anaalyzer.widgets import (
+from ui.pages.power_analyzer.widgets import (
     _get_checkmark_path,
     _format_current,
     collapsible_header_style,
