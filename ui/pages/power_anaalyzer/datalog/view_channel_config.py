@@ -38,6 +38,22 @@ class ChannelConfigViewMixin:
         channels = getattr(instance, "VALID_CHANNELS", (1, 2, 3, 4))
         return tuple(int(ch) for ch in channels)
 
+    def _channel_module_model(self, slot_char, channel):
+        instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
+        models = getattr(instance, "channel_module_models", {})
+        return str(models.get(int(channel), "") or "").strip().upper()
+
+    def _is_channel_supported(self, slot_char, channel):
+        instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
+        checker = getattr(instance, "is_channel_supported", None)
+        return bool(callable(checker) and checker(int(channel)))
+
+    def _channel_module_tooltip(self, slot_char, channel):
+        model = self._channel_module_model(slot_char, channel)
+        if self._is_channel_supported(slot_char, channel):
+            return f"Supported module: {model}"
+        return f"Unsupported module: {model or 'EMPTY'}"
+
     def _add_channel_config_import_tab(self):
         tab_idx = self.channel_config_tabbar.addTab(_make_svg_icon("plus.svg", "#8eb0e3", 16), "")
         self.channel_config_tabbar.setTabData(tab_idx, "import_plus")
@@ -77,6 +93,10 @@ class ChannelConfigViewMixin:
                 lc,
                 self.slot_frames[lc].property("assigned_serial") or "",
                 self._channels_for_slot(lc),
+                tuple(
+                    self._channel_module_model(lc, ch)
+                    for ch in self._channels_for_slot(lc)
+                ),
             )
             for lc in connected_slots
         )
@@ -148,8 +168,11 @@ class ChannelConfigViewMixin:
             channels = self._channels_for_slot(slot_char)
             for ch, ch_num in enumerate(channels):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
+                supported = self._is_channel_supported(slot_char, ch_num)
+                module_tooltip = self._channel_module_tooltip(slot_char, ch_num)
 
                 out_frame = QFrame()
+                out_frame.setToolTip(module_tooltip)
                 # 仅整行最末槽的最末通道单元格去掉右边框，避免与卡片右边框形成"双线"
                 out_frame.setStyleSheet(
                     dss.OUT_FRAME_LAST_STYLE if (
@@ -171,6 +194,8 @@ class ChannelConfigViewMixin:
                 ]):
                     btn = ToggleLabel(f"{prefix}{ch_num}")
                     btn.setFixedWidth(30)
+                    btn.setEnabled(supported)
+                    btn.setToolTip(module_tooltip)
                     btn.setProperty("ch_color", ch_color)
                     btn.setProperty("ch_idx", ch)
                     btn.setProperty("meas_type", prefix)
@@ -181,6 +206,8 @@ class ChannelConfigViewMixin:
 
                     scale_edit = ScaleOffsetEdit(default_scale)
                     scale_edit.setMinimumWidth(38)
+                    scale_edit.setEnabled(supported)
+                    scale_edit.setToolTip(module_tooltip)
                     scale_edit.setAlignment(Qt.AlignCenter)
                     scale_edit.setStyleSheet(edit_style)
                     scale_edit.setProperty("ch_idx", ch)
@@ -195,6 +222,8 @@ class ChannelConfigViewMixin:
 
                     offset_edit = ScaleOffsetEdit(default_offset)
                     offset_edit.setMinimumWidth(38)
+                    offset_edit.setEnabled(supported)
+                    offset_edit.setToolTip(module_tooltip)
                     offset_edit.setAlignment(Qt.AlignCenter)
                     offset_edit.setStyleSheet(edit_style)
                     offset_edit.setProperty("ch_idx", ch)
@@ -312,7 +341,7 @@ class ChannelConfigViewMixin:
                     offset_edit.setText(state["offset_text"])
                 if state.get("user_edited"):
                     btn.setProperty("user_edited", True)
-                if state.get("checked"):
+                if state.get("checked") and btn.isEnabled():
                     btn.blockSignals(True)
                     btn.setChecked(True)
                     ch_color = btn.property("ch_color")
@@ -808,7 +837,7 @@ class ChannelConfigViewMixin:
             if ch_idx is None or mtype is None:
                 continue
             combo = (int(ch_idx), str(mtype), bool(self._cb_is_b(cb)))
-            want = combo in target
+            want = combo in target and (index != 0 or cb.isEnabled())
             if cb.isChecked() != want:
                 cb.blockSignals(True)
                 cb.setChecked(want)

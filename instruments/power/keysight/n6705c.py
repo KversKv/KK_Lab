@@ -18,6 +18,8 @@ logger = get_logger(__name__)
 
 
 class N6705C:
+    VALID_CHANNELS = (1, 2, 3, 4)
+    SUPPORTED_MODULE_MODELS = frozenset({"N6781A", "N6784A"})
     DLOG_PERIOD_MIN = 123e-6
     DLOG_PERIOD_MAX = 60.0
 
@@ -68,8 +70,28 @@ class N6705C:
         self.instr.encoding = 'utf-8'
         self.instr.read_termination = '\n'
         self.instr.write_termination = '\n'
+        self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
         logger.debug("N6705C connected, timeout=%d ms", self.instr.timeout)
 
+    def refresh_channel_modules(self):
+        self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
+        for channel in self.VALID_CHANNELS:
+            try:
+                response = self.instr.query(f"SYST:CHAN:MOD? (@{channel})")
+                model = str(response).strip().strip("\"'").strip().upper()
+                self.channel_module_models[channel] = model
+                logger.debug("N6705C CH%d module: %s", channel, model or "EMPTY")
+            except Exception:
+                logger.warning(
+                    "N6705C CH%d module query failed; channel disabled",
+                    channel,
+                    exc_info=True,
+                )
+        return dict(self.channel_module_models)
+
+    def is_channel_supported(self, channel):
+        model = self.channel_module_models.get(int(channel), "")
+        return model in self.SUPPORTED_MODULE_MODELS
 
     def set_channel_range(self, channel):
         self.instr.write(f"SENS:CURR:RANG:AUTO ON, (@{channel})")

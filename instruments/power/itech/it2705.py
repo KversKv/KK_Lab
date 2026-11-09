@@ -23,6 +23,7 @@ class IT2705(VisaInstrument):
     """ITECH IT2705 多通道源载系统 SCPI 驱动。"""
 
     VALID_CHANNELS = tuple(range(1, 9))
+    SUPPORTED_MODULE_MODELS = frozenset({"IT27814", "IT27814E"})
     DLOG_PERIOD_MIN = 20e-6
     DLOG_PERIOD_MAX = 60.0
     INVALID_MEAS_THRESHOLD = 9.9e37
@@ -34,7 +35,28 @@ class IT2705(VisaInstrument):
             raise ValueError("IT2705: resource 必填")
         self.visa_library = visa_library
         self.timeout_ms = int(timeout_ms)
+        self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
         self.connect()
+
+    def refresh_channel_modules(self):
+        self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
+        for channel in self.VALID_CHANNELS:
+            try:
+                response = self.query(f"SYST:CHAN:MOD? (@{channel})")
+                model = str(response).strip().strip("\"'").strip().upper()
+                self.channel_module_models[channel] = model
+                logger.debug("IT2705 CH%d module: %s", channel, model or "EMPTY")
+            except Exception:
+                logger.warning(
+                    "IT2705 CH%d module query failed; channel disabled",
+                    channel,
+                    exc_info=True,
+                )
+        return dict(self.channel_module_models)
+
+    def is_channel_supported(self, channel):
+        model = self.channel_module_models.get(int(channel), "")
+        return model in self.SUPPORTED_MODULE_MODELS
 
     @property
     def instr(self):

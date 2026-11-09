@@ -138,7 +138,7 @@ class RecordingViewMixin:
         ]
         for cbs, target_mtype, target_is_b in cb_groups:
             for i, cb in enumerate(cbs):
-                if cb.isChecked():
+                if cb.isEnabled() and cb.isChecked():
                     ch = i + 1
                     for key in data_dict:
                         ch_num, mtype, is_b = _parse_ch_label(key)
@@ -316,7 +316,7 @@ class RecordingViewMixin:
         for key, btn in self._iter_channel_toggle_buttons():
             if key not in snapshot:
                 continue
-            checked = snapshot[key]
+            checked = snapshot[key] and btn.isEnabled()
             btn.blockSignals(True)
             btn.setChecked(checked)
             ch_color = btn.property("ch_color")
@@ -354,7 +354,7 @@ class RecordingViewMixin:
 
             if idx < len(cbs):
                 btn = cbs[idx]
-                if key in new_keys:
+                if key in new_keys and btn.isEnabled():
                     btn.blockSignals(True)
                     btn.setChecked(True)
                     ch_color = btn.property("ch_color")
@@ -386,18 +386,18 @@ class RecordingViewMixin:
     def _get_active_dlog_channel_count(self):
         count_a = 0
         for cb in self.ch_current_cbs_a:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_a += 1
         for cb in self.ch_voltage_cbs_a:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_a += 1
 
         count_b = 0
         for cb in self.ch_current_cbs_b:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_b += 1
         for cb in self.ch_voltage_cbs_b:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_b += 1
 
         return max(count_a, count_b, 1)
@@ -405,18 +405,18 @@ class RecordingViewMixin:
     def _get_min_period_per_unit(self):
         count_a = 0
         for cb in self.ch_current_cbs_a:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_a += 1
         for cb in self.ch_voltage_cbs_a:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_a += 1
 
         count_b = 0
         for cb in self.ch_current_cbs_b:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_b += 1
         for cb in self.ch_voltage_cbs_b:
-            if cb.isChecked():
+            if cb.isEnabled() and cb.isChecked():
                 count_b += 1
 
         native_a = callable(getattr(self.n6705c_a, "read_mmem_data", None))
@@ -534,9 +534,18 @@ class RecordingViewMixin:
         unit_labels = []
 
         if self.is_connected_a and self.n6705c_a:
-            active_a = [i + 1 for i, cb in enumerate(self.ch_current_cbs_a) if cb.isChecked()]
-            voltage_a = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_a) if cb.isChecked()]
-            power_a = [i + 1 for i, cb in enumerate(self.ch_power_cbs_a) if cb.isChecked()]
+            active_a = [
+                i + 1 for i, cb in enumerate(self.ch_current_cbs_a)
+                if cb.isEnabled() and cb.isChecked()
+            ]
+            voltage_a = [
+                i + 1 for i, cb in enumerate(self.ch_voltage_cbs_a)
+                if cb.isEnabled() and cb.isChecked()
+            ]
+            power_a = [
+                i + 1 for i, cb in enumerate(self.ch_power_cbs_a)
+                if cb.isEnabled() and cb.isChecked()
+            ]
             for ch in power_a:
                 if ch not in voltage_a:
                     voltage_a.append(ch)
@@ -551,9 +560,18 @@ class RecordingViewMixin:
                 unit_labels.append("A")
 
         if self.is_connected_b and self.n6705c_b:
-            active_b = [i + 1 for i, cb in enumerate(self.ch_current_cbs_b) if cb.isChecked()]
-            voltage_b = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_b) if cb.isChecked()]
-            power_b = [i + 1 for i, cb in enumerate(self.ch_power_cbs_b) if cb.isChecked()]
+            active_b = [
+                i + 1 for i, cb in enumerate(self.ch_current_cbs_b)
+                if cb.isEnabled() and cb.isChecked()
+            ]
+            voltage_b = [
+                i + 1 for i, cb in enumerate(self.ch_voltage_cbs_b)
+                if cb.isEnabled() and cb.isChecked()
+            ]
+            power_b = [
+                i + 1 for i, cb in enumerate(self.ch_power_cbs_b)
+                if cb.isEnabled() and cb.isChecked()
+            ]
             for ch in power_b:
                 if ch not in voltage_b:
                     voltage_b.append(ch)

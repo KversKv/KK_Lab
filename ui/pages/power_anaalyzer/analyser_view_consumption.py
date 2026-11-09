@@ -224,6 +224,8 @@ class ConsumptionViewMixin:
         icons = _get_checkmark_path(colors['accent'])
         checkbox = QCheckBox(f"CH {ch_num}")
         checkbox.setChecked(False)
+        checkbox.setEnabled(self._is_channel_supported(dev_label, ch_num))
+        checkbox.setToolTip(self._channel_module_tooltip(dev_label, ch_num))
         checkbox.setStyleSheet(f"""
             QCheckBox {{ color: #ffffff; font-size: 13px; font-weight: 700; background: transparent; spacing: 6px; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; image: url("{icons['unchecked']}"); }}
@@ -261,8 +263,11 @@ class ConsumptionViewMixin:
         if self.is_testing:
             return
 
-        any_connected = any(d["is_connected"] for d in self.devices.values())
-        if not any_connected:
+        any_supported = any(
+            self._supported_channels_for_device(label)
+            for label in self._connected_device_labels()
+        )
+        if not any_supported:
             return
 
         try:
@@ -289,8 +294,12 @@ class ConsumptionViewMixin:
         for label, dev in self.devices.items():
             if not dev["is_connected"] or not dev["n6705c"]:
                 continue
-            channels = [ch for (dl, ch), card_data in self.ct_channel_cards.items()
-                        if dl == label and card_data["checkbox"].isChecked()]
+            channels = [
+                ch for (dl, ch), card_data in self.ct_channel_cards.items()
+                if dl == label
+                and card_data["checkbox"].isEnabled()
+                and card_data["checkbox"].isChecked()
+            ]
             if not channels:
                 continue
 

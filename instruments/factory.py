@@ -95,6 +95,11 @@ def _power_analyzer_type_from_idn(idn: str) -> str:
     raise ValueError(f"Unsupported power analyzer IDN: {idn}")
 
 
+def _load_power_analyzer_modules(instance):
+    instance.refresh_channel_modules()
+    return instance
+
+
 def create_power_analyzer(
     resource: str,
     analyzer_type: str = "n6705c",
@@ -122,7 +127,7 @@ def create_power_analyzer(
             idn = get_power_analyzer_idn(probe)
             detected_type = _power_analyzer_type_from_idn(idn)
             if detected_type == "n6705c":
-                return probe
+                return _load_power_analyzer_modules(probe)
             probe.disconnect()
             instance = IT2705(resource, visa_library=visa_library)
             identified_idn = get_power_analyzer_idn(instance)
@@ -130,7 +135,7 @@ def create_power_analyzer(
                 raise ConnectionError(
                     f"Power analyzer identity changed during connection: {identified_idn}"
                 )
-            return instance
+            return _load_power_analyzer_modules(instance)
         except Exception:
             if instance is not None:
                 instance.disconnect()
@@ -142,12 +147,12 @@ def create_power_analyzer(
             instance = MockN6705C()
             instance._kk_lab_idn = "MOCK,N6705C,MOCK,1.0"
             return instance
-        return N6705C(resource, visa_library=visa_library)
+        return _load_power_analyzer_modules(N6705C(resource, visa_library=visa_library))
     if key == "it2705":
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockIT2705
             return MockIT2705(resource or "MOCK")
-        return IT2705(resource, visa_library=visa_library)
+        return _load_power_analyzer_modules(IT2705(resource, visa_library=visa_library))
     raise ValueError(f"Unknown power analyzer type: {analyzer_type}")
 
 

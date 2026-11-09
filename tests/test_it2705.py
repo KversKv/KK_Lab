@@ -79,6 +79,40 @@ def test_n6705c_probe_configures_socket_terminations(monkeypatch):
     driver.disconnect()
 
 
+def test_channel_module_whitelist_and_empty_slots(connected_driver, monkeypatch):
+    driver, resource_manager = connected_driver
+    session = resource_manager.session
+    models = {
+        1: '"IT27814"',
+        2: "IT27814E",
+        3: "IT27812",
+        4: "NONE",
+        5: "",
+        6: "it27814e",
+        7: "IT27814",
+    }
+    for channel, model in models.items():
+        session.responses[f"SYST:CHAN:MOD? (@{channel})"] = model
+    original_query = session.query
+
+    def query_with_failure(command):
+        if command == "SYST:CHAN:MOD? (@8)":
+            raise RuntimeError("query failed")
+        return original_query(command)
+
+    monkeypatch.setattr(session, "query", query_with_failure)
+    assert driver.refresh_channel_modules() == {
+        **models,
+        1: "IT27814",
+        6: "IT27814E",
+        8: "",
+    }
+    assert [
+        channel for channel in driver.VALID_CHANNELS
+        if driver.is_channel_supported(channel)
+    ] == [1, 2, 6, 7]
+
+
 def test_channel_voltage_current_and_output_commands(connected_driver):
     driver, resource_manager = connected_driver
     driver.set_voltage(2, 3.3)
@@ -211,7 +245,11 @@ def _fake_power_class(idn):
             self.resource = resource
             self.visa_library = visa_library
             self.disconnect_calls = 0
+            self.module_refresh_calls = 0
             type(self).instances.append(self)
+
+        def refresh_channel_modules(self):
+            self.module_refresh_calls += 1
 
         def identify(self):
             return idn
@@ -246,6 +284,7 @@ def test_factory_auto_detects_power_model(
 
     assert factory.get_power_analyzer_model(result) == expected_model
     assert isinstance(result, it2705_class if expect_it2705 else probe_class)
+    assert result.module_refresh_calls == 1
     assert probe_class.instances[0].visa_library == "TEST_LIBRARY"
     if expect_it2705:
         assert probe_class.instances[0].disconnect_calls == 1

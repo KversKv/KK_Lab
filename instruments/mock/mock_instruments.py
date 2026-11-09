@@ -15,8 +15,13 @@ class MockInstr:
 
 
 class MockN6705C:
+    VALID_CHANNELS = (1, 2, 3, 4)
+    SUPPORTED_MODULE_MODELS = frozenset({"N6781A", "N6784A"})
 
     def __init__(self):
+        self.channel_module_models = {
+            1: "N6781A", 2: "N6781A", 3: "N6784A", 4: "N6784A",
+        }
         self._rng = random.Random(0)
         self._vin = 3.8
         self._vout = 1.8
@@ -33,6 +38,10 @@ class MockN6705C:
         self._channel_current_limits = {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0}
         self._channel_voltage_limits = {1: 20.0, 2: 20.0, 3: 20.0, 4: 20.0}
         self.instr = MockInstr()
+
+    def is_channel_supported(self, channel):
+        model = self.channel_module_models.get(int(channel), "")
+        return model in self.SUPPORTED_MODULE_MODELS
 
     def set_channel_range(self, channel):
         pass
@@ -2074,6 +2083,10 @@ class _MockIT2705Session:
         self.output_states = {channel: False for channel in IT2705.VALID_CHANNELS}
         self.output_off_modes = {channel: "LOWZ" for channel in IT2705.VALID_CHANNELS}
         self.modes = {channel: "FIX" for channel in IT2705.VALID_CHANNELS}
+        self.module_models = {
+            channel: "IT27814" if channel % 2 else "IT27814E"
+            for channel in IT2705.VALID_CHANNELS
+        }
         self.dlog_time = 1.0
 
     @staticmethod
@@ -2113,6 +2126,8 @@ class _MockIT2705Session:
         upper = command.upper().strip()
         if upper == "*IDN?":
             return "ITECH,IT2705,MOCK,1.0"
+        if upper.startswith("SYST:CHAN:MOD?"):
+            return self.module_models[self._channel(command)]
         if upper.startswith("OUTP?"):
             return "1" if self.output_states[self._channel(command)] else "0"
         if upper.startswith("OUTP:TMOD?"):
@@ -2161,4 +2176,5 @@ class MockIT2705(IT2705):
             self.resource = str(device_address).strip() or "MOCK"
         IT2705.disconnect(self)
         self.instrument = _MockIT2705Session()
+        self.refresh_channel_modules()
         return True

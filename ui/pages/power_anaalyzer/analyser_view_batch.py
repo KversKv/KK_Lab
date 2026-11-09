@@ -197,8 +197,12 @@ class BatchViewMixin:
             for col_idx, ch_idx in enumerate(channels):
                 cb = QPushButton(f"CH {ch_idx}")
                 cb.setCheckable(True)
-                if dev_label != "B" and ch_idx in [2, 3, 4]:
-                    cb.setChecked(True)
+                supported = self._is_channel_supported(dev_label, ch_idx)
+                cb.setChecked(
+                    supported and dev_label != "B" and ch_idx in [2, 3, 4]
+                )
+                cb.setEnabled(supported)
+                cb.setToolTip(self._channel_module_tooltip(dev_label, ch_idx))
                 cb.setStyleSheet(_batch_channel_button_style())
                 self.batch_channel_buttons.append((dev_label, ch_idx, cb))
                 grid.addWidget(cb, row, col_idx + 1)
@@ -213,6 +217,7 @@ class BatchViewMixin:
                 inp = SelectAllLineEdit(f"{v:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
+                inp.setEnabled(self._is_channel_supported(dev_label, channels[col_idx]))
                 self.batch_voltage_inputs[dev_label].append(inp)
                 grid.addWidget(inp, row, col_idx + 1)
             row += 1
@@ -226,6 +231,7 @@ class BatchViewMixin:
                 inp = SelectAllLineEdit(f"{c:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
+                inp.setEnabled(self._is_channel_supported(dev_label, channels[col_idx]))
                 self.batch_current_inputs[dev_label].append(inp)
                 grid.addWidget(inp, row, col_idx + 1)
 
@@ -235,7 +241,10 @@ class BatchViewMixin:
             self._batch_columns_layout.addWidget(dev_frame, 1)
 
     def _get_selected_batch_channels(self, dev_label):
-        return [ch for dl, ch, cb in self.batch_channel_buttons if dl == dev_label and cb.isChecked()]
+        return [
+            ch for dl, ch, cb in self.batch_channel_buttons
+            if dl == dev_label and cb.isEnabled() and cb.isChecked()
+        ]
 
     def _on_batch_measure(self):
         with self._state_poller.writing():

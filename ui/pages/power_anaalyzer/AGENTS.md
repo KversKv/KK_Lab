@@ -18,6 +18,7 @@
 
 - `N6705CTop`（[power_anaalyzer_top.py](./power_anaalyzer_top.py)）：**双台仪器 A/B** 连接状态共享中枢，供多页注入；连接统一经 `instruments/factory.py` 按 `*IDN?` 识别 N6705C / IT2705，页面显示真实型号。
 - **通道事实源**：实例 `VALID_CHANNELS`；N6705C 回退 1–4，IT2705 为 1–8。Channel Tabs / Batch / Consumption / Datalog Channel Config 均按实际通道动态重建。
+- **模块门禁**：连接后由 factory 刷新 `channel_module_models`，页面统一用 `is_channel_supported(ch)`；N6705C 仅 N6781A/N6784A、IT2705 仅 IT27814/IT27814E 可用，空槽/未知/查询失败禁用且不得恢复勾选或参与采集。
 - **Datalog 双路径**：N6705C 保留原生 DLOG 配置、等待、下载与解析；IT2705 走 `measure_voltage/current` 软件采样（V/A 转 mV/mA、实际时间戳），不伪造原始 `.dlog`；混合连接时原生等待与软件采样同循环并行。
 - 主壳 [power_anaalyzer_analyser_ui.py](./power_anaalyzer_analyser_ui.py)：状态机 / 连接 / 通道切换 / 装配；视图拆分为 `analyser_view_setting / analyser_view_batch / analyser_view_consumption` Mixin + `widgets.py`。
 - `N6705CDatalogUI`：可独立运行（`python power_anaalyzer_datalog_ui.py`）或 `N6705CDatalogUI(n6705c_top=...)` 嵌入同步连接。**实现已拆分至 [datalog/](./datalog/) 子包**：主壳 `datalog/datalog_ui.py`（信号/状态/初始化）+ `view_connection / view_layout / view_channel_config / view_plot / view_recording / view_markers / view_labels / view_time_offset / view_import_export` 九个视图 Mixin + `helpers / widgets / workers / standalone`；`power_anaalyzer_datalog_ui.py` 仅作兼容入口（re-export + `__main__` + 打包入口），改功能请进子包对应模块。

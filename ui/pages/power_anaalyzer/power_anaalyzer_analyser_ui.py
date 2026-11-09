@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit,
     QFrame, QApplication, QMessageBox, QSpacerItem,
 )
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
 from PySide6.QtGui import QFont, QPainter, QColor, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
@@ -42,6 +42,32 @@ from ui.pages.power_anaalyzer.analyser_view_batch import BatchViewMixin
 from ui.pages.power_anaalyzer.analyser_view_consumption import ConsumptionViewMixin
 
 logger = get_logger(__name__)
+
+
+class _ConnectWorker(QObject):
+    success = Signal(object, str, str)
+    error = Signal(str)
+    finished = Signal()
+
+    def __init__(self, resource):
+        super().__init__()
+        self._resource = resource
+
+    def run(self):
+        instance = None
+        try:
+            instance = create_power_analyzer(self._resource, analyzer_type="auto")
+            idn = get_power_analyzer_idn(instance)
+            self.success.emit(instance, idn, self._resource)
+        except Exception as exc:
+            if instance is not None:
+                try:
+                    instance.disconnect()
+                except Exception:
+                    logger.debug("Analyser connect cleanup failed", exc_info=True)
+            self.error.emit(str(exc))
+        finally:
+            self.finished.emit()
 
 
 class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionViewMixin):
@@ -70,6 +96,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self.channels = []
         self._prev_dual_mode = None
         self._polling_enabled = False
+        self._connect_threads = {}
+        self._connect_workers = {}
 
         self._state_poller = InstrumentStatePoller(
             read_state_fn=self._read_channel_snapshot,
@@ -108,6 +136,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._dynamic_cfg_keys = []
         self._bind_config_memory()
         self._config_memory.restore()
+        self._apply_dynamic_channel_constraints()
+        self._update_ui_connection_state(
+            self.current_device,
+            self.devices[self.current_device]["is_connected"],
+        )
 
     def _bind_config_memory(self):
         """绑定静态区（Setting 视图、Consumption 参数）并首次绑定动态区。"""
@@ -156,7 +189,10 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             return
 
         def _any_connected() -> bool:
-            return any(d.get("is_connected") for d in self.devices.values())
+            return any(
+                self._supported_channels_for_device(label)
+                for label in self._connected_device_labels()
+            )
 
         def _wrap(label, fn):
             def _run() -> tuple[bool, str]:
@@ -261,11 +297,43 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         channels = getattr(instance, "VALID_CHANNELS", (1, 2, 3, 4))
         return tuple(int(ch) for ch in channels)
 
+    def _channel_module_model(self, label, channel):
+        instance = self.devices.get(label, {}).get("n6705c")
+        models = getattr(instance, "channel_module_models", {})
+        return str(models.get(int(channel), "") or "").strip().upper()
+
+    def _is_channel_supported(self, label, channel):
+        device = self.devices.get(label, {})
+        instance = device.get("n6705c")
+        if not device.get("is_connected") or instance is None:
+            return False
+        checker = getattr(instance, "is_channel_supported", None)
+        return bool(callable(checker) and checker(int(channel)))
+
+    def _supported_channels_for_device(self, label):
+        return tuple(
+            ch for ch in self._channels_for_device(label)
+            if self._is_channel_supported(label, ch)
+        )
+
+    def _channel_module_tooltip(self, label, channel):
+        model = self._channel_module_model(label, channel)
+        if self._is_channel_supported(label, channel):
+            return f"Supported module: {model}"
+        return f"Unsupported module: {model or 'EMPTY'}"
+
     def _dynamic_layout_signature(self):
         return (
             self._is_dual_mode(),
             tuple(
-                (label, self._channels_for_device(label))
+                (
+                    label,
+                    self._channels_for_device(label),
+                    tuple(
+                        self._channel_module_model(label, ch)
+                        for ch in self._channels_for_device(label)
+                    ),
+                )
                 for label in ("A", "B")
             ),
         )
@@ -273,14 +341,33 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
     def _rebuild_dynamic_sections(self):
         signature = self._dynamic_layout_signature()
         if signature == self._prev_dual_mode:
+            self._apply_dynamic_channel_constraints()
+            self._update_ui_connection_state(
+                self.current_device,
+                self.devices[self.current_device]["is_connected"],
+            )
             return
         self._prev_dual_mode = signature
 
         connected = self._connected_device_labels()
-        if connected and self.current_device not in connected:
-            self.current_device = connected[0]
+        if connected and (
+            self.current_device not in connected
+            or not self._is_channel_supported(self.current_device, self.current_channel)
+        ):
+            selected = next(
+                (
+                    (label, ch)
+                    for label in connected
+                    for ch in self._supported_channels_for_device(label)
+                ),
+                None,
+            )
+            if selected is not None:
+                self.current_device, self.current_channel = selected
+            elif self.current_device not in connected:
+                self.current_device = connected[0]
         channels = self._channels_for_device(self.current_device)
-        if self.current_channel not in channels:
+        if channels and self.current_channel not in channels:
             self.current_channel = channels[0]
 
         self._build_channel_tab_buttons()
@@ -288,7 +375,36 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._build_ct_cards()
         # Batch/Consumption 控件已重建，配置记忆需重绑新控件并回填
         self._rebind_dynamic_config_memory()
+        self._apply_dynamic_channel_constraints()
         self._apply_channel_theme(self.current_device, self.current_channel)
+        self._update_ui_connection_state(
+            self.current_device,
+            self.devices[self.current_device]["is_connected"],
+        )
+
+    def _apply_dynamic_channel_constraints(self):
+        for dev_label, ch, button in getattr(self, "batch_channel_buttons", []):
+            supported = self._is_channel_supported(dev_label, ch)
+            button.setEnabled(supported)
+            button.setToolTip(self._channel_module_tooltip(dev_label, ch))
+            if not supported:
+                button.setChecked(False)
+        for input_group in ("batch_voltage_inputs", "batch_current_inputs"):
+            for dev_label, inputs in getattr(self, input_group, {}).items():
+                channels = self._channels_for_device(dev_label)
+                for idx, edit in enumerate(inputs):
+                    if idx < len(channels):
+                        supported = self._is_channel_supported(dev_label, channels[idx])
+                        edit.setEnabled(supported)
+                        edit.setToolTip(self._channel_module_tooltip(dev_label, channels[idx]))
+        for (dev_label, ch), card_data in getattr(self, "ct_channel_cards", {}).items():
+            supported = self._is_channel_supported(dev_label, ch)
+            card_data["card"].setEnabled(supported)
+            checkbox = card_data["checkbox"]
+            checkbox.setEnabled(supported)
+            checkbox.setToolTip(self._channel_module_tooltip(dev_label, ch))
+            if not supported:
+                checkbox.setChecked(False)
 
     def _sync_from_top(self):
         if not self._top:
@@ -346,7 +462,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def _start_channel_sync(self):
         dev = self.devices[self.current_device]
-        if not dev["is_connected"] or not dev["n6705c"] or not self._polling_enabled:
+        if (
+            not dev["is_connected"]
+            or not dev["n6705c"]
+            or not self._is_channel_supported(self.current_device, self.current_channel)
+            or not self._polling_enabled
+        ):
             self._state_poller.pause()
             self._update_polling_switch_state()
             return
@@ -369,8 +490,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
     def _update_polling_switch_state(self):
         if not hasattr(self, "polling_switch"):
             return
-        has_connected = bool(
-            self.devices[self.current_device]["is_connected"] and self.devices[self.current_device]["n6705c"]
+        has_connected = self._is_channel_supported(
+            self.current_device, self.current_channel
         )
         switch_checked = self._polling_enabled and has_connected
         if self.polling_switch.isChecked() != switch_checked:
@@ -381,7 +502,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def _read_channel_snapshot(self):
         dev = self.devices.get(self.current_device)
-        if not dev or not dev["is_connected"] or not dev["n6705c"]:
+        if (
+            not dev
+            or not dev["is_connected"]
+            or not dev["n6705c"]
+            or not self._is_channel_supported(self.current_device, self.current_channel)
+        ):
             return None
         n6705c = dev["n6705c"]
         channel_num = self.current_channel
@@ -450,6 +576,10 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def closeEvent(self, event):
         self._state_poller.stop()
+        for thread in list(self._connect_threads.values()):
+            if thread.isRunning():
+                thread.quit()
+                thread.wait()
         super().closeEvent(event)
 
     def _setup_style(self):
@@ -691,6 +821,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 for ch in self._channels_for_device(dev_label):
                     btn = QPushButton(f"\u25cf {dev_label}-CH{ch}")
                     btn.setCheckable(True)
+                    btn.setProperty("device_label", dev_label)
+                    btn.setProperty("channel", ch)
                     btn.setMinimumSize(90, 36)
                     btn.setCursor(Qt.PointingHandCursor)
                     btn.clicked.connect(
@@ -710,22 +842,32 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             for ch in self._channels_for_device(single_label):
                 btn = QPushButton(f"\u25cf CH{ch}")
                 btn.setCheckable(True)
+                btn.setProperty("device_label", single_label)
+                btn.setProperty("channel", ch)
                 btn.setMinimumSize(90, 36)
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(
-                    lambda checked=False, c=ch: self._switch_channel(self._get_single_device_label(), c)
+                    lambda checked=False, d=single_label, c=ch: self._switch_channel(d, c)
                 )
                 self.channel_tab_buttons.append(btn)
                 self._channel_tabs_layout.addWidget(btn)
 
         self._channel_tabs_layout.addStretch()
 
-        any_connected = any(d["is_connected"] for d in self.devices.values())
         for btn in self.channel_tab_buttons:
-            btn.setEnabled(any_connected)
+            dev_label = btn.property("device_label")
+            ch = int(btn.property("channel"))
+            btn.setEnabled(self._is_channel_supported(dev_label, ch))
+            btn.setToolTip(self._channel_module_tooltip(dev_label, ch))
 
-        if self.channel_tab_buttons:
-            self.channel_tab_buttons[0].setChecked(True)
+        for btn in self.channel_tab_buttons:
+            dev_label = btn.property("device_label")
+            ch = int(btn.property("channel"))
+            btn.setChecked(
+                dev_label == self.current_device
+                and ch == self.current_channel
+                and self._is_channel_supported(dev_label, ch)
+            )
         self._refresh_channel_tab_styles()
 
     def _get_single_device_label(self):
@@ -853,7 +995,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             for dev_label in ["A", "B"]:
                 for ch in self._channels_for_device(dev_label):
                     if idx < total:
-                        is_active = (dev_label == self.current_device and ch == self.current_channel)
+                        is_active = (
+                            dev_label == self.current_device
+                            and ch == self.current_channel
+                            and self._is_channel_supported(dev_label, ch)
+                        )
                         self.channel_tab_buttons[idx].setStyleSheet(
                             self._build_channel_tab_style(dev_label, ch, is_active)
                         )
@@ -865,7 +1011,10 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             single_label = self._get_single_device_label()
             for ch in self._channels_for_device(single_label):
                 if idx < total:
-                    is_active = (ch == self.current_channel)
+                    is_active = (
+                        ch == self.current_channel
+                        and self._is_channel_supported(single_label, ch)
+                    )
                     self.channel_tab_buttons[idx].setStyleSheet(
                         self._build_channel_tab_style(single_label, ch, is_active)
                     )
@@ -957,6 +1106,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """)
 
     def _switch_channel(self, dev_label, ch):
+        if not self._is_channel_supported(dev_label, ch):
+            return
         logger.debug("Switch channel: dev=%s, CH%s", dev_label, ch)
         self.current_device = dev_label
         self.current_channel = ch
@@ -1214,39 +1365,64 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             ))
             return
 
-        try:
-            address = w["combo"].currentText()
-            n6705c = create_power_analyzer(address, analyzer_type="auto")
-            idn = get_power_analyzer_idn(n6705c)
-            idn_parts = idn.split(",")
-            serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
-            model = idn_parts[1].strip() if len(idn_parts) >= 2 else "Power Supply"
+        address = w["combo"].currentText()
+        thread = QThread(self)
+        worker = _ConnectWorker(address)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.success.connect(
+            lambda instance, idn, resource, lb=label: self._on_local_connect_success(
+                lb, instance, idn, resource
+            )
+        )
+        worker.error.connect(
+            lambda message, lb=label: self._on_local_connect_error(lb, message)
+        )
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda lb=label: self._on_local_connect_finished(lb))
+        self._connect_threads[label] = thread
+        self._connect_workers[label] = worker
+        thread.start()
 
-            self.devices[label]["n6705c"] = n6705c
-            self.devices[label]["is_connected"] = True
+    def _on_local_connect_success(self, label, n6705c, idn, address):
+        w = self.conn_widgets[label]
+        idn_parts = idn.split(",")
+        serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+        model = idn_parts[1].strip() if len(idn_parts) >= 2 else "Power Supply"
 
-            if self._top:
-                connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
-                if connect_fn:
-                    connect_fn(address, n6705c_instance=n6705c, serial=serial)
+        self.devices[label]["n6705c"] = n6705c
+        self.devices[label]["is_connected"] = True
 
-            w["status"].setText(f"\u25cf Connected: {model}")
-            w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-            update_connect_button_state(w["connect_btn"], connected=True)
-            self._update_ui_connection_state(label, True)
-            self._rebuild_dynamic_sections()
-            self.connection_status_changed.emit(True)
+        if self._top:
+            connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
+            if connect_fn:
+                connect_fn(address, n6705c_instance=n6705c, serial=serial)
 
-            if label == self.current_device:
-                self._start_channel_sync()
-            else:
-                self._update_polling_switch_state()
-        except Exception as e:
-            w["status"].setText("Connection failed")
-            w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-            logger.error("[%s] Connect error: %s", label, e, exc_info=True)
-        finally:
-            w["connect_btn"].setEnabled(True)
+        w["status"].setText(f"\u25cf Connected: {model}")
+        w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
+        update_connect_button_state(w["connect_btn"], connected=True)
+        w["connect_btn"].setEnabled(True)
+        self._update_ui_connection_state(label, True)
+        self._rebuild_dynamic_sections()
+        self.connection_status_changed.emit(True)
+
+        if label == self.current_device:
+            self._start_channel_sync()
+        else:
+            self._update_polling_switch_state()
+
+    def _on_local_connect_error(self, label, message):
+        w = self.conn_widgets[label]
+        w["status"].setText("Connection failed")
+        w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
+        w["connect_btn"].setEnabled(True)
+        logger.error("[%s] Connect error: %s", label, message)
+
+    def _on_local_connect_finished(self, label):
+        self._connect_workers.pop(label, None)
+        self._connect_threads.pop(label, None)
 
     def _disconnect(self, label):
         logger.debug("N6705C disconnecting: label=%s", label)
@@ -1281,19 +1457,32 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             logger.error("[%s] Disconnect error: %s", label, e)
 
     def _update_ui_connection_state(self, label, connected):
-        any_connected = any(d["is_connected"] for d in self.devices.values())
+        any_connected = any(
+            self._supported_channels_for_device(device_label)
+            for device_label in self._connected_device_labels()
+        )
 
-        active_dev_connected = self.devices[self.current_device]["is_connected"]
+        active_channel_enabled = self._is_channel_supported(
+            self.current_device, self.current_channel
+        )
 
         for btn in self.channel_tab_buttons:
-            btn.setEnabled(any_connected)
+            dev_label = btn.property("device_label")
+            ch = btn.property("channel")
+            supported = bool(
+                dev_label and ch is not None
+                and self._is_channel_supported(dev_label, int(ch))
+            )
+            btn.setEnabled(supported)
+            if dev_label and ch is not None:
+                btn.setToolTip(self._channel_module_tooltip(dev_label, int(ch)))
 
-        self.setting_frame.setEnabled(active_dev_connected)
+        self.setting_frame.setEnabled(active_channel_enabled)
 
         disabled_border = DISABLED_BORDER
         disabled_bg = DISABLED_BG
 
-        if not active_dev_connected:
+        if not active_channel_enabled:
             self.setting_frame.setStyleSheet(f"""
                 QFrame#SettingContentFrame {{
                     background-color: {disabled_bg};
@@ -1339,14 +1528,14 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._refresh_channel_tab_styles()
 
         for btn in self.mode_buttons:
-            btn.setEnabled(active_dev_connected)
-        self.output_toggle.setEnabled(active_dev_connected)
-        self.measure_btn.setEnabled(active_dev_connected)
-        self.set_btn.setEnabled(active_dev_connected)
-        self.voltage_set_input.setEnabled(active_dev_connected)
-        self.limit_current_value.setEnabled(active_dev_connected)
-        self.voltage_value.setEnabled(active_dev_connected)
-        self.current_value.setEnabled(active_dev_connected)
+            btn.setEnabled(active_channel_enabled)
+        self.output_toggle.setEnabled(active_channel_enabled)
+        self.measure_btn.setEnabled(active_channel_enabled)
+        self.set_btn.setEnabled(active_channel_enabled)
+        self.voltage_set_input.setEnabled(active_channel_enabled)
+        self.limit_current_value.setEnabled(active_channel_enabled)
+        self.voltage_value.setEnabled(active_channel_enabled)
+        self.current_value.setEnabled(active_channel_enabled)
 
         if hasattr(self, 'batch_tools_panel'):
             self.batch_content.setEnabled(any_connected)
@@ -1375,6 +1564,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         if hasattr(self, 'consumption_test_panel'):
             self.ct_content.setEnabled(any_connected)
             self.ct_toggle_btn.setEnabled(any_connected)
+            self.ct_start_btn.setEnabled(any_connected and not self.is_testing)
             if any_connected:
                 self.ct_content.setStyleSheet(f"""
                     QFrame {{
