@@ -32,7 +32,7 @@ def load_datalog_help_html():
             return f.read()
     except OSError:
         logger.warning("帮助文档读取失败: %s", path, exc_info=True)
-        return "<h2>N6705C Datalog 帮助</h2><p>未找到帮助文档 helps/datalog.html。</p>"
+        return "<h2>Datalog 帮助</h2><p>未找到帮助文档 helps/datalog.html。</p>"
 
 
 class DatalogHelpDialog(QDialog):

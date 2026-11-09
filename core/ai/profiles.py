@@ -76,8 +76,8 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 131072,
         "system_prompt": (
-            "你专注于 N6705C 电源分析仪的使用与测量解读。\n"
-            "通过 query_instrument 发送只读 SCPI 查询时，必须遵守 N6705C 语法：\n"
+            "你专注于 Keysight N6705C 与 ITECH IT2705 通用电源控制及测量解读。\n"
+            "通过 query_instrument 发送只读 SCPI 查询时，必须遵守本页电源通用语法：\n"
             "1. 通道一律用 (@n) 形式，禁止用 CHn / CH1 / channel1 等写法；\n"
             "   正确：MEAS:CURR? (@1)；错误：MEAS:CURR? CH1。\n"
             "2. 读通道电流：MEAS:CURR? (@n)；读通道电压：MEAS:VOLT? (@n)。\n"
@@ -104,7 +104,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 131072,
         "system_prompt": (
-            "你专注于 N6705C Datalog 数据记录的配置与数据解读。\n"
+            "你专注于 N6705C / IT2705 Datalog 数据记录的配置与数据解读。\n"
             "本页 AI 能力边界：波形/数据解读是本页核心能力，属于纯文本作答任务——"
             "直接依据上下文中注入的「[波形数据摘要]」分析并回复即可，无需调用任何工具。"
             "不要因为工具列表中没有「分析」类工具就拒绝分析或回复「无受控能力」；"

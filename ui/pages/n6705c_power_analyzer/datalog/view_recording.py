@@ -333,7 +333,7 @@ class RecordingViewMixin:
             if ch_num is None:
                 continue
 
-            if ch_num < 1 or ch_num > 4:
+            if ch_num < 1:
                 continue
 
             idx = ch_num - 1
@@ -419,8 +419,10 @@ class RecordingViewMixin:
             if cb.isChecked():
                 count_b += 1
 
-        min_a = max(count_a, 1) * 20
-        min_b = max(count_b, 1) * 20 if count_b > 0 else 0
+        native_a = callable(getattr(self.n6705c_a, "read_mmem_data", None))
+        native_b = callable(getattr(self.n6705c_b, "read_mmem_data", None))
+        min_a = count_a * 20 if native_a and count_a > 0 else 0
+        min_b = count_b * 20 if native_b and count_b > 0 else 0
         return min_a, min_b
 
     def _on_min_period_toggled(self, state):
@@ -447,8 +449,8 @@ class RecordingViewMixin:
         except ValueError:
             val = 20.0
 
-        num_ch = self._get_active_dlog_channel_count()
-        min_period = num_ch * 20.0
+        min_a, min_b = self._get_min_period_per_unit()
+        min_period = max(min_a, min_b, 20.0)
 
         val = round(val / 20.0) * 20.0
         if val < min_period:

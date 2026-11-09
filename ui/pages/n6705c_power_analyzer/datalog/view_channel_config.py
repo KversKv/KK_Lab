@@ -33,6 +33,11 @@ from ui.pages.n6705c_power_analyzer.datalog.widgets import ScaleOffsetEdit, Togg
 class ChannelConfigViewMixin:
     """Datalog 页通道配置视图：Active/导入页签 / 通道开关 / Scale-Offset / 通道名面板。"""
 
+    def _channels_for_slot(self, slot_char):
+        instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
+        channels = getattr(instance, "VALID_CHANNELS", (1, 2, 3, 4))
+        return tuple(int(ch) for ch in channels)
+
     def _add_channel_config_import_tab(self):
         tab_idx = self.channel_config_tabbar.addTab(_make_svg_icon("plus.svg", "#8eb0e3", 16), "")
         self.channel_config_tabbar.setTabData(tab_idx, "import_plus")
@@ -68,7 +73,11 @@ class ChannelConfigViewMixin:
                 connected_slots.append(label_char)
 
         signature = tuple(
-            (lc, self.slot_frames[lc].property("assigned_serial") or "")
+            (
+                lc,
+                self.slot_frames[lc].property("assigned_serial") or "",
+                self._channels_for_slot(lc),
+            )
             for lc in connected_slots
         )
         prev_signature = getattr(self, "_ch_cfg_slots_signature", None)
@@ -136,19 +145,21 @@ class ChannelConfigViewMixin:
 
             edit_style = dss.SCALE_OFFSET_EDIT_STYLE
 
-            for ch in range(4):
+            channels = self._channels_for_slot(slot_char)
+            for ch, ch_num in enumerate(channels):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
 
                 out_frame = QFrame()
                 # 仅整行最末槽的最末通道单元格去掉右边框，避免与卡片右边框形成"双线"
                 out_frame.setStyleSheet(
-                    dss.OUT_FRAME_LAST_STYLE if (ch == 3 and slot_char == connected_slots[-1])
-                    else dss.OUT_FRAME_STYLE)
+                    dss.OUT_FRAME_LAST_STYLE if (
+                        ch == len(channels) - 1 and slot_char == connected_slots[-1]
+                    ) else dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
                 out_vbox.setContentsMargins(4, 1, 4, 1)
                 out_vbox.setSpacing(2)
 
-                title_lbl = QLabel(f"OUTPUT {ch + 1}")
+                title_lbl = QLabel(f"OUTPUT {ch_num}")
                 title_lbl.setAlignment(Qt.AlignCenter)
                 title_lbl.setStyleSheet(dss.out_title_style(ch_color))
                 out_vbox.addWidget(title_lbl)
@@ -158,7 +169,7 @@ class ChannelConfigViewMixin:
                     ("I", "1mA", "0mA", "mA"),
                     ("P", "1W", "0W", "W"),
                 ]):
-                    btn = ToggleLabel(f"{prefix}{ch+1}")
+                    btn = ToggleLabel(f"{prefix}{ch_num}")
                     btn.setFixedWidth(30)
                     btn.setProperty("ch_color", ch_color)
                     btn.setProperty("ch_idx", ch)
@@ -776,7 +787,7 @@ class ChannelConfigViewMixin:
         active_combos = set()
         for key in data_keys:
             ch_num, mtype, is_b = _parse_ch_label(key)
-            if ch_num is None or ch_num < 1 or ch_num > 4:
+            if ch_num is None or ch_num < 1:
                 continue
             active_combos.add((ch_num - 1, mtype, is_b))
 

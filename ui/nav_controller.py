@@ -196,7 +196,7 @@ class NavController:
         self._add_group_title("INSTRUMENTS", nav_layout, first=True)
 
         self.n6705c_power_analyzer_btn = SidebarNavButton(
-            "N6705C", "", os.path.join(_PAGE_SVGS_DIR, "zap.svg")
+            "Power Control", "", os.path.join(_PAGE_SVGS_DIR, "zap.svg")
         )
         self.n6705c_power_analyzer_btn.setChecked(True)
 

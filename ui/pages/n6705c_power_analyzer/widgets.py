@@ -14,6 +14,10 @@ CHANNEL_COLORS = {
     2: {"accent": "#18b67a", "bg": "#081a14", "border": "#0a3d28"},
     3: {"accent": "#2f6fed", "bg": "#081028", "border": "#0c2a5e"},
     4: {"accent": "#d14b72", "bg": "#1a080e", "border": "#3d0c22"},
+    5: {"accent": "#00bcd4", "bg": "#071a1d", "border": "#07424a"},
+    6: {"accent": "#ff9800", "bg": "#1d1407", "border": "#573306"},
+    7: {"accent": "#ab47bc", "bg": "#190b1d", "border": "#4a1c54"},
+    8: {"accent": "#8bc34a", "bg": "#121a08", "border": "#3b521b"},
 }
 
 CHANNEL_THEMES = {
@@ -32,7 +36,23 @@ CHANNEL_THEMES = {
     4: {
         "accent": "#d14b72", "accent_hover": "#df5f85",
         "accent_soft": "#34111d", "accent_border": "#7e2f47", "text_dim": "#d79ab1"
-    }
+    },
+    5: {
+        "accent": "#00bcd4", "accent_hover": "#26c6da",
+        "accent_soft": "#073038", "accent_border": "#08788a", "text_dim": "#7bcbd6"
+    },
+    6: {
+        "accent": "#ff9800", "accent_hover": "#ffa726",
+        "accent_soft": "#3a2508", "accent_border": "#9a5f08", "text_dim": "#d6ad72"
+    },
+    7: {
+        "accent": "#ab47bc", "accent_hover": "#ba68c8",
+        "accent_soft": "#321238", "accent_border": "#753184", "text_dim": "#ca9bd2"
+    },
+    8: {
+        "accent": "#8bc34a", "accent_hover": "#9ccc65",
+        "accent_soft": "#253510", "accent_border": "#5d7f31", "text_dim": "#b3cc8b"
+    },
 }
 
 CONTENT_BG = "#0b1020"

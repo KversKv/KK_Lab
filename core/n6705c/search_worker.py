@@ -29,9 +29,9 @@ _DEFAULT_PROBE_TIMEOUT_MS = 500
 
 # mDNS 浏览等待时间（秒）：给设备回应留足时间又不过长
 _MDNS_BROWSE_TIMEOUT_S = 3.0
-# 只发现 N6705C；服务实例名形如
+# 服务实例名形如
 # "Keysight N6705C DC Power Analyzer - MY56006098._hislip._tcp.local."
-_N6705C_NAME_RE = re.compile(r"N6705C", re.IGNORECASE)
+_POWER_SUPPLY_NAME_RE = re.compile(r"N6705C|IT2705", re.IGNORECASE)
 
 # TCPIP0::<host>::<board>::INSTR 中提取 host 段
 _TCPIP_HOST_RE = re.compile(r"^(TCPIP\d*)::([^:]+)::(.*)$", re.IGNORECASE)
@@ -62,7 +62,7 @@ def _mdns_discover_n6705c() -> list[str]:
 
     class _Listener:
         def add_service(self, zc, service_type, name):
-            if not _N6705C_NAME_RE.search(name):
+            if not _POWER_SUPPLY_NAME_RE.search(name):
                 return
             board = type_board.get(service_type)
             if not board:
@@ -283,7 +283,8 @@ def _probe_one(resource: str):
         instr = rm.open_resource(resource, timeout=_probe_timeout_ms(resource))
         idn = instr.query("*IDN?").strip()
         logger.debug("Probe %s -> IDN=%r", resource, idn)
-        if "N6705" not in idn.upper():
+        upper_idn = idn.upper()
+        if "N6705" not in upper_idn and "IT2705" not in upper_idn:
             return None
         parts = idn.split(",")
         serial = parts[2].strip() if len(parts) > 2 else resource
@@ -394,7 +395,7 @@ def discovery_scope_hint() -> str | None:
         return None
     return (
         "当前仅能自动搜索本网段（同一广播域）的仪器。\n"
-        "其它网段（被路由器/VLAN 隔开，如 10.31.40.x）的 N6705C 无法自动发现，\n"
+        "其它网段（被路由器/VLAN 隔开，如 10.31.40.x）的电源无法自动发现，\n"
         "如需搜索请在下列配置文件的 extra_subnets 中填写网段（CIDR）后重试：\n"
         f"{_discovery_config_path()}"
     )

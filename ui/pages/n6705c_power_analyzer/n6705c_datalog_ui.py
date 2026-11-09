@@ -140,7 +140,7 @@ if __name__ == "__main__":
     from core.instruments import InstrumentManager
     _standalone_manager = InstrumentManager()
     w = _StandaloneDatalogWindow(instrument_manager=_standalone_manager)
-    w.setWindowTitle("N6705C Datalog")
+    w.setWindowTitle("Datalog")
     if os.path.exists(_icon_path):
         w.setWindowIcon(QIcon(_icon_path))
     w.apply_window_geometry()

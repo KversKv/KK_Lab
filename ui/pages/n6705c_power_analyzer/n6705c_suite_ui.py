@@ -183,7 +183,7 @@ class _SuiteTitleBar(QWidget):
             )
         layout.addWidget(self._icon_label, 0, Qt.AlignVCenter)
 
-        self._title_label = QLabel("N6705C Suite", self)
+        self._title_label = QLabel("Power Control", self)
         self._title_label.setObjectName("suiteTitleText")
         layout.addWidget(self._title_label, 0, Qt.AlignVCenter)
 
@@ -913,7 +913,7 @@ if __name__ == "__main__":
     w = N6705CSuiteWindow(
         n6705c_top=_standalone_top, instrument_manager=_standalone_manager
     )
-    w.setWindowTitle("N6705C Suite")
+    w.setWindowTitle("Power Control")
     if os.path.exists(_icon_path):
         w.setWindowIcon(QIcon(_icon_path))
     w.resize(1440, 900)

@@ -22,6 +22,8 @@ class N6705CTop(QObject):
         self.visa_resource_b = ""
         self.serial_a = ""
         self.serial_b = ""
+        self.model_a = ""
+        self.model_b = ""
         self._manager = None
 
     def set_instrument_manager(self, manager):
@@ -39,6 +41,7 @@ class N6705CTop(QObject):
                 self.is_connected_a = True
                 self.visa_resource_a = session.resource
                 self.serial_a = session.serial
+                self.model_a = session.model
                 self.connection_changed.emit()
         elif session_id == "n6705c:B":
             session = self._manager.get_session(session_id)
@@ -47,6 +50,7 @@ class N6705CTop(QObject):
                 self.is_connected_b = True
                 self.visa_resource_b = session.resource
                 self.serial_b = session.serial
+                self.model_b = session.model
                 self.connection_changed.emit()
 
     def _on_session_disconnected(self, session_id: str):
@@ -55,12 +59,14 @@ class N6705CTop(QObject):
             self.is_connected_a = False
             self.visa_resource_a = ""
             self.serial_a = ""
+            self.model_a = ""
             self.connection_changed.emit()
         elif session_id == "n6705c:B":
             self.n6705c_b = None
             self.is_connected_b = False
             self.visa_resource_b = ""
             self.serial_b = ""
+            self.model_b = ""
             self.connection_changed.emit()
 
     def _on_disconnect_failed(self, session_id: str, error: str):
@@ -68,13 +74,25 @@ class N6705CTop(QObject):
 
     def connect_a(self, visa_resource, n6705c_instance=None, serial=""):
         logger.debug("N6705CTop connect_a: resource=%s, serial=%s", visa_resource, serial)
+        from instruments.factory import (
+            create_power_analyzer, get_power_analyzer_idn, get_power_analyzer_model,
+        )
+        if n6705c_instance is None and not self._manager:
+            n6705c_instance = create_power_analyzer(visa_resource, analyzer_type="auto")
+        if n6705c_instance is not None:
+            idn = get_power_analyzer_idn(n6705c_instance)
+            parts = idn.split(",")
+            serial = serial or (parts[2].strip() if len(parts) > 2 else "")
+            model = get_power_analyzer_model(n6705c_instance)
+        else:
+            model = ""
         if self._manager:
             if n6705c_instance is not None:
                 self._manager.attach_external(
                     InstrumentSpec(
                         instrument_type="n6705c", resource=visa_resource, slot="A"
                     ),
-                    instance=n6705c_instance, serial=serial, model="N6705C",
+                    instance=n6705c_instance, serial=serial, model=model,
                 )
             else:
                 self._manager.connect_async(InstrumentSpec(
@@ -85,25 +103,34 @@ class N6705CTop(QObject):
                     resource=visa_resource,
                 ))
         else:
-            from instruments.power.keysight.n6705c import N6705C
-            if n6705c_instance is not None:
-                self.n6705c_a = n6705c_instance
-            else:
-                self.n6705c_a = N6705C(visa_resource)
+            self.n6705c_a = n6705c_instance
             self.is_connected_a = True
             self.visa_resource_a = visa_resource
             self.serial_a = serial
+            self.model_a = model
             self.connection_changed.emit()
 
     def connect_b(self, visa_resource, n6705c_instance=None, serial=""):
         logger.debug("N6705CTop connect_b: resource=%s, serial=%s", visa_resource, serial)
+        from instruments.factory import (
+            create_power_analyzer, get_power_analyzer_idn, get_power_analyzer_model,
+        )
+        if n6705c_instance is None and not self._manager:
+            n6705c_instance = create_power_analyzer(visa_resource, analyzer_type="auto")
+        if n6705c_instance is not None:
+            idn = get_power_analyzer_idn(n6705c_instance)
+            parts = idn.split(",")
+            serial = serial or (parts[2].strip() if len(parts) > 2 else "")
+            model = get_power_analyzer_model(n6705c_instance)
+        else:
+            model = ""
         if self._manager:
             if n6705c_instance is not None:
                 self._manager.attach_external(
                     InstrumentSpec(
                         instrument_type="n6705c", resource=visa_resource, slot="B"
                     ),
-                    instance=n6705c_instance, serial=serial, model="N6705C",
+                    instance=n6705c_instance, serial=serial, model=model,
                 )
             else:
                 self._manager.connect_async(InstrumentSpec(
@@ -114,14 +141,11 @@ class N6705CTop(QObject):
                     resource=visa_resource,
                 ))
         else:
-            from instruments.power.keysight.n6705c import N6705C
-            if n6705c_instance is not None:
-                self.n6705c_b = n6705c_instance
-            else:
-                self.n6705c_b = N6705C(visa_resource)
+            self.n6705c_b = n6705c_instance
             self.is_connected_b = True
             self.visa_resource_b = visa_resource
             self.serial_b = serial
+            self.model_b = model
             self.connection_changed.emit()
 
     def disconnect_a(self):
@@ -138,6 +162,7 @@ class N6705CTop(QObject):
             self.is_connected_a = False
             self.visa_resource_a = ""
             self.serial_a = ""
+            self.model_a = ""
             self.connection_changed.emit()
 
     def disconnect_b(self):
@@ -154,6 +179,7 @@ class N6705CTop(QObject):
             self.is_connected_b = False
             self.visa_resource_b = ""
             self.serial_b = ""
+            self.model_b = ""
             self.connection_changed.emit()
 
     def disconnect_all(self):

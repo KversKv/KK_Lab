@@ -10,13 +10,15 @@
 
 ## 本模块职责与边界
 
-- **职责**：N6705C 电源分析仪控制（通道电压/电流、批量、功耗）+ Datalog 长时采集与波形分析。
+- **职责**：N6705C / IT2705 通用电源控制（通道电压/电流、批量、功耗）+ Datalog 长时采集与波形分析；用户可见名称为 `Power Control`，保留 `n6705c` 内部键与会话 ID。
 - **上游**：`ui/main_window.py`；**下游**：`core/n6705c/` Worker（QThread 无 QtWidgets）、`instruments/factory`。
 - **铁律**：UI 仅交互；采集 / 同步走 `core/n6705c/*_worker.py`。
 
 ## 接口契约（对外不可破坏）
 
-- `N6705CTop`（[n6705c_top.py](./n6705c_top.py)）：**双台仪器 A/B** 连接状态共享中枢，供多页注入。
+- `N6705CTop`（[n6705c_top.py](./n6705c_top.py)）：**双台仪器 A/B** 连接状态共享中枢，供多页注入；连接统一经 `instruments/factory.py` 按 `*IDN?` 识别 N6705C / IT2705，页面显示真实型号。
+- **通道事实源**：实例 `VALID_CHANNELS`；N6705C 回退 1–4，IT2705 为 1–8。Channel Tabs / Batch / Consumption / Datalog Channel Config 均按实际通道动态重建。
+- **Datalog 双路径**：N6705C 保留原生 DLOG 配置、等待、下载与解析；IT2705 走 `measure_voltage/current` 软件采样（V/A 转 mV/mA、实际时间戳），不伪造原始 `.dlog`；混合连接时原生等待与软件采样同循环并行。
 - 主壳 [n6705c_analyser_ui.py](./n6705c_analyser_ui.py)：状态机 / 连接 / 通道切换 / 装配；视图拆分为 `analyser_view_setting / analyser_view_batch / analyser_view_consumption` Mixin + `widgets.py`。
 - `N6705CDatalogUI`：可独立运行（`python n6705c_datalog_ui.py`）或 `N6705CDatalogUI(n6705c_top=...)` 嵌入同步连接。**实现已拆分至 [datalog/](./datalog/) 子包**：主壳 `datalog/datalog_ui.py`（信号/状态/初始化）+ `view_connection / view_layout / view_channel_config / view_plot / view_recording / view_markers / view_labels / view_time_offset / view_import_export` 九个视图 Mixin + `helpers / widgets / workers / standalone`；`n6705c_datalog_ui.py` 仅作兼容入口（re-export + `__main__` + 打包入口），改功能请进子包对应模块。
 - **一键截图钩子 `get_capture_pixmap()`**（MainWindow 降级链最高优先级）：`chart_frame` + `measurement_card` + `channel_config_outer` 纵向合成（gap 6 与布局行间距一致，底色 #020817，DPR 随 `grab()`）；改布局间距 / 页面底色需同步。
@@ -28,7 +30,7 @@
 - **Custom Labels 显隐契约**：唯一入口 `set_labels_panel_visible(visible)` + 信号 `labels_panel_toggled(bool)` + 查询 `is_labels_panel_visible()`（`isHidden` 反判，suite 切页父链暂隐不丢态）；三处标题栏在一键截图右侧以分割线（`#titleBarSeparator`）+ `#labelsToggleBtn` 接入——独立 `_StandaloneTitleBar`（常显）、套件 `_SuiteTitleBar`（仅 standalone 且 Datalog 页签）、MainWindow `AppTopBar`（仅 datalog 页，`_sync_labels_toggle_button` 随 `_sync_compact_view_button` 同点调用）；页面内不再放切换按钮。
 - **独立运行入口是 `_StandaloneDatalogWindow`（[datalog/standalone.py](./datalog/standalone.py)，`__main__` 勿直接实例化 `N6705CDatalogUI`）**：无边框 + `_StandaloneTitleBar` 自建标题栏（含一键截图按钮），nativeEvent 方案与 [ui/main_window.py](../../main_window.py) 一致（WM_NCCALCSIZE→0 + WM_NCHITTEST 边框缩放 + HTCAPTION 拖动）。
 - **套件入口 `N6705CSuiteWindow`**（[n6705c_suite_ui.py](./n6705c_suite_ui.py)）：无边框 + 标题栏内嵌页面切换 tab，`QStackedWidget` 承载多页；页面注册表 `_SUITE_PAGES`（key/标题/类），新增界面只追加注册项；全部子页注入同一 `N6705CTop` + `InstrumentManager`；关闭时逐页 `sendEvent(QCloseEvent)` 复用子页清理（嵌入态 `isWindow()=False`，datalog 几何记忆保存空转不污染）。
-  - `standalone=True` 独立运行（`python n6705c_suite_ui.py`）；`standalone=False` 嵌入 MainWindow——N6705C 为**一级菜单**（无二级子菜单），标题栏仅留 tab，子页经 `analyser_page` / `datalog_page` 暴露给 MainWindow 既有引用（compact / AI 回调 / 截图链），tab 切换经 `page_changed` 信号同步 `current_instrument_ui`。
+  - `standalone=True` 独立运行（`python n6705c_suite_ui.py`）；`standalone=False` 嵌入 MainWindow——Power Control 为**一级菜单**（无二级子菜单），标题栏仅留 tab，子页经 `analyser_page` / `datalog_page` 暴露给 MainWindow 既有引用（compact / AI 回调 / 截图链），tab 切换经 `page_changed` 信号同步 `current_instrument_ui`。
   - 注意：MainWindow 首页装载即构造两子页，datalog 的 auto_connect 启动即触发（原懒加载为首次切换才触发）。
 - `set_compact_mode(compact: bool)`（主壳对外方法）：主窗口顶栏「最小视图」按钮调用——True 时隐藏页面 top_bar / 通道区 / 功耗区，仅留 Quick Setup（`batch_tools_panel`，收起态自动展开），并隐藏折叠头、归零区块间距、收窄页边距（配合 main_window `_COMPACT_VIEW_SIZE=(600,200)`）；False 恢复。命名与语义不可改（[main_window.py](../../main_window.py) `_on_compact_view_toggled` 依赖）。
 

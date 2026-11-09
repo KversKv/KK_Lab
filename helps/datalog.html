@@ -1,12 +1,12 @@
-<h2>N6705C Datalog 帮助手册</h2>
+<h2>Datalog 帮助手册</h2>
 
 <h3>页面介绍</h3>
-<p>Datalog 页面用于通过 Keysight N6705C 直流电源分析仪进行长时间数据采集（Datalog），实时记录各通道电压、电流、功率随时间变化的波形，并提供 Marker 区间分析、测量统计、自定义标注、数据导入导出与一键截图等完整分析能力。支持双仪器（最多 8 通道）同步采集。</p>
+<p>Datalog 页面支持 Keysight N6705C 与 ITECH IT2705 电源，记录各通道电压、电流、功率随时间变化的波形，并提供 Marker 区间分析、测量统计、自定义标注、数据导入导出与一键截图等完整分析能力。支持双仪器同步采集，通道数按实际仪器计算，最多 16 通道。手动或自动连接后均通过 IDN 识别并显示真实型号。</p>
 
 <h3>快速上手（基础流程）</h3>
 <ol>
-  <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B / C / D。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP 或 USB）。</li>
-  <li><b>配置采集参数</b> — 点击左侧 <b>Settings</b> 图标，在 <b>DATALOG CONFIG</b> 中设置 <b>Sampling Period (μs)</b> 采样周期与 <b>Monitoring Time (s)</b> 监控时长；勾选 Minimum 可自动使用最小采样周期。</li>
+  <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C / IT2705，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP 或 USB），连接后通过 IDN 自动识别真实型号。</li>
+  <li><b>配置采集参数</b> — 点击左侧 <b>Settings</b> 图标，在 <b>DATALOG CONFIG</b> 中设置 <b>Sampling Period (μs)</b> 与 <b>Monitoring Time (s)</b> 监控时长。N6705C 使用原生 DLOG 采样周期；IT2705 使用该值作为软件采样目标间隔，实际间隔受查询耗时影响。</li>
   <li><b>选择测量项</b> — 在 <b>Measurement Settings</b> 中勾选需要统计的指标（Minimum / Average / Maximum / Peak to Peak / Charge / Energy）。</li>
   <li><b>勾选采集通道</b> — 在下方 <b>Channel Config</b> 的 Active 页签中，为每个通道勾选 <b>I</b>（电流）/ <b>V</b>（电压）/ <b>P</b>（功率），必要时调整 Scale / Offset。</li>
   <li><b>开始采集</b> — 点击底部 <b>Start Recording</b>，采集过程显示进度条，完成后波形自动绘制到图表中。</li>
@@ -53,9 +53,10 @@
   <li>双仪器模式下，可用 Marker 自动计算两台仪器之间的时间偏移量。</li>
 </ol>
 
-<h3>双仪器模式（8 通道）</h3>
+<h3>仪器通道与双仪器模式</h3>
 <ul>
-  <li>连接两台 N6705C（分别占用插槽 A 和 B）即可同步采集 8 个通道。</li>
+  <li>单台 N6705C 提供 4 个通道，单台 IT2705 提供 8 个通道；两台仪器可混合连接，分别占用插槽 A 和 B，最多显示 16 个通道。</li>
+  <li>N6705C 使用仪器原生 DLOG 采集与文件下载；IT2705 通过实时测量进行软件采样，以实际测量时刻生成时间序列。</li>
   <li>通道名自动加 <b>A-</b> / <b>B-</b> 前缀区分来源。</li>
   <li>使用 <b>Time Offset</b> 对齐两台仪器的时间基准。</li>
 </ul>
@@ -74,7 +75,7 @@
 </ul>
 
 <h3>自动保存（DLog Save）</h3>
-<p>在设置对话框的 <b>DLog Save</b> 页签中可开启录制正常结束后的自动写盘（.dlog），支持命名模板占位符 {date} / {time} / {datetime} / {seq}（递增序号）。录制出错时自动跳过保存。</p>
+<p>在设置对话框的 <b>DLog Save</b> 页签中可开启录制正常结束后的自动写盘（.dlog），支持命名模板占位符 {date} / {time} / {datetime} / {seq}（递增序号）。录制出错时自动跳过保存。原始 .dlog 自动保存与 DLOG 导出仅适用于 N6705C 原生数据；IT2705 软件采样数据可导出 CSV。</p>
 
 <h3>设置对话框（底部齿轮）</h3>
 <ul>

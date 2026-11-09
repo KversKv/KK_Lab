@@ -165,7 +165,11 @@ class BatchViewMixin:
             single_label = self._get_single_device_label()
             device_list = [(single_label, "#00f5c4")]
 
+        default_voltages = [3.8, 0.8, 1.2, 1.8, 3.3, 1.8, 1.2, 0.8]
+        default_currents = [0.2, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+
         for dev_label, dev_color in device_list:
+            channels = self._channels_for_device(dev_label)
             dev_frame = QFrame()
             dev_frame.setStyleSheet(f"""
                 QFrame {{
@@ -183,14 +187,14 @@ class BatchViewMixin:
             if dual:
                 col_title = QLabel(f"Device {dev_label}")
                 col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none; background: transparent;")
-                grid.addWidget(col_title, row, 0, 1, 5)
+                grid.addWidget(col_title, row, 0, 1, len(channels) + 1)
                 row += 1
 
             ch_label = QLabel("通道选择")
             ch_label.setStyleSheet(_label_style)
             ch_label.setFixedWidth(56)
             grid.addWidget(ch_label, row, 0)
-            for col_idx, ch_idx in enumerate(range(1, 5)):
+            for col_idx, ch_idx in enumerate(channels):
                 cb = QPushButton(f"CH {ch_idx}")
                 cb.setCheckable(True)
                 if dev_label != "B" and ch_idx in [2, 3, 4]:
@@ -205,7 +209,7 @@ class BatchViewMixin:
             v_label.setFixedWidth(56)
             grid.addWidget(v_label, row, 0)
             self.batch_voltage_inputs[dev_label] = []
-            for col_idx, v in enumerate([3.8, 0.8, 1.2, 1.8]):
+            for col_idx, v in enumerate(default_voltages[:len(channels)]):
                 inp = SelectAllLineEdit(f"{v:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
@@ -218,14 +222,14 @@ class BatchViewMixin:
             c_label.setFixedWidth(56)
             grid.addWidget(c_label, row, 0)
             self.batch_current_inputs[dev_label] = []
-            for col_idx, c in enumerate([0.2, 0.02, 0.02, 0.02]):
+            for col_idx, c in enumerate(default_currents[:len(channels)]):
                 inp = SelectAllLineEdit(f"{c:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
                 self.batch_current_inputs[dev_label].append(inp)
                 grid.addWidget(inp, row, col_idx + 1)
 
-            for col in range(1, 5):
+            for col in range(1, len(channels) + 1):
                 grid.setColumnStretch(col, 1)
 
             self._batch_columns_layout.addWidget(dev_frame, 1)

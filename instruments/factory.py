@@ -62,6 +62,39 @@ def create_oscilloscope(osc_type: str, resource: str):
         raise ValueError(f"Unknown oscilloscope type: {osc_type}")
 
 
+def get_power_analyzer_idn(instance) -> str:
+    """返回已识别或实时查询的电源 IDN。"""
+    cached = str(getattr(instance, "_kk_lab_idn", "") or "").strip()
+    if cached:
+        return cached
+    if hasattr(instance, "identify"):
+        idn = str(instance.identify() or "").strip()
+    elif hasattr(instance, "instr") and instance.instr is not None:
+        idn = str(instance.instr.query("*IDN?") or "").strip()
+    else:
+        idn = ""
+    if idn:
+        instance._kk_lab_idn = idn
+    return idn
+
+
+def get_power_analyzer_model(instance) -> str:
+    """从 IDN 第二段取得真实型号。"""
+    parts = get_power_analyzer_idn(instance).split(",")
+    if len(parts) > 1 and parts[1].strip():
+        return parts[1].strip()
+    return type(instance).__name__.removeprefix("Mock")
+
+
+def _power_analyzer_type_from_idn(idn: str) -> str:
+    upper = idn.upper()
+    if "N6705" in upper:
+        return "n6705c"
+    if "IT2705" in upper:
+        return "it2705"
+    raise ValueError(f"Unsupported power analyzer IDN: {idn}")
+
+
 def create_power_analyzer(
     resource: str,
     analyzer_type: str = "n6705c",
@@ -73,10 +106,42 @@ def create_power_analyzer(
     logger.debug(
         "create_power_analyzer: type=%s, resource=%s", key, resource
     )
+    if key == "auto":
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockIT2705, MockN6705C
+            if "IT2705" in str(resource).upper():
+                instance = MockIT2705(resource or "MOCK::IT2705")
+            else:
+                instance = MockN6705C()
+                instance._kk_lab_idn = "MOCK,N6705C,MOCK,1.0"
+            return instance
+
+        probe = N6705C(resource, visa_library=visa_library)
+        instance = None
+        try:
+            idn = get_power_analyzer_idn(probe)
+            detected_type = _power_analyzer_type_from_idn(idn)
+            if detected_type == "n6705c":
+                return probe
+            probe.disconnect()
+            instance = IT2705(resource, visa_library=visa_library)
+            identified_idn = get_power_analyzer_idn(instance)
+            if _power_analyzer_type_from_idn(identified_idn) != detected_type:
+                raise ConnectionError(
+                    f"Power analyzer identity changed during connection: {identified_idn}"
+                )
+            return instance
+        except Exception:
+            if instance is not None:
+                instance.disconnect()
+            probe.disconnect()
+            raise
     if key == "n6705c":
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockN6705C
-            return MockN6705C()
+            instance = MockN6705C()
+            instance._kk_lab_idn = "MOCK,N6705C,MOCK,1.0"
+            return instance
         return N6705C(resource, visa_library=visa_library)
     if key == "it2705":
         if DEBUG_MOCK:

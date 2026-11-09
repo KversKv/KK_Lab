@@ -20,9 +20,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPainter, QColor, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from instruments.power.keysight.n6705c import N6705C
+from instruments.factory import create_power_analyzer, get_power_analyzer_idn
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C
 from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 from ui.theme import FONT_MONO
@@ -149,7 +148,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """§5b.5：登记本页无专用接口的按钮（Auto Set 系列）为 AI 可触发的具名 UI 动作。
 
         handler 直接复用按钮原 clicked.connect 的槽（_on_batch_auto_set 等），
-        行为与人点按钮完全一致；enabled_when 校验至少一台 N6705C 已连接，
+        行为与人点按钮完全一致；enabled_when 校验至少一台电源已连接，
         不满足时 list_ui_actions 不返回、ui_invoke 明示不可用（不盲点）。
         """
         registry = self._ui_action_registry
@@ -180,7 +179,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 enabled_when=_any_connected,
                 description=(
                     "批量自动设置：测当前电压并对齐到 50mV 网格（含特殊电压），"
-                    "设电流限值并打开通道输出。需至少一台 N6705C 已连接并选中通道。"
+                    "设电流限值并打开通道输出。需至少一台电源已连接并选中通道。"
                 ),
             ),
             UIActionSpec(
@@ -193,7 +192,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 enabled_when=_any_connected,
                 description=(
                     "批量自动设置（+20mV 偏移）：测当前电压后 +20mV 设为目标，"
-                    "设电流限值并打开通道输出。需至少一台 N6705C 已连接并选中通道。"
+                    "设电流限值并打开通道输出。需至少一台电源已连接并选中通道。"
                 ),
             ),
         ])
@@ -225,7 +224,9 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 instance = self._instrument_manager.get_instance(snap.session_id)
                 self.devices[label]["n6705c"] = instance
                 self.devices[label]["is_connected"] = True
-                w["status"].setText("\u25cf Connected")
+                w["status"].setText(
+                    f"\u25cf Connected: {snap.model or 'Power Supply'}"
+                )
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 if snap.resource:
                     w["combo"].clear()
@@ -255,16 +256,32 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
     def _is_dual_mode(self):
         return len(self._connected_device_labels()) >= 2
 
+    def _channels_for_device(self, label):
+        instance = self.devices.get(label, {}).get("n6705c")
+        channels = getattr(instance, "VALID_CHANNELS", (1, 2, 3, 4))
+        return tuple(int(ch) for ch in channels)
+
+    def _dynamic_layout_signature(self):
+        return (
+            self._is_dual_mode(),
+            tuple(
+                (label, self._channels_for_device(label))
+                for label in ("A", "B")
+            ),
+        )
+
     def _rebuild_dynamic_sections(self):
-        dual = self._is_dual_mode()
-        if dual == self._prev_dual_mode:
+        signature = self._dynamic_layout_signature()
+        if signature == self._prev_dual_mode:
             return
-        self._prev_dual_mode = dual
+        self._prev_dual_mode = signature
 
         connected = self._connected_device_labels()
         if connected and self.current_device not in connected:
             self.current_device = connected[0]
-            self.current_channel = 1
+        channels = self._channels_for_device(self.current_device)
+        if self.current_channel not in channels:
+            self.current_channel = channels[0]
 
         self._build_channel_tab_buttons()
         self._build_batch_columns()
@@ -280,11 +297,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             n6705c = getattr(self._top, f"n6705c_{attr_suffix}", None)
             is_conn = getattr(self._top, f"is_connected_{attr_suffix}", False)
             visa_res = getattr(self._top, f"visa_resource_{attr_suffix}", "")
+            model = getattr(self._top, f"model_{attr_suffix}", "") or "Power Supply"
             w = self.conn_widgets[label]
             if is_conn and n6705c:
                 self.devices[label]["n6705c"] = n6705c
                 self.devices[label]["is_connected"] = True
-                w["status"].setText("\u25cf Connected")
+                w["status"].setText(f"\u25cf Connected: {model}")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 if visa_res:
                     w["combo"].clear()
@@ -346,7 +364,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def _on_polling_toggle_clicked(self, checked):
         self._set_polling_enabled(checked)
-        logger.info("N6705C 状态轮询%s", "已启用" if checked else "已暂停")
+        logger.info("Power supply 状态轮询%s", "已启用" if checked else "已暂停")
 
     def _update_polling_switch_state(self):
         if not hasattr(self, "polling_switch"):
@@ -576,7 +594,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         icon_label.setStyleSheet("QLabel { background: transparent; border: none; }")
         header_layout.addWidget(icon_label)
 
-        title_label = QLabel("Keysight N6705C DC Power Analyzer")
+        title_label = QLabel("Power Control")
         title_label.setStyleSheet("QLabel { color: #ffffff; font-size: 18px; font-weight: 800; }")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
@@ -588,7 +606,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self.polling_switch = SlideToggle(self)
         self.polling_switch.setFixedSize(52, 22)
         self.polling_switch.setChecked(False)
-        self.polling_switch.setToolTip("启用后轮询当前 N6705C 通道状态；关闭可避免窗口切换时的状态读取竞态")
+        self.polling_switch.setToolTip("Poll the active power supply channel; disable to avoid state-read races during page switches")
         self.polling_switch.clicked.connect(self._on_polling_toggle_clicked)
         header_layout.addWidget(self.polling_switch)
         self._update_polling_switch_state()
@@ -668,7 +686,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         dual = self._is_dual_mode()
         if dual:
             for dev_label in ["A", "B"]:
-                for ch in range(1, 5):
+                for ch in self._channels_for_device(dev_label):
                     btn = QPushButton(f"\u25cf {dev_label}-CH{ch}")
                     btn.setCheckable(True)
                     btn.setMinimumSize(90, 36)
@@ -686,7 +704,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                     self._channel_tab_separator = sep
                     self._channel_tabs_layout.addWidget(sep)
         else:
-            for ch in range(1, 5):
+            single_label = self._get_single_device_label()
+            for ch in self._channels_for_device(single_label):
                 btn = QPushButton(f"\u25cf CH{ch}")
                 btn.setCheckable(True)
                 btn.setMinimumSize(90, 36)
@@ -830,7 +849,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         active_btn = None
         if dual:
             for dev_label in ["A", "B"]:
-                for ch in range(1, 5):
+                for ch in self._channels_for_device(dev_label):
                     if idx < total:
                         is_active = (dev_label == self.current_device and ch == self.current_channel)
                         self.channel_tab_buttons[idx].setStyleSheet(
@@ -842,7 +861,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                         idx += 1
         else:
             single_label = self._get_single_device_label()
-            for ch in range(1, 5):
+            for ch in self._channels_for_device(single_label):
                 if idx < total:
                     is_active = (ch == self.current_channel)
                     self.channel_tab_buttons[idx].setStyleSheet(
@@ -1146,11 +1165,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         if found:
             for d in found:
                 w["combo"].addItem(d)
-            w["status"].setText(f"Found {len(found)} N6705C")
+            w["status"].setText(f"Found {len(found)} instrument(s)")
             w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
         else:
-            w["combo"].addItem("No N6705C found")
-            w["status"].setText("No N6705C found")
+            w["combo"].addItem("No power supply found")
+            w["status"].setText("No power supply found")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
         w["search_btn"].stop_spinning()
         w["search_btn"].setEnabled(True)
@@ -1195,44 +1214,35 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         try:
             address = w["combo"].currentText()
-            if DEBUG_MOCK:
-                n6705c = MockN6705C()
-                idn_match = True
-                serial = "MOCK-" + label
+            n6705c = create_power_analyzer(address, analyzer_type="auto")
+            idn = get_power_analyzer_idn(n6705c)
+            idn_parts = idn.split(",")
+            serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+            model = idn_parts[1].strip() if len(idn_parts) >= 2 else "Power Supply"
+
+            self.devices[label]["n6705c"] = n6705c
+            self.devices[label]["is_connected"] = True
+
+            if self._top:
+                connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
+                if connect_fn:
+                    connect_fn(address, n6705c_instance=n6705c, serial=serial)
+
+            w["status"].setText(f"\u25cf Connected: {model}")
+            w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
+            update_connect_button_state(w["connect_btn"], connected=True)
+            self._update_ui_connection_state(label, True)
+            self._rebuild_dynamic_sections()
+            self.connection_status_changed.emit(True)
+
+            if label == self.current_device:
+                self._start_channel_sync()
             else:
-                n6705c = N6705C(address)
-                idn = n6705c.instr.query("*IDN?")
-                idn_match = "N6705C" in idn
-                idn_parts = idn.strip().split(",") if idn_match else []
-                serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
-
-            if idn_match:
-                self.devices[label]["n6705c"] = n6705c
-                self.devices[label]["is_connected"] = True
-
-                if self._top:
-                    connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
-                    if connect_fn:
-                        connect_fn(address, n6705c_instance=n6705c, serial=serial)
-
-                w["status"].setText("\u25cf Connected")
-                w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-                update_connect_button_state(w["connect_btn"], connected=True)
-                self._update_ui_connection_state(label, True)
-                self._rebuild_dynamic_sections()
-                self.connection_status_changed.emit(True)
-
-                if label == self.current_device:
-                    self._start_channel_sync()
-                else:
-                    self._update_polling_switch_state()
-            else:
-                w["status"].setText("Device mismatch")
-                w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
+                self._update_polling_switch_state()
         except Exception as e:
             w["status"].setText("Connection failed")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-            logger.error("[%s] Connect error: %s", label, e)
+            logger.error("[%s] Connect error: %s", label, e, exc_info=True)
         finally:
             w["connect_btn"].setEnabled(True)
 
@@ -1391,7 +1401,7 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
 
     win = N6705CAnalyserUI()
-    win.setWindowTitle("N6705C DC Power Analyzer")
+    win.setWindowTitle("Power Control")
     apply_window_icon(win, "n6705c_analyser")
     resize_and_center_window(win)
     win.show()

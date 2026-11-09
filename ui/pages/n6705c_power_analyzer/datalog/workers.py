@@ -6,8 +6,7 @@ import random
 import threading
 import time
 from PySide6.QtCore import QObject, Signal
-from instruments.mock.mock_instruments import MockN6705C
-from instruments.power.keysight.n6705c import N6705C
+from instruments.factory import create_power_analyzer, get_power_analyzer_idn
 from instruments.power.keysight.n6705c_datalog_process import parse_csv_text, parse_dlog_binary
 from log_config import get_logger
 
@@ -25,7 +24,7 @@ class _ScanWorker(QObject):
                 res = detail["resource"]
                 idn = detail.get("idn", "")
                 parts = idn.split(",")
-                model = parts[1].strip() if len(parts) > 1 else "N6705C"
+                model = parts[1].strip() if len(parts) > 1 else "Power Supply"
                 serial = detail.get("serial") or "Unknown"
                 ip = res.split("::")[1] if "::" in res else res
                 self.device_found.emit(serial, model, ip, res)
@@ -49,22 +48,20 @@ class _ConnectWorker(QObject):
     def run(self):
         n6705c = None
         try:
-            if self._debug:
-                n6705c = MockN6705C()
-                idn = "MOCK,N6705C,MOCK"
-            else:
-                n6705c = N6705C(self._visa_resource)
-                idn = n6705c.instr.query("*IDN?").strip()
-                if "N6705C" not in idn:
-                    raise RuntimeError(f"Device mismatch: {idn}")
+            n6705c = create_power_analyzer(self._visa_resource, analyzer_type="auto")
+            idn = get_power_analyzer_idn(n6705c)
+            parts = idn.split(",")
+            identified_serial = parts[2].strip() if len(parts) > 2 else ""
             logger.debug("Datalog connect worker verified IDN: %s", idn)
-            self.success.emit(n6705c, self._serial, self._visa_resource)
+            self.success.emit(
+                n6705c, identified_serial or self._serial, self._visa_resource
+            )
         except Exception as e:
             if n6705c is not None:
                 try:
                     n6705c.disconnect()
                 except Exception:
-                    pass
+                    logger.debug("Datalog connect cleanup failed", exc_info=True)
             self.error.emit(str(e))
         finally:
             self.finished.emit()
@@ -110,9 +107,20 @@ class _DatalogWorker(QObject):
                 self.finished.emit()
                 return
 
-            self._configure_units(active_units, sample_period_s, run_start)
-            self._wait_capture(active_units, run_start)
-            all_data, raw_dlog_list = self._download_units(sample_period_s, run_start)
+            native_units = [
+                unit for unit in active_units
+                if callable(getattr(unit[1], "read_mmem_data", None))
+            ]
+            software_units = [unit for unit in active_units if unit not in native_units]
+
+            self._configure_units(native_units, sample_period_s, run_start)
+            software_data = self._wait_capture(
+                native_units, software_units, sample_period_s, run_start
+            )
+            all_data, raw_dlog_list = self._download_units(
+                native_units, sample_period_s, run_start
+            )
+            all_data.update(software_data)
 
             self.progress_update.emit(98, "Processing results...")
             logger.debug("[Datalog][Progress] Emitting results at %.3fs", time.time() - run_start)
@@ -149,6 +157,8 @@ class _DatalogWorker(QObject):
 
     def _configure_units(self, active_units, sample_period_s, run_start):
         """多线程并行配置各仪器，并用 Barrier 对齐后再同时 INIT:DLOG。"""
+        if not active_units:
+            return
         self.progress_update.emit(2, "Configuring instruments...")
         logger.debug("[Datalog][Progress] Configure start at %.3fs", time.time() - run_start)
         config_start = time.time()
@@ -209,35 +219,36 @@ class _DatalogWorker(QObject):
 
         logger.debug("[Datalog][Progress] Configure done in %.3fs", time.time() - config_start)
 
-    def _wait_capture(self, active_units, run_start):
-        """等待仪器完成采集：优先 STAT:OPER:COND 探测，失败降级为固定时长等待。
-
-        期间处理用户停止（ABOR:DLOG）、长采集保活（*IDN?）与进度推进。
-        """
+    def _wait_capture(self, native_units, software_units, sample_period_s, run_start):
+        """等待原生 DLOG，并在同一循环内采集软件采样仪器。"""
         self.progress_update.emit(2, "Capturing data...")
         logger.debug("[Datalog][Progress] Capture wait start at %.3fs", time.time() - run_start)
 
         safety_buffer = max(0.5, min(5.0, self.monitoring_time_s * 0.3))
-        capture_total = self.monitoring_time_s + safety_buffer
-        logger.info("[Datalog] Waiting up to %.2fs for capture (monitor=%.2fs + buffer=%.2fs)...",
-                    capture_total, self.monitoring_time_s, safety_buffer)
+        capture_total = (
+            self.monitoring_time_s + safety_buffer
+            if native_units else self.monitoring_time_s
+        )
+        logger.info(
+            "[Datalog] Waiting up to %.2fs for capture (monitor=%.2fs + buffer=%.2fs)...",
+            capture_total, self.monitoring_time_s,
+            safety_buffer if native_units else 0.0,
+        )
         capture_start = time.time()
         hard_deadline = capture_start + self.monitoring_time_s + max(safety_buffer, 5.0)
         keepalive_interval = 300
-        last_keepalive = time.time()
+        last_keepalive = capture_start
         poll_sleep = 0.05 if self.monitoring_time_s <= 2.0 else 0.2
         measuring_bit = 0x1000
+        software_data = self._create_software_series(software_units)
+        next_sample_at = capture_start
 
         probe_channels = []
-        for unit_idx, n6705c, curr_ch, volt_ch in active_units:
-            any_ch = None
-            if curr_ch:
-                any_ch = curr_ch[0]
-            elif volt_ch:
-                any_ch = volt_ch[0]
+        for unit_idx, n6705c, curr_ch, volt_ch in native_units:
+            any_ch = curr_ch[0] if curr_ch else (volt_ch[0] if volt_ch else None)
             probe_channels.append(any_ch)
 
-        probe_enabled = all(ch is not None for ch in probe_channels)
+        probe_enabled = bool(native_units) and all(ch is not None for ch in probe_channels)
         probe_failures = 0
         probe_max_failures = 2
 
@@ -250,22 +261,29 @@ class _DatalogWorker(QObject):
             now = time.time()
             elapsed = now - capture_start
 
+            if software_units and now >= next_sample_at:
+                self._sample_software_units(
+                    software_units, software_data, capture_start
+                )
+                next_sample_at = time.time() + sample_period_s
+
             if self._is_stopped:
-                logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
+                logger.info("[Datalog] Stopped by user during capture wait, fetching available data...")
                 self.progress_update.emit(90, "Stopping instruments...")
-                for unit_idx, n6705c, _, _ in active_units:
+                for unit_idx, n6705c, _, _ in native_units:
                     try:
                         n6705c.instr.write("ABOR:DLOG")
                         logger.debug("[Datalog] ABOR:DLOG sent to unit %d", unit_idx)
                     except Exception as e:
                         logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
-                time.sleep(0.3)
+                if native_units:
+                    time.sleep(0.3)
                 break
 
             if probe_enabled and elapsed >= self.monitoring_time_s:
                 try:
                     all_done = True
-                    for (unit_idx, n6705c, _, _), ch in zip(active_units, probe_channels):
+                    for (unit_idx, n6705c, _, _), ch in zip(native_units, probe_channels):
                         if not _is_unit_done(n6705c, ch):
                             all_done = False
                             break
@@ -280,13 +298,16 @@ class _DatalogWorker(QObject):
                         probe_enabled = False
                         logger.warning("[Datalog] Disabling early-completion probe, falling back to fixed wait")
 
-            if elapsed >= capture_total:
+            if not native_units and elapsed >= self.monitoring_time_s:
+                break
+
+            if native_units and elapsed >= capture_total:
                 if not probe_enabled or now >= hard_deadline:
                     logger.debug("[Datalog] Capture wait reached capture_total at %.3fs", elapsed)
                     break
 
             if now - last_keepalive >= keepalive_interval:
-                for unit_idx, n6705c, _, _ in active_units:
+                for unit_idx, n6705c, _, _ in native_units:
                     try:
                         n6705c.instr.query("*IDN?")
                         logger.debug("[Datalog] Keep-alive query sent to unit %d", unit_idx)
@@ -297,11 +318,45 @@ class _DatalogWorker(QObject):
             capture_pct = min(elapsed / capture_total, 1.0) if capture_total > 0 else 1.0
             overall_pct = int(2 + capture_pct * 91)
             self.progress_update.emit(overall_pct, "Capturing data...")
-            time.sleep(poll_sleep)
+            sleep_s = poll_sleep
+            if software_units:
+                sleep_s = min(poll_sleep, max(0.0, next_sample_at - time.time()))
+            time.sleep(sleep_s)
 
         logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
+        return software_data
 
-    def _download_units(self, sample_period_s, run_start):
+    def _create_software_series(self, software_units):
+        all_data = {}
+        for unit_idx, instance, curr_channels, volt_channels in software_units:
+            ulabel = self.unit_labels[unit_idx]
+            for ch in sorted(set(curr_channels) | set(volt_channels)):
+                if ch in volt_channels:
+                    label = f"{ulabel} CH{ch} V".strip()
+                    all_data[label] = {"time": [], "values": []}
+                if ch in curr_channels:
+                    label = f"{ulabel} CH{ch} I".strip()
+                    all_data[label] = {"time": [], "values": []}
+        return all_data
+
+    def _sample_software_units(self, software_units, all_data, capture_start):
+        for unit_idx, instance, curr_channels, volt_channels in software_units:
+            ulabel = self.unit_labels[unit_idx]
+            for ch in sorted(set(curr_channels) | set(volt_channels)):
+                if self._is_stopped:
+                    return
+                if ch in volt_channels:
+                    value_mv = float(instance.measure_voltage(ch)) * 1000.0
+                    series = all_data[f"{ulabel} CH{ch} V".strip()]
+                    series["time"].append(max(0.0, time.time() - capture_start))
+                    series["values"].append(value_mv)
+                if ch in curr_channels:
+                    value_ma = float(instance.measure_current(ch)) * 1000.0
+                    series = all_data[f"{ulabel} CH{ch} I".strip()]
+                    series["time"].append(max(0.0, time.time() - capture_start))
+                    series["values"].append(value_ma)
+
+    def _download_units(self, native_units, sample_period_s, run_start):
         """逐台下载 dlog 数据：优先二进制直读（重试4次），失败降级 CSV 导出。"""
         self.progress_update.emit(93, "Downloading data...")
         logger.debug("[Datalog][Progress] Download start at %.3fs", time.time() - run_start)
@@ -310,12 +365,7 @@ class _DatalogWorker(QObject):
         all_data = {}
         raw_dlog_list = []
 
-        for unit_idx, n6705c in enumerate(self.n6705c_list):
-            curr_channels = self.channels_per_unit[unit_idx]
-            volt_channels = self.voltage_channels_per_unit[unit_idx]
-            if not curr_channels and not volt_channels:
-                continue
-
+        for unit_idx, n6705c, curr_channels, volt_channels in native_units:
             ulabel = self.unit_labels[unit_idx]
             unit_data = None
 

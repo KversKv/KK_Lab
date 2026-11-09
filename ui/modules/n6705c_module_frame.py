@@ -21,12 +21,13 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QRectF
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
-from instruments.power.keysight.n6705c import N6705C
+from instruments.factory import (
+    create_power_analyzer, get_power_analyzer_idn, get_power_analyzer_model,
+)
 from core.instruments.address_presets import get_address_preset
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C
 
 
 _SVG_COMMON_DIR = os.path.join(
@@ -497,20 +498,22 @@ class N6705CConnectionMixin:
 
     def _on_n6705c_connect(self):
         if DEBUG_MOCK:
-            self.n6705c = MockN6705C()
+            device_address = self.visa_resource_combo.currentText()
+            self.n6705c = create_power_analyzer(device_address, analyzer_type="auto")
+            idn = get_power_analyzer_idn(self.n6705c)
+            model = get_power_analyzer_model(self.n6705c)
             self._update_n6705c_connect_button_state(True)
-            self.set_system_status("● Connected")
+            self.set_system_status(f"● Connected: {model}")
             self.search_btn.setEnabled(False)
             if hasattr(self, 'append_log'):
-                self.append_log("[DEBUG] Mock N6705C connected.")
-            device_address = self.visa_resource_combo.currentText()
+                self.append_log(f"[DEBUG] Mock {model} connected.")
             if self._n6705c_top:
                 self._n6705c_top.connect_a(device_address, self.n6705c, serial="MOCK")
             elif self._n6705c_instrument_manager:
                 from core.instruments import InstrumentSpec
                 self._n6705c_instrument_manager.attach_external(
                     InstrumentSpec(instrument_type="n6705c", resource=device_address, slot="A"),
-                    instance=self.n6705c, serial="MOCK", model="N6705C",
+                    instance=self.n6705c, serial="MOCK", model=model,
                 )
             self.connection_status_changed.emit(True)
             return
@@ -537,33 +540,24 @@ class N6705CConnectionMixin:
         self.connect_btn.setEnabled(False)
 
         try:
-            self.n6705c = N6705C(device_address)
+            self.n6705c = create_power_analyzer(device_address, analyzer_type="auto")
+            idn = get_power_analyzer_idn(self.n6705c)
+            model = get_power_analyzer_model(self.n6705c)
+            self._update_n6705c_connect_button_state(True)
+            self.search_btn.setEnabled(False)
 
-            idn = self.n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
-                self._update_n6705c_connect_button_state(True)
-                self.search_btn.setEnabled(False)
+            idn_parts = idn.split(",")
+            serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
 
-                serial = ""
-                try:
-                    idn_parts = idn.strip().split(",")
-                    serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
-                except Exception:
-                    pass
+            self.set_system_status(f"● Connected: {model}")
+            if hasattr(self, 'append_log'):
+                self.append_log(f"[SYSTEM] {model} connected successfully.")
+                self.append_log(f"[IDN] {idn}")
 
-                self.set_system_status("● Connected")
-                if hasattr(self, 'append_log'):
-                    self.append_log("[SYSTEM] N6705C connected successfully.")
-                    self.append_log(f"[IDN] {idn.strip()}")
+            if self._n6705c_top:
+                self._n6705c_top.connect_a(device_address, self.n6705c, serial=serial)
 
-                if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c, serial=serial)
-
-                self.connection_status_changed.emit(True)
-            else:
-                self.set_system_status("● Device mismatch", is_error=True)
-                if hasattr(self, 'append_log'):
-                    self.append_log("[ERROR] Connected device is not N6705C.")
+            self.connection_status_changed.emit(True)
         except Exception as e:
             self.set_system_status("● Connection failed", is_error=True)
             if hasattr(self, 'append_log'):
@@ -614,11 +608,11 @@ class N6705CConnectionMixin:
         if session and session.connected:
             self.n6705c = session.instance
             self._update_n6705c_connect_button_state(True)
-            self.set_system_status("● Connected")
+            self.set_system_status(f"● Connected: {session.model or 'Power Supply'}")
             self.search_btn.setEnabled(False)
             self.connect_btn.setEnabled(True)
             if hasattr(self, 'append_log'):
-                self.append_log("[SYSTEM] N6705C connected via manager.")
+                self.append_log(f"[SYSTEM] {session.model or 'Power Supply'} connected via manager.")
             self.connection_status_changed.emit(True)
 
     def _on_mixin_manager_connect_failed(self, session_id: str, error: str):

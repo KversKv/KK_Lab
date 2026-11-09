@@ -464,7 +464,7 @@ class _InstrumentEditDialog(QDialog):
         serial = self._serial_edit.text().strip() or visa_resource
         self._result = {
             "serial": serial,
-            "model": "N6705C",
+            "model": "Power Supply",
             "display_ip": display_ip,
             "visa_resource": visa_resource,
             "auto_connect": self._auto_connect_cb.isChecked(),
@@ -604,7 +604,7 @@ class N6705CSettingsDialog(QDialog):
             serial = dev.get("serial", "")
             busy = self._is_instrument_busy(serial, visa_resource)
 
-            model_item = QTableWidgetItem(dev.get("model", "N6705C"))
+            model_item = QTableWidgetItem(dev.get("model", "Power Supply"))
             serial_text = serial + ("  (connected)" if busy else "")
             serial_item = QTableWidgetItem(serial_text)
             addr_item = QTableWidgetItem(visa_resource)
@@ -998,7 +998,7 @@ class N6705CSettingsDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(6)
         form.addRow("Software", QLabel(app_version))
-        form.addRow("Module", QLabel("N6705C Power Analyzer — Datalog"))
+        form.addRow("Module", QLabel("Power Control — Datalog"))
         form.addRow("Python", QLabel(platform.python_version()))
         form.addRow("PySide6 / Qt", QLabel(f"{pyside_version} / {qVersion()}"))
         layout.addLayout(form)

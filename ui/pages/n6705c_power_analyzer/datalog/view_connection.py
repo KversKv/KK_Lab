@@ -39,7 +39,7 @@ class ConnectionViewMixin:
     """Datalog 页连接管理视图：设备卡片 / 槽位 / 扫描 / 连接 / 默认设备。"""
 
     def _apply_slot_state(self, label, connected, instance=None,
-                          serial="", visa_resource=""):
+                          serial="", visa_resource="", model=""):
         """把 A/B 槽位的连接态应用到本页（两个同步入口共用）。
 
         connected=True 时登记实例、分配槽位并确保设备卡片存在；
@@ -48,14 +48,18 @@ class ConnectionViewMixin:
         _on_connect_success / _on_manager_sessions_changed 的 pending 分支）。
         """
         if connected:
+            if not model and instance is not None:
+                from instruments.factory import get_power_analyzer_model
+                model = get_power_analyzer_model(instance)
+            model = model or "Power Supply"
             if label == "A":
                 self.n6705c_a = instance
                 self.is_connected_a = True
             elif label == "B":
                 self.n6705c_b = instance
                 self.is_connected_b = True
-            self._assign_slot(label, serial, "N6705C", visa_resource)
-            self._ensure_device_card_exists(serial, "N6705C", visa_resource)
+            self._assign_slot(label, serial, model, visa_resource)
+            self._ensure_device_card_exists(serial, model, visa_resource)
         else:
             if label == "A" and self.is_connected_a:
                 self.n6705c_a = None
@@ -123,6 +127,7 @@ class ConnectionViewMixin:
                 self._apply_slot_state(
                     label, True, instance=instance,
                     serial=display_serial, visa_resource=snap.resource,
+                    model=snap.model,
                 )
             else:
                 self._apply_slot_state(label, False)
@@ -175,15 +180,19 @@ class ConnectionViewMixin:
                 self._apply_slot_state(
                     label, True, instance=n6705c,
                     serial=display_serial, visa_resource=visa_res,
+                    model=getattr(self._top, f"model_{attr_suffix}", ""),
                 )
             else:
                 self._apply_slot_state(label, False)
         self._after_slot_states_synced()
 
     def _ensure_device_card_exists(self, serial, model, visa_resource):
-        existing_serials = {c.property("serial") for c in self.device_cards}
-        if serial in existing_serials:
-            return
+        for existing_card in self.device_cards:
+            if existing_card.property("serial") == serial:
+                model_label = existing_card.property("model_label")
+                if model_label is not None and model:
+                    model_label.setText(model)
+                return
         display_ip = visa_resource
         if "TCPIP" in visa_resource and "::" in visa_resource:
             parts = visa_resource.split("::")
@@ -244,6 +253,8 @@ class ConnectionViewMixin:
         frame.setProperty("slot_label", label_char)
         frame.setProperty("name_label", name_label)
         frame.setProperty("assigned_serial", "")
+        frame.setProperty("assigned_model", "")
+        frame.setProperty("assigned_resource", "")
         frame.setProperty("connected", False)
         frame.setContextMenuPolicy(Qt.CustomContextMenu)
         frame.customContextMenuRequested.connect(
@@ -409,7 +420,8 @@ class ConnectionViewMixin:
             serial = slot.property("assigned_serial")
             resource = slot.property("assigned_resource")
             if serial and resource:
-                self._ensure_device_card_exists(serial, "N6705C", resource)
+                model = slot.property("assigned_model") or "Power Supply"
+                self._ensure_device_card_exists(serial, model, resource)
         self._sync_device_card_states()
         self._maybe_show_scope_hint()
         self._auto_connect_enabled_cards()
@@ -553,8 +565,10 @@ class ConnectionViewMixin:
             if self._top:
                 self._top.connect_b(visa_resource, n6705c_instance=n6705c, serial=serial)
 
-        self._assign_slot(slot_label, serial, "N6705C", visa_resource)
-        self._ensure_device_card_exists(serial, "N6705C", visa_resource)
+        from instruments.factory import get_power_analyzer_model
+        model = get_power_analyzer_model(n6705c)
+        self._assign_slot(slot_label, serial, model, visa_resource)
+        self._ensure_device_card_exists(serial, model, visa_resource)
         self._after_slot_states_synced()
 
         # 同 manager 路：门禁用 isHidden()（启动自动连接时本页可能非当前页）
@@ -717,7 +731,7 @@ class ConnectionViewMixin:
                 model_label = card.property("model_label")
                 ip_label = card.property("ip_label")
                 if model_label is not None:
-                    model_label.setText(dev.get("model", "N6705C"))
+                    model_label.setText(dev.get("model", "Power Supply"))
                 if ip_label is not None:
                     ip_label.setText(dev.get("display_ip", ""))
 
@@ -727,7 +741,7 @@ class ConnectionViewMixin:
             if not res or res in existing_resources:
                 continue
             card = self._create_device_card(
-                dev.get("serial") or res, dev.get("model", "N6705C"),
+                dev.get("serial") or res, dev.get("model", "Power Supply"),
                 dev.get("display_ip", ""), res,
                 auto_connect=bool(dev.get("auto_connect", False)),
             )
@@ -789,6 +803,7 @@ class ConnectionViewMixin:
     def _assign_slot(self, label_char, serial, model, visa_resource):
         slot = self.slot_frames[label_char]
         slot.setProperty("assigned_serial", serial)
+        slot.setProperty("assigned_model", model)
         slot.setProperty("assigned_resource", visa_resource)
         slot.setProperty("connected", True)
         slot.setStyleSheet(dss.SLOT_ASSIGNED_STYLE)
@@ -802,6 +817,7 @@ class ConnectionViewMixin:
     def _clear_slot(self, label_char):
         slot = self.slot_frames[label_char]
         slot.setProperty("assigned_serial", "")
+        slot.setProperty("assigned_model", "")
         slot.setProperty("assigned_resource", "")
         slot.setProperty("connected", False)
         slot.setStyleSheet("")
@@ -913,7 +929,7 @@ class ConnectionViewMixin:
         if serial in existing_serials:
             return
 
-        card = self._create_device_card(serial, "N6705C", display_ip, visa_resource)
+        card = self._create_device_card(serial, "Power Supply", display_ip, visa_resource)
         self.device_list_layout.insertWidget(
             self.device_list_layout.count() - 1, card
         )
@@ -921,7 +937,7 @@ class ConnectionViewMixin:
         self._sync_device_card_states()
 
         if save_default_check.isChecked():
-            self._save_default_device(serial, "N6705C", display_ip, visa_resource)
+            self._save_default_device(serial, "Power Supply", display_ip, visa_resource)
 
     def _add_default_debug_device(self):
         existing_serials = {c.property("serial") for c in self.device_cards}
@@ -1002,7 +1018,7 @@ class ConnectionViewMixin:
                     or d["visa_resource"] in existing_resources:
                 continue
             card = self._create_device_card(
-                serial, d.get("model", "N6705C"),
+                serial, d.get("model", "Power Supply"),
                 d.get("display_ip", ""), d["visa_resource"],
                 auto_connect=d.get("auto_connect", False),
             )

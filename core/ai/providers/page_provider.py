@@ -11,8 +11,8 @@ from core.ai.providers.base import ContextProvider
 from core.ai.profiles import get_profile
 
 _PAGE_LABELS: dict[str, str] = {
-    "power_analyser": "N6705C 电源分析仪",
-    "datalog": "N6705C Datalog 数据记录",
+    "power_analyser": "Power Control 通用电源控制",
+    "datalog": "Datalog 数据记录",
     "oscilloscope": "示波器",
     "thermal_chamber": "VT6002 温箱",
     "pmu_test": "PMU 测试",

@@ -181,3 +181,198 @@ def test_factory_registers_it2705_and_returns_mock(monkeypatch):
     monkeypatch.setattr(debug_config, "DEBUG_MOCK", True)
     mock = factory.create_power_analyzer("", analyzer_type="it2705")
     assert isinstance(mock, MockIT2705)
+    auto_mock = factory.create_power_analyzer(
+        "MOCK::IT2705::A", analyzer_type="auto"
+    )
+    assert isinstance(auto_mock, MockIT2705)
+    assert factory.get_power_analyzer_model(auto_mock) == "IT2705"
+
+
+def _fake_power_class(idn):
+    class FakePower:
+        instances = []
+
+        def __init__(self, resource, visa_library=None):
+            self.resource = resource
+            self.visa_library = visa_library
+            self.disconnect_calls = 0
+            type(self).instances.append(self)
+
+        def identify(self):
+            return idn
+
+        def disconnect(self):
+            self.disconnect_calls += 1
+
+    return FakePower
+
+
+@pytest.mark.parametrize(
+    ("probe_idn", "expected_model", "expect_it2705"),
+    [
+        ("KEYSIGHT,N6705C,SERIAL,1.0", "N6705C", False),
+        ("ITECH,IT2705,SERIAL,1.0", "IT2705", True),
+    ],
+)
+def test_factory_auto_detects_power_model(
+    monkeypatch, probe_idn, expected_model, expect_it2705
+):
+    import debug_config
+
+    probe_class = _fake_power_class(probe_idn)
+    it2705_class = _fake_power_class("ITECH,IT2705,SERIAL,1.0")
+    monkeypatch.setattr(debug_config, "DEBUG_MOCK", False)
+    monkeypatch.setattr(factory, "N6705C", probe_class)
+    monkeypatch.setattr(factory, "IT2705", it2705_class)
+
+    result = factory.create_power_analyzer(
+        "TEST_RESOURCE", analyzer_type="auto", visa_library="TEST_LIBRARY"
+    )
+
+    assert factory.get_power_analyzer_model(result) == expected_model
+    assert isinstance(result, it2705_class if expect_it2705 else probe_class)
+    assert probe_class.instances[0].visa_library == "TEST_LIBRARY"
+    if expect_it2705:
+        assert probe_class.instances[0].disconnect_calls == 1
+        assert it2705_class.instances[0].resource == "TEST_RESOURCE"
+    else:
+        assert probe_class.instances[0].disconnect_calls == 0
+        assert not it2705_class.instances
+
+
+def test_factory_auto_rejects_unsupported_idn_and_disconnects(monkeypatch):
+    import debug_config
+
+    probe_class = _fake_power_class("VENDOR,UNKNOWN,SERIAL,1.0")
+    it2705_class = _fake_power_class("ITECH,IT2705,SERIAL,1.0")
+    monkeypatch.setattr(debug_config, "DEBUG_MOCK", False)
+    monkeypatch.setattr(factory, "N6705C", probe_class)
+    monkeypatch.setattr(factory, "IT2705", it2705_class)
+
+    with pytest.raises(ValueError, match="Unsupported power analyzer IDN"):
+        factory.create_power_analyzer("TEST_RESOURCE", analyzer_type="auto")
+
+    assert probe_class.instances[0].disconnect_calls == 1
+    assert not it2705_class.instances
+
+
+def test_factory_auto_cleans_up_when_identity_changes(monkeypatch):
+    import debug_config
+
+    probe_class = _fake_power_class("ITECH,IT2705,SERIAL,1.0")
+    changed_class = _fake_power_class("KEYSIGHT,N6705C,SERIAL,1.0")
+    monkeypatch.setattr(debug_config, "DEBUG_MOCK", False)
+    monkeypatch.setattr(factory, "N6705C", probe_class)
+    monkeypatch.setattr(factory, "IT2705", changed_class)
+
+    with pytest.raises(ConnectionError, match="identity changed"):
+        factory.create_power_analyzer("TEST_RESOURCE", analyzer_type="auto")
+
+    assert changed_class.instances[0].disconnect_calls == 1
+    assert probe_class.instances[0].disconnect_calls >= 1
+
+
+def test_power_profile_verify_uses_idn_identity():
+    from core.instruments.registry import _verify_n6705c
+
+    instance = _fake_power_class("ITECH,IT2705,SERIAL123,2.0")("TEST_RESOURCE")
+    identity = _verify_n6705c(instance)
+
+    assert identity.vendor == "ITECH"
+    assert identity.model == "IT2705"
+    assert identity.serial == "SERIAL123"
+    assert identity.firmware == "2.0"
+
+
+def test_datalog_worker_samples_it2705_in_real_units():
+    from ui.pages.n6705c_power_analyzer.datalog.workers import _DatalogWorker
+
+    class SoftwarePower:
+        def measure_voltage(self, channel):
+            return channel + 0.5
+
+        def measure_current(self, channel):
+            return channel / 1000.0
+
+    worker = _DatalogWorker(
+        [SoftwarePower()], [[1, 8]], [""], "current", 20, 0,
+        debug=False, voltage_channels_per_unit=[[1, 8]],
+    )
+    results = []
+    raw_results = []
+    errors = []
+    finished = []
+    worker.data_ready.connect(results.append)
+    worker.dlog_raw_ready.connect(raw_results.append)
+    worker.error.connect(errors.append)
+    worker.finished.connect(lambda: finished.append(True))
+
+    worker.run()
+
+    assert errors == []
+    assert finished == [True]
+    assert raw_results == [[]]
+    data = results[0]
+    assert data["CH1 V"]["values"] == [1500.0]
+    assert data["CH8 V"]["values"] == [8500.0]
+    assert data["CH1 I"]["values"] == [1.0]
+    assert data["CH8 I"]["values"] == [8.0]
+    assert all(series["time"][0] >= 0 for series in data.values())
+
+
+def test_datalog_worker_mixes_native_and_software_units(monkeypatch):
+    from ui.pages.n6705c_power_analyzer.datalog import workers as datalog_workers
+
+    class NativeInstr:
+        def __init__(self):
+            self.timeout = 1000
+            self.commands = []
+
+        def write(self, command):
+            self.commands.append(command)
+
+        def query(self, command):
+            self.commands.append(command)
+            return "0" if command.startswith("STAT:OPER:COND?") else "1"
+
+    class NativePower:
+        def __init__(self):
+            self.instr = NativeInstr()
+
+        def read_mmem_data(self, filepath):
+            return b"native-dlog"
+
+    class SoftwarePower:
+        def measure_voltage(self, channel):
+            return 3.3
+
+        def measure_current(self, channel):
+            return 0.025
+
+    monkeypatch.setattr(datalog_workers.time, "sleep", lambda duration: None)
+    monkeypatch.setattr(
+        datalog_workers,
+        "parse_dlog_binary",
+        lambda raw, curr, volt, label, period: {
+            "A CH1 I": {"time": [0.0], "values": [10.0]}
+        },
+    )
+    worker = datalog_workers._DatalogWorker(
+        [NativePower(), SoftwarePower()], [[1], [8]], ["A", "B"],
+        "current", 20, 0, debug=False, voltage_channels_per_unit=[[1], [8]],
+    )
+    results = []
+    raw_results = []
+    errors = []
+    worker.data_ready.connect(results.append)
+    worker.dlog_raw_ready.connect(raw_results.append)
+    worker.error.connect(errors.append)
+
+    worker.run()
+
+    assert errors == []
+    assert raw_results == [[b"native-dlog"]]
+    data = results[0]
+    assert set(data) == {"A CH1 I", "B CH8 V", "B CH8 I"}
+    assert data["B CH8 V"]["values"] == [3300.0]
+    assert data["B CH8 I"]["values"] == [25.0]

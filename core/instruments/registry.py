@@ -36,35 +36,25 @@ class ProfileRegistry:
 
 
 def _create_n6705c(spec: InstrumentSpec) -> object:
-    from debug_config import DEBUG_MOCK
-    if DEBUG_MOCK:
-        from instruments.mock.mock_instruments import MockN6705C
-        return MockN6705C()
     from instruments.factory import create_power_analyzer
-    return create_power_analyzer(spec.resource)
+    return create_power_analyzer(spec.resource, analyzer_type="auto")
 
 
 def _verify_n6705c(instance: object) -> InstrumentIdentity:
-    from debug_config import DEBUG_MOCK
-    if DEBUG_MOCK:
-        return InstrumentIdentity(
-            model="N6705C", serial="MOCK", vendor="Keysight", firmware="MOCK",
-        )
-    idn = ""
-    if hasattr(instance, "instr") and instance.instr is not None:
-        idn = instance.instr.query("*IDN?").strip()
+    from instruments.factory import get_power_analyzer_idn
+    idn = get_power_analyzer_idn(instance)
     if not idn:
-        raise ConnectionError("N6705C verify failed: unable to query *IDN?")
+        raise ConnectionError("Power supply verify failed: unable to query *IDN?")
     upper_idn = idn.upper()
-    if "N6705C" not in upper_idn and "N6705" not in upper_idn:
+    if "N6705" not in upper_idn and "IT2705" not in upper_idn:
         raise ConnectionError(
-            f"N6705C verify failed: IDN does not match expected device. Got: {idn}"
+            f"Power supply verify failed: unsupported device IDN: {idn}"
         )
     parts = idn.split(",")
     return InstrumentIdentity(
-        model=parts[1].strip() if len(parts) > 1 else "N6705C",
+        model=parts[1].strip() if len(parts) > 1 else "Power Supply",
         serial=parts[2].strip() if len(parts) > 2 else "",
-        vendor=parts[0].strip() if len(parts) > 0 else "Keysight",
+        vendor=parts[0].strip() if len(parts) > 0 else "",
         firmware=parts[3].strip() if len(parts) > 3 else "",
     )
 
@@ -100,12 +90,12 @@ def _scan_n6705c() -> list[InstrumentCandidate]:
                 instrument_type="n6705c",
                 connection_kind="visa",
                 resource=detail["resource"],
-                model_hint=parts[1].strip() if len(parts) > 1 else "N6705C",
+                model_hint=parts[1].strip() if len(parts) > 1 else "Power Supply",
                 serial_hint=detail.get("serial", ""),
                 display_name=idn or detail["resource"],
             ))
     except Exception as e:
-        logger.warning("N6705C scan failed: %s", e)
+        logger.warning("Power supply scan failed: %s", e)
     return candidates
 
 
@@ -114,7 +104,7 @@ def _disconnect_n6705c(instance: object) -> None:
         try:
             instance.disconnect()
         except Exception as e:
-            logger.warning("N6705C disconnect error: %s", e)
+            logger.warning("Power supply disconnect error: %s", e)
 
 
 def _create_mso64b(spec: InstrumentSpec) -> object:
@@ -700,7 +690,7 @@ def _disconnect_ch9114f(instance: object) -> None:
 
 N6705C_PROFILE = InstrumentProfile(
     instrument_type="n6705c",
-    display_name="Keysight N6705C DC Power Analyzer",
+    display_name="Power Control",
     connection_kind="visa",
     role="power_analyzer",
     capabilities=frozenset({

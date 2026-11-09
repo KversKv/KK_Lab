@@ -184,7 +184,7 @@ class ConsumptionViewMixin:
 
                 ch_row = QHBoxLayout()
                 ch_row.setSpacing(6)
-                for ch in range(1, 5):
+                for ch in self._channels_for_device(dev_label):
                     card = self._create_ct_channel_card(dev_label, ch)
                     ch_row.addWidget(card, 1)
                 dev_layout.addLayout(ch_row)
@@ -199,7 +199,7 @@ class ConsumptionViewMixin:
             ch_container_layout = QHBoxLayout(ch_container)
             ch_container_layout.setContentsMargins(0, 0, 0, 0)
             ch_container_layout.setSpacing(10)
-            for ch in range(1, 5):
+            for ch in self._channels_for_device(single_label):
                 card = self._create_ct_channel_card(single_label, ch)
                 ch_container_layout.addWidget(card, 1)
             self._ct_cards_layout.addWidget(ch_container, 1)

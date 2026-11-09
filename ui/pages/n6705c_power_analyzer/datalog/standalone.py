@@ -219,7 +219,7 @@ class _StandaloneTitleBar(QWidget):
         icon_label.setPixmap(_make_svg_icon("sparkles.svg", "#d4a514", 16).pixmap(16, 16))
         layout.addWidget(icon_label, 0, Qt.AlignVCenter)
 
-        title_label = QLabel("N6705C Datalog", self)
+        title_label = QLabel("Datalog", self)
         title_label.setObjectName("standaloneTitleText")
         layout.addWidget(title_label, 0, Qt.AlignVCenter)
 

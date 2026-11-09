@@ -10,7 +10,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _DISPLAY_NAME_MAP = {
-    "n6705c": "N6705C",
+    "n6705c": "Power Control",
     "mso64b": "MSO64B",
     "dsox4034a": "DSOX4034A",
     "vt6002": "VT6002",

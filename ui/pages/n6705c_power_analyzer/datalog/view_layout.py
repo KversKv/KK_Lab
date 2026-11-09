@@ -511,7 +511,7 @@ class LayoutViewMixin:
         title_layout.setSpacing(2)
 
         self.page_subtitle = QLabel(
-            "Record, analyze, and export high-resolution datalogs from the N6705C."
+            "Record, analyze, and export datalogs from N6705C and IT2705 power supplies."
         )
         self.page_subtitle.setObjectName("pageSubtitle")
         title_layout.addWidget(self.page_subtitle)
@@ -1418,7 +1418,7 @@ class LayoutViewMixin:
         steps = [
             {
                 "target": None,
-                "title": "欢迎使用 N6705C Datalog",
+                "title": "欢迎使用 Datalog",
                 "text": "本引导将带你完成一次完整的数据采集流程：\n连接仪器 → 配置采集参数 → 勾选通道 → 开始记录 → 分析波形 → 导出数据。\n\n点击「下一步」继续，随时可按 Esc 或「跳过引导」退出。",
             },
             {
@@ -1430,13 +1430,13 @@ class LayoutViewMixin:
             {
                 "target": self.instrument_panel,
                 "title": "第 2 步：搜索并连接仪器",
-                "text": "点击左上角搜索按钮扫描局域网内的 N6705C；在设备卡片上点击 Connect 完成连接，设备自动分配到插槽 A / B / C / D。\n\n搜索不到时，可通过右上角「⋯」→ Add Instrument Manually 手动添加（TCP/IP 或 USB）。",
+                "text": "点击左上角搜索按钮扫描局域网内的 N6705C / IT2705；在设备卡片上点击 Connect 完成连接，设备自动分配到插槽 A / B。\n\n搜索不到时，可通过右上角「⋯」→ Add Instrument Manually 手动添加（TCP/IP 或 USB）；连接后通过 IDN 自动识别真实型号。",
                 "on_enter": lambda: show_panel("instrument"),
             },
             {
                 "target": self.config_card,
                 "title": "第 3 步：配置采集参数",
-                "text": "打开 Settings 面板，在 DATALOG CONFIG 中设置：\n· Sampling Period (μs)：采样周期，默认 20；勾选 Minimum 自动使用最小周期\n· Monitoring Time (s)：监控时长，到时自动停止采集",
+                "text": "打开 Settings 面板，在 DATALOG CONFIG 中设置：\n· Sampling Period (μs)：N6705C 原生 DLOG 采样周期；IT2705 为软件采样目标间隔，实际间隔受查询耗时影响\n· Monitoring Time (s)：监控时长，到时自动停止采集",
                 "on_enter": lambda: show_panel("settings"),
             },
             {
@@ -1469,7 +1469,7 @@ class LayoutViewMixin:
             {
                 "target": self.export_btn,
                 "title": "第 9 步：导出数据",
-                "text": "点击 Export Datalog 将数据导出为 CSV 或 DLOG 文件；旁边的 Import 按钮可导入外部数据文件进行对比分析。",
+                "text": "点击 Export Datalog 将数据导出为 CSV 或 DLOG 文件；旁边的 Import 按钮可导入外部数据文件进行对比分析。\nDLOG 原始导出仅适用于已有 N6705C 原始数据的情况。",
             },
             {
                 "target": None,
