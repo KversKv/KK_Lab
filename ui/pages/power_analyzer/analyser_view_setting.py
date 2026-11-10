@@ -171,9 +171,9 @@ class SettingViewMixin:
         current_layout.setContentsMargins(14, 14, 14, 14)
         current_layout.setSpacing(8)
 
-        current_label = QLabel("CURRENT (A)")
-        current_label.setStyleSheet("QLabel { font-size: 12px; font-weight: 600; color: #97aed9; letter-spacing: 1px; border: none; }")
-        current_layout.addWidget(current_label)
+        self.current_value_label = QLabel("CURRENT (A)")
+        self.current_value_label.setStyleSheet("QLabel { font-size: 12px; font-weight: 600; color: #97aed9; letter-spacing: 1px; border: none; }")
+        current_layout.addWidget(self.current_value_label)
 
         self.current_value = QLineEdit("0.0000")
         self.current_value.setReadOnly(True)

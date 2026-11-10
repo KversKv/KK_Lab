@@ -201,7 +201,7 @@ class N6705C:
 
 
     def measure_voltage(self, channel):
-        result = float(self.instr.query(f"MEAS:VOLT? (@{channel})")[:-1])
+        result = float(self.instr.query(f"MEAS:VOLT? (@{channel})").strip())
         logger.debug("N6705C measure_voltage: CH%s = %.6f V", channel, result)
         return result
 

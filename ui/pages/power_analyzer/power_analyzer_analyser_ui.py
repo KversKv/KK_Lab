@@ -142,6 +142,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self.current_device,
             self.devices[self.current_device]["is_connected"],
         )
+        self._refresh_current_channel_once()
 
     def _bind_config_memory(self):
         """绑定静态区（Setting 视图、Consumption 参数）并首次绑定动态区。"""
@@ -283,6 +284,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
+            self._refresh_current_channel_once()
         else:
             self._state_poller.pause()
         self._update_polling_switch_state()
@@ -452,6 +454,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
+            self._refresh_current_channel_once()
         else:
             self._state_poller.pause()
         self._update_polling_switch_state()
@@ -475,6 +478,10 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         if not callable(getter):
             return None
         return getter(f"n6705c:{self.current_device}")
+
+    def _refresh_current_channel_once(self):
+        if self._is_channel_supported(self.current_device, self.current_channel):
+            self._state_poller.refresh_once()
 
     def _start_channel_sync(self):
         dev = self.devices[self.current_device]
@@ -1313,7 +1320,17 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
     def update_channel_values(self, dev_label, channel_num, voltage, current, limit_current=None):
         if dev_label == self.current_device and channel_num == self.current_channel:
             self.voltage_value.setText(f"{voltage:.4f}")
-            self.current_value.setText(f"{current:.4f}")
+            abs_current = abs(current)
+            if abs_current < 1e-6:
+                current_scale, current_unit = 1e9, "nA"
+            elif abs_current < 1e-3:
+                current_scale, current_unit = 1e6, "µA"
+            elif abs_current < 1:
+                current_scale, current_unit = 1e3, "mA"
+            else:
+                current_scale, current_unit = 1, "A"
+            self.current_value.setText(f"{current * current_scale:.4f}")
+            self.current_value_label.setText(f"CURRENT ({current_unit})")
             if limit_current is not None:
                 self.limit_current_value.setText(f"{limit_current:.4f}")
 
@@ -1456,6 +1473,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         if label == self.current_device:
             self._start_channel_sync()
+            self._refresh_current_channel_once()
         else:
             self._update_polling_switch_state()
 

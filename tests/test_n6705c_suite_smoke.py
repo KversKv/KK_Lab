@@ -9,12 +9,52 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ui.pages.power_analyzer.power_analyzer_suite_ui import (
     N6705CSuiteWindow, N6705CTop,
 )
+
+
+@pytest.mark.qt
+@pytest.mark.parametrize(
+    ("current", "expected_value", "expected_unit"),
+    [
+        (1.25, "1.2500", "A"),
+        (1.0, "1.0000", "A"),
+        (0.999, "999.0000", "mA"),
+        (0.001, "1.0000", "mA"),
+        (0.000999, "999.0000", "µA"),
+        (0.000001, "1.0000", "µA"),
+        (0.000000999, "999.0000", "nA"),
+        (0.0, "0.0000", "nA"),
+        (-0.002, "-2.0000", "mA"),
+    ],
+)
+def test_analyser_measured_current_auto_unit(current, expected_value, expected_unit):
+    from types import SimpleNamespace
+
+    from ui.pages.power_analyzer.power_analyzer_analyser_ui import N6705CAnalyserUI
+
+    QApplication.instance() or QApplication([])
+    display = SimpleNamespace(
+        current_device="A",
+        current_channel=1,
+        voltage_value=QLineEdit(),
+        current_value=QLineEdit(),
+        current_value_label=QLabel(),
+        limit_current_value=QLineEdit(),
+        _current_unit_label=QLabel("A"),
+    )
+
+    N6705CAnalyserUI.update_channel_values(display, "A", 1, 3.8, current, 0.25)
+
+    assert display.voltage_value.text() == "3.8000"
+    assert display.current_value.text() == expected_value
+    assert display.current_value_label.text() == f"CURRENT ({expected_unit})"
+    assert display.limit_current_value.text() == "0.2500"
+    assert display._current_unit_label.text() == "A"
 
 
 @pytest.mark.qt
