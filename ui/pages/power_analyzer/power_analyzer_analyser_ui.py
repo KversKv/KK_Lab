@@ -621,6 +621,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         super().showEvent(event)
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
+            self._refresh_current_channel_once()
 
     def hideEvent(self, event):
         super().hideEvent(event)

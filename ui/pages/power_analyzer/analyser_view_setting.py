@@ -161,7 +161,7 @@ class SettingViewMixin:
         (self.voltage_input_container, self.voltage_set_label,
          self.voltage_set_input, self._voltage_unit_label) = self._create_unified_input("Set", "5", "V")
         self.voltage_set_input.returnPressed.connect(self._on_voltage_input_enter)
-        self.voltage_set_input.textChanged.connect(self._on_voltage_text_changed)
+        self.voltage_set_input.textEdited.connect(self._on_voltage_text_changed)
         voltage_layout.addWidget(self.voltage_input_container)
         params_grid.addWidget(voltage_frame, 0, 0)
 
@@ -186,7 +186,7 @@ class SettingViewMixin:
         (self.current_input_container, self.current_set_label,
          self.limit_current_value, self._current_unit_label) = self._create_unified_input("Lim", "1", "A")
         self.limit_current_value.returnPressed.connect(self._on_current_input_enter)
-        self.limit_current_value.textChanged.connect(self._on_current_text_changed)
+        self.limit_current_value.textEdited.connect(self._on_current_text_changed)
         current_layout.addWidget(self.current_input_container)
         params_grid.addWidget(current_frame, 0, 1)
 

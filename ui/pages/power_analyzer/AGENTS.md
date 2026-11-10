@@ -43,6 +43,7 @@
 - **可编辑数值输入框统一用 `widgets.SelectAllLineEdit`**（实现已沉淀为 [ui/widgets/wheel_line_edit.py](../../widgets/wheel_line_edit.py) `WheelLineEdit` 的兼容别名）：双击全选（Qt 默认按"词"选择、小数点算分隔符，`3.8000` 双击只选中 `8000`）+ 滚轮调值（默认步进 0.01，`set_wheel_step(1)` 用于整数秒/微秒字段，置 `None` 禁用；仅聚焦时生效，未聚焦事件传父级不影响页面滚动）。只读显示字段（大字号 value）仍用普通 `QLineEdit`。
 - 单位显示：内存值统一 mA/mV/mW；`_format_value(value_mA)` 显示时 SI 选档。
 - 通道同步经 `core/n6705c/channel_sync_worker.py` 周期回读。
+- 设定输入的 dirty 跟踪必须用 `textEdited`，禁用 `textChanged`：ConfigMemory 等程序化 `setText` 不应被当作用户编辑而阻断仪器快照回写。
 
 ## 局部坑点
 

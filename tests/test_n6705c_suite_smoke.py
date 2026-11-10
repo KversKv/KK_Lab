@@ -58,6 +58,55 @@ def test_analyser_measured_current_auto_unit(current, expected_value, expected_u
 
 
 @pytest.mark.qt
+def test_config_restore_does_not_block_channel_snapshot(monkeypatch):
+    import ui.pages.power_analyzer.power_analyzer_analyser_ui as analyser_module
+
+    class RestoringConfigMemory:
+        def __init__(self, *args, **kwargs):
+            self._bindings = []
+
+        def bind(self, key, widget):
+            self._bindings.append((key, widget))
+
+        def restore(self):
+            for key, widget in self._bindings:
+                if key == "setting_voltage_set":
+                    widget.setText("0.2")
+                elif key == "setting_current_limit":
+                    widget.setText("0.2")
+
+    monkeypatch.setattr(analyser_module, "ConfigMemory", RestoringConfigMemory)
+    app = QApplication.instance() or QApplication([])
+    page = analyser_module.N6705CAnalyserUI()
+    try:
+        assert not page._dirty_voltage
+        assert not page._dirty_current
+
+        page._apply_channel_snapshot({
+            "device": "A",
+            "channel": 1,
+            "channel_state": True,
+            "mode": "PS2Q",
+            "voltage": 7.25,
+            "current": 0.125,
+            "voltage_setpoint": 7.25,
+            "current_setpoint": 0.0,
+            "voltage_limit": 20.0,
+            "limit_current": 0.75,
+        })
+
+        assert page.output_toggle.isChecked()
+        assert page.voltage_value.text() == "7.2500"
+        assert page.current_value.text() == "125.0000"
+        assert page.voltage_set_input.text() == "7.2500"
+        assert page.limit_current_value.text() == "0.7500"
+    finally:
+        page.close()
+        page.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.qt
 def test_it2705_eight_channel_ui_and_model(monkeypatch):
     from instruments.mock.mock_instruments import MockIT2705
     from ui.pages.power_analyzer.datalog.datalog_ui import N6705CDatalogUI
