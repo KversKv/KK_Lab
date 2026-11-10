@@ -29,7 +29,8 @@ from core.n6705c import SearchThread as _SearchThread
 from core.instruments.address_presets import get_address_preset
 from ui.pages.power_analyzer.widgets import (
     ChannelTabBar, SlideToggle, _ZAP_ICON_PATH,
-    CHANNEL_THEMES, CONTENT_BG, ROOT_BG, PANEL_BG, PANEL_BORDER,
+    channel_theme_for_instrument,
+    CONTENT_BG, ROOT_BG, PANEL_BG, PANEL_BORDER,
     INPUT_BG, INPUT_BORDER,
     DISABLED_BG, DISABLED_BORDER, DISABLED_TEXT,
     DISABLED_BTN_BG, DISABLED_BTN_BORDER,
@@ -302,6 +303,13 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         models = getattr(instance, "channel_module_models", {})
         return str(models.get(int(channel), "") or "").strip().upper()
 
+    def _channel_theme(self, label, channel):
+        instance = self.devices.get(label, {}).get("n6705c")
+        return channel_theme_for_instrument(instance, channel)
+
+    def _current_channel_theme(self):
+        return self._channel_theme(self.current_device, self.current_channel)
+
     def _is_channel_supported(self, label, channel):
         device = self.devices.get(label, {})
         instance = device.get("n6705c")
@@ -329,6 +337,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 (
                     label,
                     self._channels_for_device(label),
+                    self._channel_theme(label, 1)["accent"],
                     tuple(
                         self._channel_module_model(label, ch)
                         for ch in self._channels_for_device(label)
@@ -895,7 +904,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """
 
     def _dirty_set_button_style(self, accent):
-        theme = CHANNEL_THEMES[self.current_channel]
+        theme = self._current_channel_theme()
         hover = theme['accent_hover']
         return f"""
         QPushButton {{
@@ -908,7 +917,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """
 
     def _build_channel_tab_style(self, dev_label, ch, checked=False):
-        theme = CHANNEL_THEMES[ch]
+        theme = self._channel_theme(dev_label, ch)
         border_color = theme['accent_border'] if checked else "#14305e"
         dual = self._is_dual_mode()
         font_size = "11px" if dual else "12px"
@@ -959,11 +968,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             """
 
     def _get_current_border_color(self):
-        theme = CHANNEL_THEMES.get(self.current_channel, CHANNEL_THEMES[1])
+        theme = self._current_channel_theme()
         return theme['accent_border']
 
     def _build_mode_button_style(self, active=False):
-        theme = CHANNEL_THEMES[self.current_channel]
+        theme = self._current_channel_theme()
         disabled_part = f"""
             QPushButton:disabled {{
                 background-color: transparent; color: #3a4a6a;
@@ -1040,7 +1049,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self._tab_bar.set_active_tab_rect(None)
 
     def _apply_channel_theme(self, dev_label, channel_num):
-        theme = CHANNEL_THEMES[channel_num]
+        theme = self._channel_theme(dev_label, channel_num)
         dual = self._is_dual_mode()
         if dual:
             self.channel_title_label.setText(f"{dev_label} - Channel {channel_num}")
@@ -1092,15 +1101,15 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def _update_set_button_dirty_state(self):
         if (self._dirty_voltage or self._dirty_current) and self.set_btn.isEnabled():
-            theme = CHANNEL_THEMES[self.current_channel]
+            theme = self._current_channel_theme()
             self.set_btn.setStyleSheet(self._dirty_set_button_style(theme['accent']))
         else:
-            theme = CHANNEL_THEMES[self.current_channel]
+            theme = self._current_channel_theme()
             self.set_btn.setStyleSheet(self._channel_action_button_style(theme['accent'], theme['accent_hover']))
 
     def _update_output_visual_state(self):
         is_on = self.output_toggle.isChecked()
-        theme = CHANNEL_THEMES[self.current_channel]
+        theme = self._current_channel_theme()
         accent = theme['accent']
 
         value_color = accent if is_on else VALUE_OFF_COLOR
@@ -1519,7 +1528,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             if hasattr(self, '_tab_bar'):
                 self._tab_bar.set_border_color(disabled_border)
         else:
-            theme = CHANNEL_THEMES[self.current_channel]
+            theme = self._current_channel_theme()
             border_color = theme['accent_border']
             self.setting_frame.setStyleSheet(f"""
                 QFrame#SettingContentFrame {{

@@ -18,6 +18,7 @@ from bisect import bisect_left, bisect_right
 from instruments.power.keysight.n6705c_datalog_process import parse_channel_label, unit_for_label
 from ui.pages.power_analyzer.power_analyzer_settings_dialog import waveform_summary_params
 from resource_path import get_resource_base
+from ui.pages.power_analyzer.widgets import IT2705_CHANNEL_ACCENTS, is_it2705_instrument
 
 def _make_svg_icon(svg_file, color="#dfe8ff", size=18, zoom=1.0):
     """加载 resources/pages/n6705c_power_analyzer_SVGs 下的 SVG 并渲染为 QIcon。
@@ -89,6 +90,18 @@ POWER_COLORS = [
 ]
 
 
+IT2705_CHANNEL_COLORS = list(IT2705_CHANNEL_ACCENTS)
+IT2705_CHANNEL_LABEL_COLORS = [
+    QColor(color).lighter(145).name() for color in IT2705_CHANNEL_ACCENTS
+]
+IT2705_VOLTAGE_COLORS = [
+    QColor(color).darker(125).name() for color in IT2705_CHANNEL_ACCENTS
+]
+IT2705_POWER_COLORS = [
+    QColor(color).lighter(115).name() for color in IT2705_CHANNEL_ACCENTS
+]
+
+
 EXTRA_MARKER_COLORS = [
     "#e6553c", "#3ce6b0",
     "#c73ce6", "#e6c73c",
@@ -155,16 +168,28 @@ def _display_label(key):
     return f"{slot}-{mtype}{ch_num}"
 
 
-def _color_for_label(label):
+def _channel_colors_for_instrument(instance):
+    return IT2705_CHANNEL_COLORS if is_it2705_instrument(instance) else CHANNEL_COLORS
+
+
+def _color_for_label(label, instance=None):
     ch_num, mtype, is_b = _parse_ch_label(label)
+    channel_colors = _channel_colors_for_instrument(instance)
     if ch_num is None:
-        return CHANNEL_COLORS[0]
-    base_idx = (ch_num - 1) + (4 if is_b else 0)
+        return channel_colors[0]
+    it2705 = is_it2705_instrument(instance)
+    if it2705:
+        voltage_colors = IT2705_VOLTAGE_COLORS
+        power_colors = IT2705_POWER_COLORS
+    else:
+        voltage_colors = VOLTAGE_COLORS
+        power_colors = POWER_COLORS
+    base_idx = (ch_num - 1) + (4 if is_b and not it2705 else 0)
     if mtype == "V":
-        return VOLTAGE_COLORS[base_idx % len(VOLTAGE_COLORS)]
+        return voltage_colors[base_idx % len(voltage_colors)]
     if mtype == "P":
-        return POWER_COLORS[base_idx % len(POWER_COLORS)]
-    return CHANNEL_COLORS[base_idx % len(CHANNEL_COLORS)]
+        return power_colors[base_idx % len(power_colors)]
+    return channel_colors[base_idx % len(channel_colors)]
 
 
 def _sort_key_for_label(label):

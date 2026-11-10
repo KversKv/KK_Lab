@@ -21,6 +21,7 @@ from ui.pages.power_analyzer.power_analyzer_suite_ui import (
 def test_it2705_eight_channel_ui_and_model(monkeypatch):
     from instruments.mock.mock_instruments import MockIT2705
     from ui.pages.power_analyzer.datalog.datalog_ui import N6705CDatalogUI
+    from ui.pages.power_analyzer.widgets import IT2705_CHANNEL_ACCENTS
 
     monkeypatch.setattr(
         N6705CDatalogUI, "_auto_connect_enabled_cards", lambda self: None
@@ -43,6 +44,13 @@ def test_it2705_eight_channel_ui_and_model(monkeypatch):
     assert len(datalog.ch_current_cbs_a) == 8
     assert len(datalog.ch_voltage_cbs_a) == 8
     assert len(datalog.ch_power_cbs_a) == 8
+
+    for channel, accent in enumerate(IT2705_CHANNEL_ACCENTS, start=1):
+        assert analyser._channel_theme("A", channel)["accent"] == accent
+        value_label = analyser.ct_channel_cards[("A", channel)]["value_label"]
+        assert accent in value_label.styleSheet()
+        assert datalog.ch_current_cbs_a[channel - 1].property("ch_color") == accent
+        assert datalog._color_for_data_label(f"A-I{channel}") == accent
 
     window.close()
     window.deleteLater()
@@ -76,6 +84,13 @@ def test_module_whitelist_hides_channels_across_both_pages(monkeypatch):
     window = N6705CSuiteWindow(n6705c_top=top)
     analyser = window.analyser_page
     datalog = window.datalog_page
+
+    assert analyser._channel_theme("A", 1)["accent"] == "#d4a514"
+    assert analyser._channel_theme("B", 1)["accent"] == "#4079fa"
+    assert datalog.ch_current_cbs_a[0].property("ch_color") == "#d4a514"
+    assert datalog.ch_current_cbs_b[0].property("ch_color") == "#4079fa"
+    assert datalog._color_for_data_label("A-I1") == "#d4a514"
+    assert datalog._color_for_data_label("B-I1") == "#4079fa"
 
     assert analyser._supported_channels_for_device("A") == (1, 2)
     assert analyser._supported_channels_for_device("B") == (1, 2, 6, 7)

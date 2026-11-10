@@ -9,7 +9,6 @@ from bisect import bisect_left, bisect_right
 from ui.pages.power_analyzer.datalog.helpers import (
     _BAND_CEILING,
     _auto_format,
-    _color_for_label,
     _display_label,
     _sort_key_for_label,
     _unit_for_label,
@@ -343,7 +342,7 @@ class PlotViewMixin:
         pen = curve.opts.get("pen")
         if pen:
             self._selected_orig_pen = pg.mkPen(pen)
-            color = _color_for_label(key)
+            color = self._color_for_data_label(key)
             curve.setPen(pg.mkPen(color=color, width=3))
 
     def _deselect_channel(self):
@@ -496,7 +495,7 @@ class PlotViewMixin:
             i = self._find_nearest_index(raw_times, lookup_x)
             if i is not None:
                 val = values[i]
-                color = _color_for_label(label)
+                color = self._color_for_data_label(label)
                 ch_unit = _unit_for_label(label)
                 lines.append(f"<span style='color:{color}'>{_display_label(label)} : {_auto_format(val, ch_unit)}</span>")
 
@@ -609,7 +608,7 @@ class PlotViewMixin:
 
         for idx, label in enumerate(sorted_keys):
             ch_data = self.datalog_data[label]
-            color = _color_for_label(label)
+            color = self._color_for_data_label(label)
             times = self._get_effective_times(label, ch_data["time"])
             raw_vals = ch_data["values"]
 

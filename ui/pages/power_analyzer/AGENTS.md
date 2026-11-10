@@ -37,6 +37,8 @@
 
 ## 局部约定
 
+- **增删查改功能时必须考虑适配所有仪器**：当前包括 N6705C 与 IT2705，禁止仅适配单一型号。
+- **通道配色按槽位仪器实例选择**：IT2705 主色事实源为 `widgets.py::IT2705_CHANNEL_ACCENTS`；Analyser / Consumption / Datalog 统一经实例感知接口取色，禁止全局型号开关或 IT2705 B 槽 `+4` 偏移。
 - **通道标签用 QPushButton 模拟 tab**：active / inactive / disabled 的 `padding / border / margin` **盒模型必须一致**（见 03§25）；视觉连接用同背景色 `border-bottom`，**禁 `border-bottom: none`**（否则切到末位 tab 内容偏移几像素）。参考 `_build_channel_tab_style`。
 - **可编辑数值输入框统一用 `widgets.SelectAllLineEdit`**（实现已沉淀为 [ui/widgets/wheel_line_edit.py](../../widgets/wheel_line_edit.py) `WheelLineEdit` 的兼容别名）：双击全选（Qt 默认按"词"选择、小数点算分隔符，`3.8000` 双击只选中 `8000`）+ 滚轮调值（默认步进 0.01，`set_wheel_step(1)` 用于整数秒/微秒字段，置 `None` 禁用；仅聚焦时生效，未聚焦事件传父级不影响页面滚动）。只读显示字段（大字号 value）仍用普通 `QLineEdit`。
 - 单位显示：内存值统一 mA/mV/mW；`_format_value(value_mA)` 显示时 SI 选档。

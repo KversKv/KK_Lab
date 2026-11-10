@@ -55,6 +55,50 @@ CHANNEL_THEMES = {
     },
 }
 
+IT2705_CHANNEL_ACCENTS = (
+    "#4079fa", "#00c800", "#eae203", "#bd0303",
+    "#00b9d5", "#ad1ec2", "#ff5a00", "#05a770",
+)
+
+
+def _make_it2705_theme(accent):
+    color = QColor(accent)
+    return {
+        "accent": accent,
+        "accent_hover": color.lighter(115).name(),
+        "accent_soft": color.darker(350).name(),
+        "accent_border": color.darker(170).name(),
+        "text_dim": color.lighter(145).name(),
+        "bg": color.darker(700).name(),
+        "border": color.darker(300).name(),
+    }
+
+
+IT2705_CHANNEL_THEMES = {
+    channel: _make_it2705_theme(accent)
+    for channel, accent in enumerate(IT2705_CHANNEL_ACCENTS, start=1)
+}
+IT2705_CHANNEL_COLORS = {
+    channel: {key: theme[key] for key in ("accent", "bg", "border")}
+    for channel, theme in IT2705_CHANNEL_THEMES.items()
+}
+
+
+def is_it2705_instrument(instance):
+    identity = getattr(instance, "_kk_lab_idn", "") or type(instance).__name__
+    return "IT2705" in str(identity).upper()
+
+
+def channel_theme_for_instrument(instance, channel):
+    themes = IT2705_CHANNEL_THEMES if is_it2705_instrument(instance) else CHANNEL_THEMES
+    return themes[channel]
+
+
+def channel_colors_for_instrument(instance, channel):
+    colors = IT2705_CHANNEL_COLORS if is_it2705_instrument(instance) else CHANNEL_COLORS
+    return colors[channel]
+
+
 CONTENT_BG = "#0b1020"
 TAB_BAR_BG = "#07111f"
 INACTIVE_TAB_BG = "#0b1222"

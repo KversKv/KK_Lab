@@ -12,7 +12,7 @@ from ui.pages.power_analyzer.widgets import (
     _format_current,
     collapsible_header_style,
     SelectAllLineEdit,
-    CHANNEL_COLORS,
+    channel_colors_for_instrument,
     PANEL_BG, PANEL_BORDER, CONTAINER_RADIUS, WIDGET_RADIUS,
     CARD_BG, CARD_BORDER, MUTED_TEXT,
     DISABLED_TEXT, DISABLED_BTN_BORDER,
@@ -205,7 +205,8 @@ class ConsumptionViewMixin:
             self._ct_cards_layout.addWidget(ch_container, 1)
 
     def _create_ct_channel_card(self, dev_label, ch_num):
-        colors = CHANNEL_COLORS[ch_num]
+        instance = self.devices.get(dev_label, {}).get("n6705c")
+        colors = channel_colors_for_instrument(instance, ch_num)
         dual = self._is_dual_mode()
         card = QFrame()
         card.setStyleSheet(f"""

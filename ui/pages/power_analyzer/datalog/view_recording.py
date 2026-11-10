@@ -12,7 +12,6 @@ from ui.pages.power_analyzer.power_analyzer_settings_dialog import build_auto_sa
 from ui.widgets.toast_notification import ToastNotification
 from ui.pages.power_analyzer.datalog.helpers import (
     _auto_format,
-    _color_for_label,
     _make_svg_icon,
     _parse_ch_label,
     _sort_key_for_label,
@@ -227,7 +226,7 @@ class RecordingViewMixin:
             offset_str = _auto_format(raw_center, ch_unit)
             self._set_ch_scale_offset_text(key.strip(), scale_str, offset_str)
 
-        panel_entries = [(k, _color_for_label(k)) for k in visible_sorted]
+        panel_entries = [(k, self._color_for_data_label(k)) for k in visible_sorted]
         self._rebuild_ch_name_panel(panel_entries)
         y_bottom, y_top = self._compute_y_range_with_labels()
         self.plot_widget.setYRange(y_bottom, y_top)

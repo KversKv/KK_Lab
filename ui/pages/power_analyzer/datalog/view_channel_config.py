@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 from instruments.power.keysight.n6705c_datalog_process import calc_power_for_ch
 from ui.pages.power_analyzer import datalog_style as dss
 from ui.pages.power_analyzer.datalog.helpers import (
-    CHANNEL_COLORS,
+    _channel_colors_for_instrument,
+    _color_for_label,
     _display_label,
     _make_svg_icon,
     _parse_ch_label,
@@ -37,6 +38,15 @@ class ChannelConfigViewMixin:
         instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
         channels = getattr(instance, "VALID_CHANNELS", (1, 2, 3, 4))
         return tuple(int(ch) for ch in channels)
+
+    def _channel_colors_for_slot(self, slot_char):
+        instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
+        return _channel_colors_for_instrument(instance)
+
+    def _color_for_data_label(self, label):
+        _, _, is_b = _parse_ch_label(label)
+        instance = self.n6705c_b if is_b else self.n6705c_a
+        return _color_for_label(label, instance)
 
     def _channel_module_model(self, slot_char, channel):
         instance = self.n6705c_a if slot_char == "A" else self.n6705c_b
@@ -93,6 +103,7 @@ class ChannelConfigViewMixin:
                 lc,
                 self.slot_frames[lc].property("assigned_serial") or "",
                 self._channels_for_slot(lc),
+                self._channel_colors_for_slot(lc)[0],
                 tuple(
                     self._channel_module_model(lc, ch)
                     for ch in self._channels_for_slot(lc)
@@ -183,8 +194,9 @@ class ChannelConfigViewMixin:
                 ),
                 None,
             )
+            channel_colors = self._channel_colors_for_slot(slot_char)
             for ch, ch_num in enumerate(channels):
-                ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
+                ch_color = channel_colors[ch % len(channel_colors)]
                 supported = self._is_channel_supported(slot_char, ch_num)
                 module_tooltip = self._channel_module_tooltip(slot_char, ch_num)
 
@@ -447,8 +459,9 @@ class ChannelConfigViewMixin:
             current_cbs = []
             power_cbs = []
 
+            channel_colors = self._channel_colors_for_slot(slot_char)
             for ch in range(1, max_ch + 1):
-                ch_color = CHANNEL_COLORS[(ch - 1) % len(CHANNEL_COLORS)]
+                ch_color = channel_colors[(ch - 1) % len(channel_colors)]
                 available_types = ch_map.get(ch, set())
 
                 out_frame = QFrame()

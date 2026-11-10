@@ -24,7 +24,6 @@ from ui.pages.power_analyzer.datalog.helpers import (
     _MEAS_AVG_BG,
     _MEAS_AVG_FG,
     _auto_format,
-    _color_for_label,
     _display_label,
     _format_time,
     _parse_ch_label,
@@ -549,7 +548,7 @@ class MarkersViewMixin:
             ch_is_current = (mtype == "I") if mtype else is_current
             ch_is_power = (mtype == "P") if mtype else False
             val_unit = "mW" if ch_is_power else ("mA" if ch_is_current else "mV")
-            color_hex = _color_for_label(key)
+            color_hex = self._color_for_data_label(key)
             parts.append(f"<br><span style='color:{color_hex};'>{_display_label(key)} avg={_auto_format(seg_avg, val_unit)}</span>")
         return "".join(parts)
 
@@ -959,7 +958,7 @@ class MarkersViewMixin:
         ROW_BG = ["#080f22", "#0c1838"]
 
         for ch_idx, (label, ch_data) in enumerate(ch_list):
-            color_hex = _color_for_label(label)
+            color_hex = self._color_for_data_label(label)
             row_bg = ROW_BG[ch_idx % 2]
 
             ch_num, mtype, _ = _parse_ch_label(label)
@@ -1052,7 +1051,7 @@ class MarkersViewMixin:
 
         for ch_idx, (label, ch_data) in enumerate(ch_list):
             row = 1 + ch_idx
-            color_hex = _color_for_label(label)
+            color_hex = self._color_for_data_label(label)
             row_bg = ROW_BG[ch_idx % 2]
 
             ch_num, mtype, _ = _parse_ch_label(label)

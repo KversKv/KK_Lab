@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
 )
 from ui.pages.power_analyzer.datalog.helpers import (
     _auto_format,
-    _color_for_label,
     _display_label,
     _make_svg_icon,
     _sort_key_for_label,
@@ -142,7 +141,7 @@ class LabelsViewMixin:
         return None
 
     def _get_channel_color(self, ch_name):
-        color = _color_for_label(ch_name)
+        color = self._color_for_data_label(ch_name)
         return (color, color)
 
     def _find_local_peak_y(self, t, ch_name):
@@ -296,7 +295,7 @@ class LabelsViewMixin:
 
         for i, lbl in enumerate(self.custom_labels):
             ch = lbl.get("channel", "")
-            color = _color_for_label(ch) if ch else "#8eb0e3"
+            color = self._color_for_data_label(ch) if ch else "#8eb0e3"
 
             row_frame = QFrame()
             row_frame.setStyleSheet(
