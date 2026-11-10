@@ -27,6 +27,9 @@ class IT2705(VisaInstrument):
     DLOG_PERIOD_MIN = 20e-6
     DLOG_PERIOD_MAX = 60.0
     INVALID_MEAS_THRESHOLD = 9.9e37
+    # MEAS 按通道积分时间（SENS:APER）采集后才返回；面板可设到 20.48s（NPLC 1024），
+    # 超过 VISA 超时会造成迟到响应污染缓冲区、后续读写全部错位。测量前临时压到该值（1 PLC）。
+    MEAS_APER_FAST = 0.02
 
     def __init__(self, resource, visa_library=None, timeout_ms=10000):
         super().__init__()
@@ -162,7 +165,15 @@ class IT2705(VisaInstrument):
     def query(self, command):
         self._ensure_connected()
         logger.debug("IT2705 QUERY: %s", command)
-        response = self.instrument.query(command)
+        try:
+            response = self.instrument.query(command)
+        except Exception:
+            # 超时后仪器迟到的响应会滞留接收缓冲区，污染后续所有读数，尽力清空
+            try:
+                self.instrument.clear()
+            except Exception:
+                logger.debug("IT2705: 清空接收缓冲区失败", exc_info=True)
+            raise
         logger.debug("IT2705 RESP: %s", response.strip())
         return response
 
@@ -172,8 +183,8 @@ class IT2705(VisaInstrument):
             value = float(raw)
         except ValueError as exc:
             raise ValueError(f"IT2705: 无法解析数值 {raw!r}") from exc
-        if abs(value) >= self.INVALID_MEAS_THRESHOLD:
-            raise ValueError(f"IT2705: 无有效测量值 {value}")
+        if math.isnan(value) or abs(value) >= self.INVALID_MEAS_THRESHOLD:
+            raise ValueError(f"IT2705: 无有效测量值 {raw!r}")
         return value
 
     @classmethod
@@ -258,9 +269,16 @@ class IT2705(VisaInstrument):
         else:
             raise ValueError("IT2705: measurement_type 仅支持 voltage 或 current")
 
+    PS_EMULATION_MODES = frozenset({"PS4Q", "PS2Q", "PS1Q"})
+
     def set_mode(self, channel, mode):
         channel = self._validate_channel(channel)
-        self.write(f"EMUL {str(mode).strip()},(@{channel})")
+        mode = str(mode).strip()
+        self.write(f"EMUL {mode},(@{channel})")
+        if mode.upper() in self.PS_EMULATION_MODES:
+            # 电流优先下 PS 通道按 CURR 定值输出，CURR:LIM 不起限流作用；
+            # 必须切电压优先，电源模式（电压定值 + 限流）语义才成立
+            self.write(f"FUNC VOLT,(@{channel})")
 
     def get_mode(self, channel):
         channel = self._validate_channel(channel)
@@ -306,17 +324,33 @@ class IT2705(VisaInstrument):
         channel = self._validate_channel(channel)
         return self.query(f"OUTP:TMOD? (@{channel})").strip().upper()
 
-    def measure_voltage(self, channel):
+    def _measure_scalar(self, channel, quantity):
         channel = self._validate_channel(channel)
-        return self._query_float(f"MEAS:VOLT? (@{channel})")
+        command = f"MEAS:{quantity}? (@{channel})"
+        try:
+            aperture = self._query_float(f"SENS:APER? (@{channel})")
+        except Exception:
+            logger.debug("IT2705: 积分时间查询失败，直接测量", exc_info=True)
+            return self._query_float(command)
+        if aperture <= self.MEAS_APER_FAST:
+            return self._query_float(command)
+        self.write(f"SENS:APER {self.MEAS_APER_FAST},(@{channel})")
+        try:
+            return self._query_float(command)
+        finally:
+            try:
+                self.write(f"SENS:APER {aperture},(@{channel})")
+            except Exception:
+                logger.warning("IT2705: 恢复积分时间失败", exc_info=True)
+
+    def measure_voltage(self, channel):
+        return self._measure_scalar(channel, "VOLT")
 
     def measure_current(self, channel):
-        channel = self._validate_channel(channel)
-        return self._query_float(f"MEAS:CURR? (@{channel})")
+        return self._measure_scalar(channel, "CURR")
 
     def measure_power(self, channel):
-        channel = self._validate_channel(channel)
-        return self._query_float(f"MEAS:POW? (@{channel})")
+        return self._measure_scalar(channel, "POW")
 
     def fetch_voltage(self, channel):
         channel = self._validate_channel(channel)

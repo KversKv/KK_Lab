@@ -173,6 +173,49 @@ def test_channel_voltage_current_and_output_commands(connected_driver):
         driver.channel_on(9)
 
 
+def test_measure_lowers_large_aperture_and_restores(connected_driver):
+    driver, resource_manager = connected_driver
+    session = resource_manager.session
+    session.responses["SENS:APER? (@1)"] = "20.480000"
+    session.responses["MEAS:VOLT? (@1)"] = "3.3"
+    assert driver.measure_voltage(1) == pytest.approx(3.3)
+    assert session.commands == [
+        "SENS:APER? (@1)",
+        "SENS:APER 0.02,(@1)",
+        "MEAS:VOLT? (@1)",
+        "SENS:APER 20.48,(@1)",
+    ]
+
+
+def test_measure_with_small_aperture_skips_override(connected_driver):
+    driver, resource_manager = connected_driver
+    session = resource_manager.session
+    session.responses["SENS:APER? (@2)"] = "0.02"
+    session.responses["MEAS:CURR? (@2)"] = "0.5"
+    assert driver.measure_current(2) == pytest.approx(0.5)
+    assert session.commands == ["SENS:APER? (@2)", "MEAS:CURR? (@2)"]
+
+
+def test_set_mode_ps_forces_voltage_priority(connected_driver):
+    driver, resource_manager = connected_driver
+    driver.set_mode(1, "PS2Q")
+    driver.set_mode(2, "CCLoad")
+    assert resource_manager.session.commands == [
+        "EMUL PS2Q,(@1)",
+        "FUNC VOLT,(@1)",
+        "EMUL CCLoad,(@2)",
+    ]
+
+
+def test_measure_nan_is_invalid(connected_driver):
+    driver, resource_manager = connected_driver
+    session = resource_manager.session
+    session.responses["SENS:APER? (@1)"] = "0.02"
+    session.responses["MEAS:VOLT? (@1)"] = "nan"
+    with pytest.raises(ValueError, match="无有效测量值"):
+        driver.measure_voltage(1)
+
+
 def test_arb_voltage_sine_uses_it2700_mode_command(connected_driver):
     driver, resource_manager = connected_driver
     driver.set_arb_sine(1, dc_offset=3.0, amplitude_vrms=0.1, frequency=1000)

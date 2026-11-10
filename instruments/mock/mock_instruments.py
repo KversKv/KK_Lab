@@ -2089,6 +2089,8 @@ class _MockIT2705Session:
         self.output_states = {channel: False for channel in IT2705.VALID_CHANNELS}
         self.output_off_modes = {channel: "LOWZ" for channel in IT2705.VALID_CHANNELS}
         self.modes = {channel: "FIX" for channel in IT2705.VALID_CHANNELS}
+        self.priorities = {channel: "VOLT" for channel in IT2705.VALID_CHANNELS}
+        self.apertures = {channel: 0.02 for channel in IT2705.VALID_CHANNELS}
         self.module_models = {
             channel: "IT27814" if channel % 2 else "IT27814E"
             for channel in IT2705.VALID_CHANNELS
@@ -2127,6 +2129,10 @@ class _MockIT2705Session:
             self.output_off_modes[self._channel(command)] = command.split()[1].split(",", 1)[0].upper()
         elif upper.startswith("EMUL "):
             self.modes[self._channel(command)] = command.split()[1].split(",", 1)[0].upper()
+        elif upper.startswith("FUNC "):
+            self.priorities[self._channel(command)] = command.split()[1].split(",", 1)[0].upper()
+        elif upper.startswith("SENS:APER "):
+            self.apertures[self._channel(command)] = self._value(command)
         elif upper.startswith("SENS:DLOG:TIME "):
             self.dlog_time = float(command.split(None, 1)[1])
         return 0
@@ -2149,10 +2155,14 @@ class _MockIT2705Session:
             return self.output_off_modes[self._channel(command)]
         if upper.startswith("EMUL?"):
             return self.modes[self._channel(command)]
+        if upper.startswith("FUNC?"):
+            return self.priorities[self._channel(command)]
         if upper.startswith("VOLT:LIM:HIGH?"):
             return str(self.voltage_limits[self._channel(command)])
         if upper.startswith("CURR:LIM?"):
             return str(self.current_limits[self._channel(command)])
+        if upper.startswith("SENS:APER?"):
+            return str(self.apertures[self._channel(command)])
         if upper.startswith("VOLT?"):
             return str(self.voltages[self._channel(command)])
         if upper.startswith("CURR?"):

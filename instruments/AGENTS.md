@@ -5,6 +5,7 @@
 ## 加载指针（AI 按需拉取）
 
 - **新增 / 修改仪器驱动** → @see [docs/ai/05_INSTRUMENT_GUIDE.md](../docs/ai/05_INSTRUMENT_GUIDE.md)
+- **查 IT2700 系列 SCPI 指令** → 直接 grep 手册提取文本 [tests/_it2700_prog_guide.txt](../tests/_it2700_prog_guide.txt)（源 PDF 在 `Temp_Docs/IT2705/IT2700 Programming Guide-CN.pdf`，勿重复提取）
 - **分层依赖规则** → @see [docs/ai/04_ARCHITECTURE.md](../docs/ai/04_ARCHITECTURE.md)
 - **VISA / 打包 / 命令** → @see [docs/ai/02_COMMANDS.md](../docs/ai/02_COMMANDS.md)
 - **跨模块坑** → @see [docs/ai/03_GOTCHAS.md](../docs/ai/03_GOTCHAS.md)
@@ -43,6 +44,8 @@
 - **温箱串口瞬时中断（WriteFile AccessDenied / WinError 5）**：USB-RS485 受压缩机强电干扰 / USB 电源管理挂起会瞬时拒写，pyserial 抛 `SerialException("WriteFile failed ...")`，重开串口（`disconnect()+connect()`）即可恢复；`TemperatureStabilizer` 新增 `max_read_failures`（默认 0=不限制，>0 时连续 N 次 PV 读失败抛 RuntimeError）防止稳定等待期串口断开还静默干等到 watchdog。
 - **§14 N6705C Datalog 格式**：二进制 + CSV 混合，解析走 [power/keysight/n6705c_datalog_process.py](./power/keysight/n6705c_datalog_process.py)，不要重复造轮子。
 - **VISA 数值响应禁用 `[:-1]` 去换行**：必须用 `strip()`，否则无换行时会截掉科学计数法指数末位（`E-01 → E-0`，读数放大 10 倍）。
+- **IT2705 PS 模式限流前提 = 电压优先（真机 2026-11）**：`CURR:LIM` 是**电压优先**（`FUNC VOLT`）下才生效的限流值；电流优先（`FUNC CURR`）时 PS 通道按 `CURR` 定值输出，限流不起作用。优先级不随 `EMUL` 切换重置（面板可改），`set_mode(PS4Q/PS2Q/PS1Q)` 已自动补写 `FUNC VOLT`；显式控制用 `set_function(ch, "VOLT"/"CURR")`。另：`CURR?` 读回值随优先级变化——电压优先下镜像 `CURR:LIM`，电流优先下才是电流定值。
+- **IT2705 MEAS 耗时 = 通道积分时间（真机 2026-11）**：`MEAS:*?` 按 `SENS:APER` 积分开后才返回，面板可设到 20.48s（NPLC 1024），远超 VISA 10s 超时——超时后迟到响应污染 socket 缓冲，后续读写全部错位，仪器报 Query Interrupted/Invalid Command。`measure_voltage/current/power` 已封装"查 APER→>0.02 临时压到 0.02→测量→恢复"（`MEAS_APER_FAST`）；输出 OFF 时测量返回 `nan`，`_query_float` 视为无有效测量值抛 ValueError。`FETC:*?` 仅返回已完成采集的缓存，不能替代实时测量。
 - **§15 示波器截图差异**：DSOX4034A 用 `:DISP:DATA? PNG, COLor`；MSO64B 用 `HARDCopy` 系列。基类保留 `capture_screen(path)`，子类各自实现。
 - **§21 VISA 后端选择**：USBTMC 仪器在 Windows 上由 NI-VISA / Keysight IO 接管，`pyvisa-py` 会抛 `No device found.`。新增驱动自检：搜 `ResourceManager('@py')` 一律替换为"默认 + 可选 visa_library + 失败回退 @py"。
 - **§9 DEBUG_MOCK**：改值后必须重启应用；新增仪器忘加 Mock 会在 Mock 模式崩溃。
