@@ -135,22 +135,6 @@ class PlotViewMixin:
         if obj is self.plot_widget and event.type() == QEvent.Leave:
             self._hide_crosshair()
             return False
-        if obj is self.plot_widget and event.type() == QEvent.MouseButtonPress:
-            if event.button() == Qt.RightButton:
-                view_pos = event.position().toPoint()
-                scene_pos = self.plot_widget.mapToScene(view_pos)
-                snap_marker = self._find_nearest_marker_at_scene(scene_pos)
-                if snap_marker:
-                    screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
-                    self._show_marker_context_menu_at(snap_marker, screen_pos)
-                    return True
-                vb = self.plot_widget.getPlotItem().getViewBox()
-                if (self._find_annotation_at_scene(scene_pos) is None
-                        and vb.sceneBoundingRect().contains(scene_pos)):
-                    screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
-                    x_val = vb.mapSceneToView(scene_pos).x()
-                    self._show_marker_move_here_menu(x_val, screen_pos)
-                    return True
         vb = self.plot_widget.getPlotItem().getViewBox()
         if obj is not vb:
             return super().eventFilter(obj, event)

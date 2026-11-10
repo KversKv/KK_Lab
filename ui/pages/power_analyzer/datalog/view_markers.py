@@ -291,14 +291,16 @@ class MarkersViewMixin:
     def _on_chart_clicked(self, event):
         if event.button() == Qt.RightButton:
             scene_pos = event.scenePos()
+            # annotation 右键由 PairAnnotationItem.mouseClickEvent 弹字体菜单，此处跳过避免双弹
+            if self._find_annotation_at_scene(scene_pos) is not None:
+                return
             snap_marker = self._find_nearest_marker_at_scene(scene_pos)
             if snap_marker:
                 self._show_marker_context_menu(snap_marker, event)
                 event.accept()
                 return
             vb = self.plot_widget.getPlotItem().getViewBox()
-            if (self._find_annotation_at_scene(scene_pos) is None
-                    and vb.sceneBoundingRect().contains(scene_pos)):
+            if vb.sceneBoundingRect().contains(scene_pos):
                 screen_pos = event.screenPos()
                 screen_pos = QPoint(int(screen_pos.x()), int(screen_pos.y()))
                 x_val = vb.mapSceneToView(scene_pos).x()
@@ -336,9 +338,6 @@ class MarkersViewMixin:
         self.marker_a_line.sigPositionChanged.connect(
             lambda line: self._on_marker_moved("A", line.value())
         )
-        self.marker_a_line.sigClicked.connect(
-            lambda line, ev: self._on_marker_line_clicked("A", ev)
-        )
         self.plot_widget.addItem(self.marker_a_line)
         self.marker_a_btn.setToolTip(f"Marker A: 已放置 ({x:.4f}s)")
         self._update_clear_markers_btn()
@@ -356,9 +355,6 @@ class MarkersViewMixin:
         self.marker_b_line.sigPositionChanged.connect(
             lambda line: self._on_marker_moved("B", line.value())
         )
-        self.marker_b_line.sigClicked.connect(
-            lambda line, ev: self._on_marker_line_clicked("B", ev)
-        )
         self.plot_widget.addItem(self.marker_b_line)
         self.marker_b_btn.setToolTip(f"Marker B: 已放置 ({x:.4f}s)")
         self._update_clear_markers_btn()
@@ -372,10 +368,6 @@ class MarkersViewMixin:
             self.marker_b_btn.setToolTip(f"Marker B: 已放置 ({value:.4f}s)")
         self._update_marker_region()
         self._update_marker_analysis()
-
-    def _on_marker_line_clicked(self, marker_tag, event):
-        if event.button() == Qt.RightButton:
-            self._show_marker_context_menu(marker_tag, event)
 
     def _update_marker_region(self):
         if self.marker_region:
@@ -713,12 +705,8 @@ class MarkersViewMixin:
             labelOpts={"color": color, "position": 0.98}
         )
         pair_idx = self._extra_markers.index(em)
-        tag = f"X{pair_idx}_{which}"
         line.sigPositionChanged.connect(
             lambda l, pi=pair_idx, w=which: self._on_extra_marker_moved(pi, w, l.value())
-        )
-        line.sigClicked.connect(
-            lambda l, ev, t=tag: self._on_marker_line_clicked(t, ev)
         )
         self.plot_widget.addItem(line)
         em[line_key] = line
