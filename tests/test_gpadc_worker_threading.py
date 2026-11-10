@@ -360,10 +360,14 @@ def test_runner_preserves_six_result_protocols(
 
 
 class _VoltageSource:
-    def __init__(self, snapshot_error=None, restore_error=None):
+    def __init__(self, snapshot_error=None, restore_error=None, initial_enabled=False):
         self.snapshot_error = snapshot_error
         self.restore_error = restore_error
         self.set_calls = []
+        self.set_mode_calls = []
+        self.channel_state_calls = []
+        self.mode = "VMETer"
+        self.channel_enabled = initial_enabled
 
     def measure_voltage(self, channel):
         if self.snapshot_error is not None:
@@ -374,6 +378,24 @@ class _VoltageSource:
         self.set_calls.append((channel, voltage))
         if voltage == 3.3 and self.restore_error is not None:
             raise self.restore_error
+
+    def get_mode(self, channel):
+        return self.mode
+
+    def set_mode(self, channel, mode):
+        self.set_mode_calls.append((channel, mode))
+        self.mode = mode
+
+    def get_channel_state(self, channel):
+        return self.channel_enabled
+
+    def channel_on(self, channel):
+        self.channel_state_calls.append((channel, True))
+        self.channel_enabled = True
+
+    def channel_off(self, channel):
+        self.channel_state_calls.append((channel, False))
+        self.channel_enabled = False
 
 
 class _SweepAcquisition:
@@ -405,12 +427,13 @@ def _make_sweep_runner(source, acquisition, logs, statuses):
 
 
 @pytest.mark.parametrize("outcome", ["success", "stop", "error"])
-def test_force_voltage_restores_snapshot_on_all_paths(outcome, monkeypatch):
+@pytest.mark.parametrize("initial_enabled", [False, True])
+def test_force_voltage_restores_snapshot_on_all_paths(outcome, initial_enabled, monkeypatch):
     from core.pmu_test.gpadc import gpadc_runner
 
     monkeypatch.setattr(gpadc_runner.time, "sleep", lambda seconds: None)
     original_error = RuntimeError("sample boom") if outcome == "error" else None
-    source = _VoltageSource()
+    source = _VoltageSource(initial_enabled=initial_enabled)
     acquisition = _SweepAcquisition(original_error)
     runner = _make_sweep_runner(source, acquisition, [], [])
     stop_check = (lambda: True) if outcome == "stop" else None
@@ -424,6 +447,10 @@ def test_force_voltage_restores_snapshot_on_all_paths(outcome, monkeypatch):
         assert kind == "force_voltage"
         assert bool(result["voltage"]) is (outcome == "success")
     assert source.set_calls[-1] == (1, 3.3)
+    assert source.set_mode_calls == [(1, "PS2Q"), (1, "VMETer")]
+    assert source.channel_state_calls == [(1, True), (1, initial_enabled)]
+    assert source.mode == "VMETer"
+    assert source.channel_enabled is initial_enabled
 
 
 @pytest.mark.parametrize("outcome", ["success", "error"])
@@ -446,6 +473,8 @@ def test_restore_failure_does_not_replace_result_or_original_exception(outcome, 
         assert kind == "force_voltage" and len(result["voltage"]) == 2
     assert any("CH1 电压恢复失败" in line and "restore boom" in line for line in logs)
     assert any(is_error and "CH1 电压恢复失败" in message for message, is_error in statuses)
+    assert source.mode == "VMETer"
+    assert source.channel_enabled is False
 
 
 def test_voltage_snapshot_failure_propagates_before_test():

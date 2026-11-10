@@ -359,20 +359,42 @@ class GPADCTestRunner:
         saved = {}
         for channel in channels:
             try:
-                saved[channel] = self.n6705c.measure_voltage(channel)
+                saved[channel] = {
+                    "voltage": self.n6705c.measure_voltage(channel),
+                    "mode": self.n6705c.get_mode(channel),
+                    "enabled": bool(self.n6705c.get_channel_state(channel)),
+                }
             except Exception as exc:
-                self.log_fn(f"[ERROR] 读取 CH{channel} 测试前电压失败: {exc}")
-                logger.error("GPADC 读取 CH%s 测试前电压失败", channel, exc_info=True)
+                self.log_fn(f"[ERROR] 读取 CH{channel} 测试前状态失败: {exc}")
+                logger.error("GPADC 读取 CH%s 测试前状态失败", channel, exc_info=True)
                 raise
         try:
+            for channel in channels:
+                self.n6705c.set_mode(channel, "PS2Q")
+                self.n6705c.channel_on(channel)
+                self.log_fn(f"[INFO] CH{channel} 已设置为 PS2Q 并开启输出")
             return method(config, stop_check)
         finally:
-            for channel, voltage in saved.items():
+            for channel, state in saved.items():
                 try:
-                    self.n6705c.set_voltage(channel, voltage)
-                    self.log_fn(f"[INFO] CH{channel} 电压已恢复测试前设定: {voltage:.3f} V")
+                    self.n6705c.set_voltage(channel, state["voltage"])
+                    self.log_fn(f"[INFO] CH{channel} 电压已恢复测试前设定: {state['voltage']:.3f} V")
                 except Exception as exc:
                     self._report_cleanup_error(f"CH{channel} 电压恢复", exc)
+                try:
+                    self.n6705c.set_mode(channel, state["mode"])
+                    self.log_fn(f"[INFO] CH{channel} 模式已恢复测试前设定: {state['mode']}")
+                except Exception as exc:
+                    self._report_cleanup_error(f"CH{channel} 模式恢复", exc)
+                try:
+                    if state["enabled"]:
+                        self.n6705c.channel_on(channel)
+                    else:
+                        self.n6705c.channel_off(channel)
+                    output_text = "ON" if state["enabled"] else "OFF"
+                    self.log_fn(f"[INFO] CH{channel} 输出状态已恢复测试前设定: {output_text}")
+                except Exception as exc:
+                    self._report_cleanup_error(f"CH{channel} 输出状态恢复", exc)
 
     def _report_cleanup_error(self, action, exc):
         logger.error("GPADC %s失败: %s", action, exc, exc_info=True)
