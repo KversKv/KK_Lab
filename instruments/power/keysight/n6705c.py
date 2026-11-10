@@ -103,6 +103,9 @@ class N6705C:
         logger.debug("N6705C set_voltage: CH%s = %s V", channel, voltage)
         self.instr.write(f"VOLT {voltage}, (@{channel})")
 
+    def get_voltage_setpoint(self, channel):
+        return self.instr.query(f"VOLT? (@{channel})")
+
     def set_sense_mode(self, channel, mode="INT"):
         """设置通道 Sense 方式：Local/INTernal 为本地检测，4 Wire/EXTernal 为远端检测。"""
         mode_str = str(mode).strip().upper()
@@ -134,6 +137,9 @@ class N6705C:
     def set_current(self, channel, current):
         logger.debug("N6705C set_current: CH%s = %s A", channel, current)
         self.instr.write(f"CURR {current},(@{channel})")
+
+    def get_current_setpoint(self, channel):
+        return self.instr.query(f"CURR? (@{channel})")
 
     def set_current_limit(self, channel, current_limit):
         logger.debug("N6705C set_current_limit: CH%s = %s A", channel, current_limit)

@@ -517,17 +517,18 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self.polling_switch.setEnabled(has_connected)
 
     def _read_channel_snapshot(self):
-        dev = self.devices.get(self.current_device)
+        device_label = self.current_device
+        channel_num = self.current_channel
+        dev = self.devices.get(device_label)
         if (
             not dev
             or not dev["is_connected"]
             or not dev["n6705c"]
-            or not self._is_channel_supported(self.current_device, self.current_channel)
+            or not self._is_channel_supported(device_label, channel_num)
         ):
             return None
         n6705c = dev["n6705c"]
-        channel_num = self.current_channel
-        data = {"device": self.current_device, "channel": channel_num}
+        data = {"device": device_label, "channel": channel_num}
         try:
             data["channel_state"] = n6705c.get_channel_state(channel_num)
         except Exception:
@@ -545,6 +546,18 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         except Exception:
             data["current"] = None
         try:
+            data["voltage_setpoint"] = float(n6705c.get_voltage_setpoint(channel_num))
+        except Exception:
+            data["voltage_setpoint"] = None
+        try:
+            data["current_setpoint"] = float(n6705c.get_current_setpoint(channel_num))
+        except Exception:
+            data["current_setpoint"] = None
+        try:
+            data["voltage_limit"] = float(n6705c.get_voltage_limit(channel_num))
+        except Exception:
+            data["voltage_limit"] = None
+        try:
             data["limit_current"] = float(n6705c.get_current_limit(channel_num))
         except Exception:
             data["limit_current"] = None
@@ -560,6 +573,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self.output_toggle.blockSignals(False)
         self._update_output_visual_state()
 
+        ui_mode = self._get_current_mode_text()
         mode_raw = data.get("mode")
         if mode_raw is not None:
             ui_mode = self._map_instrument_mode_to_ui_mode(mode_raw)
@@ -573,9 +587,24 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         voltage = data.get("voltage")
         current = data.get("current")
-        limit_current = data.get("limit_current")
-        if voltage is not None and current is not None and limit_current is not None:
-            self.update_channel_values(self.current_device, self.current_channel, voltage, current, limit_current)
+        if voltage is not None and current is not None:
+            self.update_channel_values(self.current_device, self.current_channel, voltage, current)
+
+        if ui_mode == "CC":
+            voltage_setting = data.get("voltage_limit")
+            current_setting = data.get("current_setpoint")
+        else:
+            voltage_setting = data.get("voltage_setpoint")
+            current_setting = data.get("limit_current")
+
+        self.voltage_set_input.blockSignals(True)
+        self.limit_current_value.blockSignals(True)
+        if voltage_setting is not None:
+            self.voltage_set_input.setText(f"{voltage_setting:.4f}")
+        if current_setting is not None:
+            self.limit_current_value.setText(f"{current_setting:.4f}")
+        self.voltage_set_input.blockSignals(False)
+        self.limit_current_value.blockSignals(False)
 
         self._dirty_voltage = False
         self._dirty_current = False
@@ -1131,6 +1160,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._dirty_current = False
         self._apply_channel_theme(dev_label, ch)
         self._start_channel_sync()
+        self._state_poller.refresh_once()
 
     def _map_instrument_mode_to_ui_mode(self, inst_mode):
         mapping = {

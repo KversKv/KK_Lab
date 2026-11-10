@@ -93,7 +93,9 @@ class _StatePollWorker(QObject):
         self._write_guard = write_guard
         self._running = False
         self._paused = True
+        self._refresh_requested = False
         self._lock = threading.Lock()
+        self._wake_event = threading.Event()
 
     def set_interval(self, interval_s: float) -> None:
         with self._lock:
@@ -102,10 +104,17 @@ class _StatePollWorker(QObject):
     def set_paused(self, paused: bool) -> None:
         with self._lock:
             self._paused = bool(paused)
+        self._wake_event.set()
 
     def stop(self) -> None:
         with self._lock:
             self._running = False
+        self._wake_event.set()
+
+    def request_refresh(self) -> None:
+        with self._lock:
+            self._refresh_requested = True
+        self._wake_event.set()
 
     def start_polling(self) -> None:
         self._running = True
@@ -114,13 +123,22 @@ class _StatePollWorker(QObject):
                 running = self._running
                 paused = self._paused
                 interval_s = self._interval_s
+                refresh_requested = self._refresh_requested
+                if refresh_requested:
+                    self._refresh_requested = False
             if not running:
                 break
-            if paused:
-                QThread.msleep(100)
+            if paused and not refresh_requested:
+                self._wake_event.wait(0.1)
+                self._wake_event.clear()
                 continue
-            if self._write_guard is not None and self._write_guard.in_quiet_window():
-                QThread.msleep(50)
+            if (
+                not refresh_requested
+                and self._write_guard is not None
+                and self._write_guard.in_quiet_window()
+            ):
+                self._wake_event.wait(0.05)
+                self._wake_event.clear()
                 continue
             if self._busy_check_fn is not None:
                 try:
@@ -155,7 +173,8 @@ class _StatePollWorker(QObject):
                 running = self._running
             if running and snapshot is not None:
                 self.state_ready.emit(snapshot, generation)
-            QThread.msleep(int(interval_s * 1000))
+            self._wake_event.wait(interval_s)
+            self._wake_event.clear()
         self.finished.emit()
 
 
@@ -309,6 +328,13 @@ class InstrumentStatePoller(QObject):
         self._ensure_thread()
         if self._worker is not None:
             self._worker.set_paused(False)
+
+    def refresh_once(self) -> None:
+        """Request one immediate snapshot without changing the paused state."""
+        self._write_guard.begin_write(0.0)
+        self._ensure_thread()
+        if self._worker is not None:
+            self._worker.request_refresh()
 
     def pause(self) -> None:
         if self._worker is not None:

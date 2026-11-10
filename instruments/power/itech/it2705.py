@@ -220,9 +220,17 @@ class IT2705(VisaInstrument):
         channel = self._validate_channel(channel)
         self.write(f"VOLT {float(voltage)},(@{channel})")
 
+    def get_voltage_setpoint(self, channel):
+        channel = self._validate_channel(channel)
+        return self._query_float(f"VOLT? (@{channel})")
+
     def set_current(self, channel, current):
         channel = self._validate_channel(channel)
         self.write(f"CURR {float(current)},(@{channel})")
+
+    def get_current_setpoint(self, channel):
+        channel = self._validate_channel(channel)
+        return self._query_float(f"CURR? (@{channel})")
 
     def set_current_limit(self, channel, current_limit):
         channel = self._validate_channel(channel)

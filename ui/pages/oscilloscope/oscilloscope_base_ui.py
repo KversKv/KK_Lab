@@ -33,6 +33,7 @@ from ui.pages.oscilloscope.widgets import (
     TimeScaleEdit,
     FlowLayout,
 )
+from ui.pages.power_analyzer.widgets import SlideToggle
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from ui.theme import FONT_MONO
@@ -194,6 +195,7 @@ class OscilloscopeBaseUI(QWidget):
         self._measurement_result_cards = []
         self._polling_thread = None
         self._polling_worker = None
+        self._polling_enabled = False
 
         self._settings_dirty = False
         self._apply_pulse_timer = None
@@ -650,6 +652,19 @@ class OscilloscopeBaseUI(QWidget):
         self.title_label.setObjectName("pageTitle")
         title_row.addWidget(self.title_label)
         title_row.addStretch()
+
+        polling_label = QLabel("Poll")
+        polling_label.setStyleSheet("color: #8ea6cf; font-size: 12px; font-weight: 700;")
+        title_row.addWidget(polling_label)
+
+        self.polling_switch = SlideToggle(self)
+        self.polling_switch.setFixedSize(52, 22)
+        self.polling_switch.setAccentColor("#06b6d4")
+        self.polling_switch.setChecked(False)
+        self.polling_switch.setToolTip("Poll oscilloscope state and measurement results")
+        self.polling_switch.clicked.connect(self._on_polling_toggle_clicked)
+        title_row.addWidget(self.polling_switch)
+        self._update_polling_switch_state()
 
         self.system_status_label = QLabel("● Ready")
         self.system_status_label.setObjectName("statusOk")
@@ -1574,10 +1589,10 @@ class OscilloscopeBaseUI(QWidget):
             self.set_system_status("● Connected")
             self.append_log(f"[SYSTEM] Connected: {text}")
             self._sync_channel_states_from_instrument()
-            if self.isVisible():
-                self._state_poller.resume()
+            self._start_polling()
         else:
             self._state_poller.pause()
+            self._update_polling_switch_state()
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("")
             self.set_system_status("● Ready")
@@ -2120,15 +2135,35 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _clear_result_cards finished")
 
     def _start_polling(self):
-        if self.is_connected and self.isVisible():
+        if self.is_connected and self.isVisible() and self._polling_enabled:
             self._state_poller.resume()
+        else:
+            self._state_poller.pause()
+        self._update_polling_switch_state()
 
     def _stop_polling(self):
         self._state_poller.pause()
 
+    def _set_polling_enabled(self, enabled):
+        self._polling_enabled = enabled
+        self._start_polling()
+
+    def _on_polling_toggle_clicked(self, checked):
+        self._set_polling_enabled(checked)
+        logger.info("Oscilloscope state polling %s", "enabled" if checked else "paused")
+
+    def _update_polling_switch_state(self):
+        if not hasattr(self, "polling_switch"):
+            return
+        switch_checked = self._polling_enabled and self.is_connected
+        if self.polling_switch.isChecked() != switch_checked:
+            self.polling_switch.blockSignals(True)
+            self.polling_switch.setChecked(switch_checked)
+            self.polling_switch.blockSignals(False)
+        self.polling_switch.setEnabled(self.is_connected)
+
     def _sync_polling_items(self):
-        if self.is_connected and self.isVisible():
-            self._state_poller.resume()
+        self._start_polling()
 
     def _on_polling_done(self):
         logger.debug("[MEAS] _on_polling_done called")
@@ -2683,7 +2718,7 @@ class OscilloscopeBaseUI(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         if self.is_connected:
-            self._state_poller.resume()
+            self._start_polling()
 
     def hideEvent(self, event):
         super().hideEvent(event)

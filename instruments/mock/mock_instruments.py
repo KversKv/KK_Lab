@@ -84,6 +84,9 @@ class MockN6705C:
     def get_current_limit(self, channel):
         return str(self._channel_current_limits.get(channel, 1.0))
 
+    def get_current_setpoint(self, channel):
+        return str(self._channel_currents.get(channel, 0.0))
+
     def get_voltage_limit(self, channel):
         return str(self._channel_voltage_limits.get(channel, 20.0))
 
@@ -102,6 +105,9 @@ class MockN6705C:
         self._last_expected_v = voltage
         if self._mock_i2c is not None:
             self._mock_i2c.set_mock_voltage(voltage)
+
+    def get_voltage_setpoint(self, channel):
+        return str(self._channel_voltages.get(channel, 0.0))
 
     def set_sense_mode(self, channel, mode="INT"):
         mode_str = str(mode).strip().upper()
@@ -2147,6 +2153,10 @@ class _MockIT2705Session:
             return str(self.voltage_limits[self._channel(command)])
         if upper.startswith("CURR:LIM?"):
             return str(self.current_limits[self._channel(command)])
+        if upper.startswith("VOLT?"):
+            return str(self.voltages[self._channel(command)])
+        if upper.startswith("CURR?"):
+            return str(self.currents[self._channel(command)])
         if upper.startswith("STAT:OPER:COND?"):
             return "0"
         channel = self._channel(command)
