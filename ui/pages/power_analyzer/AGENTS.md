@@ -43,6 +43,7 @@
 - **可编辑数值输入框统一用 `widgets.SelectAllLineEdit`**（实现已沉淀为 [ui/widgets/wheel_line_edit.py](../../widgets/wheel_line_edit.py) `WheelLineEdit` 的兼容别名）：双击全选（Qt 默认按"词"选择、小数点算分隔符，`3.8000` 双击只选中 `8000`）+ 滚轮调值（默认步进 0.01，`set_wheel_step(1)` 用于整数秒/微秒字段，置 `None` 禁用；仅聚焦时生效，未聚焦事件传父级不影响页面滚动）。只读显示字段（大字号 value）仍用普通 `QLineEdit`。
 - 单位显示：内存值统一 mA/mV/mW；`_format_value(value_mA)` 显示时 SI 选档。
 - 通道同步经 `core/n6705c/channel_sync_worker.py` 周期回读。
+- **Quick Setup 通道同步组**：状态存页面级 `_batch_sync_groups`（dev_label → 通道 set 列表，重建矩阵不丢，断连保留、连接时按可用通道剪枝）；主通道 = 组内序号最小者，从通道电压/限流输入禁用并镜像主通道值；组配色按组索引循环取 `widgets.py::SYNC_GROUP_COLORS`，按钮边框与从通道输入框边框同组同色；覆盖态唯一入口 `_apply_batch_sync_ui()`，必须在 `_apply_dynamic_channel_constraints` 收尾处调用（先于它会被 supported 复位）；`_on_batch_set` 经 `_expand_batch_sync_channels` 整组展开、从通道取主通道值。
 - 设定输入的 dirty 跟踪必须用 `textEdited`，禁用 `textChanged`：ConfigMemory 等程序化 `setText` 不应被当作用户编辑而阻断仪器快照回写。
 
 ## 局部坑点

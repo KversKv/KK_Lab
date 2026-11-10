@@ -423,6 +423,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             checkbox.setToolTip(self._channel_module_tooltip(dev_label, ch))
             if not supported:
                 checkbox.setChecked(False)
+        # 同步组覆盖态（从通道输入禁用 + 高亮）须最后施加，避免被上面的 supported 复位
+        self._apply_batch_sync_ui()
 
     def _sync_from_top(self):
         if not self._top:

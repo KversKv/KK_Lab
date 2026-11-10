@@ -317,14 +317,29 @@ def _format_current(current_A):
         return f"{current_A:.3e} A"
 
 
-def _batch_channel_button_style():
+# Quick Setup 同步组配色（边框/选中边框 成对，按组索引循环取色）
+SYNC_GROUP_COLORS = [
+    ("#7c3aed", "#a78bfa"),
+    ("#0891b2", "#22d3ee"),
+    ("#c2410c", "#fb923c"),
+    ("#047857", "#34d399"),
+    ("#be185d", "#f472b6"),
+    ("#a16207", "#facc15"),
+]
+
+
+def _batch_channel_button_style(synced=False, sync_color=None):
+    if synced:
+        border, checked_border = sync_color or SYNC_GROUP_COLORS[0]
+    else:
+        border, checked_border = "#1e3050", "#3a5a90"
     return f"""
         QPushButton {{
             background-color: #111d36; color: #7a8fb5;
-            border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
+            border: 1px solid {border}; border-radius: {WIDGET_RADIUS};
             padding: 3px 0px; font-size: 11px; font-weight: 600;
         }}
-        QPushButton:checked {{ background-color: #1a2a50; color: #c0d0f0; border: 1px solid #3a5a90; }}
+        QPushButton:checked {{ background-color: #1a2a50; color: #c0d0f0; border: 1px solid {checked_border}; }}
         QPushButton:hover {{ background-color: #182844; }}
         QPushButton:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
     """
