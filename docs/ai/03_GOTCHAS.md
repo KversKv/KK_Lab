@@ -585,3 +585,11 @@ app.installEventFilter(_WinFilter())
 **对策**：APx `Start()` / Sequence Batch 必须在 Guest 交互桌面执行；Host 通过交互式计划任务启动 Guest 进程，并用 SSH 反向转发保持命令会话。Signal Analyzer 保持 `FFTSpectrum.Checked=True`，调用测量对象 `Start()` 返回后直接读取双通道；`AcquisitionCount=1` 是正常状态，不等待它达到 `Averages`，也不调用不存在的 `Stop()`。Demo Mode 不得作为真机验证结果。
 
 **PSRR 实时监控**：切换到 Signal Analyzer / DC Level Sequence 可能关闭 Signal Path Setup Generator。PSRR 必须始终停留 Signal Path Setup，以 `SignalMeters.LevelMeter` 读取双路 Level，以 `FftSpectrumSignalMonitor.FFTSpectrum` 读取实时频谱，不调用 `Start()` / Sequence，也不使用 Bench Mode。VIN 首次读取时 ResetAverages 并缓存双通道，VOUT 复用同帧；必须用 `GetAllXValues/GetAllYValues(channel, VerticalAxis.Left)` 读取原始频谱，`GetXValues/GetValues` 会受当前图表显示范围裁剪（实测 10 Hz 被 20 Hz 显示下限剔除）。原始频率轴允许包含 0 Hz DC bin。扫频不得改写 OUTPUT 开关，只能由显式 OUTPUT OFF 或 Disconnect 关闭。
+
+## 42. onefile 打包退出弹 "Failed to remove temporary directory"（%TEMP%\_MEIxxxxx 残留）
+
+**现象**：onefile 单文件 exe 关闭窗口后弹 Warning 提示无法删除临时目录，`%TEMP%` 残留大量 `_MEIxxxxxx` 目录；直接跑 `main.py` 无此问题。
+
+**根因**：onefile 运行需把全部 DLL 解压到 `%TEMP%\_MEIxxxxxx`，退出时由 bootloader 父进程删除该目录；本机安全软件（AisEsmEdr / SSDLP）的驱动在进程终止阶段挂住进程（实测进程 0 线程僵尸态存活 1h+，DLL 文件锁不释放），bootloader 清理必然失败。属驱动级拦截，应用层代码无法修复。
+
+**对策**：打包统一用 **onedir（COLLECT）形态，禁 onefile**（模板见 [spec/kk_lab.spec](../../../spec/kk_lab.spec)：`EXE(exclude_binaries=True)` + `COLLECT`，`upx=False`）。onedir 无解压/清理环节，彻底规避且启动更快。历史残留 `_MEI*` 目录在无 KK_Lab 进程运行时可手动删除。

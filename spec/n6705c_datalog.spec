@@ -87,20 +87,19 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# 用 onedir 而非 onefile：本机 EDR/DLP（AisEsmEdr/SSDLP）会在 onefile 退出时
+# 挂住进程终止，导致 %TEMP%\_MEIxxxxx 内 DLL 被锁、bootloader 清理失败弹
+# "Failed to remove temporary directory"；onedir 无解压/清理环节，彻底规避。
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='N6705C_Datalog',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -108,4 +107,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'n6705c_datalog.ico'),
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='N6705C_Datalog',
 )
