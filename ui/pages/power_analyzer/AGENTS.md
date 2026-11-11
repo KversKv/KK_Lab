@@ -69,3 +69,4 @@
 - **引导层高亮坐标须 `mapToGlobal` 中转**：`GuideTourOverlay._target_rect` 曾用 `target.mapTo(overlay, …)`（mapTo 的 parent 参数必须是调用者祖先，overlay 不是目标祖先）坐标错乱；一律 `overlay.mapFromGlobal(target.mapToGlobal(QPoint(0,0)))`。
 - **`widget.grab()` 返回带 devicePixelRatio 的物理像素图**：多图 QPainter 合成时目标 QPixmap 必须 `setDevicePixelRatio(同 DPR)` 且坐标用逻辑值，否则 150% 缩放下内容缩至左上、右侧/中间留空白（`get_capture_pixmap` 实踩）。
 - **通道门禁判"支持"禁用 `isEnabled()`**：录制中 `_show_progress_overlay` 禁用 `channel_config_card` 会把子控件 `isEnabled()` 传播为 False（瞬时锁），曾致可见通道集清空 + 快照恢复误擦勾选态（波形空白、MEASUREMENT 仍有数据）；门禁判断一律走 `view_recording.py::_cb_supported`（`WA_ForceDisabled` 显式禁用标志）。
+- **仪器编辑对话框 IP 字段禁原样拼包**：`_InstrumentEditDialog._on_save` 必须先归一化（粘贴完整 VISA 地址时提取 host/端口），否则 `TCPIP0::{ip}::...` 拼出双重包裹非法地址（如 `TCPIP0::TCPIP0::ip::30000::SOCKET::hislip0::INSTR`），连接时 `viParseRsrcEx` 直接报 RSRC_NFOUND、auto 探测链在 N6705C 探针即失败，IT2705 永远不被尝试（2026-11 实踩）。

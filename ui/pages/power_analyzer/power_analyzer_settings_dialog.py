@@ -469,8 +469,19 @@ class _InstrumentEditDialog(QDialog):
         conn_index = self._conn_type_combo.currentIndex()
         if conn_index in (0, 1):
             ip = self._ip_edit.text().strip()
+            # 容忍粘贴完整 VISA 地址（如 TCPIP0::10.31.71.168::30000::SOCKET）：
+            # 提取 host（Socket 模式顺带提取端口），否则原样拼包会产生双重包裹的非法地址
+            if "::" in ip:
+                parts = ip.split("::")
+                if parts[0].upper().startswith("TCPIP") and len(parts) >= 2:
+                    ip = parts[1].strip()
+                    if conn_index == 1 and len(parts) >= 3 and parts[2].isdigit():
+                        self._port_edit.setText(parts[2])
             if not ip:
                 QMessageBox.warning(self, "输入不完整", "请填写 IP 地址。")
+                return
+            if "::" in ip:
+                QMessageBox.warning(self, "Invalid Address", "Please enter a valid IP address.")
                 return
             if conn_index == 0:
                 visa_resource = f"TCPIP0::{ip}::hislip0::INSTR"
