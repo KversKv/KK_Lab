@@ -319,7 +319,7 @@ class _ConfigAiMixin:
         # 按当前测试项与电流监控开关的仪器需求前置校验
         required = self._required_instruments()
         if "n6705c" in required and (not self.is_connected or self.n6705c is None):
-            return False, f"当前测试项 {self.current_test_item} 需要 N6705C，请先连接再启动。"
+            return False, f"当前测试项 {self.current_test_item} 需要电源仪器，请先连接再启动。"
         if "chamber" in required and (not self.is_chamber_connected or self.chamber is None):
             return False, f"当前测试项 {self.current_test_item} 需要温箱，请先连接温箱再启动。"
         # I2C 模式下校验地址可解析

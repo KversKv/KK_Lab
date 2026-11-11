@@ -1041,7 +1041,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     def _start_external_sleep_sweep(self, params):
         n6705c = self.get_n6705c_instance()
         if n6705c is None:
-            raise ValueError("N6705C not connected.")
+            raise ValueError("Power supply not connected.")
         if not self.is_mcu_io_connected or self.mcu_io is None:
             raise ValueError("MCU IO (Status control) not connected.")
 

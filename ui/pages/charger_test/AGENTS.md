@@ -30,3 +30,4 @@
 
 - 温箱联动（高低温扫描）走 `chamber_ui` 注入，勿在页内直接连温箱。
 - 跨线程只走 Signal/Slot；日志区用 `ExecutionLogsFrame.wrap_with`。
+- **iterm 采集双路径（2026-11）**：`_ItermTestWorker.single_iterm_test` 按 `callable(getattr(inst, "read_mmem_data", None))` 分支——N6705C 走 `_acquire_curve_via_dlog`（原生 DLOG 下载+parse_dlog_binary）；IT2705（内部 DLOG 无 SCPI 读回）走 `_acquire_curve_via_elog`（ELOG 流式采样，模式同 Datalog 页 `_fetch_elog_units`：0.2s 回读、时间轴=记录序号×PER、收尾先排空再 ABOR）。ELOG 路径必须先 `arb_stop→set_arb_trigger_source(ch,"BUS")→arb_on→start_elog→trg` 重同步：共享 Step3 的 arb_on 在 IMM 触发源下会立即起跑楼梯波。两路径产物统一 `{label:{"time","values"}}`（mV/mA），V/I 按短者截齐。

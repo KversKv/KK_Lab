@@ -6,7 +6,7 @@ import time
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from instruments.mock.mock_instruments import MockI2C, MockN6705C
+from instruments.mock.mock_instruments import MockI2C, MockIT2705, MockN6705C
 from lib.i2c.i2c_interface_x64 import I2CInterface
 from log_config import get_logger
 
@@ -189,7 +189,7 @@ class OutputVoltageWorker(QObject):
                 i2c.write(device_addr, reg_addr, write_reg, width_flag)
                 self._time.sleep(sleep_time)
 
-                if self._debug and isinstance(self._n6705c, MockN6705C):
+                if self._debug and isinstance(self._n6705c, (MockN6705C, MockIT2705)):
                     self._n6705c._last_expected_v = 1.0
 
                 measured_v = self._n6705c.measure_voltage(vmeter_ch)

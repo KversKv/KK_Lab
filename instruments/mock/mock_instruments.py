@@ -2249,6 +2249,9 @@ class _MockIT2705Session:
 class MockIT2705(IT2705):
     def __init__(self, resource="MOCK", visa_library=None, timeout_ms=10000):
         super().__init__(resource, visa_library=visa_library, timeout_ms=timeout_ms)
+        # dcdc_worker debug 分支会写入的角色通道属性（对齐 MockN6705C 默认值）
+        self._vin_ch = 1
+        self._iload_ch = 3
 
     def connect(self, device_address=None):
         if device_address is not None:

@@ -21,6 +21,8 @@ import os
 from resource_path import get_resource_base
 from PySide6.QtCore import QThread
 
+from ui.modules.n6705c_module_frame import get_power_analyzer_channels
+
 
 class ConsumptionTestViewDeviceMixin:
 
@@ -72,9 +74,9 @@ class ConsumptionTestViewDeviceMixin:
                 w["combo"].addItem(dev)
             w["status"].setText(f"● Found {len(devices)}")
             w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
-            self.append_log(f"[SYSTEM] Found {len(devices)} N6705C device(s) for slot {label}.")
+            self.append_log(f"[SYSTEM] Found {len(devices)} power supply device(s) for slot {label}.")
         else:
-            w["combo"].addItem("No N6705C device found")
+            w["combo"].addItem("No power supply found")
             w["combo"].setEnabled(False)
             w["status"].setText("● Not Found")
             w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
@@ -113,7 +115,7 @@ class ConsumptionTestViewDeviceMixin:
             w["search_btn"].setEnabled(False)
             w["status"].setText("● Connected")
             w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
-            self.append_log(f"[DEBUG] Mock N6705C-{label} connected.")
+            self.append_log(f"[DEBUG] Mock power supply slot {label} connected.")
             visa = w["combo"].currentText()
             self._syncing = True
             try:
@@ -129,7 +131,7 @@ class ConsumptionTestViewDeviceMixin:
         w["status"].setText("● Connecting")
         w["status"].setStyleSheet("color: #ff9800; font-weight: bold; background: transparent; border: none;")
         w["connect_btn"].setEnabled(False)
-        self.append_log(f"[SYSTEM] Connecting N6705C-{label}...")
+        self.append_log(f"[SYSTEM] Connecting power supply (slot {label})...")
 
         if self._instrument_manager:
             from core.instruments import InstrumentSpec
@@ -144,40 +146,38 @@ class ConsumptionTestViewDeviceMixin:
             return
 
         try:
-            from instruments.power.keysight.n6705c import N6705C
+            from instruments.factory import (
+                create_power_analyzer, get_power_analyzer_idn, get_power_analyzer_model,
+            )
             visa = w["combo"].currentText()
-            inst = N6705C(visa)
-            idn = inst.instr.query("*IDN?")
-            if "N6705C" in idn:
-                setattr(self, f"n6705c_{attr}", inst)
-                setattr(self, f"is_connected_{attr}", True)
-                _update_n6705c_btn_state(w["connect_btn"], connected=True)
-                w["search_btn"].setEnabled(False)
-                w["status"].setText("● Connected")
-                w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
-                self.append_log(f"[SYSTEM] N6705C-{label} connected. IDN: {idn.strip()}")
-                self._syncing = True
-                try:
-                    if self._n6705c_top:
-                        serial = ""
-                        try:
-                            serial = idn.strip().split(",")[2].strip()
-                        except Exception:
-                            pass
-                        getattr(self._n6705c_top, f"connect_{attr}")(visa, inst, serial)
-                finally:
-                    self._syncing = False
-                new_count = self._connected_device_count()
-                self._apply_preset_channels(prev_count, new_count)
-                self._update_available_channels()
-            else:
-                w["status"].setText("● Mismatch")
-                w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
-                self.append_log(f"[ERROR] Connected device on {label} is not N6705C.")
+            inst = create_power_analyzer(visa, analyzer_type="auto")
+            idn = get_power_analyzer_idn(inst)
+            model = get_power_analyzer_model(inst)
+            setattr(self, f"n6705c_{attr}", inst)
+            setattr(self, f"is_connected_{attr}", True)
+            _update_n6705c_btn_state(w["connect_btn"], connected=True)
+            w["search_btn"].setEnabled(False)
+            w["status"].setText("● Connected")
+            w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
+            self.append_log(f"[SYSTEM] {model}-{label} connected. IDN: {idn.strip()}")
+            self._syncing = True
+            try:
+                if self._n6705c_top:
+                    serial = ""
+                    try:
+                        serial = idn.strip().split(",")[2].strip()
+                    except Exception:
+                        pass
+                    getattr(self._n6705c_top, f"connect_{attr}")(visa, inst, serial)
+            finally:
+                self._syncing = False
+            new_count = self._connected_device_count()
+            self._apply_preset_channels(prev_count, new_count)
+            self._update_available_channels()
         except Exception as e:
             w["status"].setText("● Failed")
             w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
-            self.append_log(f"[ERROR] Connection failed for N6705C-{label}: {e}")
+            self.append_log(f"[ERROR] Connection failed for slot {label}: {e}")
         finally:
             w["connect_btn"].setEnabled(True)
 
@@ -210,7 +210,7 @@ class ConsumptionTestViewDeviceMixin:
             w["combo"].setEnabled(True)
             w["status"].setText("● Disconnected")
             w["status"].setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
-            self.append_log(f"[SYSTEM] N6705C-{label} disconnected.")
+            self.append_log(f"[SYSTEM] Power supply slot {label} disconnected.")
             new_count = self._connected_device_count()
             self._apply_preset_channels(prev_count, new_count)
             self._update_available_channels()
@@ -296,7 +296,7 @@ class ConsumptionTestViewDeviceMixin:
         w["search_btn"].setEnabled(False)
         w["status"].setText("● Connected")
         w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
-        self.append_log(f"[SYSTEM] N6705C-{label} connected via manager.")
+        self.append_log(f"[SYSTEM] Power supply slot {label} connected via manager.")
 
         # N6705CTop 已通过自身 _on_session_connected 订阅同一 manager 的
         # session_connected 信号完成状态同步; 此处不可再调用 connect_a/connect_b,
@@ -334,16 +334,25 @@ class ConsumptionTestViewDeviceMixin:
         w["combo"].setEnabled(True)
         w["status"].setText("● Disconnected")
         w["status"].setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
-        self.append_log(f"[SYSTEM] N6705C-{label} disconnected.")
+        self.append_log(f"[SYSTEM] Power supply slot {label} disconnected.")
         new_count = self._connected_device_count()
         self._apply_preset_channels(prev_count, new_count)
         self._update_available_channels()
         self.connection_status_changed.emit(False)
 
     def _get_available_channel_options(self):
+        # 通道事实源：已连接槽位按实例 VALID_CHANNELS（N6705C=4 / IT2705=8），
+        # 未连接槽位回退 1-4
         options = []
         for label in ["A", "B"]:
-            for ch in range(1, 5):
+            attr = label.lower()
+            inst = getattr(self, f"n6705c_{attr}", None)
+            connected = getattr(self, f"is_connected_{attr}", False)
+            if connected and inst is not None:
+                channels = get_power_analyzer_channels(inst)
+            else:
+                channels = get_power_analyzer_channels(None)
+            for ch in channels:
                 options.append(f"{label}-CH{ch}")
         return options
 

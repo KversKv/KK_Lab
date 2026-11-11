@@ -257,7 +257,7 @@ class _HighLowTempTestWorker(QObject):
 
         n6705c = self.n6705c_a
         if not n6705c:
-            raise RuntimeError("N6705C not connected")
+            raise RuntimeError("Power supply not connected")
 
         total_temps = len(temps)
         for idx, t in enumerate(temps):
@@ -913,8 +913,9 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
 
         ch_combo = DarkComboBox(bg="#0a1733", border="#1e3060",
                                 arrow_color="#8faad8", hover_color="#2f6fed")
-        ch_combo.addItems([f"CH{i}" for i in range(1, 5)])
-        ch = min(max(int(channel), 1), 4)
+        # 通道项按连接实例动态化（N6705C=4 / IT2705=8），连接状态变化自动重建
+        self.register_power_channel_combo(ch_combo, text_fmt="CH{}")
+        ch = min(max(int(channel), 1), ch_combo.count())
         ch_combo.setCurrentIndex(ch - 1)
 
         volt_spin = QDoubleSpinBox()
@@ -998,7 +999,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
                 self.append_log("[ERROR] Chamber not connected")
                 return
             if not hasattr(self, 'n6705c') or self.n6705c is None:
-                self.append_log("[ERROR] N6705C not connected")
+                self.append_log("[ERROR] Power supply not connected")
                 return
 
         channels = [ch for ch, toggle in self.ch_toggles.items() if toggle.isChecked()]

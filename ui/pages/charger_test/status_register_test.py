@@ -535,7 +535,11 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         self.test_item_card = CardFrame("\u25c9 Test Item")
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
-        self.connection_card = CardFrame("\u26a1 N6705C ")
+        self.connection_card = CardFrame("\u26a1 Power Supply ")
+        self.register_power_title_card(
+            self.connection_card, default_title="\u26a1 Power Supply ",
+            connected_fmt="\u26a1 {model} ",
+        )
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
         self.chamber_card = CardFrame("Chamber")
@@ -643,7 +647,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         self.test_channel_label = QLabel("Test Channel")
         self.test_channel_label.setObjectName("fieldLabel")
         self.test_channel_combo = DarkComboBox()
-        self.test_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.test_channel_combo, text_fmt="CH {}")
         grid.addWidget(self.test_channel_label, 0, 0)
         grid.addWidget(self.test_channel_combo, 0, 1)
         layout.addLayout(grid)
@@ -935,7 +939,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
 
         if test_item in ("Voltage Sweep", "Current Sweep"):
             if not self.is_connected or self.n6705c is None:
-                self.append_log("[ERROR] N6705C not connected. Please connect first.")
+                self.append_log("[ERROR] Power supply not connected. Please connect first.")
                 return
 
         if test_item == "Temperature Sweep":
@@ -1083,7 +1087,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
                 return False, "当前测试项为 Temperature Sweep，但未连接温箱，请先连接温箱。"
         else:
             if not self.is_connected or self.n6705c is None:
-                return False, f"当前测试项 {test_item} 需要 N6705C，请先连接再启动。"
+                return False, f"当前测试项 {test_item} 需要电源仪器，请先连接再启动。"
         try:
             cfg = self.get_test_config()
         except ValueError as e:

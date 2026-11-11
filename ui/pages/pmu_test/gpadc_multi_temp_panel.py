@@ -27,6 +27,7 @@ from core.pmu_test.gpadc.gpadc_multi_temp import (
 )
 from ui.theme import apply_qss, dp
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.modules.n6705c_module_frame import get_power_analyzer_channels
 
 # 写序列表列定义（表头即配置键名，含单位/进制提示）
 _WRITE_COLUMNS = ["Dev (Hex)", "Reg (Hex)", "Val (Hex)", "Width (bit)",
@@ -190,7 +191,7 @@ def _make_section(title: str, parent: QWidget) -> tuple[QFrame, QVBoxLayout]:
 class ChannelEditDialog(QDialog):
     """单通道编辑对话框。"""
 
-    def __init__(self, channel: dict, parent=None):
+    def __init__(self, channel: dict, parent=None, power_channels=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Channel")
         self.setMinimumWidth(680)
@@ -212,7 +213,7 @@ class ChannelEditDialog(QDialog):
         self.name_edit = QLineEdit(str(channel.get("name") or ""))
         top_grid.addWidget(self.name_edit, 1, 1)
 
-        self.sweep_check = QCheckBox("启用电压扫描（N6705C 扫压，语义同 Temp Consistency）")
+        self.sweep_check = QCheckBox("启用电压扫描（电源仪器扫压，语义同 Temp Consistency）")
         self.sweep_check.setChecked(bool(channel.get("sweep_enabled", False)))
         top_grid.addWidget(self.sweep_check, 2, 0, 1, 2)
         basic_lay.addLayout(top_grid)
@@ -254,16 +255,17 @@ class ChannelEditDialog(QDialog):
         layout.addWidget(read_frame)
 
         # ---- 扫压参数 ----
-        self.sweep_frame, sweep_lay = _make_section("电压扫描参数（N6705C）", self)
+        self.sweep_frame, sweep_lay = _make_section("电压扫描参数（电源）", self)
         sweep_grid = QGridLayout()
         sweep_grid.setHorizontalSpacing(8)
         sweep_grid.setVerticalSpacing(6)
-        sweep_grid.addWidget(QLabel("N6705C Channel"), 0, 0)
+        sweep_grid.addWidget(QLabel("Power Supply Channel"), 0, 0)
         sweep_grid.addWidget(QLabel("V Min (V)"), 0, 1)
         sweep_grid.addWidget(QLabel("V Max (V)"), 0, 2)
         sweep_grid.addWidget(QLabel("V Step (V)"), 0, 3)
         self.voltage_channel_combo = DarkComboBox(bg="#0a1733", border="#24365e")
-        for ch in range(1, 5):
+        # 通道项随电源实例动态化（N6705C=4 / IT2705=8），未连接回退 1-4
+        for ch in (tuple(power_channels) if power_channels else (1, 2, 3, 4)):
             self.voltage_channel_combo.addItem(f"Channel {ch}", ch)
         idx = self.voltage_channel_combo.findData(int(channel.get("voltage_channel") or 1))
         self.voltage_channel_combo.setCurrentIndex(max(0, idx))
@@ -490,7 +492,7 @@ class MultiChTempPanel(QFrame):
             "switch_writes_text": "", "read_dev": "", "read_reg": "", "read_width": 0,
             "voltage_channel": 1, "v_min": 0.1, "v_max": 1.8, "v_step": 0.05,
         }
-        dlg = ChannelEditDialog(new_ch, parent=self)
+        dlg = ChannelEditDialog(new_ch, parent=self, power_channels=self._power_channels())
         if dlg.exec() == QDialog.Accepted:
             self._channels.append(dlg.get_channel())
             self._rebuild_table()
@@ -499,10 +501,18 @@ class MultiChTempPanel(QFrame):
         row = self._current_row()
         if not (0 <= row < len(self._channels)):
             return
-        dlg = ChannelEditDialog(dict(self._channels[row]), parent=self)
+        dlg = ChannelEditDialog(
+            dict(self._channels[row]), parent=self,
+            power_channels=self._power_channels(),
+        )
         if dlg.exec() == QDialog.Accepted:
             self._channels[row] = dlg.get_channel()
             self._rebuild_table()
+
+    def _power_channels(self):
+        """扫压通道事实源：页面当前电源实例的 VALID_CHANNELS（未连接回退 1-4）。"""
+        inst = getattr(self.parent(), "n6705c", None)
+        return get_power_analyzer_channels(inst)
 
     def _on_del_channel(self):
         row = self._current_row()

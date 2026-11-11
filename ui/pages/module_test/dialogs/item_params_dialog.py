@@ -60,7 +60,7 @@ class ItemParamsDialog(QDialog):
     def __init__(self, *, title: str, specs, current_override: dict,
                  base_value_fn, parent: QWidget | None = None,
                  item_key: str = "", judge_payload: dict | None = None,
-                 follow_switch: dict | None = None):
+                 follow_switch: dict | None = None, power_channels=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -71,6 +71,10 @@ class ItemParamsDialog(QDialog):
         self._prefill: dict[str, object] = {}
         self._follow_key = ""
         self._follow_switch: QCheckBox | None = None
+        # channel 类型参数的通道项（N6705C=1-4 / IT2705=1-8），未传回退 1-4
+        self._power_channels = (
+            tuple(power_channels) if power_channels else (1, 2, 3, 4)
+        )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 12)
@@ -217,7 +221,7 @@ class ItemParamsDialog(QDialog):
             return w
         if spec.ptype == "channel":
             w = QComboBox()
-            w.addItems([f"CH {i}" for i in range(1, 5)])
+            w.addItems([f"CH {i}" for i in self._power_channels])
             idx = w.findText(str(prefill))
             if idx >= 0:
                 w.setCurrentIndex(idx)

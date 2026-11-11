@@ -205,7 +205,7 @@ class ConsumptionTestViewAiMixin:
     def ai_start_test(self) -> tuple[bool, str]:
         """启动本页测试：优先 Auto Test，前置条件不足时回退到 Force-High 测试。"""
         if not (self.is_connected_a or self.is_connected_b):
-            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+            return False, "未连接电源仪器，请先连接再启动测试。"
         if self.is_testing:
             return False, "测试已在运行中。"
         if not any(cfg.get("enabled") for cfg in self._channel_configs):

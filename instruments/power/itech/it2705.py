@@ -270,6 +270,48 @@ class IT2705(VisaInstrument):
         else:
             raise ValueError("IT2705: measurement_type 仅支持 voltage 或 current")
 
+    def set_channel_range(self, channel):
+        # N6705C 语义 = SENS:CURR:RANG:AUTO ON；IT2700 SENSe 子系统无电流
+        # 量程/自动量程命令（仅 SENS:VOLT:RANG:AUTO 电压自动量程），此处 no-op。
+        self._validate_channel(channel)
+        logger.debug(
+            "IT2705 set_channel_range: CH%s no-op（IT2700 无电流自动量程命令）",
+            channel,
+        )
+
+    def set_channel_range_off(self, channel):
+        # 同上，IT2700 无电流自动量程概念，no-op。
+        self._validate_channel(channel)
+        logger.debug(
+            "IT2705 set_channel_range_off: CH%s no-op（IT2700 无电流自动量程命令）",
+            channel,
+        )
+
+    def set_sense_mode(self, channel, mode="INT"):
+        """设置通道 Sense 方式：Local/INT 为本地检测，4 Wire/EXT 为远端检测。
+
+        手册 §15：SENSe[:REMote][:STATe] 0|OFF|1|ON,(@ch)。
+        """
+        channel = self._validate_channel(channel)
+        mode_str = str(mode).strip().upper()
+        mode_map = {
+            "INT": False,
+            "INTERNAL": False,
+            "LOCAL": False,
+            "EXT": True,
+            "EXTERNAL": True,
+            "4WIRE": True,
+            "4 WIRE": True,
+            "4-WIRE": True,
+        }
+        if mode_str not in mode_map:
+            raise ValueError(
+                f"Invalid sense mode '{mode}', expected 'LOCAL' or '4 WIRE'"
+            )
+        state = self._on_off(mode_map[mode_str])
+        logger.debug("IT2705 set_sense_mode: CH%s = remote %s", channel, state)
+        self.write(f"SENS {state},(@{channel})")
+
     PS_EMULATION_MODES = frozenset({"PS4Q", "PS2Q", "PS1Q"})
 
     def set_mode(self, channel, mode):
@@ -284,6 +326,10 @@ class IT2705(VisaInstrument):
     def get_mode(self, channel):
         channel = self._validate_channel(channel)
         return self.query(f"EMUL? (@{channel})").strip()
+
+    def set_voltagemode(self, channel):
+        # 与 N6705C 同义：切电压表模式（手册 EMUL 列表含 VMETer）
+        self.set_mode(channel, "VMETer")
 
     def set_function(self, channel, function):
         channel = self._validate_channel(channel)
@@ -503,6 +549,101 @@ class IT2705(VisaInstrument):
 
     def trg(self):
         self.write("*TRG")
+
+    _AUTO_SET_SPECIAL_VOLTAGES = [0.625, 0.67, 0.725, 0.78]
+
+    @staticmethod
+    def _align_voltage(v, special_values=None):
+        if special_values is None:
+            special_values = IT2705._AUTO_SET_SPECIAL_VOLTAGES
+        grid_v = round(round(v / 0.05) * 0.05, 4)
+        best = grid_v
+        best_dist = abs(v - grid_v)
+        for sv in special_values:
+            dist = abs(v - sv)
+            if dist < best_dist:
+                best = sv
+                best_dist = dist
+        return best
+
+    def prepare_force_high(self, channels, voltage_offset, current_limit,
+                           monitor_channels=None):
+        channels = self._normalize_channels(channels)
+        logger.debug("prepare_force_high: channels=%s, voltage_offset=%s, current_limit=%s",
+                     channels, voltage_offset, current_limit)
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        else:
+            monitor_channels = list(monitor_channels)
+
+        for ch in channels:
+            self.set_mode(ch, "VMETer")
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+
+        measured_voltages = {}
+        for ch in channels:
+            measured_voltages[ch] = float(self.measure_voltage(ch))
+
+        for ch in channels:
+            new_v = measured_voltages[ch] + voltage_offset
+            logger.debug("prepare_force_high: CH%s measured=%.4f V, forcing=%.4f V",
+                         ch, measured_voltages[ch], new_v)
+            self.set_mode(ch, "PS2Q")
+            self.set_voltage(ch, new_v)
+            self.set_current_limit(ch, current_limit)
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+        return measured_voltages
+
+    def prepare_force_auto(self, channels, current_limit,
+                           monitor_channels=None):
+        channels = self._normalize_channels(channels)
+        logger.debug("prepare_force_auto: channels=%s, current_limit=%s", channels, current_limit)
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        else:
+            monitor_channels = list(monitor_channels)
+
+        for ch in channels:
+            self.set_mode(ch, "VMETer")
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+
+        measured_voltages = {}
+        for ch in channels:
+            measured_voltages[ch] = float(self.measure_voltage(ch))
+
+        for ch in channels:
+            new_v = self._align_voltage(measured_voltages[ch])
+            logger.debug("prepare_force_auto: CH%s measured=%.4f V, aligned=%.4f V",
+                         ch, measured_voltages[ch], new_v)
+            self.set_mode(ch, "PS2Q")
+            self.set_voltage(ch, new_v)
+            self.set_current_limit(ch, current_limit)
+            self.channel_on(ch)
+            final_limit = 0.07 if new_v < 1.0 else 0.15
+            self.set_current_limit(ch, final_limit)
+
+        time.sleep(0.5)
+        return measured_voltages
+
+    def restore_channels_to_vmeter(self, channels):
+        channels = self._normalize_channels(channels)
+        logger.debug("restore_channels_to_vmeter: channels=%s", channels)
+        for ch in channels:
+            try:
+                self.set_mode(ch, "VMETer")
+                self.channel_on(ch)
+            except Exception:
+                pass
 
     @classmethod
     def _clamp_dlog_period(cls, sample_period, context=""):

@@ -10,7 +10,7 @@ import time
 
 from PySide6.QtCore import QThread, Signal
 
-from instruments.mock.mock_instruments import MockN6705C
+from instruments.mock.mock_instruments import MockIT2705, MockN6705C
 
 from .dcdc_analysis import generate_current_points, trimmed_mean
 
@@ -39,7 +39,7 @@ def _measure_point_instant(n, vin_ch, vout_ch, iload_ch, average_cnt):
 
 
 def _measure_point_datalog(n, vin_ch, vout_ch, iload_ch, dlog_duration, debug):
-    if debug and isinstance(n, MockN6705C):
+    if debug and isinstance(n, (MockN6705C, MockIT2705)):
         vbat = float(n.measure_voltage(vin_ch))
         vout = float(n.measure_voltage(vout_ch))
         i_in = float(n.measure_current(vin_ch))
@@ -247,7 +247,7 @@ class DCDCEfficiencyTestThread(QThread):
             )
             self.log_message.emit(f"[TEST] VIN ch={vin_ch}, VOUT ch={vout_ch}, ILOAD ch={iload_ch}")
 
-            if self._debug and isinstance(n, MockN6705C):
+            if self._debug and isinstance(n, (MockN6705C, MockIT2705)):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 
@@ -335,7 +335,7 @@ class DCDCVinSweepTestThread(QThread):
 
             current_points = generate_current_points(cfg)
 
-            if self._debug and isinstance(n, MockN6705C):
+            if self._debug and isinstance(n, (MockN6705C, MockIT2705)):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 
@@ -470,7 +470,7 @@ class DCDCTempSweepTestThread(QThread):
             sampling_method = cfg.get("sampling_method", "Instant MEAS")
             dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
 
-            if self._debug and isinstance(n, MockN6705C):
+            if self._debug and isinstance(n, (MockN6705C, MockIT2705)):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 

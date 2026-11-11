@@ -452,10 +452,10 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.ripple_channel_combo = FixedPopupComboBox()
         self.ripple_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
 
-        lbl_load = QLabel("Load Channel (N6705C)")
+        lbl_load = QLabel("Load Channel (Power Supply)")
         lbl_load.setObjectName("fieldLabel")
         self.load_channel_combo = FixedPopupComboBox()
-        self.load_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.load_channel_combo, text_fmt="CH {}")
         self.load_channel_combo.setCurrentIndex(1)
 
         grid.addWidget(lbl_ripple, 0, 0)
@@ -1343,8 +1343,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             return
 
         if not self.is_connected or self.n6705c is None:
-            self.set_page_status("Please connect N6705C first", is_error=True)
-            self.append_log("[ERROR] N6705C not connected.")
+            self.set_page_status("Please connect power supply first", is_error=True)
+            self.append_log("[ERROR] Power supply not connected.")
             return
 
         if not self.scope_connected or self.Osc_ins is None:
@@ -1431,7 +1431,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def ai_start_test(self) -> tuple[bool, str]:
         if not self.is_connected or self.n6705c is None:
-            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+            return False, "未连接电源仪器，请先连接再启动测试。"
         if not self.scope_connected or self.Osc_ins is None:
             return False, "未连接示波器，请先连接示波器再启动 Is_gain 测试。"
         if self.is_test_running:

@@ -395,15 +395,16 @@ class _LayoutMixin:
         monitor_enable_label.setObjectName("muted_label")
         monitor_layout.addWidget(monitor_enable_label, 0, 0)
         self.current_monitor_switch = _ToggleSwitch(checked=False)
-        self.current_monitor_switch.setToolTip("启用后在每个温度节点稳定后记录 N6705C 所选通道电流")
+        self.current_monitor_switch.setToolTip("启用后在每个温度节点稳定后记录电源仪器所选通道电流")
         monitor_layout.addWidget(self.current_monitor_switch, 0, 1, Qt.AlignRight)
 
         self.current_monitor_channel_label = QLabel("Monitor Channel")
         self.current_monitor_channel_label.setObjectName("muted_label")
         monitor_layout.addWidget(self.current_monitor_channel_label, 1, 0)
         self.current_monitor_channel = DarkComboBox(bg="#0a1733", border="#24365e")
-        for ch in range(1, 5):
-            self.current_monitor_channel.addItem(f"Channel {ch}", ch)
+        self.register_power_channel_combo(
+            self.current_monitor_channel, text_fmt="Channel {}", with_data=True
+        )
         monitor_layout.addWidget(self.current_monitor_channel, 1, 1)
 
         test_item_layout.addWidget(self.current_monitor_frame)
@@ -599,8 +600,9 @@ class _LayoutMixin:
         params_layout.addWidget(self.voltage_channel_label)
 
         self.voltage_channel = DarkComboBox(bg="#0a1733", border="#24365e")
-        for ch in range(1, 5):
-            self.voltage_channel.addItem(f"Channel {ch}", ch)
+        self.register_power_channel_combo(
+            self.voltage_channel, text_fmt="Channel {}", with_data=True
+        )
         self.voltage_channel.setCurrentIndex(3)
         params_layout.addWidget(self.voltage_channel)
 

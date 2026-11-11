@@ -92,7 +92,7 @@ class DutConfigPanel(QWidget):
 
         # 电压测试方式：N6705C=Vout 通道电压表；scope=示波器输出通道平均值
         self.volt_method_combo = self._make_combo([])
-        self.volt_method_combo.addItem("N6705C", "n6705c")
+        self.volt_method_combo.addItem("Power Supply", "n6705c")
         self.volt_method_combo.addItem("示波器", "scope")
         self.volt_method_combo.currentIndexChanged.connect(self._on_volt_method_changed)
         elec_grid.add_row("电压测试方式", self.volt_method_combo)

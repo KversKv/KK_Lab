@@ -25,6 +25,8 @@
 - 业务异常统一抛 [base/exceptions.py](./base/exceptions.py) 中定义的类型。
 - N6705C / IT2705 经 factory 创建后必须刷新 `channel_module_models` 并提供 `is_channel_supported(ch)`；空槽、未知型号或单通道查询失败仅禁用该通道，Mock 同步实现。
 - N6705C 逐通道用 `:SYSTem:CHANnel:MODel? (@ch)` 查询型号；IT2705 先批量 `:SYSTem:CHANnel:STATus? (@1,2,3,4,5,6,7,8)`，仅对状态 `1` 的通道查型号，空槽禁止再查 `MODel?`；禁用短格式和 `SYST:MOD:MOD?`。
+- **IT2705 对 N6705C 的 parity 方法（2026-11 补）**：`set_sense_mode`=`SENS ON/OFF,(@ch)`（手册 §15 `SENSe[:REMote][:STATe]`）；`set_voltagemode`=`EMUL VMETer`；`prepare_force_high/prepare_force_auto/restore_channels_to_vmeter` 与 N6705C 同语义纯组合（VMETer→测压→PS2Q+定值+限流）；`set_channel_range(_off)` 为 **no-op**——IT2700 SENSe 子系统无电流量程/自动量程命令（仅 `SENS:VOLT:RANG:AUTO`），业务侧直接调用勿删。
+- **IT2705 开路基线（真机 2026-11）**：VMETer+channel_on 开路测量饱和在 **-20.4V**（负满幅），`prepare_force_*` 在开路台架上测到的是该饱和值；接 DUT 时 VMETer 读真实轨压。`VOLT` 写超量程/负值被仪器**静默拒绝**（`VOLT?` 保持上一接受值），CCLoad 开路测得 ≈0 正小值。
 
 ## 局部约定
 

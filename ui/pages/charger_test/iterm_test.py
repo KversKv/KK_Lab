@@ -179,8 +179,6 @@ class _ItermTestWorker(QObject):
             self._suppress_inner_chart = False
 
     def single_iterm_test(self, vbat_channel, current_channel, voreg, average_time):
-        from instruments.power.keysight.n6705c_datalog_process import parse_dlog_binary
-
         arb_v0 = voreg - 0.2
         arb_v1 = voreg + 0.1
         arb_t0 = 0
@@ -219,6 +217,58 @@ class _ItermTestWorker(QObject):
         )
         self._n6705c.set_arb_continuous(vbat_channel, flag=False)
         self._n6705c.arb_on(vbat_channel)
+
+        if callable(getattr(self._n6705c, "read_mmem_data", None)):
+            all_data = self._acquire_curve_via_dlog(
+                vbat_channel, current_channel, arb_total_time, sample_period_s
+            )
+        else:
+            all_data = self._acquire_curve_via_elog(
+                vbat_channel, current_channel, arb_total_time, sample_period_s
+            )
+
+        if all_data is None:
+            return None
+
+        v_label = f"CH{vbat_channel} V"
+        i_label = f"CH{current_channel} I"
+
+        if i_label not in all_data:
+            logger.error(f"Current data for CH{current_channel} not found in dlog.")
+            self.log_message.emit(f"[ERROR] Current data for CH{current_channel} not found in dlog.")
+            return None
+
+        timestamps = all_data[i_label]["time"]
+        currents_mA = all_data[i_label]["values"]
+        currents = [c / 1000.0 for c in currents_mA]
+
+        voltages = None
+        if v_label in all_data:
+            voltages_mV = all_data[v_label]["values"]
+            voltages = [v / 1000.0 for v in voltages_mV]
+
+        logger.debug(
+            f"Datalog parsed: {len(timestamps)} points, "
+            f"duration={timestamps[-1]:.2f}s"
+        )
+
+        if not self._suppress_inner_chart:
+            self.chart_clear.emit()
+        if not self._suppress_inner_progress:
+            self.progress.emit(95)
+
+        msg = "Step 9: Analyzing current curve to find termination current..."
+        logger.debug(msg)
+
+        iterm = self._analyze_iterm_from_curve(timestamps, currents, voltages, voreg, average_time)
+
+        if not self._suppress_inner_progress:
+            self.progress.emit(100)
+        return iterm
+
+    def _acquire_curve_via_dlog(self, vbat_channel, current_channel, arb_total_time, sample_period_s):
+        """N6705C 原生 DLOG 路径：配置→INIT:DLOG+arb_run→等待→下载 .dlog→解析。"""
+        from instruments.power.keysight.n6705c_datalog_process import parse_dlog_binary
 
         msg = "Step 4: Configuring Datalog for highest precision recording..."
         logger.debug(msg)
@@ -304,42 +354,127 @@ class _ItermTestWorker(QObject):
             logger.error("Failed to parse dlog data.")
             self.log_message.emit("[ERROR] Failed to parse dlog data.")
             return None
+        return all_data
 
-        v_label = f"CH{vbat_channel} V"
-        i_label = f"CH{current_channel} I"
+    def _acquire_curve_via_elog(self, vbat_channel, current_channel, arb_total_time, sample_period_s):
+        """IT2705 ELOG 路径：内部 DLOG 无 SCPI 读回，改外部记录仪流式采样。
 
-        if i_label not in all_data:
-            logger.error(f"Current data for CH{current_channel} not found in dlog.")
-            self.log_message.emit(f"[ERROR] Current data for CH{current_channel} not found in dlog.")
+        模式同 Datalog 页 _fetch_elog_units：采集期间每 0.2s 回读记录，
+        时间轴=记录序号×实际 PER，V/A→mV/mA；收尾先排空再 ABOR。
+        """
+        inst = self._n6705c
+
+        msg = "Step 4: Configuring ELOG for highest precision recording..."
+        logger.debug(msg)
+        period = inst.configure_elog([current_channel], [vbat_channel], sample_period_s)
+
+        msg = "Step 5: Starting ARB and ELOG simultaneously..."
+        logger.debug(msg)
+        # 共享 Step 3 的 arb_on 在 IMM 触发源下会立即起跑楼梯波；
+        # ABOR 后改挂 BUS 触发重新武装，使楼梯波与 ELOG 记录同步起点
+        inst.arb_stop(vbat_channel)
+        inst.set_arb_trigger_source(vbat_channel, "BUS")
+        inst.arb_on(vbat_channel)
+        inst.start_elog()
+        inst.trg()
+
+        msg = f"Step 6: Waiting for ARB and ELOG to complete ({arb_total_time:.1f}s)..."
+        logger.debug(msg)
+        counters = {vbat_channel: 0}
+        if current_channel != vbat_channel:
+            counters[current_channel] = 0
+        series = {
+            "v": {"time": [], "values": []},
+            "i": {"time": [], "values": []},
+        }
+
+        def _fetch(ch):
+            try:
+                records = inst.fetch_elog_records(ch)
+            except Exception as e:
+                logger.debug("iterm ELOG fetch CH%d failed: %s", ch, e)
+                return
+            v_list = records["voltage"]
+            i_list = records["current"]
+            n = max(len(v_list), len(i_list))
+            if n == 0:
+                return
+            start = counters[ch]
+            times = [(start + k) * period for k in range(n)]
+            if ch == vbat_channel and v_list:
+                series["v"]["time"].extend(times[:len(v_list)])
+                series["v"]["values"].extend(v * 1000.0 for v in v_list)
+            if ch == current_channel and i_list:
+                series["i"]["time"].extend(times[:len(i_list)])
+                series["i"]["values"].extend(i * 1000.0 for i in i_list)
+            counters[ch] = start + n
+
+        capture_start = time.time()
+        wait_end = capture_start + arb_total_time + 5
+        next_fetch = capture_start + 0.2
+        while time.time() < wait_end:
+            if self._stop_flag:
+                logger.warning("Stopped by user.")
+                self.log_message.emit("[TEST] Stopped by user.")
+                try:
+                    inst.stop_elog()
+                except Exception:
+                    pass
+                return None
+            if time.time() >= next_fetch:
+                for ch in counters:
+                    _fetch(ch)
+                next_fetch = time.time() + 0.2
+            elapsed = time.time() - capture_start
+            pct = min(int(elapsed / arb_total_time * 90), 90)
+            if not self._suppress_inner_progress:
+                self.progress.emit(pct)
+            time.sleep(min(0.5, max(0.02, next_fetch - time.time())))
+
+        # 排空残余记录（ABOR 即清缓冲，必须先取尽再 stop）
+        for _ in range(10):
+            before = dict(counters)
+            for ch in counters:
+                _fetch(ch)
+            if all(counters[ch] == before[ch] for ch in counters):
+                break
+
+        if not self._suppress_inner_progress:
+            self.progress.emit(92)
+
+        msg = "Step 7: Stopping ELOG..."
+        logger.debug(msg)
+        try:
+            inst.stop_elog()
+        except Exception as e:
+            logger.warning("iterm ELOG stop failed: %s", e)
+
+        msg = "Step 8: Restoring ARB trigger source..."
+        logger.debug(msg)
+        inst.restore_arb_trigger_source()
+
+        if not series["i"]["values"]:
+            logger.error("No ELOG current data captured.")
+            self.log_message.emit("[ERROR] No ELOG current data captured.")
             return None
 
-        timestamps = all_data[i_label]["time"]
-        currents_mA = all_data[i_label]["values"]
-        currents = [c / 1000.0 for c in currents_mA]
-
-        voltages = None
-        if v_label in all_data:
-            voltages_mV = all_data[v_label]["values"]
-            voltages = [v / 1000.0 for v in voltages_mV]
+        # V/I 索引对齐：不同通道独立记录时按短者截齐（时间轴同为记录序号×PER）
+        if series["v"]["values"]:
+            n = min(len(series["v"]["values"]), len(series["i"]["values"]))
+            for key in ("v", "i"):
+                series[key]["time"] = series[key]["time"][:n]
+                series[key]["values"] = series[key]["values"][:n]
 
         logger.debug(
-            f"Datalog parsed: {len(timestamps)} points, "
-            f"duration={timestamps[-1]:.2f}s"
+            "ELOG captured: %d points, duration=%.2fs",
+            len(series["i"]["values"]), series["i"]["time"][-1],
         )
 
-        if not self._suppress_inner_chart:
-            self.chart_clear.emit()
-        if not self._suppress_inner_progress:
-            self.progress.emit(95)
-
-        msg = "Step 9: Analyzing current curve to find termination current..."
-        logger.debug(msg)
-
-        iterm = self._analyze_iterm_from_curve(timestamps, currents, voltages, voreg, average_time)
-
-        if not self._suppress_inner_progress:
-            self.progress.emit(100)
-        return iterm
+        all_data = {}
+        if series["v"]["values"]:
+            all_data[f"CH{vbat_channel} V"] = series["v"]
+        all_data[f"CH{current_channel} I"] = series["i"]
+        return all_data
 
     def _analyze_iterm_from_curve(self, timestamps, currents, voltages, voreg, average_time):
         if len(currents) < 10:
@@ -872,7 +1007,11 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("\u26a1 N6705C ")
+        self.connection_card = CardFrame("\u26a1 Power Supply ")
+        self.register_power_title_card(
+            self.connection_card, default_title="\u26a1 Power Supply ",
+            connected_fmt="\u26a1 {model} ",
+        )
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
@@ -1081,13 +1220,13 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         vbat_ch_label.setObjectName("fieldLabel")
 
         self.vbat_channel_combo = DarkComboBox()
-        self.vbat_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.vbat_channel_combo, text_fmt="CH {}")
 
         charge_ch_label = QLabel("Current Channel")
         charge_ch_label.setObjectName("fieldLabel")
 
         self.measure_channel_combo = DarkComboBox()
-        self.measure_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.measure_channel_combo, text_fmt="CH {}")
         self.measure_channel_combo.setCurrentIndex(2)
 
         avg_time_label = QLabel("Average Time (ms)")
@@ -1248,8 +1387,8 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
 
     def _on_start_test(self):
         if not self.is_connected or self.n6705c is None:
-            logger.error("Not connected to N6705C instrument.")
-            self._append_to_log("[ERROR] Not connected to N6705C instrument.")
+            logger.error("Not connected to power supply instrument.")
+            self._append_to_log("[ERROR] Not connected to power supply instrument.")
             return
         if self.is_test_running:
             return
@@ -1629,7 +1768,7 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
 
     def ai_start_test(self) -> tuple[bool, str]:
         if not self.is_connected or self.n6705c is None:
-            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+            return False, "未连接电源仪器，请先连接再启动测试。"
         if self.is_test_running:
             return False, "测试已在运行中。"
         test_item = self.test_item_combo.currentText()

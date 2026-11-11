@@ -28,7 +28,7 @@ from core.module_test.saved_results import (
 )
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
-from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin, get_power_analyzer_channels
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.pages.module_test._sections.ai_contract import ModuleTestAIContract
 from ui.pages.module_test._sections.config_store import ModuleConfigStore
@@ -101,6 +101,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
 
         self._build_ui()
         self._wire_shortcuts()
+        self._register_dut_channel_combos()
         self.sync_n6705c_from_top()
         self.sync_oscilloscope_from_top()
         # 初始同步一次 scope 状态到测试项表（未连接时 (scope) 项显示"未接示波器"）
@@ -115,6 +116,20 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._config_memory.restore()
 
     # ================================================================== UI 装配
+    def _register_dut_channel_combos(self):
+        """DUT 通道分配下拉接入电源通道动态化（N6705C=4 / IT2705=8）。
+
+        注意 scope_vout_ch_combo 是示波器通道，不在登记范围。
+        """
+        dut = getattr(getattr(self, "left_rail", None), "dut_panel", None)
+        if dut is None:
+            return
+        for name in ("vbat_ch_combo", "vin_ch_combo", "vout_ch_combo",
+                     "force_ch_combo", "iload_ch_combo"):
+            combo = getattr(dut, name, None)
+            if combo is not None:
+                self.register_power_channel_combo(combo, text_fmt="CH {}")
+
     def _build_ui(self) -> None:
         # Module Test 页面专属暗色主题：在共享 controls/table 上级联叠加
         # module_dark（page 级 token + 本页 overrides，不影响其它页面）。
@@ -521,6 +536,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             item_key=item_key,
             judge_payload=self._judge_criteria.get(item_key),
             follow_switch=follow,
+            power_channels=get_power_analyzer_channels(self.n6705c),
         )
         if dlg.exec():
             override = dlg.get_override()

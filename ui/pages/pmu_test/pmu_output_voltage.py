@@ -431,7 +431,11 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("N6705C ")
+        self.connection_card = CardFrame("Power Supply ")
+        self.register_power_title_card(
+            self.connection_card, default_title="Power Supply ",
+            connected_fmt="{model} ",
+        )
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
@@ -527,7 +531,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         vmeter_label.setObjectName("fieldLabel")
 
         self.vmeter_channel_combo = DarkComboBox()
-        self.vmeter_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.vmeter_channel_combo, text_fmt="CH {}")
         self.vmeter_channel_combo.setCurrentIndex(1)
 
         mode_label = QLabel("Channel Mode")
@@ -924,7 +928,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
     def _on_start_test(self):
         if not self.is_connected or self.n6705c is None:
-            self.append_log("[ERROR] Not connected to N6705C instrument.")
+            self.append_log("[ERROR] Not connected to power supply instrument.")
             return
         if self.is_test_running:
             return
@@ -1057,7 +1061,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
     def ai_start_test(self) -> tuple[bool, str]:
         if not self.is_connected or self.n6705c is None:
-            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+            return False, "未连接电源仪器，请先连接再启动测试。"
         if self.is_test_running:
             return False, "测试已在运行中。"
         cfg = self.get_test_config()

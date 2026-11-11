@@ -642,7 +642,11 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
-        self.connection_card = CardFrame("N6705C ")
+        self.connection_card = CardFrame("Power Supply ")
+        self.register_power_title_card(
+            self.connection_card, default_title="Power Supply ",
+            connected_fmt="{model} ",
+        )
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
@@ -1064,18 +1068,18 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self.vin_channel_label = QLabel("VIN Channel")
         self.vin_channel_label.setObjectName("fieldLabel")
         self.vin_channel_combo = DarkComboBox()
-        self.vin_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.vin_channel_combo, text_fmt="CH {}")
 
         self.vout_channel_label = QLabel("VOUT Channel")
         self.vout_channel_label.setObjectName("fieldLabel")
         self.vout_channel_combo = DarkComboBox()
-        self.vout_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.vout_channel_combo, text_fmt="CH {}")
         self.vout_channel_combo.setCurrentIndex(1)
 
         self.cc_load_channel_label = QLabel("CC Load Channel")
         self.cc_load_channel_label.setObjectName("fieldLabel")
         self.cc_load_channel_combo = DarkComboBox()
-        self.cc_load_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.register_power_channel_combo(self.cc_load_channel_combo, text_fmt="CH {}")
         self.cc_load_channel_combo.setCurrentIndex(2)
 
         self.vin_current_limit_label = QLabel("VIN Current Limit (A)")
@@ -1869,7 +1873,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
     def ai_start_test(self) -> tuple[bool, str]:
         if not self.is_connected or self.n6705c is None:
-            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+            return False, "未连接电源仪器，请先连接再启动测试。"
         if self.is_test_running:
             return False, "测试已在运行中。"
         cfg = self.get_test_config()

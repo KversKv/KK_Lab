@@ -3,6 +3,7 @@
 
 import os
 import sys
+import weakref
 
 if __name__ == "__main__" and __package__ in (None, ""):
     _PROJECT_ROOT = os.path.abspath(
@@ -44,6 +45,45 @@ DEFAULT_VISA_RESOURCE = get_address_preset("n6705c", "A")
 N6705C_BTN_HEIGHT = 24
 N6705C_BTN_ICON_SIZE = 14
 N6705C_BTN_RADIUS = 6
+
+# 电源通道下拉默认选项（未连接时）：N6705C 4 通道；IT2705 连接后按实例 8 通道重建
+DEFAULT_POWER_CHANNELS = (1, 2, 3, 4)
+
+
+def get_power_analyzer_channels(instance=None) -> tuple:
+    """电源分析仪通道事实源：实例 VALID_CHANNELS；未连接/异常回退 1-4。"""
+    channels = getattr(instance, "VALID_CHANNELS", None)
+    try:
+        channels = tuple(int(ch) for ch in channels) if channels else ()
+    except (TypeError, ValueError):
+        channels = ()
+    return channels or DEFAULT_POWER_CHANNELS
+
+
+def repopulate_channel_combo(combo, instance=None, *, text_fmt="CH {}", with_data=False):
+    """按实例 VALID_CHANNELS 重建通道下拉，保留仍有效的当前选择。
+
+    text_fmt 形如 "CH {}" / "Channel {}"；with_data=True 时 addItem(text, ch)
+    并按 data 还原选择，否则按文本还原。
+    """
+    channels = get_power_analyzer_channels(instance)
+    combo.blockSignals(True)
+    try:
+        if with_data:
+            prev = combo.currentData()
+            combo.clear()
+            for ch in channels:
+                combo.addItem(text_fmt.format(ch), ch)
+            idx = combo.findData(prev)
+        else:
+            prev = combo.currentText()
+            combo.clear()
+            for ch in channels:
+                combo.addItem(text_fmt.format(ch))
+            idx = combo.findText(prev)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+    finally:
+        combo.blockSignals(False)
 
 
 def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
@@ -372,6 +412,83 @@ class N6705CConnectionMixin:
             r=self._n6705c_btn_radius,
             icon_size=self._n6705c_btn_icon_size,
         )
+        self._refresh_power_channel_combos()
+        self._refresh_power_title_cards()
+
+    def register_power_channel_combo(self, combo, *, text_fmt="CH {}", with_data=False):
+        """登记电源通道下拉：连接状态变化时按实例 VALID_CHANNELS 自动重建。
+
+        N6705C=1-4 / IT2705=1-8；未连接回退 1-4。combo 以弱引用跟踪，
+        销毁后自动从注册表剔除。
+        """
+        if not hasattr(self, "_power_channel_combo_registry"):
+            self._power_channel_combo_registry = []
+        self._power_channel_combo_registry.append(
+            (weakref.ref(combo), text_fmt, with_data)
+        )
+        repopulate_channel_combo(
+            combo, getattr(self, "n6705c", None),
+            text_fmt=text_fmt, with_data=with_data,
+        )
+
+    def _refresh_power_channel_combos(self):
+        registry = getattr(self, "_power_channel_combo_registry", None)
+        if not registry:
+            return
+        alive = []
+        for ref, text_fmt, with_data in registry:
+            combo = ref()
+            if combo is None:
+                continue
+            try:
+                repopulate_channel_combo(
+                    combo, getattr(self, "n6705c", None),
+                    text_fmt=text_fmt, with_data=with_data,
+                )
+            except RuntimeError:
+                continue  # 控件已销毁（如动态删除的行）
+            alive.append((ref, text_fmt, with_data))
+        self._power_channel_combo_registry = alive
+
+    def register_power_title_card(self, card, *, default_title="Power Supply",
+                                  connected_fmt="{model}"):
+        """登记连接卡片标题：未连接显示 default_title，已连接显示真实型号。
+
+        connected_fmt 形如 "{model}" / "{model} Connection" / "⚡ {model} "。
+        card 以弱引用跟踪。
+        """
+        if not hasattr(self, "_power_title_card_registry"):
+            self._power_title_card_registry = []
+        self._power_title_card_registry.append(
+            (weakref.ref(card), default_title, connected_fmt)
+        )
+        self._refresh_power_title_cards()
+
+    def _refresh_power_title_cards(self):
+        registry = getattr(self, "_power_title_card_registry", None)
+        if not registry:
+            return
+        inst = getattr(self, "n6705c", None)
+        connected = bool(getattr(self, "is_connected", False) and inst is not None)
+        alive = []
+        for ref, default_title, connected_fmt in registry:
+            card = ref()
+            if card is None:
+                continue
+            title_label = getattr(card, "title_label", None)
+            if title_label is not None:
+                if connected:
+                    try:
+                        model = get_power_analyzer_model(inst)
+                    except Exception:
+                        model = ""
+                    title_label.setText(
+                        connected_fmt.format(model=model) if model else default_title
+                    )
+                else:
+                    title_label.setText(default_title)
+            alive.append((ref, default_title, connected_fmt))
+        self._power_title_card_registry = alive
 
     def sync_n6705c_from_top(self):
         if not self._n6705c_top:

@@ -63,7 +63,8 @@ def test_connect_identify_and_disconnect(connected_driver):
     assert driver.is_connected()
     assert driver.disconnect()
     assert resource_manager.session.closed
-    assert resource_manager.closed
+    # rm 禁 close（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+    assert not resource_manager.closed
     assert not driver.is_connected()
 
 

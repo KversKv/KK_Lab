@@ -301,7 +301,11 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         method_card.main_layout.addWidget(self.method_combo)
         left.addWidget(method_card)
 
-        self.n6705c_card = CardFrame("N6705C Connection")
+        self.n6705c_card = CardFrame("Power Supply Connection")
+        self.register_power_title_card(
+            self.n6705c_card, default_title="Power Supply Connection",
+            connected_fmt="{model} Connection",
+        )
         self.build_n6705c_connection_widgets(
             self.n6705c_card.main_layout, title_row=self.n6705c_card.title_row
         )
@@ -315,6 +319,9 @@ class PMUPSRRUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         self.excitation_card = CardFrame("Excitation")
         self.source_channel_combo = self._channel_combo()
+        self.register_power_channel_combo(
+            self.source_channel_combo, text_fmt="CH {}", with_data=True
+        )
         self.dc_voltage_spin = self._double_spin(0.1, 20.0, 5.0, 0.1, 3)
         self.afg_amplitude_spin = self._double_spin(0.1, 2000.0, 100.0, 10.0, 2)
         self.start_frequency_spin = self._double_spin(0.1, 50e6, 100.0, 100.0, 3)

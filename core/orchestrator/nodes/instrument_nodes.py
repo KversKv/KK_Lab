@@ -26,7 +26,7 @@ class N6705CSetMode(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "mode", "label": "模式", "type": "str", "default": "PS2Q",
          "options": ["PS2Q", "VMETer", "CC"]},
     ]
@@ -51,7 +51,7 @@ class N6705CSetRange(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "range_auto", "label": "自动量程", "type": "bool", "default": True},
     ]
 
@@ -78,7 +78,7 @@ class N6705CChannelOn(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
     ]
 
     def execute(self, context: Any) -> None:
@@ -100,7 +100,7 @@ class N6705CChannelOff(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
     ]
 
     def execute(self, context: Any) -> None:
@@ -122,7 +122,7 @@ class N6705CSetVoltage(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "voltage", "label": "电压 (V)", "type": "float", "default": 3.8},
         {"key": "current_limit", "label": "限流 (A)", "type": "float", "default": 1.0},
         {"key": "output_on", "label": "开启输出", "type": "bool", "default": True},
@@ -153,7 +153,7 @@ class N6705CSetCurrent(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "current", "label": "电流 (A)", "type": "float", "default": 0.1},
         {"key": "voltage_limit", "label": "限压 (V)", "type": "float", "default": 5.0},
     ]
@@ -180,7 +180,7 @@ class N6705CSetCurrentLimit(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "current_limit", "label": "限流 (A)", "type": "float", "default": 1.0},
     ]
 
@@ -204,7 +204,7 @@ class N6705CMeasure(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "measure_type", "label": "测量类型", "type": "str", "default": "current",
          "options": ["voltage", "current", "power"]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "N6705C_result"},
@@ -252,7 +252,7 @@ class N6705CGetMode(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "N6705C_mode"},
         {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
@@ -279,7 +279,7 @@ class N6705CGetChannelState(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道号", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "N6705C_ch_state"},
         {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
@@ -310,7 +310,7 @@ class ScopeSetChannel(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "display", "label": "显示", "type": "bool", "default": True},
         {"key": "coupling", "label": "耦合", "type": "str", "default": "DC",
          "options": ["DC", "AC"]},
@@ -338,7 +338,7 @@ class ScopeSetScale(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "volts_per_div", "label": "V/div", "type": "float", "default": 1.0},
         {"key": "offset", "label": "偏移 (V)", "type": "float", "default": 0.0},
     ]
@@ -386,7 +386,7 @@ class ScopeSetTrigger(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "触发源通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "level", "label": "触发电平 (V)", "type": "float", "default": 1.5},
         {"key": "slope", "label": "触发沿", "type": "str", "default": "POS",
          "options": ["POS", "NEG"]},
@@ -438,7 +438,7 @@ class ScopeMeasure(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "measure_type", "label": "测量类型", "type": "str", "default": "pk2pk",
          "options": ["pk2pk", "rms", "mean", "max", "min", "frequency"]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "scope_result"},
@@ -486,7 +486,7 @@ class ScopeMeasureFreq(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "scope_freq"},
         {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
@@ -524,7 +524,7 @@ class ScopeGetDvmDC(BaseNode):
 
     PARAM_SCHEMA = [
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
-         "options": [1, 2, 3, 4]},
+         "options": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "dvm_dc"},
         {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]

@@ -69,6 +69,7 @@
 - 跨线程更新 UI 只走 Signal/Slot；Worker 禁 import QtWidgets。
 - 日志区用 `ExecutionLogsFrame.wrap_with`（见 ui/modules/AGENTS.md §6.4）。
 - 公共 Mixin / 样式改动需回归全部 7 个子页。
+- **电源通道下拉动态化（2026-11）**：各子页电源通道下拉统一经 `register_power_channel_combo` 登记（见 ui/modules/AGENTS.md），连接 IT2705 时自动扩到 1-8；`gpadc_multi_temp_panel.ChannelEditDialog` 的扫压通道经构造参数 `power_channels` 由面板 `_power_channels()` 传入（页面实例事实源）。示波器通道下拉（isGain ripple / psrr acquisition input/output / clk）恒 1-4 不登记。
 - **GPADC 停止测试禁在 UI 线程 `thread.wait()`**（2026-08 实测卡死）：worker 收尾耗时不可控时主线程被无限期阻塞；且 UART 数据泵（`_on_uart_rx_data` 是主线程槽）随主线程一起断供，`_next_uart_log_line` 内层若不查 `stop_check` 会自旋到 deadline（120s）——两层叠加即"点停止无反应、窗口卡死"。修法：`_stop_test` 只 `request_stop()+quit()`，收尾交 `thread.finished → _on_test_thread_finished`（与 clk_test_ui 同范式）；所有 worker 侧等待循环（含内层 `_next_uart_log_line`、temp_consistency 的 30s 稳温 sleep）必须逐片检查 `stop_check`。
 - **worker 线程禁直调 `set_system_status`**（2026-08 实测整进程 SIGABRT / "Fatal Python error: Aborted"，现场仅主线程栈停在 `app.exec()`）：Mixin 原实现直接 `setText/setObjectName/unpolish/polish`，跨线程改 QWidget 破坏线程亲和性；GPADCTestUI 已重写为经 `system_status_requested` 信号队列化回主线程（`_apply_system_status` 槽），页面内直接 `self.set_system_status(...)` 即可，勿绕过重写。
 - **PSRR Audio Precision 手动连接**：页面必须先 Connect 再启动；本地复用 `audio_precision`，SSH 复用 `AudioPrecisionSSHSession`，连接/断连均走 `AudioPrecisionConnectionWorker + QThread`。正常结束与手动 Stop 均保持手动会话和已连接 UI；Stop 仅发送 `stop_sweep` 软取消当前扫频，禁止 `terminate()/disconnect()`。连接中禁用 Connect 前若其持焦，须先把焦点移到折叠按钮，避免 Qt 将焦点顺移到 Project Path。

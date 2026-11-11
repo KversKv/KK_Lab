@@ -37,3 +37,4 @@
 - **ADR 005 已收尾**：`consumption_test.py` 已拆为薄壳 + 8 视图 Mixin（2026-10-24）；新增方法按职责落对应 Mixin，勿回堆主壳、勿新增上帝类。
 - 温箱温度稳定等待为分钟级，必须异步（见 03§7）。
 - AI 受控接入评估后**推迟**（`HighLowTempConsumptionTestUI` 双仪器 + 温箱，契约命名非标准 `_on_start_clicked` / `_test_worker`），建议独立迭代。
+- **电源连接禁直连驱动类（2026-11 修复）**：`view_device._connect_device` 无 manager 的回退路径必须走 `create_power_analyzer(visa, analyzer_type="auto")`（历史曾直接 `N6705C(visa)` + `"N6705C" in idn` 硬校验，IT2705 无法连接）；连接成功日志/状态显示 `get_power_analyzer_model` 真实型号。通道选项 `_get_available_channel_options` 已按槽位实例 `VALID_CHANNELS` 动态化（IT2705=8），`_update_available_channels` 为唯一刷新入口。
