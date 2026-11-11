@@ -593,3 +593,15 @@ app.installEventFilter(_WinFilter())
 **根因**：onefile 运行需把全部 DLL 解压到 `%TEMP%\_MEIxxxxxx`，退出时由 bootloader 父进程删除该目录；本机安全软件（AisEsmEdr / SSDLP）的驱动在进程终止阶段挂住进程（实测进程 0 线程僵尸态存活 1h+，DLL 文件锁不释放），bootloader 清理必然失败。属驱动级拦截，应用层代码无法修复。
 
 **对策**：打包统一用 **onedir（COLLECT）形态，禁 onefile**（模板见 [spec/kk_lab.spec](../../../spec/kk_lab.spec)：`EXE(exclude_binaries=True)` + `COLLECT`，`upx=False`）。onedir 无解压/清理环节，彻底规避且启动更快。历史残留 `_MEI*` 目录在无 KK_Lab 进程运行时可手动删除。
+
+## 43. 任何 `rm.close()` 都会误杀其它仪器连接（pyvisa 共享 RM，双后端均中招）
+
+**现象**：A 槽 N6705C（HiSLIP）已连接，再自动连接 B 槽 IT2705 后，A 的所有读写抛 `InvalidSession: Invalid session handle`（Datalog 混合录制 Start 直接失败）；disconnect / 扫描后其它仪器"莫名断线"也属此类。
+
+**根因**：pyvisa `ResourceManager.close()`（highlevel.py）会**先逐个 close 该 RM 创建过的所有资源（`_created_resources`）再关 RM session**，docstring 明写 *"will also terminate connections obtained from other ResourceManager instances"*。且 IVI/system VISA 后端下 library 进程级单例、多次 `ResourceManager()` 返回**同一共享 RM**（`highlevel.py:2994` 复用）；pyvisa-py 后端实测同样跨 RM 误伤 HiSLIP session。factory `auto` 探测 IT2705 的一次性 probe `disconnect()` 触发 `rm.close()` 恰好踩雷（`tests/_visa_trace.log` 真机抓栈实锤）。
+
+**规则**：
+
+- **应用代码任何位置都禁止调用 `rm.close()`**——RM 生命周期归进程（退出由 pyvisa atexit 兜底），驱动 `disconnect()` 只关自身 `instr.close()`；扫描/探测只关自己打开的 probe session。`Resource.close()`（仅关本 session）不受影响可正常用。
+- 已全量清理：驱动层（n6705c / it2705 / visa_instrument 基类 / mso64b / dsox4034a / 53230A / 34461A / rohde_schwarz base）、core 扫描（search_worker / visa_scan / registry 三处）、UI 断开与清理（cleanup_mixin / n6705c_module_frame / consumption_test view_device）。新驱动/新扫描照此办理。
+- 此前"判 `@py` 后端再跳过"的条件守卫不充分——系统 VISA 可用的机器同样中招（本机真机环境即 visa32.dll 正常工作），故改为无条件禁止。

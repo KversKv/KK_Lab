@@ -207,12 +207,27 @@ def parse_dlog_binary(raw_data, curr_channels, volt_channels, ulabel, sample_per
 def compute_power_channels(all_data, power_chs_a, power_chs_b):
     for i, active in enumerate(power_chs_a):
         if active:
-            ch = i + 1
-            calc_power_for_ch(all_data, ch, "")
+            calc_power_for_ch(all_data, i + 1, _unit_prefix_for_ch(all_data, i + 1, False))
     for i, active in enumerate(power_chs_b):
         if active:
-            ch = i + 1
-            calc_power_for_ch(all_data, ch, "B")
+            calc_power_for_ch(all_data, i + 1, _unit_prefix_for_ch(all_data, i + 1, True))
+
+
+def _unit_prefix_for_ch(all_data, ch, is_b):
+    """从实际数据 key 反推槽位前缀（"A"/"B"/""）。
+
+    录制 key 格式随连接形态变化：A 单机塌缩无前缀（"CH1 V"）、B 单机或
+    双机带槽位前缀（"B CH1 V" / "A CH1 V"）。硬编码 "" / "B" 会在双机
+    A 侧 / B 单机时配不出 V/I，须按 key 解析结果反推。
+    """
+    for key in all_data:
+        c_num, _, c_is_b = parse_channel_label(key)
+        if c_num != ch or c_is_b != is_b:
+            continue
+        m = re.match(r'^(.*?)\s*CH\d+\s*[IVP]\s*$', key.strip())
+        if m and not re.match(r'^F\d+-', m.group(1).strip()):
+            return m.group(1).strip()
+    return "B" if is_b else ""
 
 
 def calc_power_for_ch(all_data, ch, unit_prefix, key_prefix=""):

@@ -274,8 +274,5 @@ class OscilloscopeController:
             log(f"[ERROR] Search failed: {str(e)}")
             return []
         finally:
-            if rm:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
+            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+            pass

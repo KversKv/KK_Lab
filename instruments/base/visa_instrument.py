@@ -22,12 +22,7 @@ class VisaInstrument(InstrumentBase):
     def scan_devices(self):
         """扫描可用的 VISA 设备"""
         try:
-            if self.rm:
-                logger.debug("Closing existing ResourceManager before scan")
-                try:
-                    self.rm.close()
-                except Exception:
-                    pass
+            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
             self.rm = visa.ResourceManager()
             devices = self.rm.list_resources()
             logger.debug("VISA scan found %d device(s): %s", len(devices), devices)
@@ -61,9 +56,8 @@ class VisaInstrument(InstrumentBase):
             logger.debug("Disconnecting VISA instrument")
             if self.instrument:
                 self.instrument.close()
-            if self.rm:
-                self.rm.close()
-            
+            # rm 禁 close()（共享 RM 误杀其它仪器，03 §43）
+
             self.instrument = None
             self.rm = None
             logger.debug("VISA instrument disconnected successfully")

@@ -188,11 +188,8 @@ def _scan_mso64b() -> list[InstrumentCandidate]:
     except Exception as e:
         logger.warning("MSO64B scan failed: %s", e)
     finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+        pass
     return candidates
 
 
@@ -286,11 +283,8 @@ def _scan_dsox4034a() -> list[InstrumentCandidate]:
     except Exception as e:
         logger.warning("DSOX4034A scan failed: %s", e)
     finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+        pass
     return candidates
 
 
@@ -528,11 +522,8 @@ def _scan_keysight53230a() -> list[InstrumentCandidate]:
     except Exception as e:
         logger.warning("53230A scan failed: %s", e)
     finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+        pass
     return candidates
 
 

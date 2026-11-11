@@ -582,8 +582,7 @@ class N6705CConnectionMixin:
                 if self.n6705c is not None:
                     if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
                         self.n6705c.instr.close()
-                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
-                        self.n6705c.rm.close()
+                    # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
                 self.n6705c = None
 
                 self._update_n6705c_connect_button_state(False)

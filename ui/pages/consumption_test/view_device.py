@@ -200,8 +200,7 @@ class ConsumptionTestViewDeviceMixin:
                         else:
                             if hasattr(inst, 'instr') and inst.instr:
                                 inst.instr.close()
-                            if hasattr(inst, 'rm') and inst.rm:
-                                inst.rm.close()
+                            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
             finally:
                 self._syncing = False
             setattr(self, f"n6705c_{attr}", None)

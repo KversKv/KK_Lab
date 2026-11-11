@@ -34,9 +34,8 @@ class CleanupMixin:
             logger.warning("[CloseEvent] Error stopping test thread for %s: %s", name, e)
 
         try:
+            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
             if hasattr(sub_ui, 'rm') and sub_ui.rm is not None:
-                logger.info("[CloseEvent] Closing VISA ResourceManager: %s", name)
-                sub_ui.rm.close()
                 sub_ui.rm = None
         except Exception as e:
             logger.warning("[CloseEvent] Error closing ResourceManager for %s: %s", name, e)
@@ -80,11 +79,7 @@ class CleanupMixin:
             ("N6705CDatalogUI", self.n6705c_datalog_ui),
         ]:
             if ui_widget is not None and hasattr(ui_widget, 'rm') and ui_widget.rm is not None:
-                logger.info("[CloseEvent] Closing VISA ResourceManager: %s", ui_name)
-                try:
-                    ui_widget.rm.close()
-                except Exception as e:
-                    logger.warning("[CloseEvent] Error closing ResourceManager for %s: %s", ui_name, e)
+                # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
                 ui_widget.rm = None
 
         if self.pmu_test_ui is not None:

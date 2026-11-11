@@ -373,11 +373,15 @@ class _InstrumentEditDialog(QDialog):
         device = device or {}
         visa_resource = device.get("visa_resource", "")
         is_usb = visa_resource.upper().startswith("USB")
+        # Socket 连接（如 IT2705 的 30000 端口原始套接字，无 HiSLIP 服务）
+        socket_m = re.match(
+            r"^TCPIP\d*::([^:]+)::(\d+)::SOCKET$", visa_resource, re.IGNORECASE
+        )
 
         layout.addWidget(QLabel("Connection Type"))
         self._conn_type_combo = QComboBox()
-        self._conn_type_combo.addItems(["TCP/IP (LAN)", "USB"])
-        self._conn_type_combo.setCurrentIndex(1 if is_usb else 0)
+        self._conn_type_combo.addItems(["TCP/IP (LAN)", "TCP/IP (Socket)", "USB"])
+        self._conn_type_combo.setCurrentIndex(2 if is_usb else (1 if socket_m else 0))
         layout.addWidget(self._conn_type_combo)
 
         self._ip_label = QLabel("IP Address")
@@ -385,6 +389,13 @@ class _InstrumentEditDialog(QDialog):
         self._ip_edit = QLineEdit()
         self._ip_edit.setPlaceholderText("e.g. 192.168.3.99")
         layout.addWidget(self._ip_edit)
+
+        self._port_label = QLabel("Port")
+        layout.addWidget(self._port_label)
+        self._port_edit = QLineEdit()
+        self._port_edit.setPlaceholderText("e.g. 30000")
+        self._port_edit.setText(socket_m.group(2) if socket_m else "30000")
+        layout.addWidget(self._port_edit)
 
         self._usb_label = QLabel("USB Resource String")
         layout.addWidget(self._usb_label)
@@ -396,11 +407,16 @@ class _InstrumentEditDialog(QDialog):
             self._usb_edit.setText(visa_resource)
             self._ip_label.hide()
             self._ip_edit.hide()
+            self._port_label.hide()
+            self._port_edit.hide()
         else:
             ip = visa_resource.split("::")[1] if "::" in visa_resource else ""
             self._ip_edit.setText(device.get("display_ip") or ip)
             self._usb_label.hide()
             self._usb_edit.hide()
+            if not socket_m:
+                self._port_label.hide()
+                self._port_edit.hide()
 
         layout.addWidget(QLabel("Serial Number (optional)"))
         self._serial_edit = QLineEdit()
@@ -416,6 +432,7 @@ class _InstrumentEditDialog(QDialog):
             # 已连接 / 连接中的仪器禁止改地址，仅允许改序列号与自动连接
             self._conn_type_combo.setEnabled(False)
             self._ip_edit.setEnabled(False)
+            self._port_edit.setEnabled(False)
             self._usb_edit.setEnabled(False)
             lock_hint = QLabel("该仪器当前已连接或连接中，地址不可修改。")
             lock_hint.setStyleSheet(dss.HINT_TEXT_STYLE)
@@ -440,19 +457,33 @@ class _InstrumentEditDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _on_conn_type_changed(self, index):
-        lan = index == 0
+        lan = index in (0, 1)
         self._ip_label.setVisible(lan)
         self._ip_edit.setVisible(lan)
-        self._usb_label.setVisible(not lan)
-        self._usb_edit.setVisible(not lan)
+        self._port_label.setVisible(index == 1)
+        self._port_edit.setVisible(index == 1)
+        self._usb_label.setVisible(index == 2)
+        self._usb_edit.setVisible(index == 2)
 
     def _on_save(self):
-        if self._conn_type_combo.currentIndex() == 0:
+        conn_index = self._conn_type_combo.currentIndex()
+        if conn_index in (0, 1):
             ip = self._ip_edit.text().strip()
             if not ip:
                 QMessageBox.warning(self, "输入不完整", "请填写 IP 地址。")
                 return
-            visa_resource = f"TCPIP0::{ip}::hislip0::INSTR"
+            if conn_index == 0:
+                visa_resource = f"TCPIP0::{ip}::hislip0::INSTR"
+            else:
+                port_text = self._port_edit.text().strip() or "30000"
+                try:
+                    port = int(port_text)
+                    if not (1 <= port <= 65535):
+                        raise ValueError(port_text)
+                except ValueError:
+                    QMessageBox.warning(self, "输入不完整", "请填写合法端口号 (1-65535)。")
+                    return
+                visa_resource = f"TCPIP0::{ip}::{port}::SOCKET"
             display_ip = ip
         else:
             usb_str = self._usb_edit.text().strip()

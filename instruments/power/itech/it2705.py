@@ -137,12 +137,7 @@ class IT2705(VisaInstrument):
             except Exception:
                 success = False
                 logger.error("IT2705: 关闭仪器连接失败", exc_info=True)
-        if self.rm is not None:
-            try:
-                self.rm.close()
-            except Exception:
-                success = False
-                logger.error("IT2705: 关闭 VISA ResourceManager 失败", exc_info=True)
+        # rm 不 close（共享 RM 误杀其它仪器连接，03 §43），仅关自身 session
         self.instrument = None
         self.rm = None
         return success

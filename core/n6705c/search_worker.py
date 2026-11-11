@@ -298,11 +298,7 @@ def _probe_one(resource: str):
                 instr.close()
             except Exception:
                 pass
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
 
 
 def _select_preferred(resources: list[str]) -> str:
@@ -341,11 +337,8 @@ def discover_n6705c_details() -> list[dict]:
     except Exception:
         logger.debug("N6705C list_resources failed", exc_info=True)
     finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+        pass
 
     visa_candidates = [r for r in resources if _is_probe_candidate(r)]
     # 合并三路候选并去重（保序：mDNS > 主动扫描 > VISA）

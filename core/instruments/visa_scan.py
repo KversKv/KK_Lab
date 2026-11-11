@@ -42,11 +42,9 @@ def discover_visa_by_idn(keywords, timeout_ms=2000):
                     except Exception:
                         pass
     finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）；
+        # 探测打开的 instr session 已在上面逐个关闭
+        pass
     return matched
 
 

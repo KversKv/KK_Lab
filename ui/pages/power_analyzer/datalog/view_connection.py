@@ -845,7 +845,7 @@ class ConnectionViewMixin:
         conn_type_label = QLabel("Connection Type")
         form_layout.addWidget(conn_type_label)
         conn_type_combo = QComboBox()
-        conn_type_combo.addItems(["TCP/IP (LAN)", "USB"])
+        conn_type_combo.addItems(["TCP/IP (LAN)", "TCP/IP (Socket)", "USB"])
         form_layout.addWidget(conn_type_combo)
 
         ip_label = QLabel("IP Address")
@@ -853,6 +853,16 @@ class ConnectionViewMixin:
         ip_edit = QLineEdit()
         ip_edit.setPlaceholderText("e.g. 192.168.3.99")
         form_layout.addWidget(ip_edit)
+
+        # Socket 连接（如 IT2705 的 30000 端口原始套接字，无 HiSLIP 服务）
+        port_label = QLabel("Port")
+        form_layout.addWidget(port_label)
+        port_edit = QLineEdit()
+        port_edit.setPlaceholderText("e.g. 30000")
+        port_edit.setText("30000")
+        form_layout.addWidget(port_edit)
+        port_label.hide()
+        port_edit.hide()
 
         usb_label = QLabel("USB Resource String")
         usb_edit = QLineEdit()
@@ -876,16 +886,13 @@ class ConnectionViewMixin:
         form_layout.addWidget(save_default_check)
 
         def _on_conn_type_changed(index):
-            if index == 0:
-                ip_label.show()
-                ip_edit.show()
-                usb_label.hide()
-                usb_edit.hide()
-            else:
-                ip_label.hide()
-                ip_edit.hide()
-                usb_label.show()
-                usb_edit.show()
+            lan = index in (0, 1)
+            ip_label.setVisible(lan)
+            ip_edit.setVisible(lan)
+            port_label.setVisible(index == 1)
+            port_edit.setVisible(index == 1)
+            usb_label.setVisible(index == 2)
+            usb_edit.setVisible(index == 2)
 
         conn_type_combo.currentIndexChanged.connect(_on_conn_type_changed)
 
@@ -914,6 +921,19 @@ class ConnectionViewMixin:
             if not ip:
                 return
             visa_resource = f"TCPIP0::{ip}::hislip0::INSTR"
+            display_ip = ip
+        elif conn_index == 1:
+            ip = ip_edit.text().strip()
+            if not ip:
+                return
+            port_text = port_edit.text().strip() or "30000"
+            try:
+                port = int(port_text)
+                if not (1 <= port <= 65535):
+                    raise ValueError(port_text)
+            except ValueError:
+                return
+            visa_resource = f"TCPIP0::{ip}::{port}::SOCKET"
             display_ip = ip
         else:
             usb_str = usb_edit.text().strip()

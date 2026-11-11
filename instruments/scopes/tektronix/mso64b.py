@@ -356,12 +356,8 @@ class MSO64B:
             except Exception:
                 pass
             self.instrument = None
-        if self.rm is not None:
-            try:
-                self.rm.close()
-            except Exception:
-                pass
-            self.rm = None
+        # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
+        self.rm = None
 
     def capture_screen_png(self, **kwargs) -> bytes:
         logger.debug("MSO64B capture_screen_png called")

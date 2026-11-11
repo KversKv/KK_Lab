@@ -537,10 +537,7 @@ class Keysight53230A:
                 pass
             self.instr = None
         if self.rm is not None:
-            try:
-                self.rm.close()
-            except Exception:
-                pass
+            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
             self.rm = None
 
     def close(self):

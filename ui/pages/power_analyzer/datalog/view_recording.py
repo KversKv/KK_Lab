@@ -4,7 +4,7 @@
 import numpy as np
 import os
 import time
-from PySide6.QtCore import QThread, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer
 from debug_config import DEBUG_MOCK
 from instruments.power.keysight.n6705c_datalog_process import compute_power_channels
 from ui.pages.power_analyzer import datalog_style as dss
@@ -123,6 +123,14 @@ class RecordingViewMixin:
             )
         return visible_keys
 
+    @staticmethod
+    def _cb_supported(cb):
+        # 通道门禁须看显式禁用标志 WA_ForceDisabled，禁用 isEnabled()：
+        # 录制中 _show_progress_overlay 禁用 channel_config_card 会把
+        # isEnabled() 传播为 False（瞬时锁），会清空可见通道集并令快照
+        # 恢复误擦勾选态（波形空白但 MEASUREMENT 有数据）。
+        return not cb.testAttribute(Qt.WA_ForceDisabled)
+
     def _collect_visible_keys_from_cbs(self, visible_keys,
                                         current_a, voltage_a, power_a,
                                         current_b, voltage_b, power_b,
@@ -137,7 +145,7 @@ class RecordingViewMixin:
         ]
         for cbs, target_mtype, target_is_b in cb_groups:
             for i, cb in enumerate(cbs):
-                if cb.isEnabled() and cb.isChecked():
+                if self._cb_supported(cb) and cb.isChecked():
                     ch = i + 1
                     for key in data_dict:
                         ch_num, mtype, is_b = _parse_ch_label(key)
@@ -315,7 +323,7 @@ class RecordingViewMixin:
         for key, btn in self._iter_channel_toggle_buttons():
             if key not in snapshot:
                 continue
-            checked = snapshot[key] and btn.isEnabled()
+            checked = snapshot[key] and self._cb_supported(btn)
             btn.blockSignals(True)
             btn.setChecked(checked)
             ch_color = btn.property("ch_color")
@@ -353,7 +361,7 @@ class RecordingViewMixin:
 
             if idx < len(cbs):
                 btn = cbs[idx]
-                if key in new_keys and btn.isEnabled():
+                if key in new_keys and self._cb_supported(btn):
                     btn.blockSignals(True)
                     btn.setChecked(True)
                     ch_color = btn.property("ch_color")
@@ -605,7 +613,10 @@ class RecordingViewMixin:
                 else:
                     logger.warning("Cannot acquire busy for n6705c:B (datalog)")
 
-        if len(n6705c_list) == 1:
+        # 单机无前缀塌缩仅限槽位 A：B 单机必须保留 "B" 前缀，否则 key 解析
+        # is_b=False 被归入 A 槽开关，A 未连接时可见通道集为空（波形空白、
+        # MEASUREMENT 走兜底仍显示数据），且 B 时间偏移 / B 侧 P 通道全失效
+        if len(n6705c_list) == 1 and unit_labels == ["A"]:
             unit_labels = [""]
 
         record_type = "current" if self.type_current.isChecked() else "voltage"

@@ -559,12 +559,12 @@ class N6705C:
             except Exception:
                 pass
             self.instr = None
-        if self.rm is not None:
-            try:
-                self.rm.close()
-            except Exception:
-                pass
-            self.rm = None
+        # RM 生命周期归进程不归驱动：pyvisa 的 ResourceManager.close() 会关闭
+        # 该 RM 创建过的所有资源，且 IVI/system VISA 后端下多次 ResourceManager()
+        # 返回同一共享 RM——任何一处 rm.close() 都会误杀其它仪器连接
+        # （factory auto 探测 probe.disconnect() 曾杀死 A 槽 HiSLIP 会话，03 §43）。
+        # 进程退出由 pyvisa atexit 兜底，这里只关自身 session。
+        self.rm = None
     
     def format_current(self, current_A):
         """

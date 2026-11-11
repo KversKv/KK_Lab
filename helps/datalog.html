@@ -5,7 +5,7 @@
 
 <h3>快速上手（基础流程）</h3>
 <ol>
-  <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C / IT2705，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP 或 USB），连接后通过 IDN 自动识别真实型号。</li>
+  <li><b>连接仪器</b> — 点击左侧图标栏的 <b>Instrument Connection</b> 图标打开连接面板，点击搜索按钮扫描局域网内的 N6705C / IT2705，在设备卡片上点击 <b>Connect</b>；已连接设备自动分配到插槽 A / B。也可以通过「⋯」菜单 → <b>Add Instrument Manually</b> 手动添加（TCP/IP HiSLIP、TCP/IP Socket 或 USB；IT2705 请选 <b>TCP/IP (Socket)</b> 并填端口 30000），连接后通过 IDN 自动识别真实型号。</li>
   <li><b>配置采集参数</b> — 点击左侧 <b>Settings</b> 图标，在 <b>DATALOG CONFIG</b> 中设置 <b>Sampling Period (μs)</b> 与 <b>Monitoring Time (s)</b> 监控时长。N6705C 使用原生 DLOG 采样周期；IT2705 使用该值作为软件采样目标间隔，实际间隔受查询耗时影响。</li>
   <li><b>选择测量项</b> — 在 <b>Measurement Settings</b> 中勾选需要统计的指标（Minimum / Average / Maximum / Peak to Peak / Charge / Energy）。</li>
   <li><b>勾选采集通道</b> — 在下方 <b>Channel Config</b> 的 Active 页签中，为每个受支持通道勾选 <b>I</b>（电流）/ <b>V</b>（电压）/ <b>P</b>（功率），必要时调整 Scale / Offset。N6705C 仅支持 N6781A / N6784A 模块，IT2705 仅支持 IT27814 / IT27814E 模块；其他模块及空插槽对应的通道会自动隐藏。</li>

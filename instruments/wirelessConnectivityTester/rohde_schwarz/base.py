@@ -239,10 +239,7 @@ class CMWBase:
                 logger.warning("%s 关闭 instr 失败", self.MODEL, exc_info=True)
             self.instr = None
         if getattr(self, "rm", None) is not None:
-            try:
-                self.rm.close()
-            except Exception:
-                logger.warning("%s 关闭 rm 失败", self.MODEL, exc_info=True)
+            # rm 禁 close()（IVI 后端 RM 进程级共享，close 误杀其它仪器，03 §43）
             self.rm = None
 
     def is_connected(self):
