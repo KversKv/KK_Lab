@@ -49,6 +49,7 @@
 ## 局部坑点
 
 - **Datalog 连接管理三律**：① 连接/断连/刷新收尾统一走 `_after_slot_states_synced`（槽位签名去重，禁止绕过重发 `connection_status_changed` 或直调 `_refresh_channel_config`）；② 并发连接用 `_pending_connects`（slot→resource）守卫，`_find_next_free_slot` 必须跳过 pending 槽；③ manager 的 `connection_failed` **不发** `sessions_changed`，必须单独监听恢复卡片按钮态，否则按钮卡死 "Connecting..."；session 被他页 `remove_session` 移除时靠 `_on_manager_sessions_changed` 对账清理。
+- **IT2705 软件采样三律**（`datalog/workers.py` / `view_recording.py`）：① 同通道 V/I 必须共用每 tick 单一时间戳——`calc_power_for_ch` 按精确时间戳配对，真机单次 MEAS ≥20ms，分别取 `time.time()` 时 P 通道永远配不出；② 采样逐点 try/except 跳过失败点（输出 OFF → nan → ValueError），仅首失败 WARN、结束汇总计数，禁上抛终止整次录制；③ `instr.timeout` 长超时（≥600s）仅对原生 DLOG 单元（有 `read_mmem_data`）提升，软件采样单元保留驱动默认 10s，防单条 MEAS 卡死挂起录制。Mock 调试卡含 `MOCK::IT2705`（`_add_default_debug_device`）。
 - **签名必须含 pending**：manager 连接成功先发 `session_connected`（→ top → `_sync_from_top` 抢跑收尾）后发 `sessions_changed`（→ 对账清 pending）；`_after_slot_states_synced` 签名若不含 `_pending_connects`，pending 清除时被去重跳过，设备卡片永久卡 "Connecting..."（suite 双页同建场景实踩）。
 - **§25 Tab 盒模型坑**：见上"局部约定"第一条，是本页踩过的真实坑。
 - **窗口几何恢复禁按 margin 压尺寸**：`_clamped_window_geometry` 只允许"超出可用区域才截断"（`min(saved, available)`）；若按 `可用宽-40` 预留 margin，Windows 吸附 1/2 屏（宽=整屏）后重开会被压小，150% DPI 下右侧出现 60 物理 px 空白。`_WINDOW_MARGIN` 仅用于默认窗口尺寸。

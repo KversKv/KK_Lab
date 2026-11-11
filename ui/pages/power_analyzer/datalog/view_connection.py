@@ -943,11 +943,19 @@ class ConnectionViewMixin:
         existing_serials = {c.property("serial") for c in self.device_cards}
         if "MY56006098" not in existing_serials:
             visa_res = get_address_preset("n6705c", "debug")
-            if not visa_res:
-                return
-            display_ip = visa_res.split("::")[1] if "::" in visa_res else visa_res
+            if visa_res:
+                display_ip = visa_res.split("::")[1] if "::" in visa_res else visa_res
+                card = self._create_device_card(
+                    "MY56006098", "N6705C", display_ip, visa_res
+                )
+                self.device_list_layout.insertWidget(self.device_list_layout.count() - 1, card)
+                self.device_cards.append(card)
+        # Mock 模式补一张 IT2705 调试卡（factory auto 按资源名识别），
+        # 便于独立运行验证 8 通道软件采样路径
+        existing_resources = {c.property("visa_resource") for c in self.device_cards}
+        if "MOCK::IT2705" not in existing_resources:
             card = self._create_device_card(
-                "MY56006098", "N6705C", display_ip, visa_res
+                "MOCK-IT2705", "IT2705", "MOCK::IT2705", "MOCK::IT2705"
             )
             self.device_list_layout.insertWidget(self.device_list_layout.count() - 1, card)
             self.device_cards.append(card)

@@ -622,7 +622,10 @@ class RecordingViewMixin:
 
         timeout_ms = int((monitor_time + 600) * 1000)
         for n6705c in n6705c_list:
-            n6705c.instr.timeout = max(timeout_ms, 600000)
+            # 仅原生 DLOG（N6705C）需长超时覆盖等待/下载；软件采样（IT2705）
+            # 逐条 MEAS 查询保留驱动默认超时，单条卡死不致挂起整次录制
+            if callable(getattr(n6705c, "read_mmem_data", None)):
+                n6705c.instr.timeout = max(timeout_ms, 600000)
 
         imported_keys = set()
         for tc in self._imported_tab_configs:

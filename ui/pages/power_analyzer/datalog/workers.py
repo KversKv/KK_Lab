@@ -87,6 +87,8 @@ class _DatalogWorker(QObject):
         self.debug = debug
         self.voltage_channels_per_unit = voltage_channels_per_unit or [[] for _ in n6705c_list]
         self._is_stopped = False
+        # 软件采样逐点失败计数 {(unit_label, ch, kind): count}，仅首失败 WARN
+        self._sample_failures = {}
 
     def stop(self):
         self._is_stopped = True
@@ -125,6 +127,11 @@ class _DatalogWorker(QObject):
             self.progress_update.emit(98, "Processing results...")
             logger.debug("[Datalog][Progress] Emitting results at %.3fs", time.time() - run_start)
             logger.info("[Datalog] Total channels with data: %d", len(all_data))
+            if self._sample_failures:
+                logger.warning(
+                    "[Datalog] Software sampling skipped failed points: %s",
+                    dict(self._sample_failures),
+                )
             self.dlog_raw_ready.emit(raw_dlog_list)
             self.data_ready.emit(all_data)
             self.progress_update.emit(100, "Done")
@@ -345,16 +352,43 @@ class _DatalogWorker(QObject):
             for ch in sorted(set(curr_channels) | set(volt_channels)):
                 if self._is_stopped:
                     return
+                # V/I 共用同一时间戳：calc_power_for_ch 按精确时间戳配对，
+                # 真机单次 MEAS ≥20ms，分别取时 P 通道永远配不出
+                t_now = max(0.0, time.time() - capture_start)
                 if ch in volt_channels:
-                    value_mv = float(instance.measure_voltage(ch)) * 1000.0
-                    series = all_data[f"{ulabel} CH{ch} V".strip()]
-                    series["time"].append(max(0.0, time.time() - capture_start))
-                    series["values"].append(value_mv)
+                    try:
+                        value_mv = float(instance.measure_voltage(ch)) * 1000.0
+                    except Exception as e:
+                        self._log_sample_failure(ulabel, ch, "V", e)
+                    else:
+                        series = all_data[f"{ulabel} CH{ch} V".strip()]
+                        series["time"].append(t_now)
+                        series["values"].append(value_mv)
                 if ch in curr_channels:
-                    value_ma = float(instance.measure_current(ch)) * 1000.0
-                    series = all_data[f"{ulabel} CH{ch} I".strip()]
-                    series["time"].append(max(0.0, time.time() - capture_start))
-                    series["values"].append(value_ma)
+                    try:
+                        value_ma = float(instance.measure_current(ch)) * 1000.0
+                    except Exception as e:
+                        self._log_sample_failure(ulabel, ch, "I", e)
+                    else:
+                        series = all_data[f"{ulabel} CH{ch} I".strip()]
+                        series["time"].append(t_now)
+                        series["values"].append(value_ma)
+
+    def _log_sample_failure(self, ulabel, ch, kind, err):
+        """软件采样逐点容错：输出 OFF / 单次超时只跳过该点，不终止整次录制。"""
+        key = (ulabel, ch, kind)
+        count = self._sample_failures.get(key, 0) + 1
+        self._sample_failures[key] = count
+        if count == 1:
+            logger.warning(
+                "[Datalog] Software sampling failed on %s CH%d %s: %s",
+                ulabel, ch, kind, err, exc_info=True,
+            )
+        else:
+            logger.debug(
+                "[Datalog] Software sampling failed on %s CH%d %s (%d times)",
+                ulabel, ch, kind, count,
+            )
 
     def _download_units(self, native_units, sample_period_s, run_start):
         """逐台下载 dlog 数据：优先二进制直读（重试4次），失败降级 CSV 导出。"""
