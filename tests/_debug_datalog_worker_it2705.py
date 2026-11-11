@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""临时 DEBUG：_DatalogWorker 真实路径（debug=False）跑 MockIT2705 软件采样。
+"""临时 DEBUG：_DatalogWorker 真实路径（debug=False）跑 MockIT2705 ELOG 流式采样。
 
 运行：python tests\\_debug_datalog_worker_it2705.py
 断言：
-1. I1/V2 有数据（基础软件采样）；
+1. I1/V1 有数据（ELOG 记录数组）；
 2. 同通道 V/I 时间戳 100% 一致（P 通道配对前提），calc_power_for_ch 能算出 P；
-3. 某通道测量抛错时录制不中断，其余通道数据完整（逐点容错）。
+3. 某通道取数抛错时录制不中断，其余通道数据完整（逐点容错）。
 """
 
 import os
@@ -32,10 +32,10 @@ def _check(name, cond, detail=""):
 def main():
     app = QApplication(sys.argv)
     inst = MockIT2705("MOCK::IT2705")
-    # 通道 2 电压测量恒失败（模拟输出 OFF 返回 nan / 单次超时）
-    inst.measure_voltage = lambda ch: (_ for _ in ()).throw(
-        ValueError("IT2705: 无有效测量值 nan")
-    ) if ch == 2 else MockIT2705.measure_voltage(inst, ch)
+    # 通道 2 ELOG 取数恒失败（模拟 socket 超时 / 缓冲异常）
+    inst.fetch_elog_records = lambda ch, *a, **k: (_ for _ in ()).throw(
+        ValueError("IT2705: ELOG fetch timeout")
+    ) if ch == 2 else MockIT2705.fetch_elog_records(inst, ch, *a, **k)
 
     worker = _DatalogWorker(
         [inst], [[1]], ["A"], "current", 20.0, 0.5,
@@ -60,8 +60,8 @@ def main():
            and len(result["A CH1 P"]["values"]) > 5)
     _check("V2 series exists (empty after failures)", v2 is not None
            and len(v2["values"]) == 0, f"pts={len(v2['values']) if v2 else None}")
-    _check("failure counted", worker._sample_failures.get(("A", 2, "V"), 0) > 0,
-           f"count={worker._sample_failures.get(('A', 2, 'V'), 0)}")
+    _check("failure counted", worker._sample_failures.get(("A", 2, "ELOG"), 0) > 0,
+           f"count={worker._sample_failures.get(('A', 2, 'ELOG'), 0)}")
 
     print("RESULT:", "ALL_OK" if all(PASS) else "FAILED")
     return 0 if all(PASS) else 1

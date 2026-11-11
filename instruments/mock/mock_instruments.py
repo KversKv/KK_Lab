@@ -2096,6 +2096,11 @@ class _MockIT2705Session:
             for channel in IT2705.VALID_CHANNELS
         }
         self.dlog_time = 1.0
+        self.elog_funcs = {channel: [False, False] for channel in IT2705.VALID_CHANNELS}
+        self.elog_periods = {channel: 0.001 for channel in IT2705.VALID_CHANNELS}
+        self.elog_running = False
+        self.elog_start = 0.0
+        self.elog_consumed = {channel: 0 for channel in IT2705.VALID_CHANNELS}
 
     @staticmethod
     def _channels(command):
@@ -2135,6 +2140,23 @@ class _MockIT2705Session:
             self.apertures[self._channel(command)] = self._value(command)
         elif upper.startswith("SENS:DLOG:TIME "):
             self.dlog_time = float(command.split(None, 1)[1])
+        elif upper.startswith(("SENS:ELOG:FUNC:VOLT:MINM ", "SENS:ELOG:FUNC:CURR:MINM ")):
+            pass
+        elif upper.startswith("SENS:ELOG:FUNC:VOLT "):
+            self.elog_funcs[self._channel(command)][0] = "ON" in upper
+        elif upper.startswith("SENS:ELOG:FUNC:CURR "):
+            self.elog_funcs[self._channel(command)][1] = "ON" in upper
+        elif upper.startswith("SENS:ELOG:PER "):
+            self.elog_periods[self._channel(command)] = self._value(command)
+        elif upper.startswith("INIT:ELOG"):
+            self.elog_consumed = {
+                channel: 0 for channel in IT2705.VALID_CHANNELS
+            }
+        elif upper.startswith("TRIG:ELOG (") or upper == "TRIG:ELOG":
+            self.elog_running = True
+            self.elog_start = time.monotonic()
+        elif upper.startswith("ABOR:ELOG"):
+            self.elog_running = False
         return 0
 
     def query(self, command):
@@ -2191,6 +2213,34 @@ class _MockIT2705Session:
             )
             return ",".join(str(value) for value in values)
         raise ValueError(f"Unsupported MockIT2705 query: {command}")
+
+    def query_binary_values(self, command, datatype="f", container=list, **kwargs):
+        self.commands.append(command)
+        upper = command.upper().strip()
+        if not upper.startswith("FETC:ELOG?"):
+            raise ValueError(f"Unsupported MockIT2705 binary query: {command}")
+        max_records = int(upper.split("?", 1)[1].split(",", 1)[0].strip())
+        channel = self._channel(command)
+        if not self.elog_running:
+            return container()
+        elapsed = time.monotonic() - self.elog_start
+        period = self.elog_periods[channel]
+        produced = int(elapsed / period)
+        available = max(0, produced - self.elog_consumed[channel])
+        count = min(max_records, available)
+        want_v, want_i = self.elog_funcs[channel]
+        base_v = self.voltages[channel]
+        base_i = self.currents[channel]
+        start_idx = self.elog_consumed[channel]
+        self.elog_consumed[channel] += count
+        out = []
+        for k in range(count):
+            idx = start_idx + k
+            if want_v:
+                out.append(base_v + 0.01 * math.sin(idx * period * 2 * math.pi * 100))
+            if want_i:
+                out.append(base_i + 0.001 * math.sin(idx * period * 2 * math.pi * 50))
+        return container(out)
 
     def close(self):
         self.closed = True

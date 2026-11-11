@@ -26,6 +26,11 @@ class IT2705(VisaInstrument):
     SUPPORTED_MODULE_MODELS = frozenset({"IT27814", "IT27814E"})
     DLOG_PERIOD_MIN = 20e-6
     DLOG_PERIOD_MAX = 60.0
+    # ELOG 外部记录仪（真机 2026-11 实测）：PER 范围 20us-60s（手册写 0.0001-1 不准）；
+    # FETC:ELOG? 仅运行中可读（ABOR 后缓冲清空），maxrecords >30000 无响应，chanlist 多通道超时。
+    ELOG_PERIOD_MIN = 20e-6
+    ELOG_PERIOD_MAX = 60.0
+    ELOG_FETCH_MAX_RECORDS = 20000
     INVALID_MEAS_THRESHOLD = 9.9e37
     # MEAS 按通道积分时间（SENS:APER）采集后才返回；面板可设到 20.48s（NPLC 1024），
     # 超过 VISA 超时会造成迟到响应污染缓冲区、后续读写全部错位。测量前临时压到该值（1 PLC）。
@@ -39,6 +44,7 @@ class IT2705(VisaInstrument):
         self.visa_library = visa_library
         self.timeout_ms = int(timeout_ms)
         self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
+        self._elog_funcs = {}
         self.connect()
 
     def refresh_channel_modules(self):
@@ -555,6 +561,110 @@ class IT2705(VisaInstrument):
 
     def stop_datalog(self):
         self.write("ABOR:DLOG")
+
+    def configure_elog(self, curr_channels, volt_channels, sample_period):
+        """配置 ELOG 外部记录仪（不启动），返回实际生效的积分时间(s)。
+
+        记录格式：每通道每条记录按使能项依次排列（如 V+I 为使能时 [V, I]）；
+        MINMax 固定关闭以保持紧凑记录。OFF 仅下发到在位通道，避免空槽报 502。
+        """
+        curr_channels = self._normalize_channels(curr_channels) if curr_channels else []
+        volt_channels = self._normalize_channels(volt_channels) if volt_channels else []
+        targets = sorted(set(curr_channels) | set(volt_channels))
+        if not targets:
+            raise ValueError("IT2705: ELOG 至少指定一个电压或电流通道")
+        period = float(sample_period)
+        clamped = min(max(period, self.ELOG_PERIOD_MIN), self.ELOG_PERIOD_MAX)
+        if clamped != period:
+            logger.warning(
+                "IT2705 ELOG:PER %.6fs 超出范围，调整为 %.6fs", period, clamped
+            )
+        populated = [
+            ch for ch in self.VALID_CHANNELS if self.channel_module_models.get(ch)
+        ]
+        touched = populated or targets
+        self.clear_status()
+        self.write(f"ABOR:ELOG (@{','.join(map(str, touched))})")
+        for channel in touched:
+            if channel in targets:
+                continue
+            self.write(f"SENS:ELOG:FUNC:VOLT OFF,(@{channel})")
+            self.write(f"SENS:ELOG:FUNC:CURR OFF,(@{channel})")
+        self._elog_funcs = {}
+        for channel in targets:
+            want_v = channel in volt_channels
+            want_i = channel in curr_channels
+            self.write(
+                f"SENS:ELOG:FUNC:VOLT {'ON' if want_v else 'OFF'},(@{channel})"
+            )
+            self.write(
+                f"SENS:ELOG:FUNC:CURR {'ON' if want_i else 'OFF'},(@{channel})"
+            )
+            self.write(f"SENS:ELOG:FUNC:VOLT:MINM OFF,(@{channel})")
+            self.write(f"SENS:ELOG:FUNC:CURR:MINM OFF,(@{channel})")
+            self.write(f"SENS:ELOG:PER {clamped},(@{channel})")
+            self._elog_funcs[channel] = (want_v, want_i)
+        chanlist = ",".join(map(str, targets))
+        self.write(f"TRIG:ELOG:SOUR IMM,(@{chanlist})")
+        return clamped
+
+    def start_elog(self):
+        targets = sorted(self._elog_funcs)
+        if not targets:
+            raise RuntimeError("IT2705: 请先 configure_elog 再 start_elog")
+        chanlist = ",".join(map(str, targets))
+        self.write(f"INIT:ELOG (@{chanlist})")
+        self.write(f"TRIG:ELOG (@{chanlist})")
+
+    def fetch_elog_records(self, channel, max_records=None):
+        """取回 ELOG 记录，返回 {"voltage": [...], "current": [...]}（SI 单位 V/A）。
+
+        仅运行中可读；每次取数以 FORM REAL 二进制块传输（BORD NORM=大端），
+        取完恢复 FORM ASC，避免影响其它数组查询。
+        """
+        channel = self._validate_channel(channel)
+        want_v, want_i = self._elog_funcs.get(channel, (False, False))
+        result = {"voltage": [], "current": []}
+        if not (want_v or want_i):
+            return result
+        max_records = int(max_records or self.ELOG_FETCH_MAX_RECORDS)
+        max_records = min(max(max_records, 1), self.ELOG_FETCH_MAX_RECORDS)
+        self.write("FORM REAL")
+        self.write("FORM:BORD NORM")
+        try:
+            values = self.instrument.query_binary_values(
+                f"FETC:ELOG? {max_records},(@{channel})",
+                datatype="f",
+                container=list,
+                is_big_endian=True,
+            )
+        except Exception:
+            try:
+                self.instrument.clear()
+            except Exception:
+                logger.debug("IT2705: ELOG 取数异常后清空缓冲失败", exc_info=True)
+            raise
+        finally:
+            try:
+                self.write("FORM ASC")
+            except Exception:
+                logger.warning("IT2705: 恢复 FORM ASC 失败", exc_info=True)
+        if want_v and want_i:
+            result["voltage"] = [float(v) for v in values[0::2]]
+            result["current"] = [float(v) for v in values[1::2]]
+        elif want_v:
+            result["voltage"] = [float(v) for v in values]
+        else:
+            result["current"] = [float(v) for v in values]
+        return result
+
+    def stop_elog(self, channels=None):
+        if channels is None:
+            channels = sorted(self._elog_funcs) or [
+                ch for ch in self.VALID_CHANNELS if self.channel_module_models.get(ch)
+            ]
+        channels = self._normalize_channels(channels)
+        self.write(f"ABOR:ELOG (@{','.join(map(str, channels))})")
 
     def set_datalog_markers(self, marker1_s, marker2_s):
         if marker1_s >= marker2_s:

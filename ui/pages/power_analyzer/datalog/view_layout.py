@@ -1436,7 +1436,7 @@ class LayoutViewMixin:
             {
                 "target": self.config_card,
                 "title": "第 3 步：配置采集参数",
-                "text": "打开 Settings 面板，在 DATALOG CONFIG 中设置：\n· Sampling Period (μs)：N6705C 原生 DLOG 采样周期；IT2705 为软件采样目标间隔，实际间隔受查询耗时影响\n· Monitoring Time (s)：监控时长，到时自动停止采集",
+                "text": "打开 Settings 面板，在 DATALOG CONFIG 中设置：\n· Sampling Period (μs)：N6705C 原生 DLOG / IT2705 ELOG 记录仪采样周期（IT2705 最低 20 μs）\n· Monitoring Time (s)：监控时长，到时自动停止采集",
                 "on_enter": lambda: show_panel("settings"),
             },
             {

@@ -113,11 +113,21 @@ class _DatalogWorker(QObject):
                 unit for unit in active_units
                 if callable(getattr(unit[1], "read_mmem_data", None))
             ]
-            software_units = [unit for unit in active_units if unit not in native_units]
+            elog_units = [
+                unit for unit in active_units
+                if unit not in native_units
+                and callable(getattr(unit[1], "fetch_elog_records", None))
+            ]
+            software_units = [
+                unit for unit in active_units
+                if unit not in native_units and unit not in elog_units
+            ]
 
             self._configure_units(native_units, sample_period_s, run_start)
+            elog_periods = self._configure_elog_units(elog_units, sample_period_s)
             software_data = self._wait_capture(
-                native_units, software_units, sample_period_s, run_start
+                native_units, software_units, sample_period_s, run_start,
+                elog_units=elog_units, elog_periods=elog_periods,
             )
             all_data, raw_dlog_list = self._download_units(
                 native_units, sample_period_s, run_start
@@ -226,7 +236,35 @@ class _DatalogWorker(QObject):
 
         logger.debug("[Datalog][Progress] Configure done in %.3fs", time.time() - config_start)
 
-    def _wait_capture(self, native_units, software_units, sample_period_s, run_start):
+    def _configure_elog_units(self, elog_units, sample_period_s):
+        """配置并启动 IT2705 ELOG 外部记录仪，返回 {unit_idx: 实际积分时间(s)}。
+
+        仪器侧按 PER 真实采样（最低 20us），主机流式回读；启动失败直接终止本次录制。
+        """
+        periods = {}
+        if not elog_units:
+            return periods
+        for unit_idx, instance, curr_channels, volt_channels in elog_units:
+            try:
+                period = instance.configure_elog(
+                    curr_channels, volt_channels, sample_period_s
+                )
+                instance.start_elog()
+            except Exception as e:
+                logger.error(
+                    "[Datalog] Unit %d ELOG configure failed: %s", unit_idx, e,
+                    exc_info=True,
+                )
+                raise
+            periods[unit_idx] = period
+            logger.info(
+                "[Datalog] Unit %d ELOG started: period=%.6fs curr=%s volt=%s",
+                unit_idx, period, curr_channels, volt_channels,
+            )
+        return periods
+
+    def _wait_capture(self, native_units, software_units, sample_period_s, run_start,
+                      elog_units=(), elog_periods=None):
         """等待原生 DLOG，并在同一循环内采集软件采样仪器。"""
         self.progress_update.emit(2, "Capturing data...")
         logger.debug("[Datalog][Progress] Capture wait start at %.3fs", time.time() - run_start)
@@ -249,6 +287,16 @@ class _DatalogWorker(QObject):
         measuring_bit = 0x1000
         software_data = self._create_software_series(software_units)
         next_sample_at = capture_start
+        # ELOG 流式回读状态：序列与按通道记录计数（时间轴 = 记录序号 × 实际 PER）
+        elog_periods = elog_periods or {}
+        elog_data = self._create_software_series(elog_units)
+        elog_counters = {
+            (unit_idx, ch): 0
+            for unit_idx, _, curr_ch, volt_ch in elog_units
+            for ch in sorted(set(curr_ch) | set(volt_ch))
+        }
+        elog_fetch_interval = 0.2
+        next_elog_fetch = capture_start + elog_fetch_interval
 
         probe_channels = []
         for unit_idx, n6705c, curr_ch, volt_ch in native_units:
@@ -273,6 +321,12 @@ class _DatalogWorker(QObject):
                     software_units, software_data, capture_start
                 )
                 next_sample_at = time.time() + sample_period_s
+
+            if elog_units and now >= next_elog_fetch:
+                self._fetch_elog_units(
+                    elog_units, elog_data, elog_counters, elog_periods
+                )
+                next_elog_fetch = time.time() + elog_fetch_interval
 
             if self._is_stopped:
                 logger.info("[Datalog] Stopped by user during capture wait, fetching available data...")
@@ -328,9 +382,14 @@ class _DatalogWorker(QObject):
             sleep_s = poll_sleep
             if software_units:
                 sleep_s = min(poll_sleep, max(0.0, next_sample_at - time.time()))
+            if elog_units:
+                sleep_s = min(sleep_s, max(0.0, next_elog_fetch - time.time()))
             time.sleep(sleep_s)
 
         logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
+        if elog_units:
+            self._finalize_elog_units(elog_units, elog_data, elog_counters, elog_periods)
+        software_data.update(elog_data)
         return software_data
 
     def _create_software_series(self, software_units):
@@ -345,6 +404,59 @@ class _DatalogWorker(QObject):
                     label = f"{ulabel} CH{ch} I".strip()
                     all_data[label] = {"time": [], "values": []}
         return all_data
+
+    def _fetch_elog_units(self, elog_units, elog_data, counters, periods):
+        """流式取回各 ELOG 通道记录；时间轴 = 记录序号 × 实际 PER。
+
+        同通道 V/I 来自同一条记录，天然共用时间戳（calc_power_for_ch 可配对）。
+        """
+        for unit_idx, instance, curr_channels, volt_channels in elog_units:
+            period = periods.get(unit_idx) or (self.sample_period_us / 1_000_000.0)
+            ulabel = self.unit_labels[unit_idx]
+            for ch in sorted(set(curr_channels) | set(volt_channels)):
+                try:
+                    records = instance.fetch_elog_records(ch)
+                except Exception as e:
+                    self._log_sample_failure(ulabel, ch, "ELOG", e)
+                    continue
+                v_list = records["voltage"]
+                i_list = records["current"]
+                n = max(len(v_list), len(i_list))
+                if n == 0:
+                    continue
+                key = (unit_idx, ch)
+                start_idx = counters.get(key, 0)
+                times = [(start_idx + k) * period for k in range(n)]
+                if ch in volt_channels and v_list:
+                    series = elog_data[f"{ulabel} CH{ch} V".strip()]
+                    series["time"].extend(times[:len(v_list)])
+                    series["values"].extend(v * 1000.0 for v in v_list)
+                if ch in curr_channels and i_list:
+                    series = elog_data[f"{ulabel} CH{ch} I".strip()]
+                    series["time"].extend(times[:len(i_list)])
+                    series["values"].extend(i * 1000.0 for i in i_list)
+                counters[key] = start_idx + n
+
+    def _finalize_elog_units(self, elog_units, elog_data, counters, periods):
+        """ELOG 收尾：先排空缓冲再 ABOR（停止后缓冲即清空，真机实测）。"""
+        for unit_idx, instance, curr_channels, volt_channels in elog_units:
+            unit = [(unit_idx, instance, curr_channels, volt_channels)]
+            for _ in range(10):
+                before = dict(counters)
+                self._fetch_elog_units(unit, elog_data, counters, periods)
+                keys = [
+                    (unit_idx, ch)
+                    for ch in sorted(set(curr_channels) | set(volt_channels))
+                ]
+                if all(counters.get(k, 0) == before.get(k, 0) for k in keys):
+                    break
+            try:
+                instance.stop_elog()
+            except Exception as e:
+                logger.warning(
+                    "[Datalog] Unit %d ELOG stop failed: %s", unit_idx, e,
+                    exc_info=True,
+                )
 
     def _sample_software_units(self, software_units, all_data, capture_start):
         for unit_idx, instance, curr_channels, volt_channels in software_units:
