@@ -1,0 +1,46 @@
+﻿window created, auto-connect kicked
+python : N6705C: 系统 VISA 不可用(VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).)，回退到 pyvi
+sa-py('@py')
+所在位置 行:15 字符: 4683
++ ... tivate.ps1; python -u tests\_debug_app_connect_kill.py > tests\_app_k ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (N6705C: 系统 VISA...yvisa-py('@py'):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+A auto-connected: True
+[A after auto-connect] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+=== connect B (IT2705) via manager ===
+N6705C: 系统 VISA 不可用(VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).)，回退到 pyvisa-py('@p
+y')
+IT2705: 系统 VISA 不可用，回退到 pyvisa-py: VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).
+Traceback (most recent call last):
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 105, in _create_resource_manager
+    return pyvisa.ResourceManager()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3001, in __new__
+    obj.session, err = visa_library.open_default_resource_manager()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\ctwrapper\functions.py", line 1870, in open_
+default_resource_manager
+    ret = library.viOpenDefaultRM(byref(session))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\ctwrapper\highlevel.py", line 226, in _retur
+n_handler
+    return self.handle_return_value(session, ret_value)  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 251, in handle_return_va
+lue
+    raise errors.VisaIOError(rv)
+pyvisa.errors.VisaIOError: VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).
+B connected: True
+[A after B connect] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+Start recording OK, thread: True
+
+=== done ===
+
+!!! ResourceManager.close() backend=py !!!
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3014, in call_close
+    meth()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_debug_app_connect_kill.py", line 25, in _traced_rm_close
+    traceback.print_stack()

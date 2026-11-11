@@ -1,0 +1,82 @@
+﻿window created
+python : N6705C: 系统 VISA 不可用(VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).)，回退到 pyvi
+sa-py('@py')
+所在位置 行:15 字符: 4683
++ ... tivate.ps1; python -u tests\_debug_app_full_flow_kill.py > tests\_ful ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (N6705C: 系统 VISA...yvisa-py('@py'):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[t=1.9] A connected: True
+[t=1.9] scan start
+[t=2.1] A session -> ALIVE
+[t=26.9] scan done wait over
+[t=26.9] connect B
+N6705C: 系统 VISA 不可用(VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).)，回退到 pyvisa-py('@p
+y')
+IT2705: 系统 VISA 不可用，回退到 pyvisa-py: VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).
+Traceback (most recent call last):
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 105, in _create_resource_manager
+    return pyvisa.ResourceManager()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3001, in __new__
+    obj.session, err = visa_library.open_default_resource_manager()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\ctwrapper\functions.py", line 1870, in open_
+default_resource_manager
+    ret = library.viOpenDefaultRM(byref(session))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\ctwrapper\highlevel.py", line 226, in _retur
+n_handler
+    return self.handle_return_value(session, ret_value)  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 251, in handle_return_va
+lue
+    raise errors.VisaIOError(rv)
+pyvisa.errors.VisaIOError: VI_ERROR_SYSTEM_ERROR (-1073807360): Unknown system error (miscellaneous error).
+[t=27.3] B connected: True
+[t=32.3] Start OK, thread: True
+[Datalog] Software sampling failed on B CH1 V: IT2705: 无有效测量值 'nan'
+Traceback (most recent call last):
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\pages\power_analyzer\datalog\workers.py", line 360, in _sample_software_
+units
+    value_mv = float(instance.measure_voltage(ch)) * 1000.0
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 350, in measure_voltage
+    return self._measure_scalar(channel, "VOLT")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 342, in _measure_scalar
+    return self._query_float(command)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 190, in _query_float
+    raise ValueError(f"IT2705: 无有效测量值 {raw!r}")
+ValueError: IT2705: 无有效测量值 'nan'
+[Datalog] Software sampling failed on B CH1 I: IT2705: 无有效测量值 'nan'
+Traceback (most recent call last):
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\pages\power_analyzer\datalog\workers.py", line 369, in _sample_software_
+units
+    value_ma = float(instance.measure_current(ch)) * 1000.0
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 353, in measure_current
+    return self._measure_scalar(channel, "CURR")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 342, in _measure_scalar
+    return self._query_float(command)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 190, in _query_float
+    raise ValueError(f"IT2705: 无有效测量值 {raw!r}")
+ValueError: IT2705: 无有效测量值 'nan'
+[t=35.2] A session -> DEAD
+[Datalog] dlog download failed on attempt 1/4: invalid literal for int() with base 10: 'X'
+[Datalog] dlog download failed on attempt 2/4: protocol synchronization error
+[Datalog] dlog download failed on attempt 3/4: protocol synchronization error
+[Datalog] dlog download failed on attempt 4/4: protocol synchronization error
+record keys: []
+curves: []
+=== done ===
+
+!!! ResourceManager.close() backend=py t=1794373727.9 !!!
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3014, in call_close
+    meth()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_debug_app_full_flow_kill.py", line 33, in _traced_rm_close
+    traceback.print_stack()

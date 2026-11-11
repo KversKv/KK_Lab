@@ -1,0 +1,6 @@
+﻿[A open] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+probe IDN: ITECH Electronics,IT2705,805757011807330
+[after probe.instr.close only] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+[A reopened] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+[after probe2 instr close] A *IDN? -> Keysight Technologies,N6705C,MY56006098,
+[after probe2 rm.close] A *IDN? FAIL: InvalidSession

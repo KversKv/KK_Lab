@@ -1,0 +1,18 @@
+﻿[A opened (rm1)] *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+-- step1: 仅创建第二个 @py RM --
+[A after rm2 create] *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+-- step2: rm2 打开 IT2705 socket --
+[B opened (rm2)] *IDN? -> ITECH Electronics,IT2705,805757011807330
+[A after B open] *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+-- step3: rm2 查询 IT2705 *IDN? --
+[B query] *IDN? -> ITECH Electronics,IT2705,805757011807330
+[A after B query] *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+-- step4: 关闭 B --
+[A after B close] *IDN? -> Keysight Technologies,N6705C,MY56006098,
+
+-- step5: rm1 重新查询 A --
+[A final] *IDN? -> Keysight Technologies,N6705C,MY56006098,

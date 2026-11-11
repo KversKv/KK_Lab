@@ -1,0 +1,146 @@
+[13:56:46] traced main launcher start
+[13:56:51] !!! instr.close() resource=TCPIP0::10.31.71.168::30000::SOCKET
+[13:56:51]   File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\workers.py", line 30, in run
+    instance = self._profile.create(self._spec)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 40, in _create_n6705c
+    return create_power_analyzer(spec.resource, analyzer_type="auto")
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\factory.py", line 131, in create_power_analyzer
+    probe.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\keysight\n6705c.py", line 558, in disconnect
+    self.instr.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 50, in _traced_res_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:56:51] !!! ResourceManager.close() backend=C:\Windows\system32\visa32.dll
+[13:56:51]   File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\workers.py", line 30, in run
+    instance = self._profile.create(self._spec)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 40, in _create_n6705c
+    return create_power_analyzer(spec.resource, analyzer_type="auto")
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\factory.py", line 131, in create_power_analyzer
+    probe.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\keysight\n6705c.py", line 568, in disconnect
+    self.rm.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 36, in _traced_rm_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:56:51] !!! instr.close() resource=TCPIP0::10.31.71.98::hislip0::INSTR
+[13:56:51]   File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\workers.py", line 30, in run
+    instance = self._profile.create(self._spec)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 40, in _create_n6705c
+    return create_power_analyzer(spec.resource, analyzer_type="auto")
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\factory.py", line 131, in create_power_analyzer
+    probe.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\keysight\n6705c.py", line 568, in disconnect
+    self.rm.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 37, in _traced_rm_close
+    return _orig_rm_close(self)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3081, in close
+    resource.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 50, in _traced_res_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] !!! instr.close() resource=TCPIP0::10.31.71.98::hislip0::INSTR
+[13:57:02]   File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 62, in <module>
+    _main.main()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\main.py", line 161, in main
+    sys.exit(app.exec())
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\app_top_bar.py", line 354, in _on_close
+    self._window.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\main_window.py", line 1825, in closeEvent
+    self.connection_hub.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\connection_hub.py", line 67, in shutdown
+    self._manager.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\instrument_manager.py", line 452, in shutdown
+    profile.disconnect(session.instance)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 105, in _disconnect_n6705c
+    instance.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\keysight\n6705c.py", line 558, in disconnect
+    self.instr.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 50, in _traced_res_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] !!! ResourceManager.close() backend=C:\Windows\system32\visa32.dll
+[13:57:02]   File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 62, in <module>
+    _main.main()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\main.py", line 161, in main
+    sys.exit(app.exec())
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\app_top_bar.py", line 354, in _on_close
+    self._window.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\main_window.py", line 1825, in closeEvent
+    self.connection_hub.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\connection_hub.py", line 67, in shutdown
+    self._manager.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\instrument_manager.py", line 452, in shutdown
+    profile.disconnect(session.instance)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 105, in _disconnect_n6705c
+    instance.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\keysight\n6705c.py", line 568, in disconnect
+    self.rm.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 36, in _traced_rm_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] !!! instr.close() resource=TCPIP0::10.31.71.168::30000::SOCKET
+[13:57:02]   File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 62, in <module>
+    _main.main()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\main.py", line 161, in main
+    sys.exit(app.exec())
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\app_top_bar.py", line 354, in _on_close
+    self._window.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\main_window.py", line 1825, in closeEvent
+    self.connection_hub.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\connection_hub.py", line 67, in shutdown
+    self._manager.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\instrument_manager.py", line 452, in shutdown
+    profile.disconnect(session.instance)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 105, in _disconnect_n6705c
+    instance.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 136, in disconnect
+    self.instrument.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 50, in _traced_res_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] !!! ResourceManager.close() backend=C:\Windows\system32\visa32.dll
+[13:57:02]   File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 62, in <module>
+    _main.main()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\main.py", line 161, in main
+    sys.exit(app.exec())
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\app_top_bar.py", line 354, in _on_close
+    self._window.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\main_window.py", line 1825, in closeEvent
+    self.connection_hub.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\connection_hub.py", line 67, in shutdown
+    self._manager.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\instrument_manager.py", line 452, in shutdown
+    profile.disconnect(session.instance)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 105, in _disconnect_n6705c
+    instance.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 145, in disconnect
+    self.rm.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 36, in _traced_rm_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] !!! instr.close() resource=TCPIP0::10.31.71.168::30000::SOCKET
+[13:57:02]   File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 62, in <module>
+    _main.main()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\main.py", line 161, in main
+    sys.exit(app.exec())
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\app_top_bar.py", line 354, in _on_close
+    self._window.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\ui\main_window.py", line 1825, in closeEvent
+    self.connection_hub.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\connection_hub.py", line 67, in shutdown
+    self._manager.shutdown()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\instrument_manager.py", line 452, in shutdown
+    profile.disconnect(session.instance)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\core\instruments\registry.py", line 105, in _disconnect_n6705c
+    instance.disconnect()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\instruments\power\itech\it2705.py", line 145, in disconnect
+    self.rm.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 37, in _traced_rm_close
+    return _orig_rm_close(self)
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\.venv\Lib\site-packages\pyvisa\highlevel.py", line 3081, in close
+    resource.close()
+  File "D:\CodeProject\TRAE_Projects\KK_Lab\tests\_run_main_traced.py", line 50, in _traced_res_close
+    _tlog("".join(traceback.format_stack()))
+
+[13:57:02] app exit

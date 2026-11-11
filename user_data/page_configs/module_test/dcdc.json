@@ -2,6 +2,7 @@
   "schema_version": 1,
   "config": {
     "selected_items": [
+      "dcdc_efficiency",
       "dcdc_load_transient"
     ],
     "chip_name": "TPS62840",

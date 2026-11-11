@@ -3,7 +3,7 @@
   "config": {
     "mode_8ch": false,
     "type_current": true,
-    "min_period": true,
+    "min_period": false,
     "meas_minimum": false,
     "meas_average": true,
     "meas_maximum": true,
