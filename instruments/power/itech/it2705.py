@@ -35,6 +35,9 @@ class IT2705(VisaInstrument):
     # MEAS 按通道积分时间（SENS:APER）采集后才返回；面板可设到 20.48s（NPLC 1024），
     # 超过 VISA 超时会造成迟到响应污染缓冲区、后续读写全部错位。测量前临时压到该值（1 PLC）。
     MEAS_APER_FAST = 0.02
+    # APER 查询结果按通道短 TTL 缓存（面板手动改 APER 最坏 TTL 秒后自愈）；
+    # 驱动自身写 SENS:APER 时同步刷新缓存，避免测量路径每次多一次往返。
+    MEAS_APER_CACHE_TTL_S = 5.0
 
     def __init__(self, resource, visa_library=None, timeout_ms=10000):
         super().__init__()
@@ -45,6 +48,7 @@ class IT2705(VisaInstrument):
         self.timeout_ms = int(timeout_ms)
         self.channel_module_models = {ch: "" for ch in self.VALID_CHANNELS}
         self._elog_funcs = {}
+        self._aper_cache = {}  # {channel: (monotonic_ts, aperture_s)}
         self.connect()
 
     def refresh_channel_modules(self):
@@ -371,22 +375,36 @@ class IT2705(VisaInstrument):
         channel = self._validate_channel(channel)
         return self.query(f"OUTP:TMOD? (@{channel})").strip().upper()
 
+    def _channel_aperture(self, channel):
+        """读通道积分时间（短 TTL 缓存；驱动自身写 APER 时同步更新缓存）。"""
+        now = time.monotonic()
+        ts, cached = self._aper_cache.get(channel, (0.0, None))
+        if cached is not None and now - ts < self.MEAS_APER_CACHE_TTL_S:
+            return cached
+        aperture = self._query_float(f"SENS:APER? (@{channel})")
+        self._aper_cache[channel] = (now, aperture)
+        return aperture
+
+    def _set_channel_aperture(self, channel, aperture):
+        self.write(f"SENS:APER {aperture},(@{channel})")
+        self._aper_cache[channel] = (time.monotonic(), float(aperture))
+
     def _measure_scalar(self, channel, quantity):
         channel = self._validate_channel(channel)
         command = f"MEAS:{quantity}? (@{channel})"
         try:
-            aperture = self._query_float(f"SENS:APER? (@{channel})")
+            aperture = self._channel_aperture(channel)
         except Exception:
             logger.debug("IT2705: 积分时间查询失败，直接测量", exc_info=True)
             return self._query_float(command)
         if aperture <= self.MEAS_APER_FAST:
             return self._query_float(command)
-        self.write(f"SENS:APER {self.MEAS_APER_FAST},(@{channel})")
+        self._set_channel_aperture(channel, self.MEAS_APER_FAST)
         try:
             return self._query_float(command)
         finally:
             try:
-                self.write(f"SENS:APER {aperture},(@{channel})")
+                self._set_channel_aperture(channel, aperture)
             except Exception:
                 logger.warning("IT2705: 恢复积分时间失败", exc_info=True)
 
@@ -756,12 +774,16 @@ class IT2705(VisaInstrument):
         chanlist = ",".join(map(str, targets))
         self.write(f"INIT:ELOG (@{chanlist})")
         self.write(f"TRIG:ELOG (@{chanlist})")
+        # 录制全程保持二进制块格式（BORD NORM=大端），避免逐通道取数时反复
+        # 切换 FORM REAL/ASC 造成每通道 3 次额外往返；stop_elog 统一恢复 ASC。
+        self.write("FORM REAL")
+        self.write("FORM:BORD NORM")
 
     def fetch_elog_records(self, channel, max_records=None):
         """取回 ELOG 记录，返回 {"voltage": [...], "current": [...]}（SI 单位 V/A）。
 
-        仅运行中可读；每次取数以 FORM REAL 二进制块传输（BORD NORM=大端），
-        取完恢复 FORM ASC，避免影响其它数组查询。
+        仅运行中可读；须在 start_elog 之后调用（FORM REAL 已生效），
+        stop_elog 负责恢复 FORM ASC。
         """
         channel = self._validate_channel(channel)
         want_v, want_i = self._elog_funcs.get(channel, (False, False))
@@ -770,8 +792,6 @@ class IT2705(VisaInstrument):
             return result
         max_records = int(max_records or self.ELOG_FETCH_MAX_RECORDS)
         max_records = min(max(max_records, 1), self.ELOG_FETCH_MAX_RECORDS)
-        self.write("FORM REAL")
-        self.write("FORM:BORD NORM")
         try:
             values = self.instrument.query_binary_values(
                 f"FETC:ELOG? {max_records},(@{channel})",
@@ -785,11 +805,6 @@ class IT2705(VisaInstrument):
             except Exception:
                 logger.debug("IT2705: ELOG 取数异常后清空缓冲失败", exc_info=True)
             raise
-        finally:
-            try:
-                self.write("FORM ASC")
-            except Exception:
-                logger.warning("IT2705: 恢复 FORM ASC 失败", exc_info=True)
         if want_v and want_i:
             result["voltage"] = [float(v) for v in values[0::2]]
             result["current"] = [float(v) for v in values[1::2]]
@@ -805,7 +820,14 @@ class IT2705(VisaInstrument):
                 ch for ch in self.VALID_CHANNELS if self.channel_module_models.get(ch)
             ]
         channels = self._normalize_channels(channels)
-        self.write(f"ABOR:ELOG (@{','.join(map(str, channels))})")
+        try:
+            self.write(f"ABOR:ELOG (@{','.join(map(str, channels))})")
+        finally:
+            # 与 start_elog 的 FORM REAL 配对，恢复 ASCII 响应格式
+            try:
+                self.write("FORM ASC")
+            except Exception:
+                logger.warning("IT2705: 恢复 FORM ASC 失败", exc_info=True)
 
     def set_datalog_markers(self, marker1_s, marker2_s):
         if marker1_s >= marker2_s:

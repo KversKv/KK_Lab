@@ -470,7 +470,6 @@ class PlotViewMixin:
                 continue
             ch_data = self.datalog_data[label]
             raw_times = ch_data["time"]
-            eff_times = self._get_effective_times(label, raw_times)
             values = ch_data["values"]
             if not raw_times:
                 continue
@@ -489,8 +488,10 @@ class PlotViewMixin:
                 else:
                     norm_y = val
 
+                # 仅需单点：直接 raw+offset，避免对整条时间轴做 numpy 拷贝
+                eff_t = raw_times[i] + self._get_total_time_offset(label)
                 dot = pg.ScatterPlotItem(
-                    [eff_times[i]], [norm_y], size=10,
+                    [eff_t], [norm_y], size=10,
                     pen=pg.mkPen(color=color, width=2),
                     brush=pg.mkBrush(color="#071127"),
                     symbol='o'
@@ -596,11 +597,16 @@ class PlotViewMixin:
             times = self._get_effective_times(label, ch_data["time"])
             raw_vals = ch_data["values"]
 
-            if not raw_vals:
+            if len(raw_vals) == 0:
                 continue
 
-            raw_min = min(raw_vals)
-            raw_max = max(raw_vals)
+            # 大数据量优化：单次 asarray 后 min/max/归一化全走 numpy，
+            # 避免 Python list 级 min()/max() 与重复拷贝
+            raw_arr = np.asarray(raw_vals, dtype=np.float64)
+            if not isinstance(times, np.ndarray):
+                times = np.asarray(times, dtype=np.float64)
+            raw_min = float(raw_arr.min())
+            raw_max = float(raw_arr.max())
             raw_range = raw_max - raw_min if raw_max > raw_min else 1.0
 
             band_top, band_bottom = band_edges[idx]
@@ -609,7 +615,7 @@ class PlotViewMixin:
             plot_bottom = band_bottom + margin
             plot_range = plot_top - plot_bottom
 
-            norm_vals = plot_bottom + (np.asarray(raw_vals, dtype=np.float64) - raw_min) * (plot_range / raw_range)
+            norm_vals = plot_bottom + (raw_arr - raw_min) * (plot_range / raw_range)
 
             self._band_info[label] = {
                 "raw_min": raw_min,
@@ -643,11 +649,21 @@ class PlotViewMixin:
             self._set_ch_scale_offset_text(label.strip(), scale_str, offset_str)
 
         if self.datalog_data:
-            all_times = []
+            # 时间轴按记录升序生成，首/末元素即范围端点（与 _update_x_limits 同一假设），
+            # 避免全量拼接拷贝
+            x_lo = None
+            x_hi = None
             for lbl, ch_data in self.datalog_data.items():
-                all_times.extend(self._get_effective_times(lbl, ch_data["time"]))
-            if all_times:
-                self.plot_widget.setXRange(min(all_times), max(all_times))
+                times = ch_data["time"]
+                if not times:
+                    continue
+                off = self._get_total_time_offset(lbl)
+                t0 = times[0] + off
+                t1 = times[-1] + off
+                x_lo = t0 if x_lo is None else min(x_lo, t0)
+                x_hi = t1 if x_hi is None else max(x_hi, t1)
+            if x_lo is not None:
+                self.plot_widget.setXRange(x_lo, x_hi)
             y_bottom, y_top = self._compute_y_range_with_labels()
             self.plot_widget.setYRange(y_bottom, y_top)
 
@@ -700,14 +716,20 @@ class PlotViewMixin:
         if not visible_keys:
             visible_keys = set(self.datalog_data.keys())
 
-        all_times = []
+        x_lo = None
+        x_hi = None
         for key in visible_keys:
             ch_data = self.datalog_data.get(key)
             if ch_data and ch_data["time"]:
-                all_times.extend(self._get_effective_times(key, ch_data["time"]))
+                times = ch_data["time"]
+                off = self._get_total_time_offset(key)
+                t0 = times[0] + off
+                t1 = times[-1] + off
+                x_lo = t0 if x_lo is None else min(x_lo, t0)
+                x_hi = t1 if x_hi is None else max(x_hi, t1)
 
-        if all_times:
-            self.plot_widget.setXRange(min(all_times), max(all_times))
+        if x_lo is not None:
+            self.plot_widget.setXRange(x_lo, x_hi)
 
         self._on_channel_visibility_changed()
 
