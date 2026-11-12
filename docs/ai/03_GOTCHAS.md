@@ -605,3 +605,16 @@ app.installEventFilter(_WinFilter())
 - **应用代码任何位置都禁止调用 `rm.close()`**——RM 生命周期归进程（退出由 pyvisa atexit 兜底），驱动 `disconnect()` 只关自身 `instr.close()`；扫描/探测只关自己打开的 probe session。`Resource.close()`（仅关本 session）不受影响可正常用。
 - 已全量清理：驱动层（n6705c / it2705 / visa_instrument 基类 / mso64b / dsox4034a / 53230A / 34461A / rohde_schwarz base）、core 扫描（search_worker / visa_scan / registry 三处）、UI 断开与清理（cleanup_mixin / n6705c_module_frame / consumption_test view_device）。新驱动/新扫描照此办理。
 - 此前"判 `@py` 后端再跳过"的条件守卫不充分——系统 VISA 可用的机器同样中招（本机真机环境即 visa32.dll 正常工作），故改为无条件禁止。
+
+## 44. QWidget 居首的多继承把 Mixin 里的 `eventFilter` 遮蔽成 QObject 空实现
+
+**现象**：Datalog 页波形点击无法选中（连带通道拖拽 offset、选中通道滚轮缩放、Marker 线拖拽、清除标记按钮 hover 图标全部静默失效），无任何报错。
+
+**根因**：`class N6705CDatalogUI(QWidget, ConnectionViewMixin, ..., PlotViewMixin, ...)` —— QWidget 居首继承时，C3 MRO 中 `QObject` 排在所有 Mixin **之前**，`eventFilter` 属性解析命中最先的 `QObject.eventFilter`（C++ 空实现，返回 False），`PlotViewMixin.eventFilter` 永远不会被分派。巨石拆分（ea2bf1f，2026-10-23）把 `eventFilter` 从页面类本体挪进 Mixin 后即引入。
+
+**规则**：
+
+- **页面类 = QWidget + Mixin 列表时，Mixin 内禁止定义与 QObject/QWidget 同名的虚函数**（`eventFilter` / `event` / `closeEvent` / `resizeEvent` / `paintEvent` / `changeEvent` / `enterEvent` / `leaveEvent` 等），一律在页面类本体显式绑定，如 `eventFilter = PlotViewMixin.eventFilter`（[datalog_ui.py](../../ui/pages/power_analyzer/datalog/datalog_ui.py) 类首）。
+- Mixin 内**禁止** `super().eventFilter(obj, event)`：Mixin 位于 MRO 尾段，`super()` 链上只剩 `object`，直接 `AttributeError`；不拦截事件就 `return False`（等效基类实现）。遮蔽修复前该调用是死代码，遮蔽解除后才暴露。
+- 排查这类"事件静默不响应"先看类声明顺序，再确认目标方法是否被 MRO 前段的 Qt 基类遮蔽。
+- Qt 事件调试注意：手工 `QMouseEvent(...)` + `QApplication.sendEvent` 在 Qt6 不触发 scene→item 的 press 配送（复现结果是假的），必须用 `QTest.mouseClick`。

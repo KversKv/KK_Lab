@@ -23,6 +23,11 @@ logger = get_logger(__name__)
 class N6705CDatalogUI(QWidget, ConnectionViewMixin, LayoutViewMixin, ChannelConfigViewMixin, PlotViewMixin, RecordingViewMixin, MarkersViewMixin, LabelsViewMixin, TimeOffsetViewMixin, ImportExportViewMixin):
     """N6705C Datalog 页面主壳：装配各视图 Mixin，持有信号 / 状态与初始化。"""
 
+    # QWidget 居首继承使 MRO 中 QObject.eventFilter 先于 PlotViewMixin.eventFilter，
+    # 不显式绑定则 ViewBox 的 GraphicsScene 事件过滤（波形选中/通道拖拽/滚轮缩放/
+    # Marker 拖拽）全部被基类空实现遮蔽。
+    eventFilter = PlotViewMixin.eventFilter
+
     connection_status_changed = Signal(bool)
 
     labels_panel_toggled = Signal(bool)

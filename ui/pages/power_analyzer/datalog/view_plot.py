@@ -137,7 +137,9 @@ class PlotViewMixin:
             return False
         vb = self.plot_widget.getPlotItem().getViewBox()
         if obj is not vb:
-            return super().eventFilter(obj, event)
+            # Mixin 居于 QWidget 之后的 MRO 尾段，super() 链上没有 eventFilter，
+            # 不拦截直接返回 False（等效 QObject.eventFilter 基类实现）
+            return False
 
         if event.type() == QEvent.GraphicsSceneWheel:
             if self._selected_ch_key and self._selected_ch_key in self._band_info:
@@ -149,7 +151,7 @@ class PlotViewMixin:
                 scene_pos = event.scenePos()
                 if self._find_annotation_at_scene(scene_pos) is not None:
                     # 按下点在 annotation 上：交给其自身的 pyqtgraph 拖拽分发，避免误触发通道拖拽
-                    return super().eventFilter(obj, event)
+                    return False
                 snap_marker = self._find_nearest_marker_at_scene(scene_pos)
                 if snap_marker:
                     self._marker_drag_target = snap_marker
@@ -213,7 +215,7 @@ class PlotViewMixin:
                     self._ch_drag_last_y = None
                     return True
 
-        return super().eventFilter(obj, event)
+        return False
 
     def _compute_band_edges(self, n):
         """计算 n 个均分 band 的 (band_top, band_bottom) 列表（自顶向下累计）。"""
