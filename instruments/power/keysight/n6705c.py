@@ -248,86 +248,240 @@ class N6705C:
     def set_arb_type(self, channel, arb_type="VOLT"):
         self.instr.write(f"ARB:FUNC:TYPE {arb_type},(@{channel})")
 
+    @staticmethod
+    def _arb_type_prefix(arb_type):
+        arb_type = str(arb_type).strip().upper()
+        if arb_type in ("VOLT", "VOLTAGE"):
+            return "VOLT"
+        if arb_type in ("CURR", "CURRENT"):
+            return "CURR"
+        raise ValueError(f"N6705C: 不支持的 ARB 类型 {arb_type!r}")
+
     def set_arb_shape(self, channel, shape="NONE"):
         """设置 ARB 形状；shape="NONE" 即面板 "No Arb Configured"（清除形状配置）。"""
         self.instr.write(f"ARB:FUNC:SHAP {shape},(@{channel})")
 
-    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency):
-        """配置叠加在直流偏置上的正弦电压，幅度参数为 Vrms。"""
+    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency, arb_type="VOLT"):
+        """配置叠加在直流偏置上的正弦波，幅度参数为 Vrms/Irms。"""
         if amplitude_vrms <= 0 or frequency <= 0:
             raise ValueError("正弦幅度与频率必须大于 0")
+        tp = self._arb_type_prefix(arb_type)
         amplitude_peak = math.sqrt(2.0) * amplitude_vrms
-        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
         self.instr.write(f"ARB:FUNC:SHAP SIN,(@{channel})")
-        self.instr.write(f"ARB:VOLT:SIN:OFFS {dc_offset},(@{channel})")
-        self.instr.write(f"ARB:VOLT:SIN:AMPL {amplitude_peak},(@{channel})")
-        self.instr.write(f"ARB:VOLT:SIN:FREQ {frequency},(@{channel})")
-        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+        self.instr.write(f"ARB:{tp}:SIN:OFFS {dc_offset},(@{channel})")
+        self.instr.write(f"ARB:{tp}:SIN:AMPL {amplitude_peak},(@{channel})")
+        self.instr.write(f"ARB:{tp}:SIN:FREQ {frequency},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
 
-    def set_arb_step(self, channel, v0, v1, t0, t1):
+    def set_arb_step(self, channel, v0, v1, t0, t1, arb_type="VOLT"):
         """
         配置ARB阶跃波形 (Step Shape)
 
         参数:
             channel (int): 通道号
-            v0 (float): 起始电压(V)
-            v1 (float): 终止电压(V)
-            t0 (float): 起始电压保持时间(s)
-            t1 (float): 终止电压保持时间(s)
+            v0 (float): 起始电平
+            v1 (float): 终止电平
+            t0 (float): 起始电平保持时间(s)
+            t1 (float): 终止电平保持时间(s)
         """
-        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
         self.instr.write(f"ARB:FUNC:SHAP STEP,(@{channel})")
-        self.instr.write(f"ARB:VOLT:STEP:STAR {v0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STEP:END {v1},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STEP:STAR:TIM {t0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STEP:END:TIM {t1},(@{channel})")
-        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+        self.instr.write(f"ARB:{tp}:STEP:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STEP:END {v1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STEP:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STEP:END:TIM {t1},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
 
-    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps):
+    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps, arb_type="VOLT"):
         """
         配置ARB阶梯波形 (Staircase Shape)
 
         参数:
             channel (int): 通道号
-            v0 (float): 起始电压(V)
-            v1 (float): 终止电压(V)
+            v0 (float): 起始电平
+            v1 (float): 终止电平
             t0 (float): 阶梯之前的保持时间(s)
             t1 (float): 阶梯变化持续时间(s)
             t2 (float): 阶梯之后的保持时间(s)
             steps (int): 阶梯数量
         """
-        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
         self.instr.write(f"ARB:FUNC:SHAP STA,(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:STAR {v0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:END {v1},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:STAR:TIM {t0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:TIM {t1},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:END:TIM {t2},(@{channel})")
-        self.instr.write(f"ARB:VOLT:STA:NST {steps},(@{channel})")
-        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:END {v1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:TIM {t1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:END:TIM {t2},(@{channel})")
+        self.instr.write(f"ARB:{tp}:STA:NST {steps},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
 
-    def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency):
+    def set_arb_ramp(self, channel, v0, v1, t0, rt, t1, arb_type="VOLT"):
+        """
+        配置ARB斜坡波形 (Ramp Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 起始电平
+            v1 (float): 终止电平
+            t0 (float): 起始保持时间(s)
+            rt (float): 上升时间(s)
+            t1 (float): 终止保持时间(s)
+        """
+        if rt <= 0:
+            raise ValueError("斜坡上升时间必须大于 0")
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP RAMP,(@{channel})")
+        self.instr.write(f"ARB:{tp}:RAMP:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:RAMP:END {v1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:RAMP:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:RAMP:RTIM {rt},(@{channel})")
+        self.instr.write(f"ARB:{tp}:RAMP:END:TIM {t1},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_trapezoid(self, channel, v0, v1, t0, rt, tt, ft, t1, arb_type="VOLT"):
+        """
+        配置ARB梯形波形 (Trapezoid Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 起始电平
+            v1 (float): 顶部电平
+            t0 (float): 起始保持时间(s)
+            rt (float): 上升时间(s)
+            tt (float): 顶部保持时间(s)
+            ft (float): 下降时间(s)
+            t1 (float): 结束保持时间(s)
+        """
+        if rt <= 0 or ft <= 0:
+            raise ValueError("梯形上升/下降时间必须大于 0")
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP TRAP,(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:TOP {v1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:RTIM {rt},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:TOP:TIM {tt},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:FTIM {ft},(@{channel})")
+        self.instr.write(f"ARB:{tp}:TRAP:END:TIM {t1},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_exponential(self, channel, v0, v1, t0, tc, t1, arb_type="VOLT"):
+        """
+        配置ARB指数波形 (Exponential Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 起始电平
+            v1 (float): 终止电平
+            t0 (float): 起始延迟时间(s)
+            tc (float): 指数时间常数(s)
+            t1 (float): 指数波形总时长(s)
+        """
+        if tc <= 0 or t1 <= 0:
+            raise ValueError("指数时间常数与总时长必须大于 0")
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP EXP,(@{channel})")
+        self.instr.write(f"ARB:{tp}:EXP:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:EXP:END {v1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:EXP:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:EXP:TCON {tc},(@{channel})")
+        self.instr.write(f"ARB:{tp}:EXP:TIM {t1},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_constant_dwell(self, channel, levels, dwell, arb_type="VOLT"):
+        """
+        配置恒定驻留 ARB (Constant Dwell)
+
+        参数:
+            channel (int): 通道号
+            levels (list[float]): 电平点列表（最多 65535 点）
+            dwell (float): 每点驻留时间(s)
+        """
+        if not levels:
+            raise ValueError("恒定驻留 ARB 至少需要 1 个电平点")
+        if dwell <= 0:
+            raise ValueError("驻留时间必须大于 0")
+        tp = self._arb_type_prefix(arb_type)
+        level_str = ",".join(str(float(v)) for v in levels)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP CDW,(@{channel})")
+        self.instr.write(f"ARB:{tp}:CDW {level_str},(@{channel})")
+        self.instr.write(f"ARB:{tp}:CDW:DWEL {dwell},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_user_defined(self, channel, levels, dwells=None, arb_type="VOLT"):
+        """
+        配置用户自定义 ARB (User Defined)
+
+        参数:
+            channel (int): 通道号
+            levels (list[float]): 电平点列表
+            dwells (list[float] | None): 逐点驻留时间(s)，None 时不下发（沿用仪器当前值）
+        """
+        if not levels:
+            raise ValueError("用户自定义 ARB 至少需要 1 个电平点")
+        if dwells is not None and len(dwells) not in (0, len(levels)):
+            raise ValueError("驻留列表长度须与电平列表一致")
+        tp = self._arb_type_prefix(arb_type)
+        level_str = ",".join(str(float(v)) for v in levels)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP UDEF,(@{channel})")
+        self.instr.write(f"ARB:{tp}:UDEF:LEV {level_str},(@{channel})")
+        if dwells:
+            dwell_str = ",".join(str(float(t)) for t in dwells)
+            self.instr.write(f"ARB:{tp}:UDEF:DWEL {dwell_str},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_none(self, channel, arb_type="VOLT"):
+        """清除 ARB 形状配置（面板 "No Arb Configured"），对应类型恢复 FIX 模式。"""
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:SHAP NONE,(@{channel})")
+        self.instr.write(f"{tp}:MODE FIX,(@{channel})")
+
+    def arb_sequence_reset(self, channel):
+        """复位通道 ARB Sequence 至上电默认（预留接口，UI 暂未使用）。"""
+        self.instr.write(f"ARB:SEQ:RES,(@{channel})")
+
+    def set_arb_sequence_repeat(self, channel, count):
+        """设置 Sequence 整体重复次数（1~16777216 或 "INF" 连续）（预留接口）。"""
+        self.instr.write(f"ARB:SEQ:COUN {count},(@{channel})")
+
+    def set_arb_sequence_terminate_last(self, channel, flag):
+        """Sequence 结束后是否保持在最后一步电平（预留接口）。"""
+        self.instr.write(f"ARB:SEQ:TERM:LAST {int(bool(flag))},(@{channel})")
+
+    def _set_arb_pulse(self, channel, arb_type, start, top, t0, t1, t2, frequency):
+        tp = self._arb_type_prefix(arb_type)
+        self.instr.write(f"ARB:FUNC:TYPE {tp},(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP PULS,(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:STAR {start},(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:TOP {top},(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:END:TIM {t1},(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:TOP:TIM {t2},(@{channel})")
+        self.instr.write(f"ARB:{tp}:PULS:FREQ {frequency},(@{channel})")
+        self.instr.write(f"{tp}:MODE ARB,(@{channel})")
+
+    def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency, arb_type="VOLT"):
         """
         配置ARB脉冲波形 (Pulse Shape)
 
         参数:
             channel (int): 通道号
-            v0 (float): 基准电压(V)
-            v1 (float): 脉冲顶部电压(V)
+            v0 (float): 基准电平
+            v1 (float): 脉冲顶部电平
             t0 (float): 起始保持时间(s)
             t1 (float): 终止保持时间(s)
             t2 (float): 脉冲顶部持续时间(s)
             frequency (float): 脉冲频率(Hz)
         """
-        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
-        self.instr.write(f"ARB:FUNC:SHAP PULS,(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:STAR {v0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:TOP {v1},(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:STAR:TIM {t0},(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:END:TIM {t1},(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:TOP:TIM {t2},(@{channel})")
-        self.instr.write(f"ARB:VOLT:PULS:FREQ {frequency},(@{channel})")
-        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+        self._set_arb_pulse(channel, arb_type, v0, v1, t0, t1, t2, frequency)
 
     def set_current_slew(self, channel, slew="MAX"):
         """设置电流变化率 (Current Slew)，Load Transient 拉载需设为 MAX。
@@ -356,15 +510,7 @@ class N6705C:
         自动压缩各段；t2=0 时脉冲顶部宽度为 0（无瞬态）。50% 占空比取
         t0=T/2, t1=0, t2=T/2。
         """
-        self.instr.write(f"ARB:FUNC:TYPE CURR,(@{channel})")
-        self.instr.write(f"ARB:FUNC:SHAP PULS,(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:STAR {i0},(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:TOP {i1},(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:STAR:TIM {t0},(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:END:TIM {t1},(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:TOP:TIM {t2},(@{channel})")
-        self.instr.write(f"ARB:CURR:PULS:FREQ {frequency},(@{channel})")
-        self.instr.write(f"CURR:MODE ARB,(@{channel})")
+        self._set_arb_pulse(channel, "CURR", i0, i1, t0, t1, t2, frequency)
 
     def exit_arb_current(self, channel):
         """退出电流 ARB 模式，恢复固定电流 (CURR:MODE FIX)。"""

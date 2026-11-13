@@ -12,10 +12,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
 
 from log_config import get_logger
-from resource_path import get_user_data_dir
+from resource_path import get_resource_base, get_user_data_dir
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.pages.power_analyzer.widgets import (
     ChannelTabBar, SlideToggle, SelectAllLineEdit, collapsible_header_style,
+    is_it2705_instrument,
     CONTENT_BG, PANEL_BG, PANEL_BORDER, CARD_BG, CARD_BORDER,
     CONTAINER_RADIUS, WIDGET_RADIUS, MUTED_TEXT,
     DISABLED_TEXT, DISABLED_BTN_BG, DISABLED_BTN_BORDER,
@@ -24,53 +26,95 @@ from ui.pages.power_analyzer.widgets import (
 
 logger = get_logger(__name__)
 
-# (shape_key, 显示名) —— 顺序即下拉与 QStackedWidget 页序
+_ARB_TYPES = [("VOLT", "Voltage"), ("CURR", "Current")]
+
+# (shape_key, 显示名, 图标文件名) —— 顺序即下拉与 QStackedWidget 页序
 _ARB_SHAPES = [
-    ("sine", "Sine"),
-    ("step", "Step"),
-    ("staircase", "Staircase"),
-    ("pulse_v", "Pulse (V)"),
-    ("pulse_i", "Pulse (I)"),
+    ("none", "No Arb Configured", "arb_none.svg"),
+    ("sine", "Sine", "arb_sine.svg"),
+    ("step", "Step", "arb_step.svg"),
+    ("ramp", "Ramp", "arb_ramp.svg"),
+    ("staircase", "Staircase", "arb_staircase.svg"),
+    ("pulse", "Pulse", "arb_pulse.svg"),
+    ("trapezoid", "Trapezoid", "arb_trapezoid.svg"),
+    ("exponential", "Exponential", "arb_exponential.svg"),
+    ("cdwell", "Constant Dwell (CD)", "arb_cdwell.svg"),
+    ("udef", "User Defined", "arb_udef.svg"),
+    ("seq", "Sequence", "arb_sequence.svg"),
 ]
 
-# shape_key -> [(label, field_key, default_text, wheel_step), ...]
+# SEQ 本阶段占位（编辑后续版本提供）；IT2705 无 CDW 指令、UDEF 为机内波形文件、SEQ 语法不同
+_ARB_PLACEHOLDER_SHAPES = frozenset({"seq"})
+_ARB_IT2705_UNSUPPORTED = frozenset({"cdwell", "udef", "seq"})
+
+# 旧版预设（pulse_v/pulse_i 与旧字段名）兼容映射
+_LEGACY_SHAPE_MAP = {"pulse_v": ("pulse", "VOLT"), "pulse_i": ("pulse", "CURR")}
+_LEGACY_FIELD_MAP = {"i0": "v0", "i1": "v1", "offset_v": "offset", "ampl_vrms": "ampl"}
+
+# shape_key -> [(label_tpl, field_key, default, wheel_step, kind), ...]
+# label_tpl 中 {u} 随 Arb Type 替换为 V / A；kind: level/time/freq/steps/list_level/list_time
 # 时间字段按时间流排序（start -> top -> end），field_key 与驱动参数对应
 _ARB_FIELDS = {
+    "none": [],
     "sine": [
-        ("DC Offset (V):", "offset_v", "3.3", 0.1),
-        ("Amplitude (Vrms):", "ampl_vrms", "0.1", 0.01),
-        ("Frequency (Hz):", "freq_hz", "1000", 1),
+        ("DC Offset ({u}):", "offset", "3.3", 0.1, "level"),
+        ("Amplitude ({u}rms):", "ampl", "0.1", 0.01, "level"),
+        ("Frequency (Hz):", "freq_hz", "1000", 1, "freq"),
     ],
     "step": [
-        ("Start Voltage (V):", "v0", "3.3", 0.1),
-        ("End Voltage (V):", "v1", "3.8", 0.1),
-        ("Start Hold (s):", "t0", "0.01", 0.001),
-        ("End Hold (s):", "t1", "0.01", 0.001),
+        ("Start Level ({u}):", "v0", "3.3", 0.1, "level"),
+        ("End Level ({u}):", "v1", "3.8", 0.1, "level"),
+        ("Start Hold (s):", "t0", "0.01", 0.001, "time"),
+        ("End Hold (s):", "t1", "0.01", 0.001, "time"),
+    ],
+    "ramp": [
+        ("Start Level ({u}):", "v0", "3.0", 0.1, "level"),
+        ("End Level ({u}):", "v1", "4.0", 0.1, "level"),
+        ("Start Hold (s):", "t0", "0.005", 0.001, "time"),
+        ("Rise Time (s):", "rt", "0.05", 0.001, "time"),
+        ("End Hold (s):", "t1", "0.005", 0.001, "time"),
     ],
     "staircase": [
-        ("Start Voltage (V):", "v0", "3.0", 0.1),
-        ("End Voltage (V):", "v1", "4.0", 0.1),
-        ("Start Hold (s):", "t0", "0.005", 0.001),
-        ("Stair Time (s):", "t1", "0.05", 0.001),
-        ("End Hold (s):", "t2", "0.005", 0.001),
-        ("Steps:", "steps", "10", 1),
+        ("Start Level ({u}):", "v0", "3.0", 0.1, "level"),
+        ("End Level ({u}):", "v1", "4.0", 0.1, "level"),
+        ("Start Hold (s):", "t0", "0.005", 0.001, "time"),
+        ("Stair Time (s):", "t1", "0.05", 0.001, "time"),
+        ("End Hold (s):", "t2", "0.005", 0.001, "time"),
+        ("Steps:", "steps", "10", 1, "steps"),
     ],
-    "pulse_v": [
-        ("Base Voltage (V):", "v0", "3.3", 0.1),
-        ("Top Voltage (V):", "v1", "3.8", 0.1),
-        ("Start Hold (s):", "t0", "0.0005", 0.0001),
-        ("Top Hold (s):", "t2", "0.0005", 0.0001),
-        ("End Hold (s):", "t1", "0", 0.0001),
-        ("Frequency (Hz):", "freq_hz", "100", 1),
+    "pulse": [
+        ("Base Level ({u}):", "v0", "3.3", 0.1, "level"),
+        ("Top Level ({u}):", "v1", "3.8", 0.1, "level"),
+        ("Start Hold (s):", "t0", "0.0005", 0.0001, "time"),
+        ("Top Hold (s):", "t2", "0.0005", 0.0001, "time"),
+        ("End Hold (s):", "t1", "0", 0.0001, "time"),
+        ("Frequency (Hz):", "freq_hz", "100", 1, "freq"),
     ],
-    "pulse_i": [
-        ("Base Current (A):", "i0", "0", 0.01),
-        ("Top Current (A):", "i1", "-0.5", 0.01),
-        ("Start Hold (s):", "t0", "0.0005", 0.0001),
-        ("Top Hold (s):", "t2", "0.0005", 0.0001),
-        ("End Hold (s):", "t1", "0", 0.0001),
-        ("Frequency (Hz):", "freq_hz", "100", 1),
+    "trapezoid": [
+        ("Start Level ({u}):", "v0", "3.0", 0.1, "level"),
+        ("Top Level ({u}):", "v1", "4.0", 0.1, "level"),
+        ("Start Hold (s):", "t0", "0.005", 0.001, "time"),
+        ("Rise Time (s):", "rt", "0.01", 0.001, "time"),
+        ("Top Hold (s):", "tt", "0.02", 0.001, "time"),
+        ("Fall Time (s):", "ft", "0.01", 0.001, "time"),
+        ("End Hold (s):", "t1", "0.005", 0.001, "time"),
     ],
+    "exponential": [
+        ("Start Level ({u}):", "v0", "3.0", 0.1, "level"),
+        ("End Level ({u}):", "v1", "4.0", 0.1, "level"),
+        ("Start Delay (s):", "t0", "0.005", 0.001, "time"),
+        ("Time Constant (s):", "tc", "0.02", 0.001, "time"),
+        ("Total Time (s):", "t1", "0.1", 0.001, "time"),
+    ],
+    "cdwell": [
+        ("Levels ({u}, comma list):", "levels", "3.2, 3.4, 3.6, 3.8", None, "list_level"),
+        ("Dwell (s):", "dwell", "0.01", 0.001, "time"),
+    ],
+    "udef": [
+        ("Levels ({u}, comma list):", "levels", "3.0, 3.5, 4.0, 3.5", None, "list_level"),
+        ("Dwells (s, comma list, optional):", "dwells", "", None, "list_time"),
+    ],
+    "seq": [],
 }
 
 _ARB_INPUT_STYLE = f"""
@@ -85,9 +129,15 @@ _ARB_INPUT_STYLE = f"""
 
 _ARB_PRESETS_FILENAME = "arb_presets.json"
 
+_ARB_ICON_COLOR = "#c8d5e2"
+
 
 def _arb_presets_path() -> str:
     return os.path.join(get_user_data_dir("n6705c"), _ARB_PRESETS_FILENAME)
+
+
+def _arb_icon_dir() -> str:
+    return os.path.join(get_resource_base(), "resources", "icons")
 
 
 class _ArbRunWorker(QObject):
@@ -96,7 +146,8 @@ class _ArbRunWorker(QObject):
     finished = Signal(str, bool, str)  # dev_label, success, message
 
     def __init__(self, instance, dev_label, channel, mode,
-                 shape_key=None, values=None, continuous=False, io_lock=None):
+                 shape_key=None, values=None, arb_type="VOLT",
+                 continuous=False, io_lock=None):
         super().__init__()
         self._instance = instance
         self._dev_label = dev_label
@@ -104,6 +155,7 @@ class _ArbRunWorker(QObject):
         self._mode = mode  # "apply" | "stop"
         self._shape_key = shape_key
         self._values = values or {}
+        self._arb_type = arb_type
         self._continuous = continuous
         self._io_lock = io_lock
 
@@ -131,22 +183,39 @@ class _ArbRunWorker(QObject):
         inst = self._instance
         ch = self._channel
         v = self._values
-        if self._shape_key == "sine":
-            inst.set_arb_sine(ch, v["offset_v"], v["ampl_vrms"], v["freq_hz"])
-        elif self._shape_key == "step":
-            inst.set_arb_step(ch, v["v0"], v["v1"], v["t0"], v["t1"])
-        elif self._shape_key == "staircase":
+        shape = self._shape_key
+        tp = self._arb_type
+        if shape == "none":
+            inst.set_arb_none(ch, tp)
+            return
+        if shape == "sine":
+            inst.set_arb_sine(ch, v["offset"], v["ampl"], v["freq_hz"], arb_type=tp)
+        elif shape == "step":
+            inst.set_arb_step(ch, v["v0"], v["v1"], v["t0"], v["t1"], arb_type=tp)
+        elif shape == "ramp":
+            inst.set_arb_ramp(ch, v["v0"], v["v1"], v["t0"], v["rt"], v["t1"], arb_type=tp)
+        elif shape == "staircase":
             inst.set_arb_staircase(
-                ch, v["v0"], v["v1"], v["t0"], v["t1"], v["t2"], int(v["steps"])
+                ch, v["v0"], v["v1"], v["t0"], v["t1"], v["t2"], int(v["steps"]), arb_type=tp
             )
-        elif self._shape_key == "pulse_v":
-            inst.set_arb_pulse(ch, v["v0"], v["v1"], v["t0"], v["t1"], v["t2"], v["freq_hz"])
-        elif self._shape_key == "pulse_i":
-            inst.set_arb_current_pulse(
-                ch, v["i0"], v["i1"], v["t0"], v["t1"], v["t2"], v["freq_hz"]
+        elif shape == "pulse":
+            inst.set_arb_pulse(
+                ch, v["v0"], v["v1"], v["t0"], v["t1"], v["t2"], v["freq_hz"], arb_type=tp
             )
+        elif shape == "trapezoid":
+            inst.set_arb_trapezoid(
+                ch, v["v0"], v["v1"], v["t0"], v["rt"], v["tt"], v["ft"], v["t1"], arb_type=tp
+            )
+        elif shape == "exponential":
+            inst.set_arb_exponential(
+                ch, v["v0"], v["v1"], v["t0"], v["tc"], v["t1"], arb_type=tp
+            )
+        elif shape == "cdwell":
+            inst.set_arb_constant_dwell(ch, v["levels"], v["dwell"], arb_type=tp)
+        elif shape == "udef":
+            inst.set_arb_user_defined(ch, v["levels"], v.get("dwells"), arb_type=tp)
         else:
-            raise ValueError(f"Unknown arb shape: {self._shape_key}")
+            raise ValueError(f"Unknown arb shape: {shape}")
         # Continuous 须在形状配置完成后、触发前设置（驱动契约）
         inst.set_arb_continuous(ch, self._continuous)
         inst.arb_on(ch)
@@ -162,7 +231,7 @@ class ArbViewMixin:
         self._arb_current_channel = 1
         self._arb_param_store = {}
         self._arb_loading = False
-        self._arb_last_shape = "sine"
+        self._arb_last_shape = "none"
         self._arb_threads = {}
         self._arb_workers = {}
         self._arb_presets = []
@@ -232,8 +301,7 @@ class ArbViewMixin:
         zone_layout.addWidget(self.arb_body)
 
         body_layout = QVBoxLayout(self.arb_body)
-        body_margins = (12, 12, 12, 12)
-        body_layout.setContentsMargins(*body_margins)
+        body_layout.setContentsMargins(12, 12, 12, 12)
         body_layout.setSpacing(10)
 
         title_row = QHBoxLayout()
@@ -254,6 +322,20 @@ class ArbViewMixin:
         title_row.addWidget(self.arb_continuous_toggle)
         body_layout.addLayout(title_row)
 
+        type_row = QHBoxLayout()
+        type_row.setSpacing(8)
+        type_label = QLabel("Arb Type:")
+        type_label.setStyleSheet(
+            f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
+        )
+        type_row.addWidget(type_label)
+        self.arb_type_combo = DarkComboBox()
+        for _key, label in _ARB_TYPES:
+            self.arb_type_combo.addItem(label)
+        self.arb_type_combo.currentIndexChanged.connect(self._arb_on_type_changed)
+        type_row.addWidget(self.arb_type_combo, 1)
+        body_layout.addLayout(type_row)
+
         shape_row = QHBoxLayout()
         shape_row.setSpacing(8)
         shape_label = QLabel("Waveform:")
@@ -262,18 +344,29 @@ class ArbViewMixin:
         )
         shape_row.addWidget(shape_label)
         self.arb_shape_combo = DarkComboBox()
-        for _key, label in _ARB_SHAPES:
-            self.arb_shape_combo.addItem(label)
+        for _key, label, icon_file in _ARB_SHAPES:
+            icon = tinted_svg_icon(
+                os.path.join(_arb_icon_dir(), icon_file), _ARB_ICON_COLOR, 16
+            )
+            self.arb_shape_combo.addItem(icon, label)
         self.arb_shape_combo.currentIndexChanged.connect(self._arb_on_shape_changed)
         shape_row.addWidget(self.arb_shape_combo, 1)
+        self.arb_shape_preview = QLabel()
+        self.arb_shape_preview.setFixedSize(32, 32)
+        self.arb_shape_preview.setStyleSheet(
+            "QLabel { background: transparent; border: none; }"
+        )
+        shape_row.addWidget(self.arb_shape_preview)
         body_layout.addLayout(shape_row)
 
         self.arb_params_stack = QStackedWidget()
         self.arb_param_inputs = {}  # shape_key -> {field_key: SelectAllLineEdit}
-        for shape_key, _label in _ARB_SHAPES:
-            page, inputs = self._create_arb_params_page(shape_key)
+        self.arb_param_labels = {}  # shape_key -> [(QLabel, label_tpl)]
+        for shape_key, _label, _icon in _ARB_SHAPES:
+            page, inputs, labels = self._create_arb_params_page(shape_key)
             self.arb_params_stack.addWidget(page)
             self.arb_param_inputs[shape_key] = inputs
+            self.arb_param_labels[shape_key] = labels
         body_layout.addWidget(self.arb_params_stack)
 
         btn_row = QHBoxLayout()
@@ -298,6 +391,7 @@ class ArbViewMixin:
         body_layout.addLayout(btn_row)
 
         self._arb_apply_channel_theme()
+        self._arb_update_shape_icon()
         return zone
 
     def _create_arb_params_page(self, shape_key):
@@ -311,23 +405,42 @@ class ArbViewMixin:
         grid.setVerticalSpacing(8)
 
         inputs = {}
+        labels = []
         fields = _ARB_FIELDS[shape_key]
-        for idx, (label_text, field_key, default_text, wheel_step) in enumerate(fields):
+        if not fields:
+            hint = QLabel(
+                "Sequence editing will be available in a future release."
+                if shape_key == "seq"
+                else "Clears the Arb configuration of this channel."
+            )
+            hint.setWordWrap(True)
+            hint.setStyleSheet(
+                f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
+            )
+            grid.addWidget(hint, 0, 0, 1, 4)
+        for idx, (label_tpl, field_key, default_text, wheel_step, _kind) in enumerate(fields):
             row, col = divmod(idx, 2)
-            label = QLabel(label_text)
+            label = QLabel(label_tpl.replace("{u}", "V"))
             label.setStyleSheet(
                 f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
             )
             edit = SelectAllLineEdit(default_text)
             edit.set_wheel_step(wheel_step)
-            edit.setFixedWidth(100)
             edit.setAlignment(Qt.AlignCenter)
             edit.setStyleSheet(_ARB_INPUT_STYLE)
-            grid.addWidget(label, row, col * 2)
-            grid.addWidget(edit, row, col * 2 + 1)
+            if _kind in ("list_level", "list_time"):
+                edit.setMinimumWidth(200)
+                edit.setAlignment(Qt.AlignLeft)
+                grid.addWidget(label, row * 2, 0, 1, 4)
+                grid.addWidget(edit, row * 2 + 1, 0, 1, 4)
+            else:
+                edit.setFixedWidth(100)
+                grid.addWidget(label, row, col * 2)
+                grid.addWidget(edit, row, col * 2 + 1)
             inputs[field_key] = edit
+            labels.append((label, label_tpl))
         grid.setColumnStretch(4, 1)
-        return page, inputs
+        return page, inputs, labels
 
     # ------------------------------------------------------------ preset zone
     def _create_arb_preset_zone(self):
@@ -579,12 +692,23 @@ class ArbViewMixin:
             QPushButton:hover {{ background-color: #12213f; color: {theme['accent_hover']}; border: 1px solid {theme['accent_hover']}; }}
             QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """)
+        self._arb_refresh_shape_availability()
+        self._arb_update_shape_icon()
         self._refresh_arb_tab_styles()
 
-    # --------------------------------------------------------- params memory
+    # --------------------------------------------------- type / shape / units
+    def _arb_current_type(self):
+        return _ARB_TYPES[self.arb_type_combo.currentIndex()][0]
+
     def _arb_current_shape_key(self):
         idx = self.arb_shape_combo.currentIndex()
         return _ARB_SHAPES[idx][0]
+
+    def _arb_on_type_changed(self, _index):
+        if self._arb_loading:
+            return
+        self._arb_update_unit_labels()
+        self._arb_store_current_params()
 
     def _arb_on_shape_changed(self, index):
         new_shape = _ARB_SHAPES[index][0]
@@ -594,8 +718,85 @@ class ArbViewMixin:
             # 滚轮调值走 setText（仅 textChanged），切走前全量保存旧页
             self._arb_store_shape_params(old_shape)
         self.arb_params_stack.setCurrentIndex(index)
-        self._arb_load_shape_params(new_shape)
+        if not self._arb_loading:
+            self._arb_load_shape_params(new_shape)
+            self._arb_store_current_params()
+        self._arb_update_shape_icon()
+
+    def _arb_update_unit_labels(self):
+        unit = "V" if self._arb_current_type() == "VOLT" else "A"
+        for shape_labels in self.arb_param_labels.values():
+            for label, tpl in shape_labels:
+                label.setText(tpl.replace("{u}", unit))
+
+    def _arb_update_shape_icon(self):
+        if not hasattr(self, "arb_shape_preview"):
+            return
+        idx = self.arb_shape_combo.currentIndex()
+        icon_file = _ARB_SHAPES[idx][2]
+        pixmap = tinted_svg_pixmap(
+            os.path.join(_arb_icon_dir(), icon_file), _ARB_ICON_COLOR, 28
+        )
+        self.arb_shape_preview.setPixmap(pixmap)
+
+    def _arb_refresh_shape_availability(self):
+        """按当前通道仪器型号禁用不支持的波形（SEQ 全局占位禁用）。"""
+        if not hasattr(self, "arb_shape_combo"):
+            return
+        instance = self.devices.get(self._arb_current_device, {}).get("n6705c")
+        is_it2705 = bool(instance is not None and is_it2705_instrument(instance))
+        model = self.arb_shape_combo.model()
+        current_key = self._arb_current_shape_key()
+        need_fallback = False
+        for idx, (key, _label, _icon) in enumerate(_ARB_SHAPES):
+            item = model.item(idx)
+            if item is None:
+                continue
+            disabled = key in _ARB_PLACEHOLDER_SHAPES or (
+                is_it2705 and key in _ARB_IT2705_UNSUPPORTED
+            )
+            item.setEnabled(not disabled)
+            if disabled:
+                reason = (
+                    "Sequence editing will be available in a future release"
+                    if key == "seq"
+                    else "Not supported by IT2705"
+                )
+                item.setToolTip(reason)
+            else:
+                item.setToolTip("")
+            if disabled and key == current_key:
+                need_fallback = True
+        if need_fallback:
+            self._arb_loading = True
+            try:
+                self.arb_shape_combo.setCurrentIndex(0)  # none
+                self.arb_params_stack.setCurrentIndex(0)
+                self._arb_last_shape = "none"
+            finally:
+                self._arb_loading = False
+            self._arb_update_shape_icon()
+
+    # --------------------------------------------------------- params memory
+    def _arb_on_continuous_toggled(self, _checked):
         self._arb_store_current_params()
+
+    def _arb_store_shape_params(self, shape):
+        if self._arb_loading or not hasattr(self, "arb_shape_combo"):
+            return
+        params = {
+            field_key: edit.text()
+            for field_key, edit in self.arb_param_inputs[shape].items()
+        }
+        key = (self._arb_current_device, self._arb_current_channel)
+        entry = self._arb_param_store.setdefault(key, {"params": {}})
+        entry["arb_type"] = self._arb_current_type()
+        entry["shape"] = self._arb_current_shape_key()
+        entry["continuous"] = self.arb_continuous_toggle.isChecked()
+        entry["params"][shape] = params
+
+    def _arb_store_current_params(self):
+        self._arb_store_shape_params(self._arb_current_shape_key())
 
     def _arb_load_shape_params(self, shape):
         """从当前通道 store 恢复指定波形页的已存值（无记录则保留默认）。"""
@@ -612,25 +813,6 @@ class ArbViewMixin:
         finally:
             self._arb_loading = prev
 
-    def _arb_on_continuous_toggled(self, _checked):
-        self._arb_store_current_params()
-
-    def _arb_store_shape_params(self, shape):
-        if self._arb_loading or not hasattr(self, "arb_shape_combo"):
-            return
-        params = {
-            field_key: edit.text()
-            for field_key, edit in self.arb_param_inputs[shape].items()
-        }
-        key = (self._arb_current_device, self._arb_current_channel)
-        entry = self._arb_param_store.setdefault(key, {"params": {}})
-        entry["shape"] = self._arb_current_shape_key()
-        entry["continuous"] = self.arb_continuous_toggle.isChecked()
-        entry["params"][shape] = params
-
-    def _arb_store_current_params(self):
-        self._arb_store_shape_params(self._arb_current_shape_key())
-
     def _arb_load_channel_params(self):
         if not hasattr(self, "arb_shape_combo"):
             return
@@ -638,10 +820,15 @@ class ArbViewMixin:
         try:
             key = (self._arb_current_device, self._arb_current_channel)
             entry = self._arb_param_store.get(key, {})
-            shape = entry.get("shape", "sine")
-            shape_keys = [k for k, _label in _ARB_SHAPES]
+            arb_type = entry.get("arb_type", "VOLT")
+            type_keys = [k for k, _label in _ARB_TYPES]
+            if arb_type not in type_keys:
+                arb_type = "VOLT"
+            self.arb_type_combo.setCurrentIndex(type_keys.index(arb_type))
+            shape = entry.get("shape", "none")
+            shape_keys = [k for k, _label, _icon in _ARB_SHAPES]
             if shape not in shape_keys:
-                shape = "sine"
+                shape = "none"
             self.arb_shape_combo.setCurrentIndex(shape_keys.index(shape))
             self.arb_params_stack.setCurrentIndex(shape_keys.index(shape))
             self.arb_continuous_toggle.setChecked(bool(entry.get("continuous", False)))
@@ -652,17 +839,40 @@ class ArbViewMixin:
             self._arb_last_shape = shape
         finally:
             self._arb_loading = False
+        self._arb_update_unit_labels()
+        self._arb_refresh_shape_availability()
+        self._arb_update_shape_icon()
 
     def _arb_collect_values(self):
         """解析当前波形参数为数值；非法输入抛 ValueError。"""
         shape = self._arb_current_shape_key()
         values = {}
-        for label_text, field_key, _default, _step in _ARB_FIELDS[shape]:
+        for label_tpl, field_key, _default, _step, kind in _ARB_FIELDS[shape]:
             text = self.arb_param_inputs[shape][field_key].text().strip()
-            try:
-                values[field_key] = float(text)
-            except ValueError as exc:
-                raise ValueError(f"{label_text.rstrip(':')} invalid: '{text}'") from exc
+            unit = "V" if self._arb_current_type() == "VOLT" else "A"
+            label = label_tpl.replace("{u}", unit)
+            if kind in ("list_level", "list_time"):
+                if not text:
+                    if kind == "list_time":
+                        values[field_key] = None
+                        continue
+                    raise ValueError(f"{label.rstrip(':')} requires at least one value")
+                try:
+                    values[field_key] = [
+                        float(part) for part in text.split(",") if part.strip()
+                    ]
+                except ValueError as exc:
+                    raise ValueError(f"{label.rstrip(':')} invalid list: '{text}'") from exc
+                if not values[field_key]:
+                    if kind == "list_time":
+                        values[field_key] = None
+                        continue
+                    raise ValueError(f"{label.rstrip(':')} requires at least one value")
+            else:
+                try:
+                    values[field_key] = float(text)
+                except ValueError as exc:
+                    raise ValueError(f"{label.rstrip(':')} invalid: '{text}'") from exc
         if shape == "staircase":
             values["steps"] = int(values["steps"])
         return values
@@ -685,6 +895,9 @@ class ArbViewMixin:
             return
         if not self._is_channel_supported(dev_label, ch) or dev_label in self._arb_threads:
             return
+        shape = self._arb_current_shape_key()
+        if shape in _ARB_PLACEHOLDER_SHAPES:
+            return
         try:
             values = self._arb_collect_values()
         except ValueError as exc:
@@ -692,8 +905,9 @@ class ArbViewMixin:
             return
         self._arb_store_current_params()
         self._arb_start_worker(dev_label, instance, ch, "apply",
-                               shape_key=self._arb_current_shape_key(),
+                               shape_key=shape,
                                values=values,
+                               arb_type=self._arb_current_type(),
                                continuous=self.arb_continuous_toggle.isChecked())
 
     def _arb_stop(self):
@@ -755,8 +969,25 @@ class ArbViewMixin:
                     presets = [p for p in raw["presets"] if isinstance(p, dict) and p.get("name")]
             except (OSError, json.JSONDecodeError):
                 logger.error("读取 arb_presets.json 失败: %s", path, exc_info=True)
-        self._arb_presets = presets
+        self._arb_presets = [self._arb_normalize_preset(p) for p in presets]
         self._arb_refresh_preset_list()
+
+    @staticmethod
+    def _arb_normalize_preset(preset):
+        """旧版 pulse_v/pulse_i 与旧字段名映射到新结构。"""
+        preset = dict(preset)
+        shape = preset.get("shape", "none")
+        if shape in _LEGACY_SHAPE_MAP:
+            shape, arb_type = _LEGACY_SHAPE_MAP[shape]
+            preset.setdefault("arb_type", arb_type)
+        preset["shape"] = shape
+        preset.setdefault("arb_type", "VOLT")
+        params = preset.get("params")
+        if isinstance(params, dict):
+            preset["params"] = {
+                _LEGACY_FIELD_MAP.get(k, k): v for k, v in params.items()
+            }
+        return preset
 
     def _arb_save_presets(self):
         path = _arb_presets_path()
@@ -778,11 +1009,12 @@ class ArbViewMixin:
 
     def _arb_preset_summary(self, preset):
         shape = preset.get("shape", "")
-        shape_label = dict(_ARB_SHAPES).get(shape, shape)
+        shape_label = {k: lbl for k, lbl, _i in _ARB_SHAPES}.get(shape, shape)
+        type_label = dict(_ARB_TYPES).get(preset.get("arb_type", "VOLT"), "Voltage")
         params = preset.get("params", {})
         parts = [f"{k}={v}" for k, v in params.items()]
         cont = "continuous" if preset.get("continuous") else "single"
-        return f"{shape_label} | {cont} | {', '.join(parts)}"
+        return f"{shape_label} | {type_label} | {cont} | {', '.join(parts)}"
 
     def _arb_on_save_preset(self):
         try:
@@ -798,6 +1030,7 @@ class ArbViewMixin:
             return
         preset = {
             "name": name,
+            "arb_type": self._arb_current_type(),
             "shape": self._arb_current_shape_key(),
             "continuous": self.arb_continuous_toggle.isChecked(),
             "params": values,
@@ -823,19 +1056,31 @@ class ArbViewMixin:
         if row < 0 or row >= len(self._arb_presets):
             return
         preset = self._arb_presets[row]
-        shape = preset.get("shape", "sine")
-        shape_keys = [k for k, _label in _ARB_SHAPES]
+        shape = preset.get("shape", "none")
+        shape_keys = [k for k, _label, _icon in _ARB_SHAPES]
         if shape not in shape_keys:
             return
         self._arb_loading = True
         try:
+            arb_type = preset.get("arb_type", "VOLT")
+            type_keys = [k for k, _label in _ARB_TYPES]
+            self.arb_type_combo.setCurrentIndex(
+                type_keys.index(arb_type) if arb_type in type_keys else 0
+            )
             self.arb_shape_combo.setCurrentIndex(shape_keys.index(shape))
             self.arb_params_stack.setCurrentIndex(shape_keys.index(shape))
             self.arb_continuous_toggle.setChecked(bool(preset.get("continuous", False)))
             params = preset.get("params", {})
             for field_key, edit in self.arb_param_inputs[shape].items():
-                if field_key in params:
-                    edit.setText(str(params[field_key]))
+                if field_key in params and params[field_key] is not None:
+                    value = params[field_key]
+                    if isinstance(value, list):
+                        edit.setText(", ".join(str(v) for v in value))
+                    else:
+                        edit.setText(str(value))
+            self._arb_last_shape = shape
         finally:
             self._arb_loading = False
+        self._arb_update_unit_labels()
+        self._arb_update_shape_icon()
         self._arb_store_current_params()

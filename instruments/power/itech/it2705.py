@@ -446,41 +446,96 @@ class IT2705(VisaInstrument):
         shape = self._normalize_choice(shape, shapes, "ARB shape")
         self.write(f"ARB:FUNC:SHAP {shape},(@{channel})")
 
-    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency):
+    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency, arb_type="VOLT"):
         channel = self._validate_channel(channel)
         if amplitude_vrms <= 0 or frequency <= 0:
             raise ValueError("IT2705: 正弦幅度与频率必须大于 0")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
         amplitude_peak = math.sqrt(2.0) * amplitude_vrms
-        self.set_arb_type(channel, "VOLT")
+        self.set_arb_type(channel, tp)
         self.set_arb_shape(channel, "SIN")
-        self.write(f"ARB:VOLT:SIN:OFFS {float(dc_offset)},(@{channel})")
-        self.write(f"ARB:VOLT:SIN:AMPL {amplitude_peak},(@{channel})")
-        self.write(f"ARB:VOLT:SIN:FREQ {float(frequency)},(@{channel})")
+        self.write(f"ARB:{tp}:SIN:OFFS {float(dc_offset)},(@{channel})")
+        self.write(f"ARB:{tp}:SIN:AMPL {amplitude_peak},(@{channel})")
+        self.write(f"ARB:{tp}:SIN:FREQ {float(frequency)},(@{channel})")
         self.set_function_mode(channel, "ARB")
 
-    def set_arb_step(self, channel, v0, v1, t0, t1):
+    def set_arb_step(self, channel, v0, v1, t0, t1, arb_type="VOLT"):
         channel = self._validate_channel(channel)
-        self.set_arb_type(channel, "VOLT")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
+        self.set_arb_type(channel, tp)
         self.set_arb_shape(channel, "STEP")
-        self.write(f"ARB:VOLT:STEP:STAR {float(v0)},(@{channel})")
-        self.write(f"ARB:VOLT:STEP:END {float(v1)},(@{channel})")
-        self.write(f"ARB:VOLT:STEP:STAR:TIME {float(t0)},(@{channel})")
-        self.write(f"ARB:VOLT:STEP:END:TIME {float(t1)},(@{channel})")
+        self.write(f"ARB:{tp}:STEP:STAR {float(v0)},(@{channel})")
+        self.write(f"ARB:{tp}:STEP:END {float(v1)},(@{channel})")
+        self.write(f"ARB:{tp}:STEP:STAR:TIME {float(t0)},(@{channel})")
+        self.write(f"ARB:{tp}:STEP:END:TIME {float(t1)},(@{channel})")
         self.set_function_mode(channel, "ARB")
 
-    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps):
+    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps, arb_type="VOLT"):
         channel = self._validate_channel(channel)
         if int(steps) < 1:
             raise ValueError("IT2705: steps 必须大于 0")
-        self.set_arb_type(channel, "VOLT")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
+        self.set_arb_type(channel, tp)
         self.set_arb_shape(channel, "STA")
-        self.write(f"ARB:VOLT:STA:STAR {float(v0)},(@{channel})")
-        self.write(f"ARB:VOLT:STA:END {float(v1)},(@{channel})")
-        self.write(f"ARB:VOLT:STA:STAR:TIME {float(t0)},(@{channel})")
-        self.write(f"ARB:VOLT:STA:TIME {float(t1)},(@{channel})")
-        self.write(f"ARB:VOLT:STA:END:TIME {float(t2)},(@{channel})")
-        self.write(f"ARB:VOLT:STA:NST {int(steps)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:STAR {float(v0)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:END {float(v1)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:STAR:TIME {float(t0)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:TIME {float(t1)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:END:TIME {float(t2)},(@{channel})")
+        self.write(f"ARB:{tp}:STA:NST {int(steps)},(@{channel})")
         self.set_function_mode(channel, "ARB")
+
+    def set_arb_ramp(self, channel, v0, v1, t0, rt, t1, arb_type="VOLT"):
+        """配置 ARB 斜坡波形：v0/v1 起止电平，t0 起始保持(s)，rt 上升(s)，t1 终止保持(s)。"""
+        channel = self._validate_channel(channel)
+        if rt <= 0:
+            raise ValueError("IT2705: 斜坡上升时间必须大于 0")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
+        self.set_arb_type(channel, tp)
+        self.set_arb_shape(channel, "RAMP")
+        self.write(f"ARB:{tp}:RAMP:STAR {float(v0)},(@{channel})")
+        self.write(f"ARB:{tp}:RAMP:END {float(v1)},(@{channel})")
+        self.write(f"ARB:{tp}:RAMP:STAR:TIME {float(t0)},(@{channel})")
+        self.write(f"ARB:{tp}:RAMP:RTIM {float(rt)},(@{channel})")
+        self.write(f"ARB:{tp}:RAMP:END:TIME {float(t1)},(@{channel})")
+        self.set_function_mode(channel, "ARB")
+
+    def set_arb_trapezoid(self, channel, v0, v1, t0, rt, tt, ft, t1, arb_type="VOLT"):
+        """配置 ARB 梯形波形：v0 起始/v1 顶部电平，t0 起始保持，rt 上升，tt 顶部保持，ft 下降，t1 结束保持(s)。"""
+        channel = self._validate_channel(channel)
+        if rt <= 0 or ft <= 0:
+            raise ValueError("IT2705: 梯形上升/下降时间必须大于 0")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
+        self.set_arb_type(channel, tp)
+        self.set_arb_shape(channel, "TRAP")
+        self.write(f"ARB:{tp}:TRAP:STAR {float(v0)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:TOP {float(v1)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:STAR:TIME {float(t0)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:RTIM {float(rt)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:TOP:TIME {float(tt)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:FTIM {float(ft)},(@{channel})")
+        self.write(f"ARB:{tp}:TRAP:END:TIME {float(t1)},(@{channel})")
+        self.set_function_mode(channel, "ARB")
+
+    def set_arb_exponential(self, channel, v0, v1, t0, tc, t1, arb_type="VOLT"):
+        """配置 ARB 指数波形：v0/v1 起止电平，t0 起始延迟(s)，tc 时间常数(s)，t1 波形总时长(s)。"""
+        channel = self._validate_channel(channel)
+        if tc <= 0 or t1 <= 0:
+            raise ValueError("IT2705: 指数时间常数与总时长必须大于 0")
+        tp = "CURR" if str(arb_type).strip().upper().startswith("CURR") else "VOLT"
+        self.set_arb_type(channel, tp)
+        self.set_arb_shape(channel, "EXP")
+        self.write(f"ARB:{tp}:EXP:STAR {float(v0)},(@{channel})")
+        self.write(f"ARB:{tp}:EXP:END {float(v1)},(@{channel})")
+        self.write(f"ARB:{tp}:EXP:STAR:TIME {float(t0)},(@{channel})")
+        self.write(f"ARB:{tp}:EXP:TCON {float(tc)},(@{channel})")
+        self.write(f"ARB:{tp}:EXP:TIME {float(t1)},(@{channel})")
+        self.set_function_mode(channel, "ARB")
+
+    def set_arb_none(self, channel, arb_type="VOLT"):
+        """退出 ARB（等效 N6705C 面板 "No Arb Configured"）：恢复 FIX 模式。"""
+        channel = self._validate_channel(channel)
+        self.set_function_mode(channel, "FIX")
 
     def _set_arb_pulse(self, channel, arb_type, start, top, t0, t1, t2, frequency):
         if frequency <= 0:

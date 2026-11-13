@@ -202,16 +202,43 @@ class MockN6705C:
     def set_arb_shape(self, channel, shape="NONE"):
         pass
 
-    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency):
+    def set_arb_sine(self, channel, dc_offset, amplitude_vrms, frequency, arb_type="VOLT"):
         self._arb_sine = (channel, dc_offset, amplitude_vrms, frequency)
 
-    def set_arb_step(self, channel, v0, v1, t0, t1):
+    def set_arb_step(self, channel, v0, v1, t0, t1, arb_type="VOLT"):
         pass
 
-    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps):
+    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps, arb_type="VOLT"):
         pass
 
-    def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency):
+    def set_arb_ramp(self, channel, v0, v1, t0, rt, t1, arb_type="VOLT"):
+        pass
+
+    def set_arb_trapezoid(self, channel, v0, v1, t0, rt, tt, ft, t1, arb_type="VOLT"):
+        pass
+
+    def set_arb_exponential(self, channel, v0, v1, t0, tc, t1, arb_type="VOLT"):
+        pass
+
+    def set_arb_constant_dwell(self, channel, levels, dwell, arb_type="VOLT"):
+        pass
+
+    def set_arb_user_defined(self, channel, levels, dwells=None, arb_type="VOLT"):
+        pass
+
+    def set_arb_none(self, channel, arb_type="VOLT"):
+        pass
+
+    def arb_sequence_reset(self, channel):
+        pass
+
+    def set_arb_sequence_repeat(self, channel, count):
+        pass
+
+    def set_arb_sequence_terminate_last(self, channel, flag):
+        pass
+
+    def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency, arb_type="VOLT"):
         pass
 
     def set_current_slew(self, channel, slew="MAX"):
