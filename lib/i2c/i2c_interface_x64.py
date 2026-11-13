@@ -258,6 +258,10 @@ class I2CInterface:
 
     @staticmethod
     def _parse_chip_model(raw_32bit):
+        # BES1700 特殊编码：bit[31:28]=版本号，低28位恒为 0x00106A4
+        # （bit[15:0]=0x06A4 即十进制 1700），不走通用编码
+        if (raw_32bit & 0x0FFFFFFF) == 0x00106A4:
+            return "1700", (raw_32bit >> 28) & 0xF
         chip_num = raw_32bit & 0xFFFF
         suffix_byte = (raw_32bit >> 16) & 0xFF
         version_byte = (raw_32bit >> 24) & 0xFF
@@ -327,6 +331,8 @@ class I2CInterface:
             bit[15:0]  — 芯片序号（如 0x1605 → "1605"）
             bit[23:16] — 后缀字母ASCII码（如 0x50 → 'P'，0x00 → 无后缀）
             bit[31:24] — 版本号（0→verA, 1→verB, ...）
+            特例 BES1700：低28位恒为 0x00106A4（bit[15:0]=0x06A4 即十进制
+            1700），bit[31:28] 高4位为版本号（如 0x000106A4 → BES1700 verA）
 
         Main-die内置PMU / 独立PMU ID解析 (16bit, 0xHHNV):
             HH  — 高字节，型号前缀（十进制）
