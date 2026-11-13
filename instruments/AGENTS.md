@@ -6,6 +6,7 @@
 
 - **新增 / 修改仪器驱动** → @see [docs/ai/05_INSTRUMENT_GUIDE.md](../docs/ai/05_INSTRUMENT_GUIDE.md)
 - **查 IT2700 系列 SCPI 指令** → 直接 grep 手册提取文本 [tests/_it2700_prog_guide.txt](../tests/_it2700_prog_guide.txt)（源 PDF 在 `Temp_Docs/IT2705/IT2700 Programming Guide-CN.pdf`，勿重复提取）
+- **查 N6705C 系列 SCPI 指令** → 直接 grep 手册提取文档 [power/keysight/n6705c_programming_guide/](./power/keysight/n6705c_programming_guide/)（源 PDF 在 `Temp_Docs/N6705C_编程指南.pdf`，重新提取用 `tests/extract_n6705c_pdf.py`，勿重复提取）
 - **分层依赖规则** → @see [docs/ai/04_ARCHITECTURE.md](../docs/ai/04_ARCHITECTURE.md)
 - **VISA / 打包 / 命令** → @see [docs/ai/02_COMMANDS.md](../docs/ai/02_COMMANDS.md)
 - **跨模块坑** → @see [docs/ai/03_GOTCHAS.md](../docs/ai/03_GOTCHAS.md)
