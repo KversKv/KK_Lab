@@ -41,6 +41,7 @@ from ui.pages.power_analyzer.widgets import (
 from ui.pages.power_analyzer.analyser_view_setting import SettingViewMixin
 from ui.pages.power_analyzer.analyser_view_batch import BatchViewMixin
 from ui.pages.power_analyzer.analyser_view_consumption import ConsumptionViewMixin
+from ui.pages.power_analyzer.analyser_view_arb import ArbViewMixin
 
 logger = get_logger(__name__)
 
@@ -71,7 +72,7 @@ class _ConnectWorker(QObject):
             self.finished.emit()
 
 
-class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionViewMixin):
+class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionViewMixin, ArbViewMixin):
     connection_status_changed = Signal(bool)
 
     def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
@@ -384,6 +385,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._build_channel_tab_buttons()
         self._build_batch_columns()
         self._build_ct_cards()
+        self._build_arb_tab_buttons()
         # Batch/Consumption 控件已重建，配置记忆需重绑新控件并回填
         self._rebind_dynamic_config_memory()
         self._apply_dynamic_channel_constraints()
@@ -423,6 +425,17 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             checkbox.setToolTip(self._channel_module_tooltip(dev_label, ch))
             if not supported:
                 checkbox.setChecked(False)
+        for btn in getattr(self, "arb_tab_buttons", []):
+            dev_label = btn.property("device_label")
+            ch = btn.property("channel")
+            if not dev_label or ch is None:
+                continue
+            supported = self._is_channel_supported(dev_label, int(ch))
+            btn.setEnabled(supported)
+            btn.setVisible(supported)
+            btn.setToolTip(self._channel_module_tooltip(dev_label, int(ch)))
+        if hasattr(self, "arb_toggle_btn"):
+            self._arb_refresh_action_state()
         # 同步组覆盖态（从通道输入禁用 + 高亮）须最后施加，避免被上面的 supported 复位
         self._apply_batch_sync_ui()
 
@@ -711,6 +724,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         self.consumption_test_panel = self._create_consumption_test_panel()
         main_layout.addWidget(self.consumption_test_panel)
+        self._block_spacers.append(QSpacerItem(0, 8))
+        main_layout.addItem(self._block_spacers[-1])
+
+        self.arb_panel = self._create_arb_panel()
+        main_layout.addWidget(self.arb_panel)
 
         main_layout.addStretch()
 
@@ -725,6 +743,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self.top_bar,
             self.channel_interaction_frame,
             self.consumption_test_panel,
+            self.arb_panel,
         ):
             if widget is not None:
                 widget.setVisible(not compact)
@@ -1653,6 +1672,30 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 """)
             else:
                 self.ct_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {DISABLED_BG};
+                        border: 1px solid {DISABLED_BORDER};
+                        border-top: none;
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
+                """)
+        if hasattr(self, 'arb_toggle_btn'):
+            self.arb_content.setEnabled(any_connected)
+            self.arb_toggle_btn.setEnabled(any_connected)
+            self._arb_refresh_action_state()
+            if any_connected:
+                self.arb_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {PANEL_BG};
+                        border: 1px solid {PANEL_BORDER};
+                        border-top: none;
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
+                """)
+            else:
+                self.arb_content.setStyleSheet(f"""
                     QFrame {{
                         background-color: {DISABLED_BG};
                         border: 1px solid {DISABLED_BORDER};
