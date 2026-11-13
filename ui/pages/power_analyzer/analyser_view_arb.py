@@ -763,13 +763,9 @@ class ArbViewMixin:
         self.arb_term_dc_radio.setToolTip("Return to DC Value: output returns to the pre-Arb settings")
         self.arb_term_last_radio.setToolTip("Last Arb Value: output stays at the last Arb value")
         for idx, radio in enumerate((self.arb_term_dc_radio, self.arb_term_last_radio)):
-            radio.setStyleSheet(f"""
-                QRadioButton {{ color: #dbe6ff; font-size: 11px; spacing: 6px; background: transparent; border: none; }}
-                QRadioButton::indicator {{ width: 14px; height: 14px; }}
-                QRadioButton:disabled {{ color: {DISABLED_TEXT}; }}
-            """)
             self.arb_term_group.addButton(radio, idx)
         self.arb_term_last_radio.toggled.connect(self._arb_on_terminate_toggled)
+        self._arb_update_radio_style()
 
         # 三栏：左紧凑选择器（Arb Type / Waveform / 结束方式 + RUN/STOP），中参数区，右波形示意图
         config_row = QHBoxLayout()
@@ -1074,11 +1070,23 @@ class ArbViewMixin:
         if not path:
             return
         points = []
+        arb_type = None
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
                 for line_no, line in enumerate(f, start=1):
-                    line = line.strip()
-                    if not line:
+                    lowered = line.strip().lower()
+                    if lowered.startswith("%arbtype="):
+                        # N6705C 面板导出格式：arbuservolt / arbusercurr
+                        if "curr" in lowered:
+                            arb_type = "CURR"
+                        elif "volt" in lowered:
+                            arb_type = "VOLT"
+                        continue
+                    if "current waveform" in lowered:
+                        arb_type = "CURR"
+                        continue
+                    if "voltage waveform" in lowered:
+                        arb_type = "VOLT"
                         continue
                     parts = [p.strip() for p in line.split(",") if p.strip()]
                     if not parts:
@@ -1087,9 +1095,7 @@ class ArbViewMixin:
                         level = float(parts[0])
                         dwell = float(parts[1]) if len(parts) > 1 else 0.001
                     except ValueError:
-                        if line_no == 1:
-                            continue  # 表头行
-                        raise ValueError(f"Line {line_no}: invalid value '{line}'")
+                        continue  # 标题 / VALUE,TIME,TRIGGER 表头行
                     if dwell <= 0:
                         raise ValueError(f"Line {line_no}: dwell must be > 0")
                     points.append([level, dwell])
@@ -1101,25 +1107,43 @@ class ArbViewMixin:
             return
         self._arb_udef_points = points
         self._arb_udef_selected = set()
+        if arb_type is not None and arb_type != self._arb_current_type():
+            type_keys = [k for k, _label in _ARB_TYPES]
+            self.arb_type_combo.setCurrentIndex(type_keys.index(arb_type))
         self._arb_udef_sync_table()
         self._arb_store_current_params()
         self._arb_refresh_preview()
-        logger.info("UDEF points imported: %s (%d points)", path, len(points))
+        logger.info("UDEF points imported: %s (%d points, type=%s)", path, len(points), arb_type)
+
+    @staticmethod
+    def _arb_udef_fmt_time(dwell):
+        text = f"{float(dwell):.9f}".rstrip("0").rstrip(".")
+        return text or "0"
 
     def _arb_udef_export_csv(self):
         if not self._arb_udef_points:
             QMessageBox.warning(self, "Arb Set", "No points to export")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export User Defined Points", "", "CSV Files (*.csv);;All Files (*)"
+            self, "Export User Defined Points", "", "N6705C Arb CSV (*.csv);;All Files (*)"
         )
         if not path:
             return
+        is_curr = self._arb_current_type() == "CURR"
+        title = (
+            "Arb User Defined Current Waveform"
+            if is_curr
+            else "Arb User Defined Voltage Waveform"
+        )
+        arbtype = "arbusercurr" if is_curr else "arbuservolt"
         try:
             with open(path, "w", encoding="utf-8") as f:
-                f.write("level,dwell\n")
+                # 与 N6705C 面板导出格式一致，可直接导回仪器
+                f.write(f"{title},,\n")
+                f.write(f"%arbtype={arbtype},,\n")
+                f.write("VALUE,TIME,TRIGGER\n")
                 for lv, dw in self._arb_udef_points:
-                    f.write(f"{lv:g},{dw:g}\n")
+                    f.write(f"{lv:.6f},{self._arb_udef_fmt_time(dw)},0\n")
         except OSError as exc:
             QMessageBox.warning(self, "Arb Set", f"Export failed: {exc}")
             return
@@ -1391,10 +1415,38 @@ class ArbViewMixin:
         """)
         self._arb_tab_bar.set_border_color(accent_border)
         self.arb_continuous_toggle.setAccentColor(theme["accent"])
+        self._arb_update_radio_style()
         self._arb_update_run_btn()
         self._arb_refresh_shape_availability()
         self._arb_refresh_preview()
         self._refresh_arb_tab_styles()
+
+    def _arb_update_radio_style(self):
+        """结束方式单选指示器：未选中深色底+可见描边，选中通道 accent 填充。"""
+        if not hasattr(self, "arb_term_dc_radio"):
+            return
+        theme = self._channel_theme(self._arb_current_device, self._arb_current_channel)
+        accent = theme["accent"]
+        qss = f"""
+            QRadioButton {{ color: #dbe6ff; font-size: 11px; spacing: 6px; background: transparent; border: none; }}
+            QRadioButton::indicator {{
+                width: 13px; height: 13px;
+                border: 1.5px solid #4a6aa0;
+                border-radius: 8px;
+                background-color: #0b1730;
+            }}
+            QRadioButton::indicator:hover {{ border: 1.5px solid {accent}; }}
+            QRadioButton::indicator:checked {{
+                border: 1.5px solid {accent};
+                background-color: {accent};
+            }}
+            QRadioButton:disabled {{ color: {DISABLED_TEXT}; }}
+            QRadioButton::indicator:disabled {{
+                border: 1.5px solid #22304f; background-color: #0a1224;
+            }}
+        """
+        self.arb_term_dc_radio.setStyleSheet(qss)
+        self.arb_term_last_radio.setStyleSheet(qss)
 
     def _arb_update_run_btn(self):
         """按当前通道 Arb 运行态刷新合并按钮（RUN=主题色 / STOP=红）。"""
