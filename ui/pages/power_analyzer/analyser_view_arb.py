@@ -334,7 +334,6 @@ class ArbViewMixin:
             self.arb_type_combo.addItem(label)
         self.arb_type_combo.currentIndexChanged.connect(self._arb_on_type_changed)
         type_row.addWidget(self.arb_type_combo, 1)
-        body_layout.addLayout(type_row)
 
         shape_row = QHBoxLayout()
         shape_row.setSpacing(8)
@@ -357,7 +356,6 @@ class ArbViewMixin:
             "QLabel { background: transparent; border: none; }"
         )
         shape_row.addWidget(self.arb_shape_preview)
-        body_layout.addLayout(shape_row)
 
         self.arb_params_stack = QStackedWidget()
         self.arb_param_inputs = {}  # shape_key -> {field_key: SelectAllLineEdit}
@@ -367,7 +365,18 @@ class ArbViewMixin:
             self.arb_params_stack.addWidget(page)
             self.arb_param_inputs[shape_key] = inputs
             self.arb_param_labels[shape_key] = labels
-        body_layout.addWidget(self.arb_params_stack)
+
+        # 左列紧凑选择器（Arb Type / Waveform），右侧为对应波形参数区
+        config_row = QHBoxLayout()
+        config_row.setSpacing(10)
+        selector_col = QVBoxLayout()
+        selector_col.setSpacing(8)
+        selector_col.addLayout(type_row)
+        selector_col.addLayout(shape_row)
+        selector_col.addStretch()
+        config_row.addLayout(selector_col)
+        config_row.addWidget(self.arb_params_stack, 1)
+        body_layout.addLayout(config_row, 1)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
