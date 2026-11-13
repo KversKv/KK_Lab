@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "config": {
-    "setting_voltage_set": "2.0000",
+    "setting_voltage_set": "3.8000",
     "setting_current_limit": "1.0000",
     "consumption_test_time_s": "30",
     "consumption_sample_period_us": "20",
