@@ -742,6 +742,9 @@ class MainWindowAiMixin:
         page_key = self.current_instrument_ui
         if page_key == "orchestrator":
             return getattr(self, "orchestrator_ui", None)
+        # Power Control（Analyser 子页经 suite 嵌入）：下钻到 Analyser 页实例
+        if page_key == "power_analyser":
+            return getattr(self, "n6705c_analyser_ui", None)
         # Tab 容器页：下钻到当前子页
         if page_key in ("pmu_test", "charger_test", "module_test", "consumption_test",
                         "vmin_hunter"):

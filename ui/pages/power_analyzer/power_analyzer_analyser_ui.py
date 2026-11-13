@@ -217,6 +217,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                     return False, f"{label} 执行失败：{exc}"
             return _run
 
+        def _arb_channel_ready() -> bool:
+            dev = getattr(self, "_arb_current_device", "A")
+            ch = getattr(self, "_arb_current_channel", 1)
+            return self._is_channel_supported(dev, ch)
+
         registry.register_many([
             UIActionSpec(
                 id="power_analyser.auto_set",
@@ -242,6 +247,20 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
                 description=(
                     "批量自动设置（+20mV 偏移）：测当前电压后 +20mV 设为目标，"
                     "设电流限值并打开通道输出。需至少一台电源已连接并选中通道。"
+                ),
+            ),
+            UIActionSpec(
+                id="power_analyser.arb_run",
+                label="Arb RUN/STOP",
+                page_key="power_analyser",
+                handler=_wrap("Arb RUN/STOP", self._arb_on_run_stop_clicked),
+                risk="high",
+                confirm=True,
+                enabled_when=_arb_channel_ready,
+                description=(
+                    "按 Arb Set 当前编辑通道下发或停止 Arb 序列（合并按钮，"
+                    "自动切换 RUN/STOP）。Arb 配置先经 generate_config_draft / "
+                    "apply_test_config_draft 落地到编辑器后再触发本动作。"
                 ),
             ),
         ])

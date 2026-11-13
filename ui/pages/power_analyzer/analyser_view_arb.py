@@ -4,6 +4,7 @@
 import json
 import math
 import os
+import threading
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame,
@@ -17,6 +18,7 @@ from PySide6.QtGui import QPainter, QPen, QColor
 
 from log_config import get_logger
 from resource_path import get_resource_base, get_user_data_dir
+from core.ai.page_contract import CAP_APPLY_CONFIG, CAP_GET_CONFIG
 from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.pages.power_analyzer.widgets import (
@@ -1596,6 +1598,13 @@ class ArbViewMixin:
     def _arb_on_terminate_toggled(self, _checked):
         self._arb_store_current_params()
 
+    def _arb_set_terminate_last(self, flag):
+        """设置结束方式（互斥组中 setChecked(False) 对已选 radio 无效，须显式二选一）。"""
+        if flag:
+            self.arb_term_last_radio.setChecked(True)
+        else:
+            self.arb_term_dc_radio.setChecked(True)
+
     def _arb_store_shape_params(self, shape):
         if self._arb_loading or not hasattr(self, "arb_shape_combo"):
             return
@@ -1657,7 +1666,7 @@ class ArbViewMixin:
             self.arb_continuous_toggle.setChecked(bool(entry.get("continuous", False)))
             self.arb_repeat_input.setText(str(entry.get("repeat_count", "1")))
             self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
-            self.arb_term_last_radio.setChecked(bool(entry.get("terminate_last", False)))
+            self._arb_set_terminate_last(bool(entry.get("terminate_last", False)))
             saved = entry.get("params", {}).get(shape, {})
             if shape == "udef":
                 self._arb_udef_load_from_saved(saved)
@@ -1937,7 +1946,7 @@ class ArbViewMixin:
             self.arb_continuous_toggle.setChecked(bool(preset.get("continuous", False)))
             self.arb_repeat_input.setText(str(preset.get("repeat_count", "1")))
             self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
-            self.arb_term_last_radio.setChecked(bool(preset.get("terminate_last", False)))
+            self._arb_set_terminate_last(bool(preset.get("terminate_last", False)))
             params = preset.get("params", {})
             if shape == "udef":
                 self._arb_udef_load_from_saved(params)
@@ -1955,3 +1964,249 @@ class ArbViewMixin:
         self._arb_update_unit_labels()
         self._arb_refresh_preview()
         self._arb_store_current_params()
+
+    # ------------------------------------------------------ AI page contract
+    # AIControllablePage（core/ai/page_contract.py）：向 AI 暴露 Arb Set 编辑器。
+    # 草案闭环：generate_config_draft(changes=...) → apply_test_config_draft(draft_id)
+    #   → main_window._apply_ai_config_draft → ai_apply_config(payload)。
+    # changes 键名 = ai_get_config 顶层键（浅合并，arb_params / arb_udef_points 为整体替换；
+    # 未列出的键沿用目标通道 store 中的当前值）。
+    def ai_capabilities(self):
+        return {CAP_GET_CONFIG, CAP_APPLY_CONFIG}
+
+    def ai_get_config(self):
+        """Arb Set 编辑器快照（AI 配置草案基准；顶层键即可写 changes）。"""
+        if not hasattr(self, "arb_shape_combo"):
+            return None
+        try:
+            shape = self._arb_current_shape_key()
+            params = {}
+            for _tpl, field_key, _default, _step, kind in _ARB_FIELDS[shape]:
+                text = self.arb_param_inputs[shape][field_key].text().strip()
+                if kind in ("list_level", "list_time"):
+                    try:
+                        params[field_key] = [
+                            float(p) for p in text.split(",") if p.strip()
+                        ]
+                    except ValueError:
+                        params[field_key] = text
+                else:
+                    try:
+                        params[field_key] = float(text)
+                    except ValueError:
+                        params[field_key] = text
+            try:
+                repeat_count = int(self.arb_repeat_input.text().strip())
+            except ValueError:
+                repeat_count = self.arb_repeat_input.text().strip()
+            return {
+                "page": "power_analyser",
+                "scope": "arb_set",
+                "arb_device": self._arb_current_device,
+                "arb_channel": self._arb_current_channel,
+                "arb_type": self._arb_current_type(),
+                "arb_shape": shape,
+                "arb_params": params,
+                "arb_udef_points": [list(p) for p in self._arb_udef_points],
+                "arb_continuous": bool(self.arb_continuous_toggle.isChecked()),
+                "arb_repeat_count": repeat_count,
+                "arb_terminate_last": bool(self.arb_term_last_radio.isChecked()),
+            }
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None
+            logger.error("AI 读取 Arb 配置快照失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload):
+        """落地 Arb 配置草案到编辑器（不直接下发仪器，预览确认后经 RUN 下发）。
+
+        事务式校验：任一字段非法整体拒绝；未给出的字段沿用目标通道 store 当前值。
+        """
+        if not isinstance(payload, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+        if not hasattr(self, "arb_shape_combo"):
+            return False, "Arb Set 尚未初始化。"
+        if threading.current_thread() is not threading.main_thread():
+            logger.error("ai_apply_config 在非主线程被调用，拒绝回填")
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        # --- device / channel ---
+        dev = str(payload.get("arb_device", self._arb_current_device)).strip().upper()
+        if dev not in self.devices:
+            return False, f"arb_device 无效：'{dev}'（可用：{', '.join(self.devices)}）。"
+        try:
+            ch = int(payload.get("arb_channel", self._arb_current_channel))
+        except (TypeError, ValueError):
+            return False, f"arb_channel 无效：{payload.get('arb_channel')!r}。"
+        valid_channels = self._channels_for_device(dev)
+        if ch not in valid_channels:
+            return False, f"arb_channel 超出范围：{ch}（{dev} 可用通道 {valid_channels}）。"
+        if self.devices[dev].get("is_connected") and not self._is_channel_supported(dev, ch):
+            return False, f"{dev} CH{ch} 模块不支持 Arb（不受支持或空槽）。"
+        if (dev, ch) in self._arb_running:
+            return False, f"{dev} CH{ch} 的 Arb 正在运行，请先 STOP 再修改配置。"
+        same_channel = (dev == self._arb_current_device and ch == self._arb_current_channel)
+
+        # 目标为当前编辑通道时先把控件最新值同步进 store，缺省链统一以 store 为事实源
+        if same_channel:
+            self._arb_store_current_params()
+        base_entry = self._arb_param_store.get((dev, ch), {})
+        base_params_all = base_entry.get("params", {})
+
+        # --- type / shape ---
+        arb_type = str(payload.get("arb_type", base_entry.get(
+            "arb_type", self._arb_current_type() if same_channel else "VOLT"))).strip().upper()
+        type_keys = [k for k, _label in _ARB_TYPES]
+        if arb_type not in type_keys:
+            return False, f"arb_type 无效：'{arb_type}'（可用：{', '.join(type_keys)}）。"
+        shape = str(payload.get("arb_shape", base_entry.get(
+            "shape", self._arb_current_shape_key() if same_channel else "none"))).strip().lower()
+        shape_keys = [k for k, _label, _icon in _ARB_SHAPES]
+        if shape not in shape_keys:
+            return False, f"arb_shape 无效：'{shape}'（可用：{', '.join(shape_keys)}）。"
+        if shape in _ARB_PLACEHOLDER_SHAPES:
+            return False, "Sequence 编辑尚未开放（占位），请改用其它波形或 udef 点表。"
+        instance = self.devices.get(dev, {}).get("n6705c")
+        if (
+            instance is not None
+            and is_it2705_instrument(instance)
+            and shape in _ARB_IT2705_UNSUPPORTED
+        ):
+            return False, (
+                f"IT2705 不支持波形 '{shape}'"
+                "（可用：sine/step/ramp/staircase/pulse/trapezoid/exponential）。"
+            )
+
+        # --- params（缺省字段沿用该形状已存值） ---
+        raw_params = payload.get("arb_params")
+        if raw_params is None:
+            raw_params = {}
+        if not isinstance(raw_params, dict):
+            return False, "arb_params 必须是对象（field_key -> 数值或数值列表）。"
+        fields = _ARB_FIELDS[shape]
+        valid_fields = [field_key for _tpl, field_key, _d, _s, _k in fields]
+        unknown = [k for k in raw_params if k not in valid_fields]
+        ignored_note = ""
+        if unknown:
+            # 判据：unknown 全部属于其它形状的合法字段 → 草案浅合并残留，忽略并明示；
+            # 含任何不属于任何形状的字段 → 模型笔误，拒绝并回显可用字段。
+            all_known_fields = {
+                field_key
+                for shape_fields in _ARB_FIELDS.values()
+                for _tpl, field_key, _d, _s, _k in shape_fields
+            }
+            stray = [k for k in unknown if k not in all_known_fields]
+            if stray:
+                return False, (
+                    f"arb_params 含波形 '{shape}' 不支持的字段：{', '.join(stray)}。"
+                    f"可用字段：{', '.join(valid_fields) or '（无）'}。"
+                )
+            logger.info(
+                "AI Arb 配置：忽略不适用于 '%s' 的残留参数字段：%s", shape, unknown)
+            ignored_note = f"；已忽略不适用于 '{shape}' 的残留字段：{', '.join(unknown)}"
+        # 缺省链：_ARB_FIELDS 默认值 → 该形状已存值 → payload 覆盖
+        new_params = {}
+        if shape != "udef":
+            for _tpl, field_key, default, _s, _k in fields:
+                if default is not None:
+                    new_params[field_key] = default
+            new_params.update(base_params_all.get(shape, {}))
+        for field_key, value in raw_params.items():
+            if field_key not in valid_fields:
+                continue  # 残留字段（上面已记录忽略说明）
+            kind = next(k for _t, fk, _d, _s, k in fields if fk == field_key)
+            if kind in ("list_level", "list_time"):
+                if isinstance(value, str):
+                    items = [p.strip() for p in value.split(",") if p.strip()]
+                elif isinstance(value, (list, tuple)):
+                    items = list(value)
+                else:
+                    return False, f"arb_params.{field_key} 需为数值列表或逗号分隔文本。"
+                try:
+                    nums = [float(v) for v in items]
+                except (TypeError, ValueError):
+                    return False, f"arb_params.{field_key} 含非数值项：{value!r}。"
+                if not nums and kind == "list_level":
+                    return False, f"arb_params.{field_key} 至少需要一个数值。"
+                new_params[field_key] = ", ".join(str(n) for n in nums)
+            else:
+                try:
+                    num = float(value)
+                except (TypeError, ValueError):
+                    return False, f"arb_params.{field_key} 非数值：{value!r}。"
+                if kind == "steps":
+                    if num < 2:
+                        return False, "arb_params.steps 至少为 2。"
+                    num = int(num)
+                new_params[field_key] = str(num)
+
+        # --- udef 点表 ---
+        new_points = None
+        if shape == "udef":
+            raw_points = payload.get("arb_udef_points")
+            if raw_points is None:
+                raw_points = base_params_all.get("udef", {}).get("points")
+            if not raw_points:
+                return False, (
+                    "arb_shape=udef 需要提供 arb_udef_points"
+                    "（[[level, dwell_s], ...]，dwell_s > 0）。"
+                )
+            new_points = []
+            for idx, item in enumerate(raw_points):
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    return False, f"arb_udef_points[{idx}] 需为 [level, dwell_s]。"
+                try:
+                    level = float(item[0])
+                    dwell = float(item[1])
+                except (TypeError, ValueError):
+                    return False, f"arb_udef_points[{idx}] 含非数值：{item!r}。"
+                if dwell <= 0:
+                    return False, f"arb_udef_points[{idx}] 的 dwell_s 必须 > 0。"
+                new_points.append([level, dwell])
+
+        # --- continuous / repeat / terminate ---
+        continuous = bool(payload.get(
+            "arb_continuous", base_entry.get("continuous", False)))
+        try:
+            repeat_count = int(payload.get(
+                "arb_repeat_count", base_entry.get("repeat_count", "1")))
+        except (TypeError, ValueError):
+            return False, f"arb_repeat_count 非整数：{payload.get('arb_repeat_count')!r}。"
+        if not 1 <= repeat_count <= 16777216:
+            return False, "arb_repeat_count 需在 1 ~ 16777216 之间。"
+        terminate_last = bool(payload.get(
+            "arb_terminate_last", base_entry.get("terminate_last", False)))
+
+        # --- 写 store 并整体从 store 重载编辑器（复用既有加载路径） ---
+        new_params_all = dict(base_params_all)
+        if shape == "udef":
+            new_params_all["udef"] = {"points": [list(p) for p in new_points]}
+        else:
+            new_params_all[shape] = new_params
+        self._arb_param_store[(dev, ch)] = {
+            "arb_type": arb_type,
+            "shape": shape,
+            "continuous": continuous,
+            "repeat_count": str(repeat_count),
+            "terminate_last": terminate_last,
+            "params": new_params_all,
+        }
+        if not same_channel:
+            self._arb_current_device = dev
+            self._arb_current_channel = ch
+        self._arb_load_channel_params()
+        self._arb_apply_channel_theme()
+        self._arb_refresh_action_state()
+        if self.arb_collapsed:
+            self._toggle_arb_panel()
+        logger.info(
+            "AI 应用 Arb 配置：%s CH%d %s/%s params=%s",
+            dev, ch, arb_type, shape,
+            new_points if shape == "udef" else new_params,
+        )
+        label = f"{dev} CH{ch}" if self._is_dual_mode() else f"CH{ch}"
+        shape_label = next(lbl for k, lbl, _i in _ARB_SHAPES if k == shape)
+        type_label = "Voltage" if arb_type == "VOLT" else "Current"
+        return True, (
+            f"已将 Arb 配置应用到 {label} 编辑器（{shape_label} / {type_label}），"
+            f"面板已展开可预览；确认无误后点击 RUN 下发到仪器{ignored_note}。"
+        )
