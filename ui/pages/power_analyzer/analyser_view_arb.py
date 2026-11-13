@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QStackedWidget, QListWidget, QListWidgetItem,
     QMessageBox, QInputDialog, QSizePolicy, QRadioButton, QButtonGroup,
     QTableWidget, QTableWidgetItem, QMenu, QDialog, QDialogButtonBox,
-    QFileDialog, QHeaderView, QAbstractItemView,
+    QFileDialog, QHeaderView, QAbstractItemView, QBoxLayout,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor
@@ -631,12 +631,14 @@ class ArbViewMixin:
         """)
         self.arb_content.setVisible(False)
 
-        content_layout = QHBoxLayout(self.arb_content)
+        content_layout = QBoxLayout(QBoxLayout.LeftToRight, self.arb_content)
         content_layout.setContentsMargins(16, 10, 16, 14)
         content_layout.setSpacing(12)
+        self._arb_content_layout = content_layout
 
         content_layout.addWidget(self._create_arb_channel_zone(), 3)
-        content_layout.addWidget(self._create_arb_preset_zone(), 2)
+        self._arb_preset_card = self._create_arb_preset_zone()
+        content_layout.addWidget(self._arb_preset_card, 2)
 
         outer_layout.addWidget(self.arb_content)
 
@@ -645,6 +647,18 @@ class ArbViewMixin:
         self._arb_load_presets()
         self._arb_refresh_action_state()
         return outer
+
+    def _arb_apply_responsive_layout(self, page_width):
+        """响应式：页宽 < 800 时 Arb Set 切上下布局（预设区限高），否则左右布局。"""
+        if not hasattr(self, "_arb_content_layout"):
+            return
+        stacked = page_width < 800
+        direction = (
+            QBoxLayout.TopToBottom if stacked else QBoxLayout.LeftToRight
+        )
+        if self._arb_content_layout.direction() != direction:
+            self._arb_content_layout.setDirection(direction)
+        self._arb_preset_card.setMaximumHeight(240 if stacked else 16777215)
 
     def _toggle_arb_panel(self):
         self.arb_collapsed = not self.arb_collapsed

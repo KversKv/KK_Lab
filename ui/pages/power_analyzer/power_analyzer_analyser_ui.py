@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
     QFrame, QApplication, QMessageBox, QSpacerItem,
+    QScrollArea,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
 from PySide6.QtGui import QFont, QPainter, QColor, QPixmap
@@ -44,6 +45,14 @@ from ui.pages.power_analyzer.analyser_view_consumption import ConsumptionViewMix
 from ui.pages.power_analyzer.analyser_view_arb import ArbViewMixin
 
 logger = get_logger(__name__)
+
+# 页面内容最小可用宽度：低于该宽度出横向滚动条而非压碎控件
+_PAGE_MIN_CONTENT_WIDTH = 640
+
+# 响应式断点（页面逻辑尺寸）
+_RESP_H_STANDARD = 900   # >= 标准模式
+_RESP_H_COMPACT = 700    # >= 紧凑模式，否则小屏
+_RESP_W_ARB_STACK = 800  # < Arb Set 上下布局
 
 
 class _ConnectWorker(QObject):
@@ -98,6 +107,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self.channels = []
         self._prev_dual_mode = None
         self._polling_enabled = False
+        self._compact_view_active = False
         self._connect_threads = {}
         self._connect_workers = {}
 
@@ -683,7 +693,22 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         """)
 
     def _create_layout(self):
-        self._main_layout = QVBoxLayout(self)
+        # 根布局仅承载 QScrollArea：内容自然排布，超出可视区域出滚动条（滚动优先于压缩）
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll_area.viewport().setAutoFillBackground(False)
+
+        self._content_widget = QWidget()
+        self._content_widget.setMinimumWidth(_PAGE_MIN_CONTENT_WIDTH)
+
+        self._main_layout = QVBoxLayout(self._content_widget)
         main_layout = self._main_layout
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(12, 12, 12, 12)
@@ -732,6 +757,30 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         main_layout.addStretch()
 
+        self._scroll_area.setWidget(self._content_widget)
+        root_layout.addWidget(self._scroll_area)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
+
+    def _apply_responsive_layout(self):
+        """响应式布局：按页面实际高度调边距/区块间距（滚动优先于压缩），
+        并联动 Arb Set 的左右/上下布局切换。紧凑（最小）视图激活时不介入。"""
+        if getattr(self, "_compact_view_active", False):
+            return
+        height = self.height()
+        if height >= _RESP_H_STANDARD:
+            margins, gap = 12, 8
+        elif height >= _RESP_H_COMPACT:
+            margins, gap = 8, 6
+        else:
+            margins, gap = 6, 4
+        self._main_layout.setContentsMargins(margins, margins, margins, margins)
+        for spacer in getattr(self, "_block_spacers", []):
+            spacer.changeSize(0, gap)
+        self._arb_apply_responsive_layout(self.width())
+
     def set_compact_mode(self, compact: bool):
         """紧凑（最小）视图：仅显示 Quick Setup 面板，隐藏其余区块。
 
@@ -739,6 +788,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         紧凑态额外隐藏折叠头并归零区块间距 / 收窄页边距，配合主窗口
         压到 ~600x200。
         """
+        self._compact_view_active = compact
         for widget in (
             self.top_bar,
             self.channel_interaction_frame,
@@ -751,12 +801,12 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self._toggle_batch_panel()
         # 紧凑态下面板是唯一内容，折叠无意义，隐藏折叠头省一行高度
         self.batch_toggle_btn.setVisible(not compact)
-        for spacer in self._block_spacers:
-            spacer.changeSize(0, 0 if compact else 8)
         if compact:
+            for spacer in self._block_spacers:
+                spacer.changeSize(0, 0)
             self._main_layout.setContentsMargins(6, 6, 6, 6)
         else:
-            self._main_layout.setContentsMargins(12, 12, 12, 12)
+            self._apply_responsive_layout()
         self._main_layout.invalidate()
 
     def _create_top_bar(self):
