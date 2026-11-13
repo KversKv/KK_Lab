@@ -256,6 +256,12 @@ class MockN6705C:
     def set_arb_continuous(self, channel, flag=False):
         pass
 
+    def set_arb_repeat_count(self, channel, count):
+        pass
+
+    def set_arb_terminate_last(self, channel, flag):
+        pass
+
     def clear_arb_all_channels(self, total_channels=4):
         pass
 

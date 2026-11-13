@@ -974,9 +974,11 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """
 
-    def _build_channel_tab_style(self, dev_label, ch, checked=False):
+    def _build_channel_tab_style(self, dev_label, ch, checked=False, bar_border_color=None):
         theme = self._channel_theme(dev_label, ch)
         border_color = theme['accent_border'] if checked else "#14305e"
+        if bar_border_color is None:
+            bar_border_color = self._get_current_border_color()
         dual = self._is_dual_mode()
         font_size = "11px" if dual else "12px"
         corner = WIDGET_RADIUS
@@ -1013,14 +1015,14 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             QPushButton {{
                 background-color: {INACTIVE_TAB_BG}; color: {theme['text_dim']};
                 border: 1px solid #1b2847;
-                border-bottom: 1px solid {self._get_current_border_color()};
+                border-bottom: 1px solid {bar_border_color};
                 {radius_str}
                 padding: {inactive_pad}; font-size: {font_size}; font-weight: 700;
             }}
             QPushButton:hover {{
                 background-color: {INACTIVE_TAB_HOVER_BG}; color: #ffffff;
                 border: 1px solid {theme['accent_border']};
-                border-bottom: 1px solid {self._get_current_border_color()};
+                border-bottom: 1px solid {bar_border_color};
             }}
             {disabled_part}
             """

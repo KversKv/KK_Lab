@@ -532,6 +532,19 @@ class N6705C:
         else:
             self.instr.write(f"ARB:COUN 1,(@{channel})")
 
+    def set_arb_repeat_count(self, channel, count):
+        """设置 ARB 重复次数（1 ~ 16,777,216）；须在触发(arb_on)之前设置。"""
+        count = int(count)
+        if not 1 <= count <= 16777216:
+            raise ValueError("ARB 重复次数须在 1 ~ 16777216 之间")
+        self.instr.write(f"ARB:COUN {count},(@{channel})")
+
+    def set_arb_terminate_last(self, channel, flag):
+        """设置 ARB 结束方式：True=输出保持最后一个 ARB 值（Last Arb Value）；
+        False=返回 ARB 开始前设置（Return to DC Value，默认）。
+        注意：ARB 被中止(ABOR)时始终返回开始前设置。"""
+        self.instr.write(f"ARB:TERM:LAST {'ON' if flag else 'OFF'},(@{channel})")
+
     def clear_arb_all_channels(self, total_channels=4):
         ch_list = ",".join(str(ch) for ch in range(1, total_channels + 1))
         try:

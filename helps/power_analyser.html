@@ -8,7 +8,7 @@
   <li><b>多通道管理</b> — N6705C 支持 4 通道，IT2705 支持 8 通道；双仪器按各自实际通道数独立配置与监测；启动、切回本页及切换通道时自动回读当前通道的模式、输出状态与设定参数</li>
   <li><b>输出控制</b> — 开启/关闭各通道输出，设置电压和电流限值</li>
   <li><b>批量与功耗测试</b> — 按仪器实际通道执行批量设置和 Current Consumption Test</li>
-  <li><b>Arb Set（任意波形）</b> — 在 Current Consumption Test 下方折叠区内为任一通道配置 Arb：先选 <b>Arb Type</b>（Voltage / Current），再选波形（No Arb Configured / Sine / Step / Ramp / Staircase / Pulse / Trapezoid / Exponential / Constant Dwell / User Defined，各带波形图示；Constant Dwell 与 User Defined 用逗号分隔列表输入电平点），以及 Continuous 连续重复；APPLY &amp; RUN 下发并启动、STOP 停止；通道标签与上方电压区相互独立，各通道参数自动记忆；IT2705 通道不支持 Constant Dwell / User Defined / Sequence（选项禁用），Sequence 编辑将在后续版本提供；右侧 Quick Presets 可将当前配置命名保存（持久化到 user_data/n6705c/arb_presets.json），点击预设仅回填编辑区，Delete 删除选中预设</li>
+  <li><b>Arb Set（任意波形）</b> — 在 Current Consumption Test 下方折叠区内为任一通道配置 Arb：先选 <b>Arb Type</b>（Voltage / Current），再选波形（No Arb Configured / Sine / Step / Ramp / Staircase / Pulse / Trapezoid / Exponential / Constant Dwell / User Defined，各带波形图示；Constant Dwell 与 User Defined 用逗号分隔列表输入电平点），以及 Continuous 连续重复（未勾选时可在 <b>Repeat Count</b> 设置执行次数）与结束方式（<b>Return to DC Value</b> 结束后回 DC 设定 / <b>Last Arb Value</b> 保持最后 Arb 值）；左栏下方单按钮 <b>RUN / STOP</b> 按当前通道运行态自动切换，中栏参数区、右栏按当前参数实时绘制的波形示意图；通道标签与上方电压区相互独立，各通道参数自动记忆；IT2705 通道不支持 Constant Dwell / User Defined / Sequence（选项禁用），Sequence 编辑将在后续版本提供；右侧 Quick Presets 可将当前配置命名保存（持久化到 user_data/n6705c/arb_presets.json），点击预设仅回填编辑区，Delete 删除选中预设</li>
   <li><b>通道同步</b> — 在 Quick Setup 通道按钮上右键 → <b>Sync</b> 勾选要同步的通道（可多选/分多组）；同步组内仅序号最小的主通道可编辑电压/限流，其余成员输入框禁用并实时镜像主通道值，同组通道按钮与从通道输入框以同色边框区分；执行 <b>Set</b> 时任一成员被勾选即整组按主通道的电压和限流统一下发</li>
 </ul>
 

@@ -576,6 +576,19 @@ class IT2705(VisaInstrument):
         channel = self._validate_channel(channel)
         self.write(f"ARB:COUN {0 if flag else 1},(@{channel})")
 
+    def set_arb_repeat_count(self, channel, count):
+        """设置 ARB 重复次数（≥1；IT2705 的 0 表示连续，由 set_arb_continuous 使用）。"""
+        channel = self._validate_channel(channel)
+        count = int(count)
+        if count < 1:
+            raise ValueError("IT2705: ARB 重复次数须 >= 1")
+        self.write(f"ARB:COUN {count},(@{channel})")
+
+    def set_arb_terminate_last(self, channel, flag):
+        """设置 ARB 结束方式：True=保持最后 ARB 值（LAST）；False=返回原设定（NORMal）。"""
+        channel = self._validate_channel(channel)
+        self.write(f"ARB:TERM:MODE {'LAST' if flag else 'NORM'},(@{channel})")
+
     def set_arb_trigger_source(self, channel, source="BUS"):
         channel = self._validate_channel(channel)
         source = self._normalize_choice(source, {"IMM", "IMMEDIATE", "BUS", "MAN", "MANUAL"}, "trigger source")

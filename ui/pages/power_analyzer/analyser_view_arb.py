@@ -2,18 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import json
+import math
 import os
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame,
     QLabel, QPushButton, QStackedWidget, QListWidget, QListWidgetItem,
-    QMessageBox, QInputDialog, QSizePolicy,
+    QMessageBox, QInputDialog, QSizePolicy, QRadioButton, QButtonGroup,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread, QRectF
+from PySide6.QtGui import QPainter, QPen, QColor
 
 from log_config import get_logger
 from resource_path import get_resource_base, get_user_data_dir
-from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
+from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.pages.power_analyzer.widgets import (
     ChannelTabBar, SlideToggle, SelectAllLineEdit, collapsible_header_style,
@@ -143,11 +145,12 @@ def _arb_icon_dir() -> str:
 class _ArbRunWorker(QObject):
     """Arb 下发 / 停止 worker（QThread 内执行，UI 不阻塞）。"""
 
-    finished = Signal(str, bool, str)  # dev_label, success, message
+    finished = Signal(str, int, str, bool, str)  # dev_label, channel, mode, success, message
 
     def __init__(self, instance, dev_label, channel, mode,
                  shape_key=None, values=None, arb_type="VOLT",
-                 continuous=False, io_lock=None):
+                 continuous=False, repeat_count=None, terminate_last=False,
+                 io_lock=None):
         super().__init__()
         self._instance = instance
         self._dev_label = dev_label
@@ -157,6 +160,8 @@ class _ArbRunWorker(QObject):
         self._values = values or {}
         self._arb_type = arb_type
         self._continuous = continuous
+        self._repeat_count = repeat_count
+        self._terminate_last = terminate_last
         self._io_lock = io_lock
 
     def run(self):
@@ -174,10 +179,10 @@ class _ArbRunWorker(QObject):
                 if self._io_lock is not None:
                     self._io_lock.release()
             logger.info("Arb %s ok: %s", self._mode, message)
-            self.finished.emit(self._dev_label, True, message)
+            self.finished.emit(self._dev_label, self._channel, self._mode, True, message)
         except Exception as exc:
             logger.error("Arb %s failed: %s", self._mode, exc, exc_info=True)
-            self.finished.emit(self._dev_label, False, str(exc))
+            self.finished.emit(self._dev_label, self._channel, self._mode, False, str(exc))
 
     def _apply(self):
         inst = self._instance
@@ -216,9 +221,208 @@ class _ArbRunWorker(QObject):
             inst.set_arb_user_defined(ch, v["levels"], v.get("dwells"), arb_type=tp)
         else:
             raise ValueError(f"Unknown arb shape: {shape}")
-        # Continuous 须在形状配置完成后、触发前设置（驱动契约）
-        inst.set_arb_continuous(ch, self._continuous)
+        # Continuous / Repeat Count 与结束方式须在形状配置完成后、触发前设置（驱动契约）
+        if self._continuous:
+            inst.set_arb_continuous(ch, True)
+        elif self._repeat_count:
+            inst.set_arb_repeat_count(ch, self._repeat_count)
+        inst.set_arb_terminate_last(ch, self._terminate_last)
         inst.arb_on(ch)
+
+
+class _ArbWaveformPreview(QWidget):
+    """按当前 Arb 参数实时绘制的波形示意图（类仪器面板图示）。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._shape = "none"
+        self._values = {}
+        self._unit = "V"
+        self._accent = QColor(_ARB_ICON_COLOR)
+        self.setMinimumSize(220, 130)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def set_config(self, shape, values, arb_type, accent):
+        self._shape = shape
+        self._values = values or {}
+        self._unit = "V" if arb_type == "VOLT" else "A"
+        self._accent = QColor(accent)
+        self.update()
+
+    # ---------------------------------------------------------- wave compute
+    def _wave_points(self):
+        """返回 (points[(t, v)], level_marks[(value, name)])；t 单位任意仅用于比例。"""
+        v = self._values
+        shape = self._shape
+        if shape == "seq":
+            return None, []
+        if shape == "none":
+            return [(0.0, 0.0), (1.0, 0.0)], []
+        if shape == "sine":
+            freq = max(v.get("freq_hz", 0.0), 1e-9)
+            period = 1.0 / freq
+            offset = v.get("offset", 0.0)
+            peak = math.sqrt(2.0) * v.get("ampl", 0.0)
+            pts = [
+                (2 * period * i / 100, offset + peak * math.sin(2 * math.pi * i / 100))
+                for i in range(101)
+            ]
+            return pts, [(offset + peak, "Max"), (offset - peak, "Min")]
+        if shape == "step":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            t0 = max(v.get("t0", 0.0), 1e-9)
+            t1 = v.get("t1", 0.0) if v.get("t1", 0.0) > 0 else t0
+            return ([(0.0, v0), (t0, v0), (t0, v1), (t0 + t1, v1)],
+                    [(v0, "V0"), (v1, "V1")])
+        if shape == "ramp":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            t0 = max(v.get("t0", 0.0), 1e-9)
+            rt = max(v.get("rt", 0.0), 1e-9)
+            t1 = v.get("t1", 0.0) if v.get("t1", 0.0) > 0 else t0
+            return ([(0.0, v0), (t0, v0), (t0 + rt, v1), (t0 + rt + t1, v1)],
+                    [(v0, "V0"), (v1, "V1")])
+        if shape == "staircase":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            t0 = max(v.get("t0", 0.0), 1e-9)
+            t1 = max(v.get("t1", 0.0), 1e-9)
+            t2 = v.get("t2", 0.0) if v.get("t2", 0.0) > 0 else t0
+            steps = max(int(v.get("steps", 10)), 1)
+            pts = [(0.0, v0), (t0, v0)]
+            for i in range(1, steps + 1):
+                ti = t0 + t1 * i / steps
+                vi = v0 + (v1 - v0) * i / steps
+                pts.append((ti, pts[-1][1]))
+                pts.append((ti, vi))
+            pts.append((t0 + t1 + t2, v1))
+            return pts, [(v0, "V0"), (v1, "V1")]
+        if shape == "pulse":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            freq = max(v.get("freq_hz", 0.0), 1e-9)
+            period = 1.0 / freq
+            total = v.get("t0", 0.0) + v.get("t2", 0.0) + v.get("t1", 0.0)
+            scale = period / total if total > 0 else 1.0
+            t0 = v.get("t0", 0.0) * scale
+            t2 = v.get("t2", 0.0) * scale
+            t1 = v.get("t1", 0.0) * scale
+            pts = [(0.0, v0), (t0, v0), (t0, v1), (t0 + t2, v1),
+                   (t0 + t2, v0), (period, v0)]
+            # 再画下一个周期开头，示意重复
+            pts += [(period + t0, v0), (period + t0, v1), (period + t0 + t2, v1)]
+            return pts, [(v0, "V0"), (v1, "V1")]
+        if shape == "trapezoid":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            t0 = max(v.get("t0", 0.0), 1e-9)
+            rt = max(v.get("rt", 0.0), 1e-9)
+            tt = v.get("tt", 0.0) if v.get("tt", 0.0) > 0 else rt
+            ft = max(v.get("ft", 0.0), 1e-9)
+            t1 = v.get("t1", 0.0) if v.get("t1", 0.0) > 0 else t0
+            return ([(0.0, v0), (t0, v0), (t0 + rt, v1), (t0 + rt + tt, v1),
+                     (t0 + rt + tt + ft, v0), (t0 + rt + tt + ft + t1, v0)],
+                    [(v0, "V0"), (v1, "V1")])
+        if shape == "exponential":
+            v0, v1 = v.get("v0", 0.0), v.get("v1", 0.0)
+            t0 = max(v.get("t0", 0.0), 1e-9)
+            tc = max(v.get("tc", 0.0), 1e-9)
+            t1 = max(v.get("t1", 0.0), tc)
+            pts = [(0.0, v0), (t0, v0)]
+            for i in range(1, 61):
+                t = t1 * i / 60
+                pts.append((t0 + t, v1 - (v1 - v0) * math.exp(-t / tc)))
+            return pts, [(v0, "V0"), (v1, "V1")]
+        if shape == "cdwell":
+            levels = v.get("levels") or [0.0]
+            dwell = max(v.get("dwell", 0.0), 1e-9)
+            pts = []
+            for i, lv in enumerate(levels):
+                pts.append((dwell * i, lv))
+                pts.append((dwell * (i + 1), lv))
+            return pts, []
+        if shape == "udef":
+            levels = v.get("levels") or [0.0]
+            dwells = v.get("dwells") or []
+            if len(dwells) != len(levels):
+                dwells = [1.0] * len(levels)
+            pts = []
+            t = 0.0
+            for lv, dw in zip(levels, dwells):
+                dw = max(float(dw), 1e-9)
+                pts.append((t, lv))
+                pts.append((t + dw, lv))
+                t += dw
+            return pts, []
+        return [(0.0, 0.0), (1.0, 0.0)], []
+
+    # --------------------------------------------------------------- painting
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        p.setPen(QPen(QColor(CARD_BORDER), 1))
+        p.setBrush(QColor(CARD_BG))
+        p.drawRoundedRect(rect, 8, 8)
+
+        points, marks = self._wave_points()
+        if points is None:
+            p.setPen(QPen(QColor(MUTED_TEXT), 1))
+            p.drawText(rect, Qt.AlignCenter, "Sequence")
+            p.end()
+            return
+
+        t_vals = [pt[0] for pt in points]
+        v_vals = [pt[1] for pt in points] + [m[0] for m in marks]
+        t_min, t_max = min(t_vals), max(t_vals)
+        v_min, v_max = min(v_vals), max(v_vals)
+        if t_max <= t_min:
+            t_max = t_min + 1.0
+        if v_max <= v_min:
+            v_max = v_min + 1.0
+        v_pad = (v_max - v_min) * 0.12
+        v_min -= v_pad
+        v_max += v_pad
+
+        plot = rect.adjusted(44, 8, -8, -14)
+
+        def map_pt(t, val):
+            x = plot.left() + (t - t_min) / (t_max - t_min) * plot.width()
+            y = plot.bottom() - (val - v_min) / (v_max - v_min) * plot.height()
+            return x, y
+
+        font = p.font()
+        font.setPixelSize(9)
+        p.setFont(font)
+
+        # 零基线
+        if v_min < 0 < v_max:
+            x0, y0 = map_pt(t_min, 0.0)
+            x1, _y1 = map_pt(t_max, 0.0)
+            pen = QPen(QColor("#3a5a90"), 1, Qt.DashLine)
+            p.setPen(pen)
+            p.drawLine(int(x0), int(y0), int(x1), int(y0))
+
+        # 电平标注（虚线 + 数值）
+        for value, name in marks:
+            _x0, y = map_pt(t_min, value)
+            _x1, _y = map_pt(t_max, value)
+            p.setPen(QPen(QColor("#3a5a90"), 1, Qt.DotLine))
+            p.drawLine(int(plot.left()), int(y), int(plot.right()), int(y))
+            p.setPen(QPen(QColor(MUTED_TEXT), 1))
+            p.drawText(
+                QRectF(rect.left() + 2, y - 7, 42, 14),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                f"{name} {value:g}{self._unit}",
+            )
+
+        # 波形主线
+        p.setPen(QPen(self._accent, 2))
+        prev = None
+        for t, val in points:
+            x, y = map_pt(t, val)
+            if prev is not None:
+                p.drawLine(int(prev[0]), int(prev[1]), int(x), int(y))
+            prev = (x, y)
+
+        p.end()
 
 
 class ArbViewMixin:
@@ -234,6 +438,7 @@ class ArbViewMixin:
         self._arb_last_shape = "none"
         self._arb_threads = {}
         self._arb_workers = {}
+        self._arb_running = set()  # (dev_label, channel) Arb 运行态
         self._arb_presets = []
 
         outer = QWidget()
@@ -312,6 +517,18 @@ class ArbViewMixin:
         )
         title_row.addWidget(self.arb_ch_title)
         title_row.addStretch()
+        repeat_label = QLabel("Repeat Count")
+        repeat_label.setStyleSheet(
+            f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
+        )
+        title_row.addWidget(repeat_label)
+        self.arb_repeat_input = SelectAllLineEdit("1")
+        self.arb_repeat_input.set_wheel_step(1)
+        self.arb_repeat_input.setFixedWidth(56)
+        self.arb_repeat_input.setAlignment(Qt.AlignCenter)
+        self.arb_repeat_input.setStyleSheet(_ARB_INPUT_STYLE)
+        self.arb_repeat_input.setToolTip("Repeat count (used when Continuous is off)")
+        title_row.addWidget(self.arb_repeat_input)
         cont_label = QLabel("Continuous")
         cont_label.setStyleSheet(
             f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
@@ -325,6 +542,7 @@ class ArbViewMixin:
         type_row = QHBoxLayout()
         type_row.setSpacing(8)
         type_label = QLabel("Arb Type:")
+        type_label.setFixedWidth(66)
         type_label.setStyleSheet(
             f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
         )
@@ -338,6 +556,7 @@ class ArbViewMixin:
         shape_row = QHBoxLayout()
         shape_row.setSpacing(8)
         shape_label = QLabel("Waveform:")
+        shape_label.setFixedWidth(66)
         shape_label.setStyleSheet(
             f"QLabel {{ font-size: 11px; color: {MUTED_TEXT}; border: none; background: transparent; }}"
         )
@@ -350,12 +569,8 @@ class ArbViewMixin:
             self.arb_shape_combo.addItem(icon, label)
         self.arb_shape_combo.currentIndexChanged.connect(self._arb_on_shape_changed)
         shape_row.addWidget(self.arb_shape_combo, 1)
-        self.arb_shape_preview = QLabel()
-        self.arb_shape_preview.setFixedSize(32, 32)
-        self.arb_shape_preview.setStyleSheet(
-            "QLabel { background: transparent; border: none; }"
-        )
-        shape_row.addWidget(self.arb_shape_preview)
+
+        self.arb_wave_preview = _ArbWaveformPreview()
 
         self.arb_params_stack = QStackedWidget()
         self.arb_param_inputs = {}  # shape_key -> {field_key: SelectAllLineEdit}
@@ -366,41 +581,49 @@ class ArbViewMixin:
             self.arb_param_inputs[shape_key] = inputs
             self.arb_param_labels[shape_key] = labels
 
-        # 左列紧凑选择器（Arb Type / Waveform），右侧为对应波形参数区
+        # 结束方式（Return to DC / Last Arb），Waveform 下方横排
+        self.arb_term_group = QButtonGroup(self)
+        self.arb_term_dc_radio = QRadioButton("Return to DC")
+        self.arb_term_last_radio = QRadioButton("Last Arb")
+        self.arb_term_dc_radio.setChecked(True)
+        self.arb_term_dc_radio.setToolTip("Return to DC Value: output returns to the pre-Arb settings")
+        self.arb_term_last_radio.setToolTip("Last Arb Value: output stays at the last Arb value")
+        for idx, radio in enumerate((self.arb_term_dc_radio, self.arb_term_last_radio)):
+            radio.setStyleSheet(f"""
+                QRadioButton {{ color: #dbe6ff; font-size: 11px; spacing: 6px; background: transparent; border: none; }}
+                QRadioButton::indicator {{ width: 14px; height: 14px; }}
+                QRadioButton:disabled {{ color: {DISABLED_TEXT}; }}
+            """)
+            self.arb_term_group.addButton(radio, idx)
+        self.arb_term_last_radio.toggled.connect(self._arb_on_terminate_toggled)
+
+        # 三栏：左紧凑选择器（Arb Type / Waveform / 结束方式 + RUN/STOP），中参数区，右波形示意图
         config_row = QHBoxLayout()
         config_row.setSpacing(10)
         selector_col = QVBoxLayout()
         selector_col.setSpacing(8)
         selector_col.addLayout(type_row)
         selector_col.addLayout(shape_row)
+        term_row = QHBoxLayout()
+        term_row.setSpacing(12)
+        term_row.addWidget(self.arb_term_dc_radio)
+        term_row.addWidget(self.arb_term_last_radio)
+        term_row.addStretch()
+        selector_col.addLayout(term_row)
         selector_col.addStretch()
+
+        self.arb_run_btn = QPushButton("\u25b6  RUN")
+        self.arb_run_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.arb_run_btn.clicked.connect(self._arb_on_run_stop_clicked)
+        selector_col.addWidget(self.arb_run_btn)
+
         config_row.addLayout(selector_col)
-        config_row.addWidget(self.arb_params_stack, 1)
+        config_row.addWidget(self.arb_params_stack, 3)
+        config_row.addWidget(self.arb_wave_preview, 2)
         body_layout.addLayout(config_row, 1)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-        self.arb_apply_btn = QPushButton("APPLY && RUN")
-        self.arb_apply_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.arb_apply_btn.clicked.connect(self._arb_apply)
-        self.arb_stop_btn = QPushButton("\u25a0  STOP")
-        self.arb_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.arb_stop_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #2a0a1c; color: #ff4fa3;
-                border: 1px solid #d63384; border-radius: {WIDGET_RADIUS};
-                font-weight: 700; font-size: 12px; min-height: 32px;
-            }}
-            QPushButton:hover {{ background-color: #3a1028; }}
-            QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
-        """)
-        self.arb_stop_btn.clicked.connect(self._arb_stop)
-        btn_row.addWidget(self.arb_apply_btn, 1)
-        btn_row.addWidget(self.arb_stop_btn, 1)
-        body_layout.addLayout(btn_row)
-
         self._arb_apply_channel_theme()
-        self._arb_update_shape_icon()
+        self._arb_refresh_preview()
         return zone
 
     def _create_arb_params_page(self, shape_key):
@@ -437,6 +660,7 @@ class ArbViewMixin:
             edit.set_wheel_step(wheel_step)
             edit.setAlignment(Qt.AlignCenter)
             edit.setStyleSheet(_ARB_INPUT_STYLE)
+            edit.textChanged.connect(lambda _t: self._arb_refresh_preview())
             if _kind in ("list_level", "list_time"):
                 edit.setMinimumWidth(200)
                 edit.setAlignment(Qt.AlignLeft)
@@ -575,7 +799,7 @@ class ArbViewMixin:
         btn.setCheckable(True)
         btn.setProperty("device_label", dev_label)
         btn.setProperty("channel", ch)
-        btn.setMinimumSize(80, 32)
+        btn.setMinimumSize(90, 36)
         btn.setCursor(Qt.PointingHandCursor)
         btn.setEnabled(self._is_channel_supported(dev_label, ch))
         btn.setToolTip(self._channel_module_tooltip(dev_label, ch))
@@ -598,49 +822,11 @@ class ArbViewMixin:
         self._arb_refresh_action_state()
 
     def _arb_tab_style(self, dev_label, ch, checked=False):
-        theme = self._channel_theme(dev_label, ch)
-        active_border = theme["accent_border"]
-        font_size = "11px" if self._is_dual_mode() else "12px"
-        radius = (
-            f"border-top-left-radius: {WIDGET_RADIUS}; border-top-right-radius: {WIDGET_RADIUS};"
-            " border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
+        """复用电压区通道 tab 样式（效果对齐），仅底线色取 Arb 选中通道。"""
+        theme = self._channel_theme(self._arb_current_device, self._arb_current_channel)
+        return self._build_channel_tab_style(
+            dev_label, ch, checked, bar_border_color=theme["accent_border"]
         )
-        disabled_part = f"""
-            QPushButton:disabled {{
-                background-color: #0a1224; color: #3a4a6a;
-                border: 1px solid #151f36;
-                border-bottom: 1px solid #151f36;
-                {radius}
-                padding: 7px 10px; font-size: {font_size}; font-weight: 700;
-            }}
-        """
-        if checked:
-            return f"""
-            QPushButton {{
-                background-color: {CONTENT_BG}; color: {theme['accent']};
-                border: 1px solid {active_border};
-                border-bottom: 1px solid {CONTENT_BG};
-                {radius}
-                padding: 7px 10px; font-size: {font_size}; font-weight: 700;
-                margin-bottom: 0px;
-            }}
-            {disabled_part}
-            """
-        return f"""
-        QPushButton {{
-            background-color: {INACTIVE_TAB_BG}; color: {theme['text_dim']};
-            border: 1px solid #1b2847;
-            border-bottom: 1px solid {active_border};
-            {radius}
-            padding: 7px 10px; font-size: {font_size}; font-weight: 700;
-        }}
-        QPushButton:hover {{
-            background-color: {INACTIVE_TAB_HOVER_BG}; color: #ffffff;
-            border: 1px solid {active_border};
-            border-bottom: 1px solid {active_border};
-        }}
-        {disabled_part}
-        """
 
     def _refresh_arb_tab_styles(self):
         active_btn = None
@@ -692,18 +878,39 @@ class ArbViewMixin:
         """)
         self._arb_tab_bar.set_border_color(accent_border)
         self.arb_continuous_toggle.setAccentColor(theme["accent"])
-        self.arb_apply_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #0c1a38; color: {theme['accent']};
-                border: 1px solid {theme['accent']}; border-radius: {WIDGET_RADIUS};
-                font-size: 12px; min-height: 32px; font-weight: 700;
-            }}
-            QPushButton:hover {{ background-color: #12213f; color: {theme['accent_hover']}; border: 1px solid {theme['accent_hover']}; }}
-            QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
-        """)
+        self._arb_update_run_btn()
         self._arb_refresh_shape_availability()
-        self._arb_update_shape_icon()
+        self._arb_refresh_preview()
         self._refresh_arb_tab_styles()
+
+    def _arb_update_run_btn(self):
+        """按当前通道 Arb 运行态刷新合并按钮（RUN=主题色 / STOP=红）。"""
+        if not hasattr(self, "arb_run_btn"):
+            return
+        running = (self._arb_current_device, self._arb_current_channel) in self._arb_running
+        if running:
+            self.arb_run_btn.setText("\u25a0  STOP")
+            self.arb_run_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #2a0a1c; color: #ff4fa3;
+                    border: 1px solid #d63384; border-radius: {WIDGET_RADIUS};
+                    font-size: 12px; min-height: 32px; font-weight: 700;
+                }}
+                QPushButton:hover {{ background-color: #3a1028; }}
+                QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
+            """)
+        else:
+            theme = self._channel_theme(self._arb_current_device, self._arb_current_channel)
+            self.arb_run_btn.setText("\u25b6  RUN")
+            self.arb_run_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #0c1a38; color: {theme['accent']};
+                    border: 1px solid {theme['accent']}; border-radius: {WIDGET_RADIUS};
+                    font-size: 12px; min-height: 32px; font-weight: 700;
+                }}
+                QPushButton:hover {{ background-color: #12213f; color: {theme['accent_hover']}; border: 1px solid {theme['accent_hover']}; }}
+                QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
+            """)
 
     # --------------------------------------------------- type / shape / units
     def _arb_current_type(self):
@@ -718,6 +925,7 @@ class ArbViewMixin:
             return
         self._arb_update_unit_labels()
         self._arb_store_current_params()
+        self._arb_refresh_preview()
 
     def _arb_on_shape_changed(self, index):
         new_shape = _ARB_SHAPES[index][0]
@@ -730,7 +938,7 @@ class ArbViewMixin:
         if not self._arb_loading:
             self._arb_load_shape_params(new_shape)
             self._arb_store_current_params()
-        self._arb_update_shape_icon()
+        self._arb_refresh_preview()
 
     def _arb_update_unit_labels(self):
         unit = "V" if self._arb_current_type() == "VOLT" else "A"
@@ -738,15 +946,20 @@ class ArbViewMixin:
             for label, tpl in shape_labels:
                 label.setText(tpl.replace("{u}", unit))
 
-    def _arb_update_shape_icon(self):
-        if not hasattr(self, "arb_shape_preview"):
+    def _arb_refresh_preview(self):
+        """按当前参数刷新波形示意图；No Arb 时隐藏，非法输入保留上一有效图形。"""
+        if not hasattr(self, "arb_wave_preview"):
             return
-        idx = self.arb_shape_combo.currentIndex()
-        icon_file = _ARB_SHAPES[idx][2]
-        pixmap = tinted_svg_pixmap(
-            os.path.join(_arb_icon_dir(), icon_file), _ARB_ICON_COLOR, 28
+        shape = self._arb_current_shape_key()
+        self.arb_wave_preview.setVisible(shape != "none")
+        try:
+            values = self._arb_collect_values()
+        except ValueError:
+            return
+        theme = self._channel_theme(self._arb_current_device, self._arb_current_channel)
+        self.arb_wave_preview.set_config(
+            shape, values, self._arb_current_type(), theme["accent"]
         )
-        self.arb_shape_preview.setPixmap(pixmap)
 
     def _arb_refresh_shape_availability(self):
         """按当前通道仪器型号禁用不支持的波形（SEQ 全局占位禁用）。"""
@@ -784,10 +997,14 @@ class ArbViewMixin:
                 self._arb_last_shape = "none"
             finally:
                 self._arb_loading = False
-            self._arb_update_shape_icon()
+            self._arb_refresh_preview()
 
     # --------------------------------------------------------- params memory
-    def _arb_on_continuous_toggled(self, _checked):
+    def _arb_on_continuous_toggled(self, checked):
+        self.arb_repeat_input.setEnabled(not checked)
+        self._arb_store_current_params()
+
+    def _arb_on_terminate_toggled(self, _checked):
         self._arb_store_current_params()
 
     def _arb_store_shape_params(self, shape):
@@ -802,6 +1019,8 @@ class ArbViewMixin:
         entry["arb_type"] = self._arb_current_type()
         entry["shape"] = self._arb_current_shape_key()
         entry["continuous"] = self.arb_continuous_toggle.isChecked()
+        entry["repeat_count"] = self.arb_repeat_input.text()
+        entry["terminate_last"] = self.arb_term_last_radio.isChecked()
         entry["params"][shape] = params
 
     def _arb_store_current_params(self):
@@ -841,6 +1060,9 @@ class ArbViewMixin:
             self.arb_shape_combo.setCurrentIndex(shape_keys.index(shape))
             self.arb_params_stack.setCurrentIndex(shape_keys.index(shape))
             self.arb_continuous_toggle.setChecked(bool(entry.get("continuous", False)))
+            self.arb_repeat_input.setText(str(entry.get("repeat_count", "1")))
+            self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
+            self.arb_term_last_radio.setChecked(bool(entry.get("terminate_last", False)))
             saved = entry.get("params", {}).get(shape, {})
             for field_key, edit in self.arb_param_inputs[shape].items():
                 if field_key in saved:
@@ -850,7 +1072,7 @@ class ArbViewMixin:
             self._arb_loading = False
         self._arb_update_unit_labels()
         self._arb_refresh_shape_availability()
-        self._arb_update_shape_icon()
+        self._arb_refresh_preview()
 
     def _arb_collect_values(self):
         """解析当前波形参数为数值；非法输入抛 ValueError。"""
@@ -895,6 +1117,13 @@ class ArbViewMixin:
             return None
         return getter(f"n6705c:{dev_label}")
 
+    def _arb_on_run_stop_clicked(self):
+        key = (self._arb_current_device, self._arb_current_channel)
+        if key in self._arb_running:
+            self._arb_stop()
+        else:
+            self._arb_apply()
+
     def _arb_apply(self):
         dev_label = self._arb_current_device
         ch = self._arb_current_channel
@@ -909,6 +1138,12 @@ class ArbViewMixin:
             return
         try:
             values = self._arb_collect_values()
+            continuous = self.arb_continuous_toggle.isChecked()
+            repeat_count = None
+            if not continuous:
+                repeat_count = int(float(self.arb_repeat_input.text().strip()))
+                if repeat_count < 1:
+                    raise ValueError("Repeat Count must be >= 1")
         except ValueError as exc:
             QMessageBox.warning(self, "Arb Set", str(exc))
             return
@@ -917,7 +1152,9 @@ class ArbViewMixin:
                                shape_key=shape,
                                values=values,
                                arb_type=self._arb_current_type(),
-                               continuous=self.arb_continuous_toggle.isChecked())
+                               continuous=continuous,
+                               repeat_count=repeat_count,
+                               terminate_last=self.arb_term_last_radio.isChecked())
 
     def _arb_stop(self):
         dev_label = self._arb_current_device
@@ -952,19 +1189,31 @@ class ArbViewMixin:
         self._arb_threads.pop(dev_label, None)
         self._arb_refresh_action_state()
 
-    def _arb_on_run_finished(self, dev_label, success, message):
-        if not success:
+    def _arb_on_run_finished(self, dev_label, channel, mode, success, message):
+        if success:
+            key = (dev_label, channel)
+            if mode == "apply":
+                self._arb_running.add(key)
+            else:
+                self._arb_running.discard(key)
+        else:
             QMessageBox.warning(self, "Arb Set", message)
+        self._arb_refresh_action_state()
 
     def _arb_refresh_action_state(self):
-        if not hasattr(self, "arb_apply_btn"):
+        if not hasattr(self, "arb_run_btn"):
             return
         dev = self.devices.get(self._arb_current_device, {})
         connected = bool(dev.get("is_connected"))
+        if not connected:
+            # 断连即失效的本地运行态记录
+            self._arb_running = {
+                key for key in self._arb_running if key[0] != self._arb_current_device
+            }
         supported = self._is_channel_supported(self._arb_current_device, self._arb_current_channel)
-        running = self._arb_current_device in self._arb_threads
-        self.arb_apply_btn.setEnabled(connected and supported and not running)
-        self.arb_stop_btn.setEnabled(connected and supported and not running)
+        busy = self._arb_current_device in self._arb_threads
+        self.arb_run_btn.setEnabled(connected and supported and not busy)
+        self._arb_update_run_btn()
 
     # ---------------------------------------------------------------- presets
     def _arb_load_presets(self):
@@ -1042,6 +1291,8 @@ class ArbViewMixin:
             "arb_type": self._arb_current_type(),
             "shape": self._arb_current_shape_key(),
             "continuous": self.arb_continuous_toggle.isChecked(),
+            "repeat_count": self.arb_repeat_input.text(),
+            "terminate_last": self.arb_term_last_radio.isChecked(),
             "params": values,
         }
         self._arb_presets = [p for p in self._arb_presets if p.get("name") != name]
@@ -1079,6 +1330,9 @@ class ArbViewMixin:
             self.arb_shape_combo.setCurrentIndex(shape_keys.index(shape))
             self.arb_params_stack.setCurrentIndex(shape_keys.index(shape))
             self.arb_continuous_toggle.setChecked(bool(preset.get("continuous", False)))
+            self.arb_repeat_input.setText(str(preset.get("repeat_count", "1")))
+            self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
+            self.arb_term_last_radio.setChecked(bool(preset.get("terminate_last", False)))
             params = preset.get("params", {})
             for field_key, edit in self.arb_param_inputs[shape].items():
                 if field_key in params and params[field_key] is not None:
@@ -1091,5 +1345,5 @@ class ArbViewMixin:
         finally:
             self._arb_loading = False
         self._arb_update_unit_labels()
-        self._arb_update_shape_icon()
+        self._arb_refresh_preview()
         self._arb_store_current_params()
