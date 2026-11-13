@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame,
     QLabel, QPushButton, QStackedWidget, QListWidget, QListWidgetItem,
     QMessageBox, QInputDialog, QSizePolicy, QRadioButton, QButtonGroup,
+    QTableWidget, QTableWidgetItem, QMenu, QDialog, QDialogButtonBox,
+    QFileDialog, QHeaderView, QAbstractItemView,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor
@@ -112,10 +114,7 @@ _ARB_FIELDS = {
         ("Levels ({u}, comma list):", "levels", "3.2, 3.4, 3.6, 3.8", None, "list_level"),
         ("Dwell (s):", "dwell", "0.01", 0.001, "time"),
     ],
-    "udef": [
-        ("Levels ({u}, comma list):", "levels", "3.0, 3.5, 4.0, 3.5", None, "list_level"),
-        ("Dwells (s, comma list, optional):", "dwells", "", None, "list_time"),
-    ],
+    "udef": [],  # 点表编辑器（模型 _arb_udef_points），不走文本字段
     "seq": [],
 }
 
@@ -231,7 +230,15 @@ class _ArbRunWorker(QObject):
 
 
 class _ArbWaveformPreview(QWidget):
-    """按当前 Arb 参数实时绘制的波形示意图（类仪器面板图示）。"""
+    """按当前 Arb 参数实时绘制的波形示意图（类仪器面板图示）。
+
+    User Defined 形状下进入交互模式：每个点一个区域，可点选（Ctrl 多选）、
+    拖拽改 level/dwell、右键弹参数编辑。
+    """
+
+    sig_udef_clicked = Signal(int, object)   # index, Qt.KeyboardModifiers
+    sig_udef_changed = Signal(int, float, float)  # index, level, dwell
+    sig_udef_edit = Signal(int)              # index
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -239,6 +246,12 @@ class _ArbWaveformPreview(QWidget):
         self._values = {}
         self._unit = "V"
         self._accent = QColor(_ARB_ICON_COLOR)
+        self._interactive = False
+        self._udef_points = []      # [[level, dwell], ...]（交互模式副本）
+        self._udef_sel = set()
+        self._udef_regions = []     # [(x0, x1, index)] 命中测试
+        self._map_state = None      # (plot_rect, t_min, t_max, v_min, v_max)
+        self._drag = None
         self.setMinimumSize(220, 130)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -247,6 +260,14 @@ class _ArbWaveformPreview(QWidget):
         self._values = values or {}
         self._unit = "V" if arb_type == "VOLT" else "A"
         self._accent = QColor(accent)
+        self.update()
+
+    def set_udef_interaction(self, enabled, points, selected):
+        self._interactive = bool(enabled)
+        self._udef_points = [list(p) for p in points] if enabled else []
+        self._udef_sel = set(selected) if enabled else set()
+        if not enabled:
+            self._drag = None
         self.update()
 
     # ---------------------------------------------------------- wave compute
@@ -382,6 +403,7 @@ class _ArbWaveformPreview(QWidget):
         v_max += v_pad
 
         plot = rect.adjusted(44, 8, -8, -14)
+        self._map_state = (plot, t_min, t_max, v_min, v_max)
 
         def map_pt(t, val):
             x = plot.left() + (t - t_min) / (t_max - t_min) * plot.width()
@@ -391,6 +413,32 @@ class _ArbWaveformPreview(QWidget):
         font = p.font()
         font.setPixelSize(9)
         p.setFont(font)
+
+        # UDEF 交互区域（每个点一列，选中高亮）
+        self._udef_regions = []
+        if self._interactive and self._shape == "udef" and self._udef_points:
+            t_acc = 0.0
+            for idx, (_lv, dw) in enumerate(self._udef_points):
+                x0, _ = map_pt(t_acc, v_min)
+                x1, _ = map_pt(t_acc + max(float(dw), 1e-9), v_min)
+                self._udef_regions.append((x0, x1, idx))
+                t_acc += max(float(dw), 1e-9)
+            for x0, x1, idx in self._udef_regions:
+                if idx in self._udef_sel:
+                    fill = QColor(self._accent)
+                    fill.setAlpha(60)
+                else:
+                    fill = QColor("#ffffff")
+                    fill.setAlpha(10 if idx % 2 == 0 else 20)
+                p.setPen(Qt.NoPen)
+                p.setBrush(fill)
+                p.drawRect(QRectF(x0, plot.top(), x1 - x0, plot.height()))
+                p.setPen(QPen(QColor(MUTED_TEXT), 1))
+                p.drawText(
+                    QRectF(x0 + 2, plot.top() + 1, max(x1 - x0 - 4, 8), 12),
+                    Qt.AlignLeft | Qt.AlignVCenter,
+                    f"#{idx + 1}",
+                )
 
         # 零基线
         if v_min < 0 < v_max:
@@ -424,6 +472,121 @@ class _ArbWaveformPreview(QWidget):
 
         p.end()
 
+    # ---------------------------------------------------------- interaction
+    def _region_at(self, x):
+        for x0, x1, idx in self._udef_regions:
+            if x0 <= x <= x1:
+                return idx
+        return None
+
+    def _y_to_level(self, y):
+        if not self._map_state:
+            return 0.0
+        plot, _t0, _t1, v_min, v_max = self._map_state
+        ratio = (plot.bottom() - y) / max(plot.height(), 1e-9)
+        return v_min + ratio * (v_max - v_min)
+
+    def _x_scale(self):
+        """x 像素 -> 时间单位比例。"""
+        if not self._map_state:
+            return 1.0
+        plot, t_min, t_max, _v0, _v1 = self._map_state
+        return (t_max - t_min) / max(plot.width(), 1e-9)
+
+    def mousePressEvent(self, event):
+        if self._interactive and self._shape == "udef":
+            idx = self._region_at(event.position().x())
+            if idx is not None:
+                if event.button() == Qt.LeftButton:
+                    self.sig_udef_clicked.emit(idx, event.modifiers())
+                    if idx < len(self._udef_points):
+                        lv, dw = self._udef_points[idx]
+                        self._drag = {
+                            "idx": idx,
+                            "start_x": event.position().x(),
+                            "orig_dwell": float(dw),
+                            "x_scale": self._x_scale(),
+                        }
+                elif event.button() == Qt.RightButton:
+                    self.sig_udef_edit.emit(idx)
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag is not None:
+            idx = self._drag["idx"]
+            if idx < len(self._udef_points):
+                level = self._y_to_level(event.position().y())
+                dx = event.position().x() - self._drag["start_x"]
+                dwell = max(self._drag["orig_dwell"] + dx * self._drag["x_scale"], 1e-4)
+                self.sig_udef_changed.emit(idx, level, dwell)
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._drag is not None:
+            self._drag = None
+            return
+        super().mouseReleaseEvent(event)
+
+
+class _UdefPointDialog(QDialog):
+    """UDEF 单点参数编辑对话框（示意图右键 / 表格右键 Edit...）。"""
+
+    def __init__(self, level, dwell, unit, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Point")
+        self.setModal(True)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {CONTENT_BG}; }}
+            QLabel {{ color: {MUTED_TEXT}; font-size: 11px; background: transparent; border: none; }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(8)
+        level_label = QLabel(f"Level ({unit}):")
+        self.level_edit = SelectAllLineEdit(f"{level:g}")
+        self.level_edit.setStyleSheet(_ARB_INPUT_STYLE)
+        self.level_edit.setMinimumWidth(140)
+        dwell_label = QLabel("Dwell (s):")
+        self.dwell_edit = SelectAllLineEdit(f"{dwell:g}")
+        self.dwell_edit.setStyleSheet(_ARB_INPUT_STYLE)
+        self.dwell_edit.setMinimumWidth(140)
+        form.addWidget(level_label, 0, 0)
+        form.addWidget(self.level_edit, 0, 1)
+        form.addWidget(dwell_label, 1, 0)
+        form.addWidget(self.dwell_edit, 1, 1)
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_btn = buttons.button(QDialogButtonBox.Ok)
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = buttons.button(QDialogButtonBox.Cancel)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def values(self):
+        try:
+            level = float(self.level_edit.text().strip())
+        except ValueError as exc:
+            raise ValueError(f"Level invalid: '{self.level_edit.text().strip()}'") from exc
+        try:
+            dwell = float(self.dwell_edit.text().strip())
+        except ValueError as exc:
+            raise ValueError(f"Dwell invalid: '{self.dwell_edit.text().strip()}'") from exc
+        if dwell <= 0:
+            raise ValueError("Dwell must be > 0")
+        return level, dwell
+
 
 class ArbViewMixin:
     """Arb Set 面板：左侧通道 Arb 配置（独立 tab），右侧常用预设（JSON 持久化）。"""
@@ -440,6 +603,10 @@ class ArbViewMixin:
         self._arb_workers = {}
         self._arb_running = set()  # (dev_label, channel) Arb 运行态
         self._arb_presets = []
+        # UDEF 点模型（当前通道）：[[level, dwell], ...]
+        self._arb_udef_points = [[3.0, 0.001], [3.5, 0.001], [4.0, 0.001], [3.5, 0.001]]
+        self._arb_udef_selected = set()
+        self._arb_udef_loading = False
 
         outer = QWidget()
         outer.setStyleSheet("QWidget { background: transparent; border: none; }")
@@ -486,6 +653,10 @@ class ArbViewMixin:
             "\u25b6  Arb Set" if self.arb_collapsed else "\u25bc  Arb Set"
         )
         self.arb_toggle_btn.setStyleSheet(collapsible_header_style(self.arb_collapsed))
+        if not self.arb_collapsed:
+            # 折叠期 arb_content 隐藏、布局未激活，tab 按钮 geometry 为未排布值；
+            # 展开后须重算活动 tab 的底线缺口（内部经 singleShot 待布局完成取几何）
+            self._refresh_arb_tab_styles()
 
     # ----------------------------------------------------------- channel zone
     def _create_arb_channel_zone(self):
@@ -571,6 +742,9 @@ class ArbViewMixin:
         shape_row.addWidget(self.arb_shape_combo, 1)
 
         self.arb_wave_preview = _ArbWaveformPreview()
+        self.arb_wave_preview.sig_udef_clicked.connect(self._arb_udef_on_region_clicked)
+        self.arb_wave_preview.sig_udef_changed.connect(self._arb_udef_on_region_changed)
+        self.arb_wave_preview.sig_udef_edit.connect(self._arb_udef_on_region_edit)
 
         self.arb_params_stack = QStackedWidget()
         self.arb_param_inputs = {}  # shape_key -> {field_key: SelectAllLineEdit}
@@ -627,6 +801,8 @@ class ArbViewMixin:
         return zone
 
     def _create_arb_params_page(self, shape_key):
+        if shape_key == "udef":
+            return self._create_udef_page()
         page = QFrame()
         page.setStyleSheet(
             f"QFrame {{ background-color: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: {CONTAINER_RADIUS}; }}"
@@ -674,6 +850,343 @@ class ArbViewMixin:
             labels.append((label, label_tpl))
         grid.setColumnStretch(4, 1)
         return page, inputs, labels
+
+    # ------------------------------------------------------------- udef page
+    def _create_udef_page(self):
+        """User Defined 点表编辑器：上表格（直接编辑/Ctrl 多选同改/右键），下按钮行。"""
+        page = QFrame()
+        page.setStyleSheet(
+            f"QFrame {{ background-color: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: {CONTAINER_RADIUS}; }}"
+        )
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        self.arb_udef_table = QTableWidget(0, 3)
+        self.arb_udef_table.setHorizontalHeaderLabels(["#", "Level (V)", "Dwell (s)"])
+        header = self.arb_udef_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        self.arb_udef_table.verticalHeader().setVisible(False)
+        self.arb_udef_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.arb_udef_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.arb_udef_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.arb_udef_table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: #091426; color: #dbe6ff;
+                border: 1px solid {CARD_BORDER}; border-radius: {WIDGET_RADIUS};
+                gridline-color: #12224a; font-size: 11px; outline: 0;
+            }}
+            QTableWidget::item {{ padding: 2px 6px; border: none; }}
+            QTableWidget::item:selected {{ background-color: #1a2a50; color: #ffffff; }}
+            QHeaderView::section {{
+                background-color: #0b1b34; color: {MUTED_TEXT};
+                border: none; border-bottom: 1px solid {CARD_BORDER};
+                font-size: 10px; font-weight: 700; padding: 4px 6px;
+            }}
+        """)
+        self.arb_udef_table.cellChanged.connect(self._arb_udef_on_cell_changed)
+        self.arb_udef_table.itemSelectionChanged.connect(self._arb_udef_on_table_selection)
+        self.arb_udef_table.customContextMenuRequested.connect(self._arb_udef_context_menu)
+        layout.addWidget(self.arb_udef_table, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        udef_btn_style = f"""
+            QPushButton {{
+                background-color: #0b1730; color: #dbe6ff;
+                border: 1px solid #23417a; border-radius: {WIDGET_RADIUS};
+                font-size: 11px; padding: 3px 8px; min-height: 24px;
+            }}
+            QPushButton:hover {{ background-color: #10203e; }}
+            QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
+        """
+        for text, slot in (
+            ("Add", self._arb_udef_add_point),
+            ("Delete", self._arb_udef_delete_selected),
+            ("Clear", self._arb_udef_clear_points),
+            ("Import", self._arb_udef_import_csv),
+            ("Export", self._arb_udef_export_csv),
+        ):
+            btn = QPushButton(text)
+            btn.setStyleSheet(udef_btn_style)
+            btn.clicked.connect(slot)
+            btn_row.addWidget(btn, 1)
+        layout.addLayout(btn_row)
+
+        self._arb_udef_sync_table()
+        return page, {}, []
+
+    def _arb_udef_sync_table(self):
+        """模型 -> 表格重建（保留选中行）。"""
+        if not hasattr(self, "arb_udef_table"):
+            return
+        table = self.arb_udef_table
+        prev_sel = set(self._arb_udef_selected)
+        self._arb_udef_loading = True
+        try:
+            table.setRowCount(len(self._arb_udef_points))
+            for row, (lv, dw) in enumerate(self._arb_udef_points):
+                idx_item = QTableWidgetItem(str(row + 1))
+                idx_item.setFlags(idx_item.flags() & ~Qt.ItemIsEditable)
+                idx_item.setTextAlignment(Qt.AlignCenter)
+                lv_item = QTableWidgetItem(f"{lv:g}")
+                lv_item.setTextAlignment(Qt.AlignCenter)
+                dw_item = QTableWidgetItem(f"{dw:g}")
+                dw_item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row, 0, idx_item)
+                table.setItem(row, 1, lv_item)
+                table.setItem(row, 2, dw_item)
+            table.clearSelection()
+            model = table.selectionModel()
+            for row in sorted(prev_sel):
+                if row < table.rowCount():
+                    model.select(
+                        table.model().index(row, 0),
+                        model.SelectionFlag.Select | model.SelectionFlag.Rows,
+                    )
+        finally:
+            self._arb_udef_loading = False
+
+    def _arb_udef_selected_rows(self):
+        return sorted({idx.row() for idx in self.arb_udef_table.selectionModel().selectedRows()})
+
+    def _arb_udef_on_cell_changed(self, row, col):
+        if self._arb_udef_loading or col == 0 or row >= len(self._arb_udef_points):
+            return
+        item = self.arb_udef_table.item(row, col)
+        text = item.text().strip()
+        try:
+            value = float(text)
+        except ValueError:
+            value = None
+        if value is None or (col == 2 and value <= 0):
+            # 非法输入回退模型值
+            self._arb_udef_loading = True
+            item.setText(f"{self._arb_udef_points[row][col - 1]:g}")
+            self._arb_udef_loading = False
+            return
+        self._arb_udef_loading = True
+        try:
+            self._arb_udef_points[row][col - 1] = value
+            sel_rows = self._arb_udef_selected_rows()
+            if row in sel_rows and len(sel_rows) > 1:
+                # Ctrl 多选：同列同步到所有选中行
+                for r in sel_rows:
+                    if r != row and r < len(self._arb_udef_points):
+                        self._arb_udef_points[r][col - 1] = value
+                        self.arb_udef_table.item(r, col).setText(f"{value:g}")
+        finally:
+            self._arb_udef_loading = False
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_on_table_selection(self):
+        if self._arb_udef_loading or not hasattr(self, "arb_udef_table"):
+            return
+        self._arb_udef_selected = set(self._arb_udef_selected_rows())
+        self._arb_refresh_preview()
+
+    def _arb_udef_context_menu(self, pos):
+        table = self.arb_udef_table
+        row = table.rowAt(pos.y())
+        menu = QMenu(self)
+        insert_above = menu.addAction("Insert Above")
+        insert_below = menu.addAction("Insert Below")
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete")
+        edit_action = menu.addAction("Edit...")
+        insert_above.setEnabled(row >= 0)
+        insert_below.setEnabled(row >= 0)
+        delete_action.setEnabled(bool(self._arb_udef_selected_rows()))
+        edit_action.setEnabled(row >= 0)
+        action = menu.exec(table.viewport().mapToGlobal(pos))
+        if action is insert_above and row >= 0:
+            self._arb_udef_insert_point(row)
+        elif action is insert_below and row >= 0:
+            self._arb_udef_insert_point(row + 1)
+        elif action is delete_action:
+            self._arb_udef_delete_selected()
+        elif action is edit_action and row >= 0:
+            self._arb_udef_edit_point_dialog(row)
+
+    def _arb_udef_insert_point(self, row):
+        row = max(0, min(row, len(self._arb_udef_points)))
+        if self._arb_udef_points:
+            ref = self._arb_udef_points[min(row, len(self._arb_udef_points) - 1)]
+            point = [ref[0], ref[1]]
+        else:
+            point = [3.3, 0.001]
+        self._arb_udef_points.insert(row, point)
+        self._arb_udef_selected = {row}
+        self._arb_udef_sync_table()
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_add_point(self):
+        row = self.arb_udef_table.currentRow()
+        self._arb_udef_insert_point(row + 1 if row >= 0 else len(self._arb_udef_points))
+
+    def _arb_udef_delete_selected(self):
+        rows = self._arb_udef_selected_rows()
+        if not rows:
+            return
+        for row in reversed(rows):
+            if row < len(self._arb_udef_points):
+                del self._arb_udef_points[row]
+        self._arb_udef_selected = set()
+        self._arb_udef_sync_table()
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_clear_points(self):
+        if not self._arb_udef_points:
+            return
+        self._arb_udef_points = []
+        self._arb_udef_selected = set()
+        self._arb_udef_sync_table()
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_edit_point_dialog(self, row):
+        if row >= len(self._arb_udef_points):
+            return
+        unit = "V" if self._arb_current_type() == "VOLT" else "A"
+        lv, dw = self._arb_udef_points[row]
+        dialog = _UdefPointDialog(lv, dw, unit, parent=self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        try:
+            level, dwell = dialog.values()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Arb Set", str(exc))
+            return
+        self._arb_udef_points[row] = [level, dwell]
+        self._arb_udef_sync_table()
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_import_csv(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import User Defined Points", "", "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        points = []
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                for line_no, line in enumerate(f, start=1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = [p.strip() for p in line.split(",") if p.strip()]
+                    if not parts:
+                        continue
+                    try:
+                        level = float(parts[0])
+                        dwell = float(parts[1]) if len(parts) > 1 else 0.001
+                    except ValueError:
+                        if line_no == 1:
+                            continue  # 表头行
+                        raise ValueError(f"Line {line_no}: invalid value '{line}'")
+                    if dwell <= 0:
+                        raise ValueError(f"Line {line_no}: dwell must be > 0")
+                    points.append([level, dwell])
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Arb Set", f"Import failed: {exc}")
+            return
+        if not points:
+            QMessageBox.warning(self, "Arb Set", "Import failed: no valid points found")
+            return
+        self._arb_udef_points = points
+        self._arb_udef_selected = set()
+        self._arb_udef_sync_table()
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+        logger.info("UDEF points imported: %s (%d points)", path, len(points))
+
+    def _arb_udef_export_csv(self):
+        if not self._arb_udef_points:
+            QMessageBox.warning(self, "Arb Set", "No points to export")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export User Defined Points", "", "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("level,dwell\n")
+                for lv, dw in self._arb_udef_points:
+                    f.write(f"{lv:g},{dw:g}\n")
+        except OSError as exc:
+            QMessageBox.warning(self, "Arb Set", f"Export failed: {exc}")
+            return
+        logger.info("UDEF points exported: %s (%d points)", path, len(self._arb_udef_points))
+
+    # ------------------------------------------------- udef preview <-> table
+    def _arb_udef_on_region_clicked(self, index, modifiers):
+        if index >= len(self._arb_udef_points):
+            return
+        if modifiers & Qt.ControlModifier:
+            sel = set(self._arb_udef_selected)
+            sel ^= {index}
+        else:
+            sel = {index}
+        self._arb_udef_selected = sel
+        self._arb_udef_sync_table()
+        self._arb_refresh_preview()
+
+    def _arb_udef_on_region_changed(self, index, level, dwell):
+        if index >= len(self._arb_udef_points):
+            return
+        self._arb_udef_points[index] = [level, dwell]
+        self._arb_udef_loading = True
+        try:
+            self.arb_udef_table.item(index, 1).setText(f"{level:g}")
+            self.arb_udef_table.item(index, 2).setText(f"{dwell:g}")
+        finally:
+            self._arb_udef_loading = False
+        self._arb_store_current_params()
+        self._arb_refresh_preview()
+
+    def _arb_udef_on_region_edit(self, index):
+        self._arb_udef_edit_point_dialog(index)
+
+    def _arb_udef_load_from_saved(self, saved):
+        """从 store / 预设记录恢复 UDEF 点模型（兼容 points / levels+dwells 两种结构）。"""
+        if not isinstance(saved, dict):
+            return
+        points = None
+        raw_points = saved.get("points")
+        if isinstance(raw_points, list) and raw_points:
+            try:
+                points = [[float(p[0]), float(p[1])] for p in raw_points]
+            except (TypeError, ValueError, IndexError):
+                points = None
+        if points is None and "levels" in saved:
+            levels = saved.get("levels")
+            dwells = saved.get("dwells")
+            if isinstance(levels, str):
+                levels = [p.strip() for p in levels.split(",") if p.strip()]
+            if isinstance(dwells, str):
+                dwells = [p.strip() for p in dwells.split(",") if p.strip()]
+            try:
+                levels = [float(v) for v in (levels or [])]
+            except (TypeError, ValueError):
+                levels = []
+            if levels:
+                if not isinstance(dwells, (list, tuple)) or len(dwells) != len(levels):
+                    dwells = [0.001] * len(levels)
+                else:
+                    dwells = [max(float(d), 1e-4) for d in dwells]
+                points = [[lv, dw] for lv, dw in zip(levels, dwells)]
+        if points is None:
+            return
+        self._arb_udef_points = points
+        self._arb_udef_selected = set()
+        self._arb_udef_sync_table()
 
     # ------------------------------------------------------------ preset zone
     def _create_arb_preset_zone(self):
@@ -945,6 +1458,10 @@ class ArbViewMixin:
         for shape_labels in self.arb_param_labels.values():
             for label, tpl in shape_labels:
                 label.setText(tpl.replace("{u}", unit))
+        if hasattr(self, "arb_udef_table"):
+            self.arb_udef_table.setHorizontalHeaderLabels(
+                ["#", f"Level ({unit})", "Dwell (s)"]
+            )
 
     def _arb_refresh_preview(self):
         """按当前参数刷新波形示意图；No Arb 时隐藏，非法输入保留上一有效图形。"""
@@ -952,6 +1469,12 @@ class ArbViewMixin:
             return
         shape = self._arb_current_shape_key()
         self.arb_wave_preview.setVisible(shape != "none")
+        if shape == "udef":
+            self.arb_wave_preview.set_udef_interaction(
+                True, self._arb_udef_points, self._arb_udef_selected
+            )
+        else:
+            self.arb_wave_preview.set_udef_interaction(False, [], set())
         try:
             values = self._arb_collect_values()
         except ValueError:
@@ -1010,10 +1533,13 @@ class ArbViewMixin:
     def _arb_store_shape_params(self, shape):
         if self._arb_loading or not hasattr(self, "arb_shape_combo"):
             return
-        params = {
-            field_key: edit.text()
-            for field_key, edit in self.arb_param_inputs[shape].items()
-        }
+        if shape == "udef":
+            params = {"points": [list(p) for p in self._arb_udef_points]}
+        else:
+            params = {
+                field_key: edit.text()
+                for field_key, edit in self.arb_param_inputs[shape].items()
+            }
         key = (self._arb_current_device, self._arb_current_channel)
         entry = self._arb_param_store.setdefault(key, {"params": {}})
         entry["arb_type"] = self._arb_current_type()
@@ -1031,6 +1557,9 @@ class ArbViewMixin:
         key = (self._arb_current_device, self._arb_current_channel)
         saved = self._arb_param_store.get(key, {}).get("params", {}).get(shape, {})
         if not saved:
+            return
+        if shape == "udef":
+            self._arb_udef_load_from_saved(saved)
             return
         prev = self._arb_loading
         self._arb_loading = True
@@ -1064,9 +1593,12 @@ class ArbViewMixin:
             self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
             self.arb_term_last_radio.setChecked(bool(entry.get("terminate_last", False)))
             saved = entry.get("params", {}).get(shape, {})
-            for field_key, edit in self.arb_param_inputs[shape].items():
-                if field_key in saved:
-                    edit.setText(str(saved[field_key]))
+            if shape == "udef":
+                self._arb_udef_load_from_saved(saved)
+            else:
+                for field_key, edit in self.arb_param_inputs[shape].items():
+                    if field_key in saved:
+                        edit.setText(str(saved[field_key]))
             self._arb_last_shape = shape
         finally:
             self._arb_loading = False
@@ -1077,6 +1609,13 @@ class ArbViewMixin:
     def _arb_collect_values(self):
         """解析当前波形参数为数值；非法输入抛 ValueError。"""
         shape = self._arb_current_shape_key()
+        if shape == "udef":
+            if not self._arb_udef_points:
+                raise ValueError("User Defined requires at least one point")
+            return {
+                "levels": [p[0] for p in self._arb_udef_points],
+                "dwells": [p[1] for p in self._arb_udef_points],
+            }
         values = {}
         for label_tpl, field_key, _default, _step, kind in _ARB_FIELDS[shape]:
             text = self.arb_param_inputs[shape][field_key].text().strip()
@@ -1334,13 +1873,16 @@ class ArbViewMixin:
             self.arb_repeat_input.setEnabled(not self.arb_continuous_toggle.isChecked())
             self.arb_term_last_radio.setChecked(bool(preset.get("terminate_last", False)))
             params = preset.get("params", {})
-            for field_key, edit in self.arb_param_inputs[shape].items():
-                if field_key in params and params[field_key] is not None:
-                    value = params[field_key]
-                    if isinstance(value, list):
-                        edit.setText(", ".join(str(v) for v in value))
-                    else:
-                        edit.setText(str(value))
+            if shape == "udef":
+                self._arb_udef_load_from_saved(params)
+            else:
+                for field_key, edit in self.arb_param_inputs[shape].items():
+                    if field_key in params and params[field_key] is not None:
+                        value = params[field_key]
+                        if isinstance(value, list):
+                            edit.setText(", ".join(str(v) for v in value))
+                        else:
+                            edit.setText(str(value))
             self._arb_last_shape = shape
         finally:
             self._arb_loading = False
