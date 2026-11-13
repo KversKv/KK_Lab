@@ -3,11 +3,13 @@
     "enabled": true,
     "base_url": "http://172.16.10.94:3000/v1",
     "api_key": "sk-hkfOA1_CnRo3GOthYZpUag",
-    "default_model": "glm-5.3-fp8",
+    "default_model": "hs-dsv4.1-flash",
     "model_mode": "fixed",
     "available_models": [
-      "deepseek-v4-flash",
-      "glm-5.3-fp8"
+      "hs-glm5.2",
+      "hs-dsv4-pro",
+      "hs-glm5.3-flash",
+      "hs-dsv4.1-flash"
     ],
     "stream": true,
     "timeout_seconds": 300,
@@ -21,8 +23,10 @@
     "panel_default_open": false,
     "panel_width": 360,
     "model_context_windows": {
-      "deepseek-v4-flash": 131072,
-      "glm-5.3-fp8": 131072
+      "hs-glm5.2": 131072,
+      "hs-dsv4-pro": 131072,
+      "hs-glm5.3-flash": 131072,
+      "hs-dsv4.1-flash": 131072
     },
     "default_context_window": 131072,
     "waveform_event_algo": "stalta",
