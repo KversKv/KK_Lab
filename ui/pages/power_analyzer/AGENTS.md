@@ -49,6 +49,7 @@
 
 ## 局部坑点
 
+- **QScrollArea(widgetResizable) 宿主 `minimumSizeHint()` 恒 ~68x68**：主窗口最小视图靠 `page.minimumSizeHint()` 收缩窗口（`_fit_compact_size`），紧凑态必须走页面重写的 `minimumSizeHint()` 直取 `_content_widget` 内容 hint；且紧凑态须先 `_content_widget.setMinimumWidth(0)`（退出恢复 640），否则 600 窗宽出横向滚动条。
 - **Datalog 连接管理三律**：① 连接/断连/刷新收尾统一走 `_after_slot_states_synced`（槽位签名去重，禁止绕过重发 `connection_status_changed` 或直调 `_refresh_channel_config`）；② 并发连接用 `_pending_connects`（slot→resource）守卫，`_find_next_free_slot` 必须跳过 pending 槽；③ manager 的 `connection_failed` **不发** `sessions_changed`，必须单独监听恢复卡片按钮态，否则按钮卡死 "Connecting..."；session 被他页 `remove_session` 移除时靠 `_on_manager_sessions_changed` 对账清理。
 - **§44 Mixin 同名 Qt 虚函数遮蔽**：`N6705CDatalogUI` 是 QWidget 居首多继承，Mixin 里的 `eventFilter`/`event`/`*Event` 会被 QObject 空实现遮蔽静默失效；`eventFilter` 已在类首显式绑定 `PlotViewMixin.eventFilter`，Mixin 内禁 `super().eventFilter`（MRO 尾段只有 object），不拦截 `return False`。
 - **IT2705 ELOG 采样三律**（`datalog/workers.py`）：① 同通道 V/I 来自同一条 ELOG 记录，按记录序号共用时间轴，`calc_power_for_ch` 可配对；② 单次 `fetch_elog_records` 失败仅跳过该批（`_log_sample_failure` kind="ELOG"），禁上抛终止录制；③ `instr.timeout` 长超时（≥600s）仅对原生 DLOG 单元（有 `read_mmem_data`）提升，ELOG 单元保留驱动默认 10s。旧 `measure_*` 软件采样路径已弃用（MEAS 单条 ≥20ms，20us 不可能），仅作无 `fetch_elog_records` 仪器的兜底。Mock 调试卡含 `MOCK::IT2705`（`_add_default_debug_device`）。

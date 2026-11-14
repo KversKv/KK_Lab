@@ -783,6 +783,14 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         super().resizeEvent(event)
         self._apply_responsive_layout()
 
+    def minimumSizeHint(self):
+        # main_window._fit_compact_size 依本 hint 收缩最小视图窗口；
+        # 根布局套 QScrollArea(widgetResizable) 后宿主 hint 恒为 ~68x68，
+        # 紧凑态须直接取内容布局最小尺寸。
+        if getattr(self, "_compact_view_active", False):
+            return self._content_widget.minimumSizeHint()
+        return super().minimumSizeHint()
+
     def _apply_responsive_layout(self):
         """响应式布局：按页面实际高度调边距/区块间距（滚动优先于压缩），
         并联动 Arb Set 的左右/上下布局切换。紧凑（最小）视图激活时不介入。"""
@@ -821,10 +829,13 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         # 紧凑态下面板是唯一内容，折叠无意义，隐藏折叠头省一行高度
         self.batch_toggle_btn.setVisible(not compact)
         if compact:
+            # 最小视图窗口宽 600，解除内容最小宽约束，避免横向滚动条
+            self._content_widget.setMinimumWidth(0)
             for spacer in self._block_spacers:
                 spacer.changeSize(0, 0)
             self._main_layout.setContentsMargins(6, 6, 6, 6)
         else:
+            self._content_widget.setMinimumWidth(_PAGE_MIN_CONTENT_WIDTH)
             self._apply_responsive_layout()
         self._main_layout.invalidate()
 
