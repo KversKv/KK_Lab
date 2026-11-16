@@ -139,6 +139,7 @@ class NavController:
             "gpadc_test": 4,
             "clk_test": 5,
             "psrr": 6,
+            "ft_calib_check": 7,
         }
 
         self.charger_test_tab_map = {
@@ -396,6 +397,7 @@ class NavController:
             ("gpadc_test", "GPADC Test"),
             ("clk_test", "CLK Test"),
             ("psrr", "PSRR TEST"),
+            ("ft_calib_check", "FT Calibration Check"),
         ], parent=self._host)
         self.pmu_submenu.item_clicked.connect(self._on_pmu_submenu_clicked)
         self.pmu_test_btn.installEventFilter(self._host)

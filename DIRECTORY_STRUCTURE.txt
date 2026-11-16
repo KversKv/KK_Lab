@@ -495,7 +495,8 @@ ui/
 │   │   │   └── mixins/                   # 7 职责 Mixin：layout/execution/acquisition/plotting/recent_tests/export/config_ai
 │   │   ├── gpadc_multi_temp_panel.py # GPADC 多通道高低温联合测试配置面板（通道表/前置配置/存取）
 │   │   ├── clk_test_ui.py            # 时钟测试界面
-│   │   └── pmu_psrr_ui.py            # PSRR 电源抑制比扫频测试界面
+│   │   ├── pmu_psrr_ui.py            # PSRR 电源抑制比扫频测试界面
+│   │   └── ft_calib_check_ui.py      # FT Calibration Check 容器页（GPADC ft_only 嵌入 + Output Voltage Check 占位）
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
@@ -663,6 +664,7 @@ helps/
 ├── pmu_gpadc.html                   # GPADC 测试操作说明
 ├── pmu_clk.html                     # 时钟测试操作说明
 ├── pmu_psrr.html                    # PSRR 电源抑制比测试操作说明
+├── pmu_ft_calib.html                # FT Calibration Check（GPADC 两点 FT 校准检查）操作说明
 ├── charger_config_traverse.html     # 充电配置遍历测试操作说明
 ├── charger_status_register.html     # 充电状态寄存器测试操作说明
 ├── charger_iterm.html               # Iterm 终止电流测试操作说明

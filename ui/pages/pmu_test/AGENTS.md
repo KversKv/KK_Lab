@@ -10,14 +10,15 @@
 
 ## 本模块职责与边界
 
-- **职责**：PMU 子测试 Tab 容器（DCDC 效率 / 输出电压 / Is Gain / OSCP / GPADC / CLK / PSRR）。
+- **职责**：PMU 子测试 Tab 容器（DCDC 效率 / 输出电压 / Is Gain / OSCP / GPADC / CLK / PSRR / FT Calibration Check）。
 - **上游**：`ui/main_window.py`；**下游**：`core/pmu_test/` 各 analysis+worker、`instruments/factory`。
 - **铁律**：UI 仅交互；算法 / 解析落 `core/pmu_test/*_analysis.py`（无 Qt）、Worker 落 `*_worker.py`（仅 QtCore）。
 
 ## 接口契约（对外不可破坏）
 
 - `PMUTestUI` 构造透传：`n6705c_top / mso64b_top / chamber_ui / instrument_manager / ui_action_registry`。
-- `TEST_TAB_MAP`：`dcdc_efficiency=0 / output_voltage=1 / is_gain=2 / oscp=3 / gpadc_test=4 / clk_test=5 / psrr=6`。
+- **子页懒加载**（2026-11，03 §45）：`_create_layout` 只放占位 QWidget，`set_current_test → _ensure_subpage` 首次选中才构建并原位替换 tab（索引/标签不变），信号连接与仪器同步随构建执行；子页属性（`dcdc_efficiency_ui` 等）未构建为 `None`，`get_test_config`/结果分发对 `None` 降级；`__init__` 尾部构建 ConfigMemory 恢复出的当前 tab。新增子页：`TEST_TAB_MAP`/`_TAB_LABELS`/`_SUBPAGE_ATTRS`/`_build_subpage`/`_connect_subpage_signals` 五处登记。
+- `TEST_TAB_MAP`：`dcdc_efficiency=0 / output_voltage=1 / is_gain=2 / oscp=3 / gpadc_test=4 / clk_test=5 / psrr=6 / ft_calib_check=7`（nav_controller.pmu_test_tab_map 同步）。
 - 各子页实现 `AIControllablePage` 契约：`ai_capabilities / ai_get_config / ai_apply_config / ai_start_test / ai_stop_test / ai_get_result_summary`。
 
 ## 局部约定
@@ -33,6 +34,7 @@
 - **Output Voltage 测量通道模式**：配置键 `vmeter_mode=VMETer/CCLoad`，VMeter 设模式后必须开启通道且仅测压；CCLoad 启动时先关通道再设模式与 -1mA、随后开启，禁止开启态设 0mA；`close_channel_after` 默认 `False`，仅勾选时在结束（含停止/异常）关断所选通道。
 - 结果落 `Results/`，文件名带时间戳 + 芯片型号。
 - 新增子测试：UI 在 `ui/pages/pmu_test/`、analysis+worker 在 `core/pmu_test/<name>/`，并注册进 `TEST_TAB_MAP`。
+- **FT Calibration Check 容器页**（`ft_calib_check_ui.py`，2026-11）：子项 Tab = GPADC（嵌入 `GPADCTestUI(ft_only=True)`，复用全部 FT 流程/Recent/导出）+ Output Voltage Check（占位待实现）。`ft_only` 契约：test_item_combo 仅留 FT 项并隐藏 Test Item 面板、嵌入页页头隐藏（容器在子项 Tab 栏上方统一提供标题/副标题，副标题随子项切换）、ConfigMemory 用独立命名空间 `pmu_test/ft_calib_gpadc`（勿与 `pmu_test/gpadc` 混用）；嵌入实例 `ui_action_registry=None` 防重复登记，容器以 `pmu_ft_calib` 页键自登记导出动作并透传 AI 契约/截图（仅 GPADC 子项激活时）。容器对 PMUTestUI 透传 start/stop 按钮、`is_test_running` 与状态/配置接口。新增子项在容器 `tab_widget` 加页并补 AI/透传分支。
 - **PSRR 测量方式**：`measurement_method=mso64b_j2120a/audio_precision`；J2120A 路径固定为 N6705C DC + MSO64B AFG 注入 + 双通道 RMS，激励配置键为 `afg_amplitude_mvpp`（旧 `ripple_mv_rms` 仅作转换兼容）；扫频 UI 用起止频率 + Points + Include Start/End Points（默认勾选，取消时 Points 为内部点数，配置键 `include_endpoints/ap_include_endpoints`），对数等间隔生成；现代配置恢复时 Start/End/Points 优先于旧频率列表；Audio Precision 路径固定当前 APx 项目 + Signal Path1 + Signal Analyzer（页面不提供 Project/Signal Path/Measurement 编辑），Analog Unbalanced + 双通道 FFT；`ap_vin_input_channel/ap_vout_input_channel` 默认 1/2 且禁止相同，FFT 配置键 `ap_fft_length/ap_fft_window/ap_fft_averages` 默认 48000/Equiripple/5，每次切频后 VIN 采集必须先 ResetAverages，再复用同一帧按映射读取 VOUT，PSRR=VIN(dBV)-VOUT(dBV)；另经 DC Level 读取两路 INPUT DC 后按映射记录 `input_dc_v/output_dc_v`，由 `_emit_point` 统一输出日志，本地与 Guest 路径必须同步；数据日志首行输出带单位表头，后续行用定宽数值 + Tab 分列；扫频保持手动 OUTPUT 状态，Disconnect 必须关闭发生器。
 - **PSRR AP 连接**：`ap_connection_mode=local/vm_ssh`，默认 `vm_ssh` + SSH Profile `testvm`，Guest IP `192.168.208.128` 仅作无 Profile 回退；SSH 执行在 Worker 内完成，经 `KK_LAB_PSRR_EVENT` 回传 log/point/complete/error，禁在 UI 阻塞等待；持久会话必须用 `python -c` + 单行 Base64 bootstrap，禁以 `python -` 发送脚本后保持 stdin 打开（Guest 会等 EOF，连接永久卡住）。
 - **GPADC 页拆分布局**（2026-10，ADR 005 Mixin 范式）：`gpadc_test_ui.py` 为薄壳（`GPADCTestUI` 装配 + 信号/类常量 + 状态日志方法 + `__main__`，对外 import 路径不变）；方法按职责平移到 `gpadc_test/` 子包——`toggle_switch.py`（`_ToggleSwitch`）+ `mixins/`（layout 布局构建 / execution 启停编排 / acquisition 采集依赖装配与结果整形 / plotting 曲线悬浮 / recent_tests 记录命名对比 / export Excel / config_ai 配置与 AI 契约，7 个 `_XxxMixin`）；方法名零变更，跨 Mixin 互访走 `self`，改功能先按职责定位 Mixin 文件。

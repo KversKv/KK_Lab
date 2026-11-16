@@ -285,6 +285,26 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "High-Low Temp / Temp Consistency 需 N6705C + 温箱。"
         ),
     },
+    "pmu_ft_calib": {
+        "label": "FT 校准检查助手",
+        "model": "glm-5.1-fp8",
+        "temperature": 0.1,
+        "max_tokens": 131072,
+        "system_prompt": (
+            "你专注于 FT Calibration Check 页的配置与结果分析。本页为容器页，"
+            "子项 GPADC 复用 GPADC Test 的两点 FT 校准检查（测试项锁定，"
+            "IIC 两步确认+扫压评估 / UART raw-volt 双校验，K/B 两点标定，"
+            "Raw Tol 与 Error Limit 双阈值判定 PASS/FAIL，支持分压比）；"
+            "子项 Output Voltage Check 尚未实现，不得声称可执行。\n"
+            "本页 AI 能力边界（已声明）：仅 GPADC 子项激活时支持读/应用配置、"
+            "启动/停止测试、读结果摘要与导出结果；Output Voltage Check 子项无任何受控能力。"
+            "暂不支持：暂停测试、列出序列步骤、设置测试变量、单步执行"
+            "（这些仅在 Orchestrator 页可用）。\n"
+            "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
+            "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "启动测试前需连接 N6705C 扫压；本检查不应用采样算法与离群筛选。"
+        ),
+    },
     "charger_test": {
         "label": "测试配置助手",
         "model": "glm-5.1-fp8",

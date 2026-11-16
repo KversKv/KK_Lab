@@ -1,0 +1,14 @@
+﻿QApplication                                            0.703 s
+一次性成本预热（模拟 MainWindow 启动）                               0.001 s
+imports                                                 4.409 s
+PMUTestUI() 构造（懒加载，仅当前 tab）                             3.354 s
+默认 tab 首次 grab                                          0.163 s
+首次切 FT（构建+渲染）                                           0.372 s
+切回 tab0                                                 0.014 s
+第二次切 FT                                                 0.013 s
+gpadc_test 首次构建+渲染                                      0.244 s
+psrr 首次构建+渲染                                            0.615 s
+clk_test 首次构建+渲染                                        0.283 s
+is_gain 首次构建+渲染                                         0.193 s
+oscp 首次构建+渲染                                            0.122 s
+output_voltage 首次构建+渲染                                  0.159 s

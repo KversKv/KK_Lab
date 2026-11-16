@@ -618,3 +618,14 @@ app.installEventFilter(_WinFilter())
 - Mixin 内**禁止** `super().eventFilter(obj, event)`：Mixin 位于 MRO 尾段，`super()` 链上只剩 `object`，直接 `AttributeError`；不拦截事件就 `return False`（等效基类实现）。遮蔽修复前该调用是死代码，遮蔽解除后才暴露。
 - 排查这类"事件静默不响应"先看类声明顺序，再确认目标方法是否被 MRO 前段的 Qt 基类遮蔽。
 - Qt 事件调试注意：手工 `QMouseEvent(...)` + `QApplication.sendEvent` 在 Qt6 不触发 scene→item 的 press 配送（复现结果是假的），必须用 `QTest.mouseClick`。
+
+## 45. Tab 容器一次性构建全部子页 → 首次导航卡顿数秒（Windows 真机）
+
+**现象**：PMU Test 首次进入（侧边栏直点任一子项）卡顿数秒；offscreen 平台复现不明显（构造 ~1.9s vs 真机 ~5.5s）。
+
+**根因**：两层叠加——① Windows 真机进程内**首个大型样式化控件树的 polish/渲染**（典型落点 `ExecutionLogsFrame.wrap_with` 的 `QSplitter.addWidget`，实测单次 ~2.15s）是一次性成本，被第一个构建的页面吸收；② `PMUTestUI._create_layout` 曾一次性构建全部 8 个子页（含两个 GPADC 级重型页），把所有一次性成本 + 全量构造都压在首次导航上。
+
+**规则**：
+
+- 隐藏 tabBar 的 Tab 容器子页一律**懒加载**：占位 `QWidget()` 占槽位，`set_current_test` 经 `_ensure_subpage` 首次选中才构建并 `removeTab/insertTab` 原位替换（保持索引/标签不变），信号连接与仪器同步随构建执行；未构建子页属性为 `None`，`get_test_config` 等分发接口对 `None` 降级（范式见 [pmu_test_ui.py](../../ui/pages/pmu_test/pmu_test_ui.py)）。
+- 性能排查须区分**真机 vs offscreen**：offscreen 无真实 polish/字体/主题初始化，构造耗时差 3 倍属正常；真机测量可用 `widget.grab()` 强制渲染（不弹窗）。进程级一次性成本勿误判为某页面自身缺陷（换序构建对照即可定位）。

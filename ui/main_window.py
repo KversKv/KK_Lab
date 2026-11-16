@@ -1298,6 +1298,7 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
                 "gpadc_test": "pmu_gpadc",
                 "clk_test": "pmu_clk",
                 "psrr": "pmu_psrr",
+                "ft_calib_check": "pmu_ft_calib",
             }
             return key_map.get(self.nav.current_pmu_test_key, "pmu_dcdc_efficiency")
         elif self.current_instrument_ui == "charger_test":

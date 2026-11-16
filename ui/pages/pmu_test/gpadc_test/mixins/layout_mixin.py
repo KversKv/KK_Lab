@@ -352,10 +352,12 @@ class _LayoutMixin:
         title_label = QLabel("GPADC Automated Test")
         title_label.setObjectName("title_label")
         title_label.setStyleSheet("border: none")
+        self._header_title_label = title_label
 
         subtitle_label = QLabel("Evaluate GPADC performance including Linearity, ENOB, and Temperature Drift.")
         subtitle_label.setObjectName("subtitle_label")
         subtitle_label.setStyleSheet("border: none")
+        self._header_subtitle_label = subtitle_label
 
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
@@ -366,6 +368,7 @@ class _LayoutMixin:
         test_item_panel = QFrame()
         test_item_panel.setObjectName("panel")
         test_item_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.test_item_panel = test_item_panel
         test_item_layout = QVBoxLayout(test_item_panel)
         test_item_layout.setContentsMargins(12, 12, 12, 12)
         test_item_layout.setSpacing(8)

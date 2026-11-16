@@ -76,9 +76,11 @@ class GPADCTestUI(
         TEST_FT_CALIB_CHECK: ["n6705c"],
     }
 
-    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None,
+                 ft_only=False):
         super().__init__()
 
+        self._ft_only = ft_only
         self._instrument_manager = instrument_manager
         self._ui_action_registry = ui_action_registry
         # 状态栏跨线程更新通道：worker 线程的 set_system_status 经此队列化回主线程
@@ -139,18 +141,40 @@ class GPADCTestUI(
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
+        if ft_only:
+            self._apply_ft_only_mode()
         self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
         self.sync_chamber_from_manager()
 
         # 上次配置自动记忆（仅回填控件值，不触发仪器连接）
-        self._config_memory = ConfigMemory("pmu_test/gpadc", self)
+        # ft_only 嵌入实例用独立命名空间，避免与 GPADC Test 页互相覆盖配置
+        self._config_memory = ConfigMemory(
+            "pmu_test/ft_calib_gpadc" if ft_only else "pmu_test/gpadc", self
+        )
         self._config_memory.bind_interface(
             self.get_test_config,
             lambda cfg: self.apply_config_to_controls(cfg, silent=True),
         )
         self._config_memory.watch(self)
         self._config_memory.restore()
+
+    def _apply_ft_only_mode(self):
+        """FT Calibration Check 专页模式：测试项锁定为 FT，隐藏 Test Item 面板。
+
+        供 FTCalibCheckUI 容器嵌入复用；下拉仅保留 FT 项后，
+        apply_config_to_controls 的 test_item 回填对其它测试项 findData 失配，
+        天然不会切走。页头标题/副标题隐藏，由容器在子项 Tab 栏上方统一提供。
+        """
+        combo = self.test_item_combo
+        combo.blockSignals(True)
+        while combo.count() > 1:
+            combo.removeItem(0)
+        combo.blockSignals(False)
+        self._set_test_item(self.TEST_FT_CALIB_CHECK)
+        self.test_item_panel.hide()
+        self._header_title_label.hide()
+        self._header_subtitle_label.hide()
 
     def _append_log(self, text):
         self.execution_logs.append_log(text)

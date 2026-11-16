@@ -1,0 +1,30 @@
+<h2>PMU — FT Calibration Check（FT 校准检查）</h2>
+<h3>页面介绍</h3>
+<p>FT Calibration Check 页面用于集中执行各模块的 FT（Final Test）校准数据检查。页面顶部子项 Tab 切换检查对象：</p>
+<ul>
+  <li><b>GPADC</b> — 复用 GPADC Test 的两点 FT 校准检查流程（测试项已锁定为 FT Calibration Check，配置记忆与 GPADC Test 页相互独立）。</li>
+  <li><b>Output Voltage Check</b> — 输出电压校准检查（待实现）。</li>
+</ul>
+
+<h3>GPADC — 两点 FT 校准检查</h3>
+<p>用户提供两个 FT 校准电压点及对应校准码（ADC raw code），系统按 Data Acquisition 选择分两种方式检查：</p>
+<ol>
+  <li><b>IIC 方式（两步）</b> — 第一步「校准点确认」：N6705C 依次施加两个校准电压，IIC 实时采样 GPADC raw，与用户校准码比对（容差 <b>Raw Tol ±LSB</b>）；第二步用用户两点解出 K/B（<code>code = K·V + B</code>），对 Start/End/Step 遍历范围逐点采样并换算校准电压，评估其与实际施加电压的误差。</li>
+  <li><b>UART Log 方式</b> — DUT 内部已带校准计算，逐点从日志 <code>raw/volt=&lt;raw&gt;/&lt;volt&gt;</code> 同时提取 raw 与 volt（volt 单位 mV）：校验 volt 与施加电压的误差；同时用用户两点 K/B 反推电压 <code>(raw − B)/K</code>，校验其与 DUT volt 的一致性（K,B Consistency）。</li>
+</ol>
+<p><b>判定与输出</b>：Max/Avg/RMS 误差统计；任一项超出 <b>Error Limit ±mV</b>（IIC 含校准点确认）即判 <b>FAIL</b>。指标卡含 P1/P2 偏差（仅 IIC）、MAX/RMS ERR、CONS MAX（仅 UART）与 RESULT；曲线主图为理想曲线（y=x）+ 校准电压传输曲线，下方子图为误差 vs 施加电压（带 ±Limit 判定线，UART 叠加一致性曲线），X 轴联动；导出 Excel 含 Summary（K/B、校准点确认、误差统计、判定）+ Sweep Data 两个 sheet。</p>
+<p><b>分压比（Divider Ratio，默认 1）</b>：外部有分压电路时设置为 源设定电压 / DUT 引脚电压（如外部四分压填 4）。扫压 Start/End/Step 为源设定电压（按原值输出，不放大）；DUT 侧得出的校准电压按 <code>× 比值</code> 还原到源域后，与设定值比对评估误差。校准点电压填写 DUT 引脚电压（FT 标称值），IIC 确认时源输出自动按 <code>点电压 × 比值</code> 折算。</p>
+<p><b>Calib Raw 1/2 输入</b>：支持十进制 / <code>0x</code> 十六进制及 <code>base±offset</code> 自动求值（如 <code>0x13F+2000</code>→2319），仅内部求值，输入框保留原始表达式文本。</p>
+<p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本检查不应用 Algorithm 采样算法与 Outlier Filter 离群筛选（保持 raw 与 volt 配对一致），两区在本页自动隐藏。测试结束（含中止或异常）后，扫压通道的电压、模式及输出开关自动恢复为测试前状态。</p>
+
+<h3>测试方法</h3>
+<ol>
+  <li>连接 N6705C 电源作为精确电压源</li>
+  <li>通过 I2C 连接到 DUT（或连接 DUT 串口选择 UART Log 采集）</li>
+  <li>填写两个 FT 校准点（电压 V + 校准码 LSB）与 Raw Tol / Error Limit 阈值，按需设置分压比</li>
+  <li>设置扫压 Start/End/Step，点击开始测试</li>
+  <li>查看指标卡与校准曲线 / 误差子图判定 PASS/FAIL，可导出 Excel 或在 Recent Tests 载入历史记录</li>
+</ol>
+
+<h3>Output Voltage Check</h3>
+<p>待实现。</p>
