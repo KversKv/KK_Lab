@@ -86,6 +86,53 @@ def sc_format_bytes(prefix, n):
         return f"{prefix}: {n / (1024 * 1024):.2f} MB"
 
 
+_RX_CTRL_ESCAPE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_RX_HEX_ESCAPE_RE = re.compile(r"\\x([0-9a-fA-F]{2})")
+
+
+def ascii_display_text(data: bytes) -> str:
+    """ASCII 显示：可打印文本保留，非法 UTF-8 字节与控制字符转 \\xHH HEX 转义（如芯片握手帧）。"""
+    text = data.decode("utf-8", errors="backslashreplace")
+    text = _RX_CTRL_ESCAPE_RE.sub(lambda m: f"\\x{ord(m.group(0)):02X}", text)
+    return _RX_HEX_ESCAPE_RE.sub(lambda m: f"\\x{m.group(1).upper()}", text)
+
+
+_RX_HEX_RUN_RE = re.compile(r"(?:\\x[0-9A-F]{2})+")
+
+
+def split_ascii_hex_segments(display: str):
+    """切分 ascii_display_text() 结果为 [(is_hex, 文本), ...]；HEX 段格式如 'BE 19 03'。
+
+    夹在二进制段之间且不含换行的可打印空洞（如握手帧内 0x50='P'）
+    整体并入 HEX 段，避免一帧被劈成多段。
+    """
+    parts = []
+    pos = 0
+    for m in _RX_HEX_RUN_RE.finditer(display):
+        if m.start() > pos:
+            parts.append((False, display[pos:m.start()]))
+        parts.append((True, bytes.fromhex(m.group(0).replace("\\x", ""))))
+        pos = m.end()
+    if pos < len(display):
+        parts.append((False, display[pos:]))
+
+    n = len(parts)
+    result = []
+    buf = bytearray()
+    for i, (is_hex, seg) in enumerate(parts):
+        hole = (not is_hex) and 0 < i < n - 1 and "\n" not in seg
+        if is_hex or hole:
+            buf += seg if is_hex else seg.encode("utf-8")
+            continue
+        if buf:
+            result.append((True, bytes(buf).hex(" ").upper()))
+            buf = bytearray()
+        result.append((False, seg))
+    if buf:
+        result.append((True, bytes(buf).hex(" ").upper()))
+    return result
+
+
 class SerialLogPanel(QFrame):
     """统一串口日志面板（QFrame#scLogFrame，三处容器共用）。"""
 
@@ -537,12 +584,16 @@ class SerialLogPanel(QFrame):
             )
 
     def append_rx_data(self, data: bytes):
-        """接收字节流：计数 + 按行追加 [RX]（额外面板/独立浮窗路径）。"""
+        """接收字节流：计数 + 文本按行追加 [RX]，二进制段以 [RX(HEX)] 显示（额外面板/独立浮窗路径）。"""
         self.add_rx_bytes(len(data))
-        display = data.decode("utf-8", errors="replace")
-        for line in display.splitlines():
-            if line.strip():
-                self.append_log(f"[RX] {line}", _CLR_RX)
+        display = ascii_display_text(data)
+        for is_hex, seg in split_ascii_hex_segments(display):
+            if is_hex:
+                self.append_log(f"[RX(HEX)] {seg}", _CLR_RX)
+                continue
+            for line in seg.splitlines():
+                if line.strip():
+                    self.append_log(f"[RX] {line}", _CLR_RX)
 
     def render_entry(self, base_html, line_no, apply_filter_highlight=False):
         if self.entry_renderer is not None:

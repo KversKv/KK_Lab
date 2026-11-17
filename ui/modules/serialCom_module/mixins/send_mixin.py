@@ -46,6 +46,10 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
+from ui.modules.serialCom_module.serial_log_panel import (
+    ascii_display_text,
+    split_ascii_hex_segments,
+)
 from ui.modules.serialCom_module.serial_style import (
     MODE_FULL,
     MODE_INLINE,
@@ -609,20 +613,20 @@ class SendMixin:
                 if line.strip():
                     self._sc_append_log(f"[RX] {line}", _CLR_RX)
         else:
-            display = data.decode("utf-8", errors="replace")
-            display = display.replace("\x00", "")
-            display = "".join(
-                ch if ch == "\n" or ch == "\r" or ch == "\t" or (ord(ch) >= 0x20) else ""
-                for ch in display
-            )
-
-            self._sc_rx_line_buf += display
-            while "\n" in self._sc_rx_line_buf:
-                line, self._sc_rx_line_buf = self._sc_rx_line_buf.split("\n", 1)
-                line = line.rstrip("\r")
-                if line.strip():
-                    self._sc_chart_feed_line(line)
-                    self._sc_append_log(f"[RX] {line}", _CLR_RX)
+            display = ascii_display_text(data)
+            for is_hex, seg in split_ascii_hex_segments(display):
+                if is_hex:
+                    # 二进制段（如芯片握手帧）：先刷出已缓冲文本保持时序，再以 HEX 行显示
+                    self._sc_flush_rx_line_buf()
+                    self._sc_append_log(f"[RX(HEX)] {seg}", _CLR_RX)
+                    continue
+                self._sc_rx_line_buf += seg
+                while "\n" in self._sc_rx_line_buf:
+                    line, self._sc_rx_line_buf = self._sc_rx_line_buf.split("\n", 1)
+                    line = line.rstrip("\r")
+                    if line.strip():
+                        self._sc_chart_feed_line(line)
+                        self._sc_append_log(f"[RX] {line}", _CLR_RX)
 
             if self._sc_rx_line_buf and self._sc_rx_auto_flush_cb.isChecked():
                 self._sc_rx_flush_timer.start(self._sc_rx_auto_flush_spin.value())
