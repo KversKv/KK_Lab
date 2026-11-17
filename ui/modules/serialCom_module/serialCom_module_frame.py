@@ -124,7 +124,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_auto_baud_initial_ts = 0.0
 
         outer = QVBoxLayout()
-        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setContentsMargins(5, 5, 5, 5)
         outer.setSpacing(10)
 
         self._sc_toolbar = self._build_sc_toolbar()
@@ -146,7 +146,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         center_widget.setAutoFillBackground(True)
         center_widget.setStyleSheet(center_widget_style())
         center_layout = QVBoxLayout(center_widget)
-        center_layout.setContentsMargins(10, 10, 10, 10)
+        center_layout.setContentsMargins(5, 5, 5, 5)
         center_layout.setSpacing(10)
 
         center_splitter = QSplitter(Qt.Vertical)
