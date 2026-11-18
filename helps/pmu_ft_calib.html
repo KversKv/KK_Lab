@@ -3,7 +3,7 @@
 <p>FT Calibration Check 页面用于集中执行各模块的 FT（Final Test）校准数据检查。页面顶部子项 Tab 切换检查对象：</p>
 <ul>
   <li><b>GPADC</b> — 复用 GPADC Test 的两点 FT 校准检查流程（测试项已锁定为 FT Calibration Check，配置记忆与 GPADC Test 页相互独立）。</li>
-  <li><b>Output Voltage Check</b> — 输出电压校准检查（待实现）。</li>
+  <li><b>Output Voltage Check</b> — 逐 rail 输出电压校准检查：读 EFUSE 校准码，按偏移/绝对模式写入 Vbit 位域调压，用 DMM 或 N6705C VMeter 实测 DUT 电压并按容差判定 PASS/FAIL。</li>
 </ul>
 
 <h3>GPADC — 两点 FT 校准检查</h3>
@@ -26,5 +26,31 @@
   <li>查看指标卡与校准曲线 / 误差子图判定 PASS/FAIL，可导出 Excel 或在 Recent Tests 载入历史记录</li>
 </ol>
 
-<h3>Output Voltage Check</h3>
-<p>待实现。</p>
+<h3>Output Voltage Check — 输出电压校准检查</h3>
+<p>按「芯片 → 多个 DCDC/LDO rail」组织校准验证。核心流程：读取 EFUSE 校准 trim → 按模式计算校准码 → 写入指定 Vbit 寄存器位域调整输出电压 → 测量 DUT 实际电压 → 与目标电压按容差判定。</p>
+<h4>芯片管理（Manage Chips）</h4>
+<ul>
+  <li>芯片库保存在 <code>user_data/ft_calib_ov_chips/chip_library.json</code>，支持 Import/Export JSON 交换（重名芯片导入时确认覆盖）。</li>
+  <li>芯片级配置：I2C 设备地址 / 位宽（8/10/32/8x8）/ 速度；EFUSE 链路二选一——<b>script</b>（厂商时序脚本，下拉选择 EFUSE_SCRIPTS 中的脚本，如 efuse_1307ph.py）或 <b>i2c</b>（EFUSE 映射为普通寄存器直接读）。</li>
+  <li>每个 rail 配置：Vbit 位域（寄存器地址 + MSB/LSB，位宽可继承芯片）、EFUSE 字段（地址/偏移 + MSB/LSB，支持 Signed 补码）、校准模式、目标与容差。</li>
+</ul>
+<h4>校准模式与判定</h4>
+<ul>
+  <li><b>offset 模式</b>：<code>code = Base Code + EFUSE值 + Offset</code>（EFUSE 为相对基准码的偏移量）。</li>
+  <li><b>absolute 模式</b>：<code>code = EFUSE值 + Offset</code>（EFUSE 即绝对校准码）。</li>
+  <li>目标电压二选一：<b>config</b> 直接填写目标 (mV)；<b>derived</b> 按 <code>code × Step (mV/LSB) + Base Voltage (mV)</code> 推算。</li>
+  <li>判定：<code>|实测 − 目标| ≤ Tolerance (mV)</code> 判 PASS（边界含等号）；超出位域范围的码自动钳位并告警。</li>
+</ul>
+<h4>测量仪器</h4>
+<ul>
+  <li><b>Keysight 34461A (DMM)</b>：页内连接卡扫描/手填 VISA 地址后连接；Samples/NPLC/Range 可配，多次采样取平均（精密容差判定优先 DMM）。</li>
+  <li><b>N6705C VMeter</b>：复用电源连接，选择 VMeter 通道；仅测压模式（VMETer），3 次读数取平均。</li>
+</ul>
+<h4>运行与恢复</h4>
+<ol>
+  <li>选择芯片，在 rail 表 Run 列勾选要检查的 rail（双击 rail 行可快捷编辑）。</li>
+  <li>选择测量仪器并连接，按需勾选 Restore registers（默认开）与 Stop on first FAIL。</li>
+  <li>点击 Start Check 逐 rail 执行；结果表给出 EFUSE/码/目标/实测/误差/判定，误差图带 ±容差参考。</li>
+  <li>结束（含停止/异常）后按勾选统一恢复所有写过的 Vbit 寄存器原值；Export CSV 导出到 Results/。</li>
+</ol>
+<p><b>注意</b>：EFUSE 脚本读取与 DMM 批量采样为不可中断的仪器操作，Stop 响应粒度为 rail 边界；EFUSE 读失败会中止整轮（避免错码调压）。写码后自动 readback 校验，不一致会告警并记录。</p>

@@ -5,10 +5,11 @@ FT Calibration Check 容器页 - 整合 GPADC FT 校准检查与 Output Voltage 
 """
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal
 from ui.theme import Colors, FontSizes
 from ui.widgets.config_memory import ConfigMemory
 from ui.pages.pmu_test.gpadc_test_ui import GPADCTestUI
+from ui.pages.pmu_test.ft_calib_ov_check_ui import FtCalibOvCheckUI
 from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 
@@ -18,9 +19,14 @@ logger = get_logger(__name__)
 class FTCalibCheckUI(QWidget):
     """FT Calibration Check 容器页（子项：GPADC / Output Voltage Check）"""
 
+    # PMUTestUI 的按钮连接是一次性绑定到构建时的按钮对象，无法跟随子 Tab
+    # 切换；上游经容器级中继信号感知两个子页的启停点击（仿 psrr 特例）。
+    start_relay = Signal()
+    stop_relay = Signal()
+
     _SUBTAB_SUBTITLES = {
         "GPADC": "Two-point FT calibration verification of GPADC (IIC / UART).",
-        "Output Voltage Check": "Output voltage calibration check (to be implemented).",
+        "Output Voltage Check": "Per-rail output voltage calibration check via EFUSE-derived trim codes.",
     }
 
     def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
@@ -93,8 +99,18 @@ class FTCalibCheckUI(QWidget):
         )
         self.tab_widget.addTab(self.gpadc_ui, "GPADC")
 
-        self.output_voltage_check_ui = self._build_output_voltage_placeholder()
+        # Output Voltage Check 子项：芯片管理 + EFUSE 校准码调压验证。
+        self.output_voltage_check_ui = FtCalibOvCheckUI(
+            n6705c_top=n6705c_top,
+            instrument_manager=instrument_manager,
+            ui_action_registry=None,
+        )
         self.tab_widget.addTab(self.output_voltage_check_ui, "Output Voltage Check")
+
+        # 子页自身启停槽在其 __init__ 已先连（先执行），中继信号随后通知上游
+        for subpage in (self.gpadc_ui, self.output_voltage_check_ui):
+            subpage.start_test_btn.clicked.connect(self.start_relay)
+            subpage.stop_test_btn.clicked.connect(self.stop_relay)
 
         main_layout.addWidget(self.tab_widget, 1)
 
@@ -103,84 +119,77 @@ class FTCalibCheckUI(QWidget):
             self._SUBTAB_SUBTITLES.get(self.tab_widget.tabText(index), "")
         )
 
-    def _build_output_voltage_placeholder(self):
-        placeholder = QWidget()
-        layout = QVBoxLayout(placeholder)
-        title = QLabel("Output Voltage Check")
-        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #d7dce2; border: none;")
-        hint = QLabel("This check is not implemented yet.")
-        hint.setStyleSheet("color: #8a93a6; border: none;")
-        layout.addStretch(1)
-        layout.addWidget(title, 0, Qt.AlignHCenter)
-        layout.addWidget(hint, 0, Qt.AlignHCenter)
-        layout.addStretch(2)
-        return placeholder
+    def _active_subpage(self):
+        return self.tab_widget.currentWidget()
 
     # ------------------------------------------------------------------
-    # PMUTestUI 容器契约：启停按钮 / 运行状态 / 状态与配置透传 GPADC 子项
+    # PMUTestUI 容器契约：按当前子项分发；广播类接口两个子页都调
     # ------------------------------------------------------------------
 
     @property
     def start_test_btn(self):
-        return self.gpadc_ui.start_test_btn
+        return self._active_subpage().start_test_btn
 
     @property
     def stop_test_btn(self):
-        return self.gpadc_ui.stop_test_btn
+        return self._active_subpage().stop_test_btn
 
     @property
     def is_test_running(self):
-        return self.gpadc_ui.is_test_running
+        return bool(getattr(self._active_subpage(), "is_test_running", False))
 
     def sync_n6705c_from_top(self):
         self.gpadc_ui.sync_n6705c_from_top()
+        self.output_voltage_check_ui.sync_n6705c_from_top()
 
     def sync_chamber_from_manager(self):
         self.gpadc_ui.sync_chamber_from_manager()
 
     def set_system_status(self, status, is_error=False):
         self.gpadc_ui.set_system_status(status, is_error)
+        self.output_voltage_check_ui.set_system_status(status, is_error)
 
     def update_instrument_info(self, instrument_info):
         self.gpadc_ui.update_instrument_info(instrument_info)
+        self.output_voltage_check_ui.update_instrument_info(instrument_info)
 
     def get_test_config(self):
-        return self.gpadc_ui.get_test_config()
+        return self._active_subpage().get_test_config()
 
     def update_test_result(self, result):
-        self.gpadc_ui.update_test_result(result)
+        self._active_subpage().update_test_result(result)
 
     def clear_results(self):
-        self.gpadc_ui.clear_results()
+        self._active_subpage().clear_results()
 
     def get_test_mode(self):
-        return self.gpadc_ui.get_test_mode()
+        return self._active_subpage().get_test_mode()
 
     def set_test_mode(self, mode):
-        self.gpadc_ui.set_test_mode(mode)
+        self._active_subpage().set_test_mode(mode)
 
     def get_test_id(self):
-        return self.gpadc_ui.get_test_id()
+        return self._active_subpage().get_test_id()
 
     def set_test_id(self, test_id):
-        self.gpadc_ui.set_test_id(test_id)
+        self._active_subpage().set_test_id(test_id)
 
     def get_capture_pixmap(self):
-        if self.tab_widget.currentWidget() is self.gpadc_ui:
-            return self.gpadc_ui.get_capture_pixmap()
+        page = self._active_subpage()
+        if hasattr(page, "get_capture_pixmap"):
+            return page.get_capture_pixmap()
         return None
 
     def cleanup_threads(self):
         self.gpadc_ui.cleanup_threads()
+        self.output_voltage_check_ui.cleanup_threads()
 
     # ------------------------------------------------------------------
-    # AI 契约：仅 GPADC 子项激活时透传其能力（Output Voltage Check 待实现）
+    # AI 契约：透传当前激活子项（两子页均实现 AIControllablePage）
     # ------------------------------------------------------------------
 
     def _ai_active_subpage(self):
-        if self.tab_widget.currentWidget() is self.gpadc_ui:
-            return self.gpadc_ui
-        return None
+        return self._active_subpage()
 
     def ai_capabilities(self) -> set[str]:
         page = self._ai_active_subpage()
@@ -219,11 +228,19 @@ class FTCalibCheckUI(QWidget):
 
         def _run_export() -> tuple[bool, str]:
             try:
-                self.gpadc_ui.export_result()
+                if self.tab_widget.currentWidget() is self.gpadc_ui:
+                    self.gpadc_ui.export_result()
+                else:
+                    self.output_voltage_check_ui.export_csv()
                 return True, "导出结果 已执行。"
             except Exception as exc:  # noqa: BLE001
                 logger.error("导出结果 执行失败", exc_info=True)
                 return False, f"导出结果 执行失败：{exc}"
+
+        def _export_enabled() -> bool:
+            if self.tab_widget.currentWidget() is self.gpadc_ui:
+                return self.gpadc_ui._export_data is not None
+            return self.output_voltage_check_ui.has_results
 
         registry.register_many([
             UIActionSpec(
@@ -233,11 +250,8 @@ class FTCalibCheckUI(QWidget):
                 handler=_run_export,
                 risk="low",
                 confirm=False,
-                enabled_when=lambda: (
-                    self.tab_widget.currentWidget() is self.gpadc_ui
-                    and self.gpadc_ui._export_data is not None
-                ),
-                description="导出当前 FT Calibration Check (GPADC) 测试结果为 Excel。需已有测试结果数据。",
+                enabled_when=_export_enabled,
+                description="导出当前 FT Calibration Check 子项（GPADC / Output Voltage Check）测试结果。需已有测试结果数据。",
             ),
         ])
 

@@ -272,6 +272,13 @@ class PMUTestUI(QWidget):
             ui.sequence_execution_finished.connect(
                 lambda _success, _message: self._on_test_stopped("psrr"))
             return
+        if key == "ft_calib_check":
+            # 容器内两个子项各有启停按钮，经容器级中继信号感知（按钮对象
+            # 一次性绑定无法跟随子 Tab 切换）
+            ui.start_relay.connect(
+                lambda: self._on_test_btn_clicked(key, ui))
+            ui.stop_relay.connect(lambda: self._on_test_stopped(key))
+            return
         ui.start_test_btn.clicked.connect(
             lambda: self._on_test_btn_clicked(key, ui))
         ui.stop_test_btn.clicked.connect(

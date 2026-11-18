@@ -209,9 +209,14 @@ core/
 │   ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
 │   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
-├── pmu_test/                # PMU 子测试算法与 Worker（clk/dcdc/gpadc/isgain/oscp/output_voltage/psrr）
+├── pmu_test/                # PMU 子测试算法与 Worker（clk/dcdc/gpadc/isgain/oscp/output_voltage/psrr/ft_calib_ov）
 │   ├── gpadc/               # GPADC 纯采样、六类测试编排、算法与 QtCore Worker
 │   │   └── gpadc_runner.py  # GPADCAcquisition + GPADCTestRunner（无 Qt，显式依赖注入）
+│   ├── ft_calib_ov/         # FT Calibration Check - Output Voltage Check（EFUSE 校准码调压验证）
+│   │   ├── __init__.py      # 导出纯算法、芯片库持久化与 Worker
+│   │   ├── ft_calib_ov_analysis.py # 位提取/双模式码计算/钳位/目标解析/容差判定/配置校验（无 Qt）
+│   │   ├── ft_calib_ov_store.py    # 芯片库 JSON 持久化（user_data/ft_calib_ov_chips，原子写/导入合并）
+│   │   └── ft_calib_ov_worker.py   # 逐 rail EFUSE→Vbit 调压→DMM/VMeter 测压 Worker（仅 QtCore）
 │   ├── output_voltage/      # Output Voltage 输出电压扫描测试
 │   │   ├── __init__.py      # 导出纯算法、业务 Worker 与旧接口运行器
 │   │   ├── output_voltage_analysis.py # 位域校验、有效区间、结果指标与前置校验（无 Qt）
@@ -496,7 +501,10 @@ ui/
 │   │   ├── gpadc_multi_temp_panel.py # GPADC 多通道高低温联合测试配置面板（通道表/前置配置/存取）
 │   │   ├── clk_test_ui.py            # 时钟测试界面
 │   │   ├── pmu_psrr_ui.py            # PSRR 电源抑制比扫频测试界面
-│   │   └── ft_calib_check_ui.py      # FT Calibration Check 容器页（GPADC ft_only 嵌入 + Output Voltage Check 占位）
+│   │   ├── ft_calib_check_ui.py      # FT Calibration Check 容器页（GPADC ft_only 嵌入 + Output Voltage Check，按子项分发契约 + start/stop 中继信号）
+│   │   ├── ft_calib_ov_check_ui.py   # Output Voltage Check 子页（芯片/rail 选择 + DMM/VMeter 测压 + 结果表/误差图/导出）
+│   │   ├── ft_calib_ov_chip_dialog.py # 芯片库管理对话框（ChipManagerDialog + RailEditDialog，导入/导出）
+│   │   └── ft_calib_ov_dmm_card.py   # 页内私有 DMM（34461A）连接卡（异步连接/断开 + VISA 扫描）
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
