@@ -386,6 +386,7 @@ ui/
 │   ├── mcu_io_module_frame.py          # MCU IO 连接区 Mixin (串口搜索/连接/GPIO 高低HighZ 输出/读取)
 │   ├── ch9114f_gpio_module_frame.py    # CH9114F GPIO 连接区 Mixin (CH9114F 端口搜索/连接/GPIO 高低输出/读取)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开/收发/脚本)
+│       ├── AGENTS.md                   # serialCom_module 局部 AI 协作指引（就近加载）
 │       ├── serialCom_module_frame.py   # SerialComMixin 薄壳：装配 8 Mixin + complete_serialComWidget + __main__ demo
 │       ├── serial_style.py             # 叶子模块：样式动态装载/导出 + SVG 目录 + MODE_* + add_serial_port_item + 高亮调色板
 │       ├── widgets.py                  # 可复用串口 UI 组件 (_SerialSearchButton/_FramelessChromeDialog/...)

@@ -34,8 +34,10 @@ from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideTog
 # Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
 _UPDATE_LOG_ENTRIES = [
     ("2026-11-18", [
+        "New Update Log tab in Settings: changes grouped by date with EN/中文 toggle.",
         "Preserve firmware alignment spaces in log display (consecutive and leading spaces kept, e.g. %4u / %9u output).",
     ], [
+        "设置新增 Update Log 标签页：按日期分组改动要点，支持中英切换。",
         "日志显示保留固件格式化对齐空格（连续空格与行首空格不丢失，如 %4u / %9u 输出）。",
     ]),
     ("2026-11-17", [
