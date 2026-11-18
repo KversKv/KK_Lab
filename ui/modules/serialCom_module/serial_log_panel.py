@@ -99,6 +99,18 @@ def ascii_display_text(data: bytes) -> str:
 
 _RX_HEX_RUN_RE = re.compile(r"(?:\\x[0-9A-F]{2})+")
 
+_HTML_TAG_SPLIT_RE = re.compile(r"(<[^>]*>)")
+
+
+def preserve_html_spaces(html: str) -> str:
+    """QTextEdit.append 富文本解析会折叠连续空格并丢弃行首空格，
+    将标签外的空格转为 &nbsp; 以保留固件 %4u/%9u 等格式化对齐。"""
+    parts = _HTML_TAG_SPLIT_RE.split(html)
+    for idx, seg in enumerate(parts):
+        if seg and not seg.startswith("<") and " " in seg:
+            parts[idx] = seg.replace(" ", "&nbsp;")
+    return "".join(parts)
+
 
 def split_ascii_hex_segments(display: str):
     """切分 ascii_display_text() 结果为 [(is_hex, 文本), ...]；HEX 段格式如 'BE 19 03'。
@@ -597,8 +609,10 @@ class SerialLogPanel(QFrame):
 
     def render_entry(self, base_html, line_no, apply_filter_highlight=False):
         if self.entry_renderer is not None:
-            return self.entry_renderer(base_html, line_no, apply_filter_highlight)
-        return self.default_render_entry(base_html, line_no, apply_filter_highlight)
+            html = self.entry_renderer(base_html, line_no, apply_filter_highlight)
+        else:
+            html = self.default_render_entry(base_html, line_no, apply_filter_highlight)
+        return preserve_html_spaces(html)
 
     def default_render_entry(self, base_html, line_no, apply_filter_highlight=False):
         return self.apply_highlights(base_html, apply_filter_highlight)
