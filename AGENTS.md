@@ -153,6 +153,7 @@ python -m pytest -m qt
 ### 附：PowerShell 命令注意
 
 - **PowerShell 不支持 heredoc**：禁用 `bash` 风格的 `$(cat <<'EOF' ... EOF)` 多行消息语法（`<` 为保留运算符，直接解析报错）。多行内容改用多个 `-m` 参数拼接（如 `git commit -m "标题" -m "正文段1" -m "正文段2"`），或临时消息文件。
+- **PowerShell 5.x 禁用 `&&` / `||`**：解析直接报 `ParserError: The token '&&' is not a valid statement separator`（仅 PS7+ 支持）。多命令顺序执行用 `;` 分隔（注意 `;` 无短路语义，前条失败仍执行后条，必要时拆成独立命令逐一执行）。
 
 ### 反例（真实事故）
 
