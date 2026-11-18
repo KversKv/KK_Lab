@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """N6705C Datalog 设置对话框（底部控制栏齿轮入口）。
 
-五个标签页：
+六个标签页：
 1. Instruments      —— 默认仪器管理（新增/修改/删除 + 自动连接，与仪器连接面板联动）
 2. Network Scan     —— 跨网段主动扫描 CIDR 配置（discovery.json extra_subnets）
 3. DLog Save        —— 录制完成后自动保存 .dlog（开关/目录/命名模板/序号递增）
 4. Waveform Summary —— 波形摘要事件算法与分段参数（AISettings + 本模块设置）
-5. About            —— 版本信息 / 配置目录 / RESET JSON 还原默认配置
+5. Update Log       —— 按日期分组的改动要点（EN/中文切换，只读可复制）
+6. About            —— 版本信息 / 配置目录 / RESET JSON 还原默认配置
 
 本模块不 import 主页面模块（power_analyzer_datalog_ui），仅持有其引用调用公共方法，
 避免循环依赖；设置存取为模块级函数，供主页面热路径（波形摘要渲染 /
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -41,6 +43,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QTextEdit,
     QHeaderView,
     QVBoxLayout,
     QWidget,
@@ -52,6 +55,99 @@ from resource_path import get_user_data_dir, is_frozen
 from ui.pages.power_analyzer import datalog_style as dss
 
 logger = get_logger(__name__)
+
+
+# Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
+_UPDATE_LOG_ENTRIES = [
+    ("2026-11-18", [
+        "New Update Log tab in Settings: changes grouped by date with EN/中文 toggle.",
+        "Update Log supports multi-line selection, Select All (Ctrl+A) and copy.",
+    ], [
+        "设置新增 Update Log 标签页：按日期分组改动要点，支持中英切换。",
+        "Update Log 支持跨行选中、全选（Ctrl+A）与复制。",
+    ]),
+    ("2026-11-12", [
+        "Fixed waveform selection not working in the Datalog chart.",
+    ], [
+        "修复 Datalog 图表波形无法选中的问题。",
+    ]),
+    ("2026-11-11", [
+        "IT2705 Datalog now uses the ELOG recorder for real 20 us sampling.",
+        "Faster IT2705 ELOG fetching and waveform rendering.",
+        "Fixed missing slot-B waveforms and Start crash with mixed A+B connections.",
+        "Fixed IT2705 connection failure caused by double-wrapped default instrument addresses.",
+    ], [
+        "IT2705 Datalog 改走 ELOG 记录仪，实现 20 us 真实采样率。",
+        "IT2705 ELOG 取数与波形绘图性能优化。",
+        "修复 B 槽波形缺失与 A+B 混合连接时 Start 崩溃。",
+        "修复 IT2705 默认仪器地址双重包裹导致连接失败。",
+    ]),
+    ("2026-11-10", [
+        "Fixed duplicated chart right-click menus.",
+        "Channel colors now follow the connected instrument model.",
+    ], [
+        "修复图表右键菜单重复弹出。",
+        "通道配色按所连仪器型号区分。",
+    ]),
+    ("2026-11-09", [
+        "IT2705 power analyzer supported (connection, channel gating and Datalog).",
+        "Fixed IT2705 Socket auto-connect.",
+    ], [
+        "支持 IT2705 电源分析仪（连接、通道门禁与 Datalog）。",
+        "修复 IT2705 Socket 自动连接。",
+    ]),
+    ("2026-10-29", [
+        "Right-click in empty chart area can move markers again.",
+    ], [
+        "恢复图表空白区右键移动 Marker。",
+    ]),
+    ("2026-10-23", [
+        "New in-page help manual dialog and one-click guided tour.",
+        "New Settings dialog (gear button): instruments, network scan, auto save, waveform summary, about.",
+        "Export waveform summary image (stage diagram + summary table) to clipboard.",
+        "One-click capture fixed on high-DPI screens and now includes Channel Config.",
+        "Layout rework: left icon rail with exclusive panels, bottom control bar, Custom Labels toggle in title bars.",
+        "Chart grid changed to 8 equal divisions; fixed crosshair preview line residue.",
+    ], [
+        "新增页内帮助手册对话框与一键引导。",
+        "新增设置对话框（齿轮按钮）：仪器、网段扫描、自动保存、波形摘要、关于。",
+        "新增导出波形摘要图到剪贴板（阶段示意 + 汇总表）。",
+        "一键截图修复高分屏空白并纳入 Channel Config 区域。",
+        "布局重构：左侧图标 rail 互斥面板、底部控制栏、标题栏 Custom Labels 开关。",
+        "纵轴网格改 8 格均分；修复十字预览线残留。",
+    ]),
+    ("2026-10-22", [
+        "New suite window with title-bar tabs to switch Analyser / Datalog.",
+        "One-click screenshot added; standalone window goes frameless.",
+        "Fixed device cards stuck at 'Connecting...'.",
+    ], [
+        "新增套件窗口，标题栏 tab 快速切换 Analyser / Datalog。",
+        "接入一键截图；独立运行窗口无边框化。",
+        "修复设备卡片卡在 Connecting... 的问题。",
+    ]),
+    ("2026-10-19", [
+        "Device card right-click menu: remove device and toggle auto-connect.",
+    ], [
+        "设备卡片右键支持删除与自动连接开关。",
+    ]),
+    ("2026-09-20", [
+        "Pair-marker annotation boxes support drag move and right-click font size.",
+        "Instrument connection management reworked; fixed concurrency races and state sync.",
+    ], [
+        "成对 Marker 注释框支持拖拽移动与右键字号调整。",
+        "重构仪器连接管理，修复并发竞态与状态同步。",
+    ]),
+    ("2026-09-08", [
+        "Marker right-click menu adds Move To (Abs/Delta) positioning.",
+    ], [
+        "Marker 右键菜单新增 Move To (Abs/Δ) 定位。",
+    ]),
+    ("2026-08-27", [
+        "Value inputs: double-click selects all, mouse wheel adjusts values.",
+    ], [
+        "数值输入框支持双击全选与滚轮调值。",
+    ]),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +426,31 @@ _SETTINGS_QSS = """
     QListWidget#settingsList::item:selected {
         background-color: #1e3460;
     }
+    QTextEdit#updateLogView {
+        background: transparent;
+        border: none;
+    }
+    QTextEdit#updateLogView QScrollBar:vertical {
+        background: #0a1628;
+        width: 10px;
+        margin: 0;
+    }
+    QTextEdit#updateLogView QScrollBar::handle:vertical {
+        background: #1e3460;
+        border-radius: 4px;
+        min-height: 30px;
+    }
+    QTextEdit#updateLogView QScrollBar::handle:vertical:hover {
+        background: #2a4a80;
+    }
+    QTextEdit#updateLogView QScrollBar::add-line:vertical,
+    QTextEdit#updateLogView QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+    QTextEdit#updateLogView QScrollBar::add-page:vertical,
+    QTextEdit#updateLogView QScrollBar::sub-page:vertical {
+        background: none;
+    }
 """
 
 _RESET_BTN_STYLE = """
@@ -522,7 +643,7 @@ class _InstrumentEditDialog(QDialog):
 # ---------------------------------------------------------------------------
 
 class N6705CSettingsDialog(QDialog):
-    """Datalog 页设置对话框（五标签页）。
+    """Datalog 页设置对话框（六标签页）。
 
     datalog_ui：N6705CDatalogUI 实例，用于仪器列表变更后的卡片联动
     （apply_instrument_settings / is_instrument_busy / 自动连接触发）。
@@ -548,6 +669,7 @@ class N6705CSettingsDialog(QDialog):
         self._tabs.addTab(self._build_network_tab(), "Network Scan")
         self._tabs.addTab(self._build_dlog_tab(), "DLog Save")
         self._tabs.addTab(self._build_waveform_tab(), "Waveform Summary")
+        self._tabs.addTab(self._build_update_log_tab(), "Update Log")
         self._tabs.addTab(self._build_about_tab(), "About")
         layout.addWidget(self._tabs, 1)
 
@@ -1015,7 +1137,60 @@ class N6705CSettingsDialog(QDialog):
             self._wave_param_form.addRow(fld.name, editor)
             self._wave_param_editors[fld.name] = editor
 
-    # ---- Tab 5: About ---------------------------------------------------------
+    # ---- Tab 5: Update Log ----------------------------------------------------
+
+    def _build_update_log_tab(self) -> QWidget:
+        # 懒导入：datalog 包 __init__ 会拉起主页面，模块级 import 形成循环依赖
+        from ui.pages.power_analyzer.datalog.widgets import MiniSlideToggle
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        lang_row = QHBoxLayout()
+        lang_row.setSpacing(8)
+        lang_row.addWidget(QLabel("Language"))
+        self._update_log_lang_toggle = MiniSlideToggle("EN", "中文")
+        self._update_log_lang_toggle.toggled.connect(self._render_update_log)
+        lang_row.addWidget(self._update_log_lang_toggle)
+        lang_row.addStretch()
+        layout.addLayout(lang_row)
+
+        # 单一富文本视图：支持跨行选中 / Ctrl+A 全选 / 右键复制（多 QLabel 方案只能单行选中）
+        self._update_log_view = QTextEdit()
+        self._update_log_view.setObjectName("updateLogView")
+        self._update_log_view.setReadOnly(True)
+        self._update_log_view.setFrameShape(QFrame.NoFrame)
+        self._update_log_view.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard
+        )
+        layout.addWidget(self._update_log_view, 1)
+        self._render_update_log("EN")
+        return tab
+
+    def _render_update_log(self, lang):
+        use_en = lang == "EN"
+        parts = []
+        for date, en_items, zh_items in _UPDATE_LOG_ENTRIES:
+            rows = [
+                '<tr><td><span style="font-size:13px; font-weight:800; color:#eaf2ff;">'
+                f"{date}</span></td></tr>"
+            ]
+            for en_text, zh_text in zip(en_items, zh_items):
+                text = en_text if use_en else zh_text
+                rows.append(
+                    '<tr><td><span style="font-size:12px; color:#9fb6dd;">'
+                    f"- {text}</span></td></tr>"
+                )
+            parts.append(
+                '<table border="0" cellpadding="6" cellspacing="0" width="100%" '
+                'bgcolor="#0c1a35">' + "".join(rows) + "</table>"
+            )
+            parts.append('<p style="font-size:5px; margin:0;">&nbsp;</p>')
+        self._update_log_view.setHtml("".join(parts))
+
+    # ---- Tab 6: About ---------------------------------------------------------
 
     def _build_about_tab(self) -> QWidget:
         tab = QWidget()

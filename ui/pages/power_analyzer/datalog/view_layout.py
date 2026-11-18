@@ -1398,7 +1398,7 @@ class LayoutViewMixin:
         self._show_left_panel(None)
 
     def _on_open_settings_dialog(self):
-        """底部控制栏设置齿轮：弹出五标签设置对话框（仪器/网段/DLog/摘要/关于）。"""
+        """底部控制栏设置齿轮：弹出六标签设置对话框（仪器/网段/DLog/摘要/更新日志/关于）。"""
         dialog = N6705CSettingsDialog(self)
         dialog.exec()
 
