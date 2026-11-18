@@ -45,8 +45,8 @@
     "auto_scroll_default": true,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      287,
-      185
+      420,
+      0
     ],
     "log_auto_save": false,
     "log_save_path": ""
@@ -225,11 +225,10 @@
     ]
   },
   "window": {
-    "x": 2,
-    "y": 2,
+    "x": 376,
+    "y": 389,
     "width": 1228,
     "height": 500,
     "maximized": false
-  },
-  "extra_panels": []
+  }
 }
