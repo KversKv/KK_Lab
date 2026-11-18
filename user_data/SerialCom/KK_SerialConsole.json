@@ -38,10 +38,15 @@
     "sidebar_visible": false,
     "footer_visible": false,
     "show_line_num": false,
+    "display_font": "Consolas",
+    "display_font_size": 11,
+    "word_wrap": true,
+    "max_log_lines": 10000,
+    "auto_scroll_default": true,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      398,
-      0
+      287,
+      185
     ],
     "log_auto_save": false,
     "log_save_path": ""
@@ -222,22 +227,9 @@
   "window": {
     "x": 2,
     "y": 2,
-    "width": 1323,
+    "width": 1228,
     "height": 500,
     "maximized": false
   },
-  "extra_panels": [
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_detect": false,
-      "independent_window": false,
-      "connected": false
-    }
-  ]
+  "extra_panels": []
 }
