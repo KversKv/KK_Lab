@@ -36,9 +36,11 @@ _UPDATE_LOG_ENTRIES = [
     ("2026-11-18", [
         "New Update Log tab in Settings: changes grouped by date with EN/中文 toggle.",
         "Preserve firmware alignment spaces in log display (consecutive and leading spaces kept, e.g. %4u / %9u output).",
+        "Clear now keeps the applied filter working on new logs instead of silently disabling it.",
     ], [
         "设置新增 Update Log 标签页：按日期分组改动要点，支持中英切换。",
         "日志显示保留固件格式化对齐空格（连续空格与行首空格不丢失，如 %4u / %9u 输出）。",
+        "Clear 后保留已应用的过滤条件，新日志继续按过滤规则显示，不再静默失效。",
     ]),
     ("2026-11-17", [
         "Binary data in ASCII mode now shown as separate [RX(HEX)] lines instead of being dropped.",

@@ -1019,8 +1019,11 @@ class SerialLogPanel(QFrame):
         self.reset_byte_counters()
         self.filter_last_count = 0
         self.filter_dirty = False
-        self.filter_match_label.setText("")
-        self._reset_applied_filter()
+        # Clear 只清日志，保留已应用的 Filter（UI 仍启用时功能须继续生效）
+        if self.filter_row.isVisible() and self.filter_applied_pattern:
+            self.filter_match_label.setText("Matched: 0 lines")
+        else:
+            self.filter_match_label.setText("")
         self.auto_scroll = True
         self.scroll_lock_btn.setChecked(True)
         self.cleared.emit()
