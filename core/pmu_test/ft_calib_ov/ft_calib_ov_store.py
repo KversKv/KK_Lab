@@ -8,6 +8,7 @@ tmp + os.replace 原子写，损坏记日志回落空库）。芯片 → 多 rai
 
 import json
 import os
+from pathlib import Path
 
 from log_config import get_logger
 from resource_path import get_resource_base, get_user_data_dir
@@ -91,14 +92,41 @@ def merge_import(existing, incoming):
     return merged, conflicts
 
 
+def _efuse_config_root() -> Path:
+    return Path(get_resource_base()) / "lib" / "i2c" / "config"
+
+
 def list_efuse_scripts() -> list:
-    """扫描 EFUSE_SCRIPTS 目录下的厂商脚本文件名（供管理对话框下拉）。"""
-    script_dir = os.path.join(get_resource_base(), "lib", "i2c", "config", "EFUSE_SCRIPTS")
+    """扫描 EFUSE 脚本，返回相对 lib/i2c/config 的路径列表（供管理对话框下拉）。
+
+    覆盖 EFUSE_SCRIPTS/*.py（旧芯片）与 best*/efuse_scripts/*.py（1811/1860 等
+    按芯片分目录的厂商脚本）。
+    """
+    root = _efuse_config_root()
+    found = []
     try:
-        return sorted(
-            name for name in os.listdir(script_dir)
-            if name.endswith(".py") and not name.startswith("_")
-        )
+        for path in sorted((root / "EFUSE_SCRIPTS").glob("*.py")):
+            if not path.name.startswith("_"):
+                found.append(f"EFUSE_SCRIPTS/{path.name}")
+        for chip_dir in sorted(root.glob("best*")):
+            script_dir = chip_dir / "efuse_scripts"
+            if not script_dir.is_dir():
+                continue
+            for path in sorted(script_dir.glob("*.py")):
+                if not path.name.startswith("_"):
+                    found.append(f"{chip_dir.name}/efuse_scripts/{path.name}")
     except OSError:
-        _logger.error("扫描 EFUSE 脚本目录失败: %s", script_dir, exc_info=True)
-        return []
+        _logger.error("扫描 EFUSE 脚本目录失败: %s", root, exc_info=True)
+    return found
+
+
+def resolve_efuse_script(script_filename: str) -> Path:
+    """把配置中的脚本名解析为绝对路径。
+
+    裸文件名（旧配置兼容）→ EFUSE_SCRIPTS/<name>；
+    含目录的相对路径（如 best1811/efuse_scripts/efuse_1811_pmu.py）→ 相对 lib/i2c/config。
+    """
+    rel = str(script_filename).strip().replace("\\", "/")
+    if "/" not in rel:
+        rel = f"EFUSE_SCRIPTS/{rel}"
+    return _efuse_config_root() / rel

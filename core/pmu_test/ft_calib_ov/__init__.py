@@ -19,6 +19,7 @@ from .ft_calib_ov_store import (
     list_efuse_scripts,
     load_library,
     merge_import,
+    resolve_efuse_script,
     save_library,
 )
 from .ft_calib_ov_worker import FtCalibOvWorker
@@ -39,6 +40,7 @@ __all__ = [
     "list_efuse_scripts",
     "load_library",
     "merge_import",
+    "resolve_efuse_script",
     "save_library",
     "FtCalibOvWorker",
 ]

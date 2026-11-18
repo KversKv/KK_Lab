@@ -250,6 +250,46 @@ def test_worker_clamp_warns():
     assert any("clamped" in line for line in logs)
 
 
+def test_worker_sign_magnitude_trim():
+    # BES1811/1860 EFUSE trim：幅度 [4:0] + 符号位 bit5（1=负）
+    chip = _chip()
+    chip["rails"][0]["efuse_field"] = {
+        "reg_addr": "0x1", "msb": 4, "lsb": 0, "signed": False, "sign_bit": 5,
+    }
+    regs = _regs()
+    regs[(0x27, 0x1)] = 0x0023  # 幅度 3，符号位 1 → trim = -3
+    i2c = _FakeI2C(regs)
+    dmm = _FakeDmm([1.100, 1.43125])
+    _, _, results, finished = _run_worker(chip, _options(), i2c, dmm=dmm)
+    assert finished == [(True, "Test completed")]
+    assert results[0]["efuse_value"] == -3
+    assert results[0]["code"] == 0x7D  # 0x80 - 3
+
+
+def test_generated_1811_1860_library_mock_run():
+    import copy
+
+    from core.pmu_test.ft_calib_ov.ft_calib_ov_analysis import validate_chip_config
+    from core.pmu_test.ft_calib_ov.ft_calib_ov_store import load_library
+    from instruments.mock.mock_instruments import MockKeysight34461A
+
+    chips = {c["name"]: c for c in load_library()}
+    for name in ("BES1811", "BES1860"):
+        assert name in chips, f"芯片库缺少 {name}（先跑 tests/_gen_ft_calib_ov_chips.py）"
+        validate_chip_config(chips[name])
+        assert len(chips[name]["rails"]) == 11
+
+    chip = copy.deepcopy(chips["BES1811"])
+    options = _options(selected_rails=[r["name"] for r in chip["rails"]])
+    worker = FtCalibOvWorker(chip, options, dmm=MockKeysight34461A(), debug_flag=True)
+    results, finished = [], []
+    worker.rail_result.connect(results.append)
+    worker.test_finished.connect(lambda ok, reason: finished.append((ok, reason)))
+    worker.run()
+    assert finished == [(True, "Test completed")]
+    assert len(results) == 11
+
+
 def test_worker_async_qthread_finishes():
     i2c = _FakeI2C(_regs())
     dmm = _FakeDmm([1.100, 1.43125])

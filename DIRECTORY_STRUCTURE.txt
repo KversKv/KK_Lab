@@ -604,9 +604,11 @@ lib/
     └── config/                  # I2C 相关配置与资源
         ├── BES_USBIO_I2C_X64.dll   # BES USB-IO I2C 通信 DLL (64位)
         ├── CH341DLLA64.dll          # CH341 USB 桥接芯片 DLL (64位)
-        └── EFUSE_SCRIPTS/           # EFuse 烧录脚本目录
-            └── efuse_<chip>.py      # 各芯片 eFuse 烧录脚本
-                                     # (1307ph / 1310A / 1503p / 1505A / 1701)
+        ├── EFUSE_SCRIPTS/           # EFuse 烧录脚本目录
+        │   └── efuse_<chip>.py      # 各芯片 eFuse 烧录脚本
+        │                            # (1307ph / 1310A / 1503p / 1505A / 1701)
+        ├── best1811/                # BES1811 芯片资料（efuse_scripts/ 分模块 EFUSE 脚本 + registers_description/ 寄存器定义）
+        └── best1860/                # BES1860 芯片资料（同上，与 1811 共用 PMU 寄存器映射）
 
 ================================================================================
   resources/ - 静态资源

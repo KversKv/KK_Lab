@@ -25,6 +25,7 @@ from .ft_calib_ov_analysis import (
     summarize,
     validate_chip_config,
 )
+from .ft_calib_ov_store import resolve_efuse_script
 
 _logger = get_logger(__name__)
 
@@ -86,14 +87,15 @@ class FtCalibOvWorker(QObject):
                 _SPEED_MAP[int(efuse_cfg["speed_khz"])],
                 efuse_cfg["script_filename"], efuse_cfg.get("chip_name", ""),
             )
-            if not ok or not isinstance(raw, int):
+            if not ok or not isinstance(raw, int) or raw < 0:
                 raise RuntimeError(
                     f"EFUSE script read failed @0x{reg:X} ({efuse_cfg['script_filename']})"
                 )
         else:
             raw = i2c.read(dev, reg, width)
         value = extract_bits(raw, field["msb"], field["lsb"],
-                             signed=bool(field.get("signed", False)))
+                             signed=bool(field.get("signed", False)),
+                             sign_bit=field.get("sign_bit"))
         return raw, value
 
     def _measure(self, options):
@@ -148,7 +150,10 @@ class FtCalibOvWorker(QObject):
                     )
                 else:
                     from lib.i2c.efuse_script_caller import EFuseScriptCaller
-                    caller = EFuseScriptCaller(i2c.raw)
+                    script_path = resolve_efuse_script(efuse_cfg["script_filename"])
+                    efuse_cfg["script_filename"] = script_path.name
+                    caller = EFuseScriptCaller(
+                        i2c.raw, efuse_scripts_dir=script_path.parent)
 
             instrument = options["instrument"]
             if instrument == "vmeter":

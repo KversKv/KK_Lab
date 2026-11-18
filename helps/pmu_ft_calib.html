@@ -31,8 +31,9 @@
 <h4>芯片管理（Manage Chips）</h4>
 <ul>
   <li>芯片库保存在 <code>user_data/ft_calib_ov_chips/chip_library.json</code>，支持 Import/Export JSON 交换（重名芯片导入时确认覆盖）。</li>
-  <li>芯片级配置：I2C 设备地址 / 位宽（8/10/32/8x8）/ 速度；EFUSE 链路二选一——<b>script</b>（厂商时序脚本，下拉选择 EFUSE_SCRIPTS 中的脚本，如 efuse_1307ph.py）或 <b>i2c</b>（EFUSE 映射为普通寄存器直接读）。</li>
-  <li>每个 rail 配置：Vbit 位域（寄存器地址 + MSB/LSB，位宽可继承芯片）、EFUSE 字段（地址/偏移 + MSB/LSB，支持 Signed 补码）、校准模式、目标与容差。</li>
+  <li>芯片级配置：I2C 设备地址 / 位宽（8/10/32/8x8）/ 速度；EFUSE 链路二选一——<b>script</b>（厂商时序脚本，下拉选择脚本，含 EFUSE_SCRIPTS 旧芯片脚本与 best1811/best1860 等按芯片分目录的脚本）或 <b>i2c</b>（EFUSE 映射为普通寄存器直接读）。</li>
+  <li>每个 rail 配置：Vbit 位域（寄存器地址 + MSB/LSB，位宽可继承芯片）、EFUSE 字段（地址/偏移 + MSB/LSB，支持 Signed 补码或 Sign Bit 独立符号位）、校准模式、目标与容差。</li>
+  <li>已预置 <b>BES1811 / BES1860</b> 芯片库（各 11 个 rail：BUCK1-6 + VREG_L7-L11），基准 BT1811_BT1860_FT_Efuse_V01.xlsx：EFUSE 走各自 PMU 脚本（best18xx/efuse_scripts/efuse_18xx_pmu.py），trim 为「幅度位域 + 独立符号位」格式（Sign Bit，1=负），mode=offset（code = FT 基准码 + trim），目标为 FT 标称电压，容差默认 ±20mV 可按需调整。BUCK 默认用小 BG trim（EFUSE 0x2/0x3），大 BG 场景把 EFUSE 地址改为 0x4/0x5。</li>
 </ul>
 <h4>校准模式与判定</h4>
 <ul>

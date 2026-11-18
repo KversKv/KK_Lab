@@ -56,7 +56,8 @@ def default_rail():
         "type": "LDO",
         "enabled": True,
         "vbit": {"reg_addr": "0x0000", "msb": 7, "lsb": 0, "width_flag": None},
-        "efuse_field": {"reg_addr": "0x0000", "msb": 7, "lsb": 0, "signed": False},
+        "efuse_field": {"reg_addr": "0x0000", "msb": 7, "lsb": 0,
+                        "signed": False, "sign_bit": None},
         "mode": "offset",
         "base_code": "0x80",
         "offset_lsb": 0,
@@ -188,6 +189,12 @@ class RailEditDialog(QDialog):
         self.efuse_lsb_spin.setValue(int(field.get("lsb", 0)))
         grid.addWidget(self.efuse_msb_spin, 3, 0)
         grid.addWidget(self.efuse_lsb_spin, 3, 1)
+        grid.addWidget(_field_label("Sign Bit (-1 = none, sign-magnitude)"), 4, 0)
+        self.efuse_sign_bit_spin = QSpinBox()
+        self.efuse_sign_bit_spin.setRange(-1, 31)
+        sign_bit = field.get("sign_bit")
+        self.efuse_sign_bit_spin.setValue(-1 if sign_bit is None else int(sign_bit))
+        grid.addWidget(self.efuse_sign_bit_spin, 5, 0)
         efuse_lay.addLayout(grid)
         root.addWidget(efuse_sec)
 
@@ -288,6 +295,8 @@ class RailEditDialog(QDialog):
                 "msb": self.efuse_msb_spin.value(),
                 "lsb": self.efuse_lsb_spin.value(),
                 "signed": self.efuse_signed_check.isChecked(),
+                "sign_bit": (None if self.efuse_sign_bit_spin.value() < 0
+                             else self.efuse_sign_bit_spin.value()),
             },
             "mode": self.mode_combo.currentText(),
             "base_code": self.base_code_edit.text().strip(),
@@ -508,7 +517,12 @@ class ChipManagerDialog(QDialog):
         _fill_speed_combo(self.speed_combo, i2c.get("speed_khz", 100))
         self.efuse_link_combo.setCurrentText(str(efuse.get("link", "i2c")))
         script = str(efuse.get("script_filename", ""))
+        if script and "/" not in script:
+            script = f"EFUSE_SCRIPTS/{script}"
         idx = self.efuse_script_combo.findText(script)
+        if idx < 0 and script:
+            self.efuse_script_combo.addItem(script)
+            idx = self.efuse_script_combo.count() - 1
         if idx >= 0:
             self.efuse_script_combo.setCurrentIndex(idx)
         self.efuse_chip_name_edit.setText(str(efuse.get("chip_name", "")))

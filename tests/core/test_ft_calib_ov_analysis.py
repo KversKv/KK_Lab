@@ -74,6 +74,16 @@ def test_extract_bits_unsigned_and_signed():
     assert extract_bits(0xFFF0, 7, 4, signed=True) == -1
 
 
+def test_extract_bits_sign_magnitude():
+    # BES1811/1860 EFUSE trim：幅度 [4:0] + 独立符号位 bit5（1=负）
+    assert extract_bits(0x0003, 4, 0, sign_bit=5) == 3
+    assert extract_bits(0x0023, 4, 0, sign_bit=5) == -3
+    assert extract_bits(0x0020, 4, 0, sign_bit=5) == 0  # step==0 时 sign=1 → -0=0
+    # dcdc2 布局：幅度 [9:6] + 符号位 bit10
+    assert extract_bits(0x0400 | (5 << 6), 9, 6, sign_bit=10) == -5
+    assert extract_bits(5 << 6, 9, 6, sign_bit=10) == 5
+
+
 def test_insert_bits_preserves_other_bits():
     assert insert_bits(0xAB00, 0xCD, 7, 0) == 0xABCD
     assert insert_bits(0xFFFF, 0x00, 7, 0) == 0xFF00
@@ -134,6 +144,19 @@ def test_validate_rail_ok():
     validate_rail(_rail())
     validate_rail(_rail(mode="absolute"))
     validate_rail(_rail(target={"source": "derived"}))
+    validate_rail(_rail(efuse_field={
+        "reg_addr": "0x2", "msb": 4, "lsb": 0, "signed": False, "sign_bit": 5,
+    }))
+
+
+@pytest.mark.parametrize("field", [
+    {"reg_addr": "0x2", "msb": 4, "lsb": 0, "sign_bit": 3},
+    {"reg_addr": "0x2", "msb": 4, "lsb": 0, "sign_bit": 32},
+    {"reg_addr": "0x2", "msb": 4, "lsb": 0, "signed": True, "sign_bit": 5},
+])
+def test_validate_rail_sign_bit_invalid(field):
+    with pytest.raises(ValueError):
+        validate_rail(_rail(efuse_field=field))
 
 
 @pytest.mark.parametrize("override", [
@@ -237,4 +260,65 @@ def test_export_import_file(tmp_library):
 
 def test_list_efuse_scripts_contains_known():
     scripts = store.list_efuse_scripts()
-    assert "efuse_1307ph.py" in scripts
+    assert "EFUSE_SCRIPTS/efuse_1307ph.py" in scripts
+    assert "best1811/efuse_scripts/efuse_1811_pmu.py" in scripts
+    assert "best1860/efuse_scripts/efuse_1860_pmu.py" in scripts
+
+
+def test_resolve_efuse_script():
+    legacy = store.resolve_efuse_script("efuse_1307ph.py")
+    assert legacy.name == "efuse_1307ph.py"
+    assert legacy.parent.name == "EFUSE_SCRIPTS"
+    assert legacy.is_file()
+    pmu = store.resolve_efuse_script("best1811/efuse_scripts/efuse_1811_pmu.py")
+    assert pmu.is_file()
+    assert pmu.parent.name == "efuse_scripts"
+    backslash = store.resolve_efuse_script("best1860\\efuse_scripts\\efuse_1860_pmu.py")
+    assert backslash == store.resolve_efuse_script(
+        "best1860/efuse_scripts/efuse_1860_pmu.py")
+
+
+class _FakeEfuseRaw:
+    """模拟 1811/1860 PMU efuse 控制器（0x1a8 控制 / 0x1af 结果）。"""
+
+    def __init__(self, phys):
+        self.phys = dict(phys)
+        self.regs = {}
+        self._latched = 0
+
+    def read(self, speed, dev, reg, width):
+        if reg == 0x1AF:
+            return self.phys.get(self._latched, 0)
+        return self.regs.get(reg, 0)
+
+    def write(self, speed, dev, reg, data, width, high_bit=-1, low_bit=-1):
+        cur = self.regs.get(reg, 0)
+        if high_bit >= 0 and low_bit >= 0:
+            mask = ((1 << (high_bit - low_bit + 1)) - 1) << low_bit
+            cur = (cur & ~mask) | ((data << low_bit) & mask)
+        else:
+            cur = data & 0xFFFF
+        self.regs[reg] = cur
+        if reg == 0x1A8 and (cur & 0x20):
+            self._latched = (cur >> 6) & 0x7F
+
+
+@pytest.mark.parametrize("script_rel", [
+    "best1811/efuse_scripts/efuse_1811_pmu.py",
+    "best1860/efuse_scripts/efuse_1860_pmu.py",
+])
+def test_vendor_pmu_script_read_via_caller(script_rel):
+    from lib.i2c.efuse_script_caller import EFuseScriptCaller
+    from lib.i2c.i2c_interface_x64 import I2CSpeedMode, I2CWidthFlag
+
+    # 字索引 2 → 物理字节 8..11；低 16bit = 0x0023（幅度 3 + 符号位 1）
+    raw = _FakeEfuseRaw({8: 0x23, 9: 0x00, 10: 0x00, 11: 0x00})
+    path = store.resolve_efuse_script(script_rel)
+    caller = EFuseScriptCaller(raw, efuse_scripts_dir=path.parent)
+    ok, value = caller.read_efuse(
+        0x17, 0x2, I2CWidthFlag.BIT_10, I2CSpeedMode.SPEED_100K,
+        path.name, "test",
+    )
+    assert ok
+    assert value == 0x0023
+    assert extract_bits(value, 4, 0, sign_bit=5) == -3

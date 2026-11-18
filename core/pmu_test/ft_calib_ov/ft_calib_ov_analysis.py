@@ -41,9 +41,18 @@ def _field_mask(msb, lsb):
     return (1 << (msb - lsb + 1)) - 1
 
 
-def extract_bits(raw, msb, lsb, signed=False):
-    """从寄存器原始值提取 [lsb, msb] 位域；signed=True 按二进制补码符号扩展。"""
+def extract_bits(raw, msb, lsb, signed=False, sign_bit=None):
+    """从寄存器原始值提取 [lsb, msb] 位域。
+
+    signed=True 按二进制补码符号扩展；sign_bit 指定独立符号位
+    （sign-magnitude：幅度无符号，符号位 1=负，如 BES1811/1860 EFUSE trim）。
+    两者互斥，sign_bit 优先校验由 validate_rail 保证。
+    """
     value = (int(raw) >> lsb) & _field_mask(msb, lsb)
+    if sign_bit is not None:
+        if (int(raw) >> int(sign_bit)) & 1:
+            value = -value
+        return value
     if signed:
         bit_count = msb - lsb + 1
         if value & (1 << (bit_count - 1)):
@@ -158,6 +167,15 @@ def validate_rail(rail):
 
     efuse_field = rail.get("efuse_field") or {}
     _validate_bit_field(efuse_field, f"Rail {name} efuse_field")
+    sign_bit = efuse_field.get("sign_bit")
+    if sign_bit is not None:
+        if isinstance(sign_bit, bool) or not isinstance(sign_bit, int) \
+                or not (0 <= sign_bit <= _MAX_BIT_INDEX):
+            raise ValueError(f"Rail {name}: efuse_field.sign_bit must be 0..{_MAX_BIT_INDEX}")
+        if efuse_field["lsb"] <= sign_bit <= efuse_field["msb"]:
+            raise ValueError(f"Rail {name}: sign_bit must be outside the magnitude field")
+        if efuse_field.get("signed", False):
+            raise ValueError(f"Rail {name}: signed and sign_bit are mutually exclusive")
 
     mode = rail.get("mode")
     if mode not in _CALIB_MODES:

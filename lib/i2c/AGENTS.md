@@ -23,7 +23,8 @@
 
 ## eFuse 读取流程
 
-- **脚本契约**：[config/EFUSE_SCRIPTS/](./config/EFUSE_SCRIPTS/) 每芯片一份 `efuse_<chip>.py`，必须提供 `read_efuse(reg_offset) -> int` / `write_efuse(reg_offset, data) -> bool`；脚本顶部用 `globals().get()` 取注入变量，禁 import 主程序模块。
+- **脚本契约**：[config/EFUSE_SCRIPTS/](./config/EFUSE_SCRIPTS/) 每芯片一份 `efuse_<chip>.py`，必须提供 `read_efuse(reg_offset) -> int` / `write_efuse(reg_offset, data) -> bool`；脚本顶部用 `globals().get()` 取注入变量，禁 import 主程序模块。1811/1860 等新芯片脚本按芯片分目录放 `config/best<chip>/efuse_scripts/`（如 `efuse_1811_pmu.py` / `efuse_1860_pmu.py`，PMU/charger/fg 分模块）；`EFuseScriptCaller(i2c, efuse_scripts_dir=...)` 支持指定目录。
+- **1811/1860 PMU eFuse**：控制器 0x1a8（模式/地址[12:6]/触发[5]）、结果 0x1af、idle 查 0x1af[11:8]、时钟选择 0x1b1[14]+0x1b3[2]/[9]（dev 0x17 BIT_10）；`read_efuse(字索引)` 读 字索引×4 起 4 个物理字节拼 32bit（低 16bit=byte0|byte1<<8），FT trim 表字段在低 16bit，格式为幅度位域+独立符号位（sign-magnitude）。
 - **调用入口**：[efuse_script_caller.py](./efuse_script_caller.py) `EFuseScriptCaller(BESI2CIO实例)`：importlib 动态加载脚本并注入 `i2c_interface / I2CSpeedMode / I2CWidthFlag / I2CError / ui_dev_addr / ui_reg_addr / ui_data_hex / ui_data_width / ui_module_name_unique / ui_chip_name`；对外 `read_efuse(device_addr, reg_addr, data_width, speed_mode, script_filename, chip_name)` / `write_efuse(...)`。
 - **1307ph 读取时序（2026-09-24 实机验证）**：① 读 0x158，低 4 位须==0（idle）；② 0x147 bit[14]=1，efuse 时钟切 osc；③ 0xb7=0x0008 开 clk en+read mode；④ 0xb7=0x0018 function on；⑤ 0xb7=`0x0018|(addr<<6)` 装入 efuse 地址；⑥ 0xb7=`0x0038|(addr<<6)` 单次读触发；⑦ 0xb7=`0x0018|(addr<<6)` 触发关闭；⑧ 读 0xbd（高16bit）/ 0xbe（低16bit），`value1|value2` 合并为结果；⑨ 收尾 0xb7=0x0008 → 0xb7=0x0000 关 efuse/时钟，0x147 bit[14]=0 切回 32k。
 - **验证基准**：[tests/verify_efuse_1307ph.py](../../tests/verify_efuse_1307ph.py)（device=0x27，BIT_10，100K）：1307ph eFuse[0x0001]=0x0003 通过；改动脚本或调用器后必须重跑回归。
