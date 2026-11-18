@@ -119,6 +119,6 @@
       "A-CH3",
       "A-CH4"
     ],
-    "mcu_port": "COM41 - CH9114F"
+    "mcu_port": "No CH9114F ports found"
   }
 }
