@@ -1,0 +1,679 @@
+{
+  "schema_version": 1,
+  "chips": [
+    {
+      "name": "BES1811",
+      "i2c": {
+        "device_addr": "0x17",
+        "width_flag": 10,
+        "speed_khz": 100
+      },
+      "efuse": {
+        "link": "script",
+        "script_filename": "best1811/efuse_scripts/efuse_1811_pmu.py",
+        "chip_name": "1811",
+        "device_addr": "0x17",
+        "width_flag": 10,
+        "speed_khz": 100
+      },
+      "rails": [
+        {
+          "name": "BUCK1",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x046",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 4,
+            "lsb": 0,
+            "signed": false,
+            "sign_bit": 5
+          },
+          "mode": "offset",
+          "base_code": "0x86",
+          "offset_lsb": 0,
+          "step_mv": 3.69,
+          "base_voltage_mv": 305.54,
+          "target": {
+            "source": "config",
+            "voltage_mv": 800.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK2",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x146",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 9,
+            "lsb": 6,
+            "signed": false,
+            "sign_bit": 10
+          },
+          "mode": "offset",
+          "base_code": "0x50",
+          "offset_lsb": 0,
+          "step_mv": 7.35,
+          "base_voltage_mv": 612.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1200.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK3",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x1E6",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xA0",
+          "offset_lsb": 0,
+          "step_mv": 7.35,
+          "base_voltage_mv": 624.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1800.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK4",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x156",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 4,
+            "lsb": 0,
+            "signed": false,
+            "sign_bit": 5
+          },
+          "mode": "offset",
+          "base_code": "0x93",
+          "offset_lsb": 0,
+          "step_mv": 3.89,
+          "base_voltage_mv": 278.17,
+          "target": {
+            "source": "config",
+            "voltage_mv": 850.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK5",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x1D6",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 9,
+            "lsb": 6,
+            "signed": false,
+            "sign_bit": 10
+          },
+          "mode": "offset",
+          "base_code": "0x93",
+          "offset_lsb": 0,
+          "step_mv": 3.56,
+          "base_voltage_mv": 326.68,
+          "target": {
+            "source": "config",
+            "voltage_mv": 850.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK6",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x35A",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xBE",
+          "offset_lsb": 0,
+          "step_mv": 3.89,
+          "base_voltage_mv": 260.9,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1000.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L7",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x250",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xD",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x64",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 610.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L8",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x11C",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xE",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x64",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 610.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L9",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x08A",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xF",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xA0",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 916.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1700.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L10",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x248",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x10",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x28",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 904.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L11",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x010",
+            "msb": 15,
+            "lsb": 8,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x11",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x28",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 904.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        }
+      ]
+    },
+    {
+      "name": "BES1860",
+      "i2c": {
+        "device_addr": "0x17",
+        "width_flag": 10,
+        "speed_khz": 100
+      },
+      "efuse": {
+        "link": "script",
+        "script_filename": "best1860/efuse_scripts/efuse_1860_pmu.py",
+        "chip_name": "1860",
+        "device_addr": "0x17",
+        "width_flag": 10,
+        "speed_khz": 100
+      },
+      "rails": [
+        {
+          "name": "BUCK1",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x046",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 4,
+            "lsb": 0,
+            "signed": false,
+            "sign_bit": 5
+          },
+          "mode": "offset",
+          "base_code": "0x86",
+          "offset_lsb": 0,
+          "step_mv": 3.69,
+          "base_voltage_mv": 305.54,
+          "target": {
+            "source": "config",
+            "voltage_mv": 800.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK2",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x146",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 9,
+            "lsb": 6,
+            "signed": false,
+            "sign_bit": 10
+          },
+          "mode": "offset",
+          "base_code": "0x50",
+          "offset_lsb": 0,
+          "step_mv": 7.35,
+          "base_voltage_mv": 612.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1200.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK3",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x1E6",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x2",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xA0",
+          "offset_lsb": 0,
+          "step_mv": 7.35,
+          "base_voltage_mv": 624.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1800.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK4",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x156",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 4,
+            "lsb": 0,
+            "signed": false,
+            "sign_bit": 5
+          },
+          "mode": "offset",
+          "base_code": "0x93",
+          "offset_lsb": 0,
+          "step_mv": 3.89,
+          "base_voltage_mv": 278.17,
+          "target": {
+            "source": "config",
+            "voltage_mv": 850.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK5",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x1D6",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 9,
+            "lsb": 6,
+            "signed": false,
+            "sign_bit": 10
+          },
+          "mode": "offset",
+          "base_code": "0x93",
+          "offset_lsb": 0,
+          "step_mv": 3.56,
+          "base_voltage_mv": 326.68,
+          "target": {
+            "source": "config",
+            "voltage_mv": 850.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "BUCK6",
+          "type": "DCDC",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x35A",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x3",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xBE",
+          "offset_lsb": 0,
+          "step_mv": 3.89,
+          "base_voltage_mv": 260.9,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1000.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L7",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x250",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xD",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x64",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 610.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L8",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x11C",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xE",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x64",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 610.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L9",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x08A",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0xF",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0xA0",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 916.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1700.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L10",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x248",
+            "msb": 7,
+            "lsb": 0,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x10",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x28",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 904.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        },
+        {
+          "name": "VREG_L11",
+          "type": "LDO",
+          "enabled": true,
+          "vbit": {
+            "reg_addr": "0x010",
+            "msb": 15,
+            "lsb": 8,
+            "width_flag": null
+          },
+          "efuse_field": {
+            "reg_addr": "0x11",
+            "msb": 14,
+            "lsb": 11,
+            "signed": false,
+            "sign_bit": 15
+          },
+          "mode": "offset",
+          "base_code": "0x28",
+          "offset_lsb": 0,
+          "step_mv": 4.9,
+          "base_voltage_mv": 904.0,
+          "target": {
+            "source": "config",
+            "voltage_mv": 1100.0
+          },
+          "tolerance_mv": 20.0,
+          "settle_ms": 20
+        }
+      ]
+    }
+  ]
+}
