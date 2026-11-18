@@ -31,6 +31,94 @@ from ui.modules.serialCom_module.serial_style import (
 from ui.modules.serialCom_module.widgets import _FramelessChromeDialog
 from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideToggle
 
+# Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
+_UPDATE_LOG_ENTRIES = [
+    ("2026-11-18", [
+        "Preserve firmware alignment spaces in log display (consecutive and leading spaces kept, e.g. %4u / %9u output).",
+    ], [
+        "日志显示保留固件格式化对齐空格（连续空格与行首空格不丢失，如 %4u / %9u 输出）。",
+    ]),
+    ("2026-11-17", [
+        "Binary data in ASCII mode now shown as separate [RX(HEX)] lines instead of being dropped.",
+        "Halved outer and center margins in full mode to enlarge the log area.",
+    ], [
+        "ASCII 模式下二进制数据以 [RX(HEX)] 独立行显示，不再被丢弃。",
+        "完整模式外层与中央区边距减半，扩大日志区域可用空间。",
+    ]),
+    ("2026-10-29", [
+        "Keep manual scroll position stable in large logs; auto-scroll no longer re-pins the view unexpectedly.",
+    ], [
+        "大日志下保持手动滚动位置稳定，自动滚动不再意外把视图钉回底部。",
+    ]),
+    ("2026-10-25", [
+        "Serial IO moved down to core/serial_io (port enumeration, sessions); UI no longer talks to pyserial directly.",
+    ], [
+        "串口 IO 下沉至 core/serial_io（端口枚举、会话管理），UI 不再直接依赖 pyserial。",
+    ]),
+    ("2026-10-21", [
+        "New Clear All toolbar button: clears main panel, extra panels and floating windows at once (visible when 2+ ports connected).",
+    ], [
+        "工具栏新增 Clear All 按钮：一键清空主面板、额外面板与独立浮窗日志（2 个以上串口同时连接时可见）。",
+    ]),
+    ("2026-10-08", [
+        "Settings OK now applies immediately to live connections.",
+        "Disconnect always stops running scripts and clears the RX line buffer.",
+        "Send and script execution are pinned to the primary panel; extra panels use stable session IDs.",
+        "Exact port-name matching on restore (COM3 no longer matches COM30); editable baudrate rebinds correctly.",
+        "Persisted sidebar checkboxes and visibility are replayed on restart.",
+    ], [
+        "设置点击 OK 后立即应用到活动连接。",
+        "断开时统一停止运行中的脚本并清空 RX 行缓冲。",
+        "发送与脚本执行固定归属主面板；额外面板改用稳定会话 ID。",
+        "端口恢复改精确匹配（COM3 不再误配 COM30）；波特率可编辑态正确重绑。",
+        "重启时回放侧栏勾选与显隐状态。",
+    ]),
+    ("2026-09-30", [
+        "Switch serial port directly while connected (full disconnect + reconnect).",
+        "Port combo shows only the port number when collapsed; popup renders the full device description.",
+        "Fixed primary panel Port being cleared after removing a log panel.",
+    ], [
+        "连接态支持直接切换串口（完整断开 + 重连）。",
+        "串口下拉收起态仅显示端口号，弹层渲染完整设备描述。",
+        "修复移除日志面板后主面板 Port 被清空的问题。",
+    ]),
+    ("2026-09-29", [
+        "Silent hot-plug refresh of the port list; auto-disconnect with a warning when a connected port is removed.",
+    ], [
+        "热插拔静默刷新端口列表；已连接端口被移除时自动断开并告警。",
+    ]),
+    ("2026-09-19", [
+        "Send history now uses MRU order: re-sending a command moves it to the front.",
+    ], [
+        "发送历史改为 MRU 语义：重复发送的指令移至队首。",
+    ]),
+    ("2026-09-15", [
+        "Restart restores panel / floating-window layout and geometry only; no automatic reconnect.",
+    ], [
+        "重启仅恢复面板 / 浮窗布局与几何位置，不再自动回连。",
+    ]),
+    ("2026-09-11", [
+        "Multi-port layout memory: extra embedded panels and independent windows are restored on reopen.",
+        "Rename the primary panel via right-click Settings.",
+        "Terminal-style Up/Down history navigation in the send box, with draft restore.",
+        "Pause / Stop are mutually exclusive (last click wins) and disabled while disconnected.",
+        "Sidebar configuration follows the focused panel.",
+    ], [
+        "多开串口记忆：重开时恢复额外内嵌面板与独立浮窗。",
+        "主面板右键 Settings 支持改名。",
+        "发送框支持终端式上下键历史导航，浏览前草稿可恢复。",
+        "Pause / Stop 互斥（后点生效），未连接时禁用。",
+        "侧栏配置跟随聚焦面板。",
+    ]),
+    ("2026-09-10", [
+        "Unified SerialLogPanel component shared by main panel, extra panels and floating windows.",
+        "Filter / highlight sync across panels; new footer toggle.",
+    ], [
+        "统一 SerialLogPanel 组件，主面板 / 额外面板 / 独立浮窗共用。",
+        "多面板过滤 / 高亮同步；新增 Footer 开关。",
+    ]),
+]
+
 class _SerialSettingsDialog(_FramelessChromeDialog):
 
     def __init__(self, parent=None):
@@ -52,6 +140,7 @@ class _SerialSettingsDialog(_FramelessChromeDialog):
         self._tabs.addTab(self._build_tab_log(), "Log")
         self._tabs.addTab(self._build_tab_display(), "Display")
         self._tabs.addTab(self._build_tab_auto_detect(), "Auto-Detect")
+        self._tabs.addTab(self._build_tab_update_log(), "Update Log")
         self._tabs.addTab(self._build_tab_about(), "About")
 
         btn_row = QHBoxLayout()
@@ -427,6 +516,78 @@ class _SerialSettingsDialog(_FramelessChromeDialog):
 
         layout.addStretch()
         return page
+
+    # ---- tab: Update Log ----
+
+    def _build_tab_update_log(self):
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(14, 14, 14, 14)
+        page_layout.setSpacing(10)
+
+        lang_row = QHBoxLayout()
+        lang_row.setSpacing(8)
+        lang_row.addWidget(QLabel("Language"))
+        self.update_log_lang_toggle = _MiniSlideToggle("EN", "中文")
+        self.update_log_lang_toggle.toggled.connect(self._on_update_log_lang_toggled)
+        lang_row.addWidget(self.update_log_lang_toggle)
+        lang_row.addStretch()
+        page_layout.addLayout(lang_row)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(transparent_scroll_area_style() + SERIAL_SCROLLBAR_STYLE)
+
+        content = QWidget()
+        content.setObjectName("updateLogPage")
+        content.setStyleSheet("""
+            QWidget#updateLogPage QLabel#updateLogDate {
+                color: #1d1d1f;
+                font-size: 13px;
+                font-weight: 800;
+            }
+            QWidget#updateLogPage QLabel#updateLogItem {
+                color: #4f5b6b;
+                font-size: 12px;
+            }
+        """)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(10)
+
+        self._update_log_item_labels = []
+        for date, en_items, zh_items in _UPDATE_LOG_ENTRIES:
+            card = QFrame()
+            card.setObjectName("scSectionCard")
+            card.setStyleSheet(section_card_style())
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(6)
+
+            date_label = QLabel(date)
+            date_label.setObjectName("updateLogDate")
+            card_layout.addWidget(date_label)
+
+            for en_text, zh_text in zip(en_items, zh_items):
+                item_label = QLabel("- " + en_text)
+                item_label.setObjectName("updateLogItem")
+                item_label.setWordWrap(True)
+                card_layout.addWidget(item_label)
+                self._update_log_item_labels.append((item_label, en_text, zh_text))
+
+            layout.addWidget(card)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        page_layout.addWidget(scroll, 1)
+        return page
+
+    def _on_update_log_lang_toggled(self, value):
+        use_en = value == "EN"
+        for item_label, en_text, zh_text in self._update_log_item_labels:
+            item_label.setText("- " + (en_text if use_en else zh_text))
 
     # ---- tab: About ----
 
