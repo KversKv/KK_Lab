@@ -627,5 +627,6 @@ app.installEventFilter(_WinFilter())
 
 **规则**：
 
-- 隐藏 tabBar 的 Tab 容器子页一律**懒加载**：占位 `QWidget()` 占槽位，`set_current_test` 经 `_ensure_subpage` 首次选中才构建并 `removeTab/insertTab` 原位替换（保持索引/标签不变），信号连接与仪器同步随构建执行；未构建子页属性为 `None`，`get_test_config` 等分发接口对 `None` 降级（范式见 [pmu_test_ui.py](../../ui/pages/pmu_test/pmu_test_ui.py)）。
+- 隐藏 tabBar 的 Tab 容器子页一律**懒加载**：占位 `QWidget()` 占槽位，`set_current_test` 经 `_ensure_subpage` 首次选中才构建并 `removeTab/insertTab` 原位替换（保持索引/标签不变），信号连接与仪器同步随构建执行；未构建子页属性为 `None`，`get_test_config` 等分发接口对 `None` 降级（范式见 [pmu_test_ui.py](../../ui/pages/pmu_test/pmu_test_ui.py)）。已铺开：pmu_test / charger_test / consumption_test / vmin_hunter；module_test 为 `QStackedWidget` 变体（`removeWidget/insertWidget` 替换期间必须 `blockSignals` 防索引平移误触发 `currentChanged`→CommandBar 误绑占位页）。容器构造时先建默认子页，`set_current_test(selected)` 再建目标页——直选非默认子页首进会建 2 页，属预期。
 - 性能排查须区分**真机 vs offscreen**：offscreen 无真实 polish/字体/主题初始化，构造耗时差 3 倍属正常；真机测量可用 `widget.grab()` 强制渲染（不弹窗）。进程级一次性成本勿误判为某页面自身缺陷（换序构建对照即可定位）。
+- **计时/冒烟脚本禁污染 user_data**：`ConfigMemory.bind` 也挂变更信号自动写盘（不止 `watch`），`aboutToQuit` 还会兜底 `save_now`——脚本须同时禁 `watch/restore/bind/save_now`，或先补丁 `resource_path.get_user_data_dir` 到临时目录再 import UI（后导入的 from-import 才绑到隔离路径）。真实 MainWindow 冒烟曾把用户 consumption 芯片/固件配置覆写为 Mock 默认值（靠 git restore 找回）。

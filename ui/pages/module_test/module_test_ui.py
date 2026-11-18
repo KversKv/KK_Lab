@@ -46,6 +46,9 @@ class ModuleTestUI(QWidget):
 
     TEST_TAB_MAP = {"ldo": 0, "dcdc": 1}
 
+    # 与 TEST_TAB_MAP 对齐的子页属性名（声明顺序 = stack 顺序）
+    _SUBPAGE_ATTRS = {"ldo": "ldo_test_ui", "dcdc": "dcdc_test_ui"}
+
     def __init__(self, n6705c_top=None, mso64b_top=None, chamber_ui=None,
                  instrument_manager=None, ui_action_registry=None):
         super().__init__()
@@ -55,6 +58,10 @@ class ModuleTestUI(QWidget):
         self._instrument_manager = instrument_manager
         self._ui_action_registry = ui_action_registry
 
+        # 子页懒加载：key → 实例（未构建为 None）；属性名兼容既有外部引用
+        self._subpages: dict = {}
+        for attr in self._SUBPAGE_ATTRS.values():
+            setattr(self, attr, None)
         self._config_prompted: set[str] = set()
         # objectName 供 module_dark.qss 钉页面底色；顶层注入 controls+module_dark
         # 合并样式（修顶栏 CommandBar 主题断层，与子页同 token 盘）
@@ -84,37 +91,62 @@ class ModuleTestUI(QWidget):
         layout.addWidget(self.command_bar)
 
         self.stack = QStackedWidget()
-        self.ldo_test_ui = LDOTestUI(
-            n6705c_top=self._n6705c_top,
-            mso64b_top=self._mso64b_top,
-            chamber_ui=self._chamber_ui,
-            instrument_manager=self._instrument_manager,
-            ui_action_registry=self._ui_action_registry,
-        )
-        self.dcdc_test_ui = DCDCTestUI(
-            n6705c_top=self._n6705c_top,
-            mso64b_top=self._mso64b_top,
-            chamber_ui=self._chamber_ui,
-            instrument_manager=self._instrument_manager,
-            ui_action_registry=self._ui_action_registry,
-        )
-        self.stack.addWidget(self.ldo_test_ui)   # index 0 = ldo
-        self.stack.addWidget(self.dcdc_test_ui)  # index 1 = dcdc
+        # 占位 widget 先占住 stack 槽位；子页在首次选中时构建（_ensure_subpage），
+        # 避免首次进入 Module Test 一次性构建 LDO+DCDC 造成长时间卡顿
+        for _key in self.TEST_TAB_MAP:
+            self.stack.addWidget(QWidget())
         layout.addWidget(self.stack, 1)
 
-        for sub in (self.ldo_test_ui, self.dcdc_test_ui):
-            sub.runStateChanged.connect(self._on_sub_run_state)
-            sub.configNameChanged.connect(self._on_sub_config_name_changed)
-
         self.stack.currentChanged.connect(self._on_tab_changed)
-        self.command_bar.bind_subpage(self.ldo_test_ui)
+        self.command_bar.bind_subpage(self._ensure_subpage("ldo"))
+
+    def _build_subpage(self, key: str):
+        """按 key 构建子页实例（构造参数与原即时构建保持一致）"""
+        cls = LDOTestUI if key == "ldo" else DCDCTestUI
+        return cls(
+            n6705c_top=self._n6705c_top,
+            mso64b_top=self._mso64b_top,
+            chamber_ui=self._chamber_ui,
+            instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
+        )
+
+    def _ensure_subpage(self, key: str):
+        """懒加载入口：子页未构建则构建并原位替换占位页，随后接信号与同步仪器状态"""
+        if key not in self.TEST_TAB_MAP:
+            key = "ldo"
+        ui = self._subpages.get(key)
+        if ui is not None:
+            return ui
+        ui = self._build_subpage(key)
+        self._subpages[key] = ui
+        setattr(self, self._SUBPAGE_ATTRS[key], ui)
+
+        index = self.TEST_TAB_MAP[key]
+        current = self.stack.currentIndex()
+        placeholder = self.stack.widget(index)
+        # 替换期间屏蔽 currentChanged，防 removeWidget 索引平移误触发 _on_tab_changed
+        self.stack.blockSignals(True)
+        self.stack.removeWidget(placeholder)
+        self.stack.insertWidget(index, ui)
+        self.stack.setCurrentIndex(current)
+        self.stack.blockSignals(False)
+        placeholder.deleteLater()
+
+        ui.runStateChanged.connect(self._on_sub_run_state)
+        ui.configNameChanged.connect(self._on_sub_config_name_changed)
+        if hasattr(ui, "sync_n6705c_from_top"):
+            ui.sync_n6705c_from_top()
+        if hasattr(ui, "sync_oscilloscope_from_top"):
+            ui.sync_oscilloscope_from_top()
+        return ui
 
     # ------------------------------------------------------------------ 切换
-    def _on_tab_changed(self, _index: int) -> None:
-        sub = self.stack.currentWidget()
-        if sub is not None:
-            self.command_bar.bind_subpage(sub)
-            self.command_bar.set_running(sub.is_test_running)
+    def _on_tab_changed(self, index: int) -> None:
+        reverse_map = {v: k for k, v in self.TEST_TAB_MAP.items()}
+        sub = self._ensure_subpage(reverse_map.get(index, "ldo"))
+        self.command_bar.bind_subpage(sub)
+        self.command_bar.set_running(sub.is_test_running)
         self._auto_prompt_current_config()
 
     def _on_sub_run_state(self, _state) -> None:
@@ -150,6 +182,7 @@ class ModuleTestUI(QWidget):
 
     # ------------------------------------------------------------------ 契约 API
     def set_current_test(self, test_key: str) -> None:
+        self._ensure_subpage(test_key)
         index = self.TEST_TAB_MAP.get(test_key, 0)
         if index != self.stack.currentIndex():
             self.stack.setCurrentIndex(index)
@@ -162,27 +195,31 @@ class ModuleTestUI(QWidget):
         return reverse_map.get(index, "ldo")
 
     def _sync_from_top(self) -> None:
-        for sub_ui in (self.ldo_test_ui, self.dcdc_test_ui):
+        for sub_ui in self._subpages.values():
             if hasattr(sub_ui, "sync_n6705c_from_top"):
                 sub_ui.sync_n6705c_from_top()
             if hasattr(sub_ui, "sync_oscilloscope_from_top"):
                 sub_ui.sync_oscilloscope_from_top()
 
     def get_test_config(self, test_type: str):
-        sub = self.ldo_test_ui if test_type == "ldo" else self.dcdc_test_ui
-        return sub.get_test_config()
+        """获取指定模块的配置（子页未构建时返回 None）"""
+        sub = self._subpages.get(test_type)
+        if sub is not None:
+            return sub.get_test_config()
+        return None
 
     def update_test_result(self, test_type: str, result) -> None:
-        sub = self.ldo_test_ui if test_type == "ldo" else self.dcdc_test_ui
-        sub.update_test_result(result)
+        sub = self._subpages.get(test_type)
+        if sub is not None:
+            sub.update_test_result(result)
 
     def clear_all_results(self) -> None:
-        self.ldo_test_ui.clear_results()
-        self.dcdc_test_ui.clear_results()
+        for sub_ui in self._subpages.values():
+            sub_ui.clear_results()
 
     def set_system_status(self, status: str, is_error: bool = False) -> None:
-        self.ldo_test_ui.set_system_status(status, is_error)
-        self.dcdc_test_ui.set_system_status(status, is_error)
+        for sub_ui in self._subpages.values():
+            sub_ui.set_system_status(status, is_error)
 
     # ------------------------------------------------------------------ AI Assistant 透传
     # 容器自身不实现 AI 契约（ai_capabilities / ai_get_config / ai_start_test /

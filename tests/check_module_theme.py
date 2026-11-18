@@ -57,6 +57,7 @@ def check_page_build() -> None:
     assert w.objectName() == "ModuleTestShell"
     assert "CommandBar" in w.styleSheet(), "顶层缺 module_dark 顶栏规则"
     assert "QFrame#Toast" in w.styleSheet(), "顶层缺 controls 共享规则"
+    w.set_current_test("dcdc")  # 懒加载：dcdc 子页首次选中才构建
     for sub, name in ((w.ldo_test_ui, "ldo"), (w.dcdc_test_ui, "dcdc")):
         assert sub.objectName() == "ModuleTestSubPage", name
         assert "#ModuleTestSubPage" in sub.styleSheet(), name

@@ -95,6 +95,7 @@ def test_get_test_config_keys_and_defaults():
     assert ui.ldo_test_ui.get_test_config()["judge_enabled"] is False
     ui.ldo_test_ui._store.restore({"judge_enabled": True})
     assert ui.ldo_test_ui.test_plan.judge_enabled() is True
+    ui.set_current_test("dcdc")  # 懒加载：dcdc 子页首次选中才构建
     assert ui.dcdc_test_ui.get_test_config()["vout_nominal_mv"] == 1200
     assert "vin_v" not in ui.dcdc_test_ui.get_test_config()
 

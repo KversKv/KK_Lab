@@ -26,6 +26,7 @@
 
 > 共享 `_common.py` 助手的测试项 LDO/DCDC 两侧天然同步；以下各条不再重复标注同步状态。
 
+- **子页懒加载（2026-11，03 §45）**：`QStackedWidget` 占位页 + `_ensure_subpage` 首次选中才构建（初始默认建 LDO）；替换期间 `blockSignals` 防 `currentChanged` 误绑占位页；未构建子页属性为 `None`，外部直引前先 `set_current_test`。
 - **LDO / DCDC 同名测试项双向同步（硬规则）**：更改任一侧测试项时，必须评估另一侧同名项（共用 `_common.py` 助手的尤其）的流程/参数/判定是否需同步；不同步须说明理由。两侧改动须在同次变更内完成（或明确豁免），并同步更新本文件。
 - **单项测试分组**：LDO `ldo_dropout`/`ldo_current_limit` 在 `ldo_test_ui.STANDALONE_ITEMS`（「单项测试」组；「全选」只作用「自动测试序列」组，runner 按 `selected_items` 执行不变）；DCDC 侧豁免（用户指令限定 LDO，且无 dropout 项）。
 - **Vbat / Vin 双通道分离**：DUT Config 有「Vbat 通道」（`vbat_ch_combo`，cfg 键 `vbat_channel`，默认 CH 1）与「Vin 通道」（`vin_ch_combo`，cfg 键 `vin_channel`，默认 CH 2）两个独立通道。Vbat=DUT 主供电，原「Vin 通道」的全部既有逻辑（runner 开局限流、各项 Vin 偏置上电、Line Transient 电压脉冲、quiescent/efficiency 电流测量等）均走 Vbat；新 Vin 通道仅两处使用——Dropout 扫描、Output Voltage Scan 输入偏置。core 读 Vbat 唯一出口 = `_common.vbat_channel(cfg, default)`（新键 `vbat_channel`，旧配置无此键回落 `vin_channel`）；读新 Vin 直接 `cfg.get("vin_channel", default)`。配置兼容：restore 时 Vbat 回落旧 `vin_channel`；新 Vin 仅在新格式（含 `vbat_channel` 键）时回填，旧配置保持控件默认（旧 `vin_channel` 是 Vbat 语义，不能误填）。

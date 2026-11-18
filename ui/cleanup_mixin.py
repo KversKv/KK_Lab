@@ -69,10 +69,10 @@ class CleanupMixin:
 
         if self.consumption_test_ui is not None:
             self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestWrapper")
-            if hasattr(self.consumption_test_ui, 'auto_test_ui'):
-                self._cleanup_sub_ui(self.consumption_test_ui.auto_test_ui, "ConsumptionTestUI")
-            if hasattr(self.consumption_test_ui, 'high_low_temp_ui'):
-                self._cleanup_sub_ui(self.consumption_test_ui.high_low_temp_ui, "HighLowTempConsumptionTestUI")
+            for attr in ['auto_test_ui', 'high_low_temp_ui']:
+                sub_ui = getattr(self.consumption_test_ui, attr, None)
+                if sub_ui is not None:
+                    self._cleanup_sub_ui(sub_ui, f"Consumption.{attr}")
 
         for ui_name, ui_widget in [
             ("N6705CAnalyserUI", self.n6705c_analyser_ui),
