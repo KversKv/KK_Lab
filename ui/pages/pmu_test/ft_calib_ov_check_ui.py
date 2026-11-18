@@ -172,6 +172,12 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
 
+        # ---- 顶部：Chip（整行宽度） ----
+        self.chip_card = _Card("Chip")
+        self._build_chip_card()
+        root.addWidget(self.chip_card)
+
+        # ---- 下部：左配置 / 右结果 ----
         content = QHBoxLayout()
         content.setSpacing(14)
         root.addLayout(content, 1)
@@ -199,10 +205,6 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
-
-        self.chip_card = _Card("Chip")
-        self._build_chip_card()
-        left_layout.addWidget(self.chip_card)
 
         self.measure_card = _Card("Measurement")
         self._build_measure_card()
@@ -304,11 +306,13 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         self.rail_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.rail_table.verticalHeader().setVisible(False)
         header = self.rail_table.horizontalHeader()
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        for col in (0, 2, 3, 4, 5):
+        for col in (1, 4):
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
+        for col in (0, 2, 3, 5):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.rail_table.setStyleSheet(get_table_qss())
         self.rail_table.setMinimumHeight(140)
+        self.rail_table.setMaximumHeight(240)
         layout.addWidget(self.rail_table)
 
         self.chip_hint_label = QLabel("No chips configured. Click Manage Chips to add.")
