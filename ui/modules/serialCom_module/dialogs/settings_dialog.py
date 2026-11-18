@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QTabWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -38,11 +39,13 @@ _UPDATE_LOG_ENTRIES = [
         "Preserve firmware alignment spaces in log display (consecutive and leading spaces kept, e.g. %4u / %9u output).",
         "Clear now keeps the applied filter working on new logs instead of silently disabling it.",
         "Display settings (font family/size, word wrap, max log lines, default auto-scroll) are now saved and restored on restart; Settings OK saves immediately.",
+        "Update Log now supports multi-line selection, Select All (Ctrl+A) and copy.",
     ], [
         "设置新增 Update Log 标签页：按日期分组改动要点，支持中英切换。",
         "日志显示保留固件格式化对齐空格（连续空格与行首空格不丢失，如 %4u / %9u 输出）。",
         "Clear 后保留已应用的过滤条件，新日志继续按过滤规则显示，不再静默失效。",
         "Display 设置（字体/字号、自动换行、缓冲行数、默认自动滚动）现已保存并在重启后恢复；Settings 点 OK 立即落盘。",
+        "Update Log 支持跨行选中、全选（Ctrl+A）与复制。",
     ]),
     ("2026-11-17", [
         "Binary data in ASCII mode now shown as separate [RX(HEX)] lines instead of being dropped.",
@@ -540,60 +543,43 @@ class _SerialSettingsDialog(_FramelessChromeDialog):
         lang_row.addStretch()
         page_layout.addLayout(lang_row)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(transparent_scroll_area_style() + SERIAL_SCROLLBAR_STYLE)
-
-        content = QWidget()
-        content.setObjectName("updateLogPage")
-        content.setStyleSheet("""
-            QWidget#updateLogPage QLabel#updateLogDate {
-                color: #1d1d1f;
-                font-size: 13px;
-                font-weight: 800;
-            }
-            QWidget#updateLogPage QLabel#updateLogItem {
-                color: #4f5b6b;
-                font-size: 12px;
-            }
-        """)
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(10)
-
-        self._update_log_item_labels = []
-        for date, en_items, zh_items in _UPDATE_LOG_ENTRIES:
-            card = QFrame()
-            card.setObjectName("scSectionCard")
-            card.setStyleSheet(section_card_style())
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
-
-            date_label = QLabel(date)
-            date_label.setObjectName("updateLogDate")
-            card_layout.addWidget(date_label)
-
-            for en_text, zh_text in zip(en_items, zh_items):
-                item_label = QLabel("- " + en_text)
-                item_label.setObjectName("updateLogItem")
-                item_label.setWordWrap(True)
-                card_layout.addWidget(item_label)
-                self._update_log_item_labels.append((item_label, en_text, zh_text))
-
-            layout.addWidget(card)
-
-        layout.addStretch()
-        scroll.setWidget(content)
-        page_layout.addWidget(scroll, 1)
+        # 单一富文本视图：支持跨行选中 / Ctrl+A 全选 / 右键复制（多 QLabel 方案只能单行选中）
+        self._update_log_view = QTextEdit()
+        self._update_log_view.setReadOnly(True)
+        self._update_log_view.setFrameShape(QFrame.NoFrame)
+        self._update_log_view.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard
+        )
+        self._update_log_view.setStyleSheet(
+            "QTextEdit { background: transparent; border: none; }" + SERIAL_SCROLLBAR_STYLE
+        )
+        page_layout.addWidget(self._update_log_view, 1)
+        self._render_update_log("EN")
         return page
 
+    def _render_update_log(self, lang):
+        use_en = lang == "EN"
+        parts = []
+        for date, en_items, zh_items in _UPDATE_LOG_ENTRIES:
+            rows = [
+                '<tr><td><span style="font-size:13px; font-weight:800; color:#1d1d1f;">'
+                f"{date}</span></td></tr>"
+            ]
+            for en_text, zh_text in zip(en_items, zh_items):
+                text = en_text if use_en else zh_text
+                rows.append(
+                    '<tr><td><span style="font-size:12px; color:#4f5b6b;">'
+                    f"- {text}</span></td></tr>"
+                )
+            parts.append(
+                '<table border="0" cellpadding="6" cellspacing="0" width="100%" '
+                'bgcolor="#ffffff">' + "".join(rows) + "</table>"
+            )
+            parts.append('<p style="font-size:5px; margin:0;">&nbsp;</p>')
+        self._update_log_view.setHtml("".join(parts))
+
     def _on_update_log_lang_toggled(self, value):
-        use_en = value == "EN"
-        for item_label, en_text, zh_text in self._update_log_item_labels:
-            item_label.setText("- " + (en_text if use_en else zh_text))
+        self._render_update_log(value)
 
     # ---- tab: About ----
 
