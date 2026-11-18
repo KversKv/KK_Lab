@@ -40,7 +40,7 @@
     "show_line_num": false,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      572,
+      398,
       0
     ],
     "log_auto_save": false,
@@ -220,10 +220,24 @@
     ]
   },
   "window": {
-    "x": 1167,
-    "y": 555,
-    "width": 1303,
-    "height": 652,
+    "x": 2,
+    "y": 2,
+    "width": 1323,
+    "height": 500,
     "maximized": false
-  }
+  },
+  "extra_panels": [
+    {
+      "title": "P2",
+      "port": "COM5",
+      "baudrate": 115200,
+      "databit": 8,
+      "stopbit": "1",
+      "parity": "None",
+      "flow": "None",
+      "auto_detect": false,
+      "independent_window": false,
+      "connected": false
+    }
+  ]
 }
