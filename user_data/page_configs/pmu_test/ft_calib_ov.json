@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "config": {
-    "chip_name": "",
+    "chip_name": "BES1811",
     "selected_rails": [],
     "measure_instrument": "dmm",
     "vmeter_channel": "CH 2",
