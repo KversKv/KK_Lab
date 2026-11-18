@@ -69,6 +69,10 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_show_line_num = False
         self._sc_highlight_keywords = []  # [{"keyword": str, "bg": str, "fg": str}]
         self._sc_max_log_lines = self._SC_MAX_LOG_LINES_DEFAULT
+        self._sc_display_font = "Consolas"
+        self._sc_display_font_size = 11
+        self._sc_word_wrap = True
+        self._sc_auto_scroll_default = True
         self._sc_log_auto_save = False
         self._sc_log_save_path = ''
         self._sc_log_file_handle = None

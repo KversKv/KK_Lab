@@ -53,6 +53,11 @@ class PersistenceMixin:
                 "sidebar_visible": True,
                 "footer_visible": True,
                 "show_line_num": False,
+                "display_font": "Consolas",
+                "display_font_size": 11,
+                "word_wrap": True,
+                "max_log_lines": self._SC_MAX_LOG_LINES_DEFAULT,
+                "auto_scroll_default": True,
                 "primary_panel_title": "Serial Log",
                 "center_split_sizes": [680, 185],
             },
@@ -382,6 +387,11 @@ class PersistenceMixin:
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
             "footer_visible": getattr(self, "_sc_footer_visible", True),
             "show_line_num": getattr(self, "_sc_show_line_num", False),
+            "display_font": getattr(self, "_sc_display_font", "Consolas"),
+            "display_font_size": getattr(self, "_sc_display_font_size", 11),
+            "word_wrap": getattr(self, "_sc_word_wrap", True),
+            "max_log_lines": getattr(self, "_sc_max_log_lines", self._SC_MAX_LOG_LINES_DEFAULT),
+            "auto_scroll_default": getattr(self, "_sc_auto_scroll_default", True),
             "primary_panel_title": getattr(self, "_sc_primary_panel_title", "Serial Log"),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
             "log_save_path": getattr(self, "_sc_log_save_path", ""),
@@ -521,6 +531,11 @@ class PersistenceMixin:
                     ("sidebar_visible", "_sc_sidebar_visible"),
                     ("footer_visible", "_sc_footer_visible"),
                     ("show_line_num", "_sc_show_line_num"),
+                    ("display_font", "_sc_display_font"),
+                    ("display_font_size", "_sc_display_font_size"),
+                    ("word_wrap", "_sc_word_wrap"),
+                    ("max_log_lines", "_sc_max_log_lines"),
+                    ("auto_scroll_default", "_sc_auto_scroll_default"),
                     ("log_auto_save", "_sc_log_auto_save"),
                     ("log_save_path", "_sc_log_save_path"),
                 ):
@@ -628,7 +643,18 @@ class PersistenceMixin:
                     break
         # 主面板组件时间戳开关与真值对齐（组件 append_log 用自身 show_timestamp）
         if getattr(self, "_sc_log_panel", None) is not None:
-            self._sc_log_panel.show_timestamp = bool(getattr(self, "_sc_show_timestamp", True))
+            panel = self._sc_log_panel
+            panel.show_timestamp = bool(getattr(self, "_sc_show_timestamp", True))
+            # Display 设置回放：字体/字号/自动换行/缓冲行数/默认自动滚动
+            panel.set_display_font(
+                str(getattr(self, "_sc_display_font", "Consolas")),
+                int(getattr(self, "_sc_display_font_size", 11)),
+            )
+            panel.set_word_wrap(bool(getattr(self, "_sc_word_wrap", True)))
+            panel.set_max_lines(int(getattr(
+                self, "_sc_max_log_lines", self._SC_MAX_LOG_LINES_DEFAULT
+            )))
+            panel.set_auto_scroll(bool(getattr(self, "_sc_auto_scroll_default", True)))
 
         # 回放 Sidebar 显隐（按钮为 clicked 绑定，setChecked 不触发，须显式驱动）
         if hasattr(self, "_sc_sidebar_toggle_btn"):

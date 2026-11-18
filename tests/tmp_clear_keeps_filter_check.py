@@ -14,6 +14,7 @@ from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 
 def check_filter_kept():
     p = SerialLogPanel()
+    p.show()
     p.set_filter_visible(True)
     p.filter_input.setText("KEEP")
     p.apply_filter()
@@ -40,6 +41,7 @@ def check_filter_kept():
 
 def check_highlight_only_kept():
     p = SerialLogPanel()
+    p.show()
     p.set_filter_visible(True)
     p.filter_input.setText("MARK")
     p.filter_highlight_only_cb.setChecked(True)
@@ -56,6 +58,7 @@ def check_highlight_only_kept():
 
 def check_context_filter_kept():
     p = SerialLogPanel()
+    p.show()
     p.set_filter_visible(True)
     p.filter_input.setText("KEEP")
     p.filter_before_spin.setValue(1)
@@ -74,6 +77,7 @@ def check_context_filter_kept():
 
 def check_hide_filter_still_resets():
     p = SerialLogPanel()
+    p.show()
     p.set_filter_visible(True)
     p.filter_input.setText("KEEP")
     p.apply_filter()

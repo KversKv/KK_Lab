@@ -140,7 +140,6 @@ from ui.modules.serialCom_module.serial_style import (
     log_color_info_style,
     log_color_info_text,
     log_document_style,
-    log_edit_style,
     log_frame_style,
     log_panel_button_style,
     log_title_style,
@@ -188,7 +187,6 @@ from ui.modules.serialCom_module.serial_style import (
     transparent_scroll_area_style,
     transparent_toolbar_button_style,
     unit_label_style,
-    SERIAL_SCROLLBAR_STYLE,
     SerialDarkComboBox,
     SerialHistoryComboBox,
     _CLR_HISTORY_COMBO_BG
@@ -909,7 +907,7 @@ class LogPanelMixin:
 
         dlg.display_font_combo.setCurrentText(getattr(self, '_sc_display_font', 'Consolas'))
         dlg.display_font_size_spin.setValue(getattr(self, '_sc_display_font_size', 11))
-        dlg.display_auto_scroll_cb.setChecked(self._sc_log_panel.auto_scroll)
+        dlg.display_auto_scroll_cb.setChecked(getattr(self, '_sc_auto_scroll_default', True))
         dlg.display_word_wrap_cb.setChecked(getattr(self, '_sc_word_wrap', True))
         dlg.display_show_line_num_cb.setChecked(getattr(self, '_sc_show_line_num', False))
 
@@ -972,22 +970,13 @@ class LogPanelMixin:
                     or font_size != getattr(self, '_sc_display_font_size', 11)):
                 self._sc_display_font = font_family
                 self._sc_display_font_size = font_size
-                self._sc_log_edit.setStyleSheet(
-                    log_edit_style(
-                        font_family=font_family,
-                        font_size=font_size,
-                        padding="4px 6px",
-                        include_line_height=True,
-                    ) + SERIAL_SCROLLBAR_STYLE
-                )
+                self._sc_log_panel.set_display_font(font_family, font_size)
 
-            self._sc_log_panel.set_auto_scroll(dlg.display_auto_scroll_cb.isChecked())
+            self._sc_auto_scroll_default = dlg.display_auto_scroll_cb.isChecked()
+            self._sc_log_panel.set_auto_scroll(self._sc_auto_scroll_default)
 
             self._sc_word_wrap = dlg.display_word_wrap_cb.isChecked()
-            from PySide6.QtWidgets import QTextEdit as _QTE
-            self._sc_log_edit.setLineWrapMode(
-                _QTE.WidgetWidth if self._sc_word_wrap else _QTE.NoWrap
-            )
+            self._sc_log_panel.set_word_wrap(self._sc_word_wrap)
 
             new_show_line_num = dlg.display_show_line_num_cb.isChecked()
             if new_show_line_num != getattr(self, '_sc_show_line_num', False):
@@ -998,6 +987,7 @@ class LogPanelMixin:
 
             # 控件当前为主面板视图：Serial 值写回主面板真值
             self._sc_sidebar_store_serial()
+            self._sc_save_persisted_state()
 
         # 恢复聚焦面板侧栏视图（焦点在主面板时 no-op）
         if getattr(self, "_sc_sidebar_bound_index", None) is not None:

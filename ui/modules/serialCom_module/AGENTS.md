@@ -30,7 +30,7 @@
 1. **导入方向单向**：`serial_style` ← widgets / serial_log_panel / mixins / dialogs / controls ← frame。mixin 引用对话框/控件/浮窗一律**方法内懒导入**；dialogs 禁模块级 import frame/mixins。新增懒加载子模块须同步 `spec/*` hiddenimports。
 2. **禁 `import serial`**：串口 IO 全部走 `core/serial_io/`（`serial_backend` 枚举/open_serial/参数映射，`serial_session(+manager)` 会话）；脚本执行委托 `core.serial_script`。UI 禁阻塞 IO，读写走 QThread + Signal/Slot。
 3. **样式切换**：`KK_SERIALCOM_STYLE` 环境变量 > 运行模式（frame 入口 / frozen `serialcom_module.exe` → light）> 默认 dark。`serial_style._is_serialcom_frame_main()` 按**入口脚本文件名**判定，勿改回 `__name__ == "__main__"`。两套样式模块必须都导出 `_SERIALCOM_STYLE_EXPORTS` 白名单符号。
-4. **日志/滚动/过滤/ASCII-HEX 显示只改 `serial_log_panel.py` 一处**，禁止在 Mixin/浮窗另起平行实现；差异仅经构造参数与钩子注入。**Clear 保留已应用 Filter**：`clear_logs()` 只清日志/计数，禁重置 `filter_applied_*`（仅隐藏 Filter 行 `set_filter_visible(False)` 才重置）。
+4. **日志/滚动/过滤/ASCII-HEX 显示只改 `serial_log_panel.py` 一处**，禁止在 Mixin/浮窗另起平行实现；差异仅经构造参数与钩子注入。**Clear 保留已应用 Filter**：`clear_logs()` 只清日志/计数，禁重置 `filter_applied_*`（仅隐藏 Filter 行 `set_filter_visible(False)` 才重置）。**Display 设置持久化**：字体/字号/换行/缓冲行数/默认自动滚动走 `ui.display_font/display_font_size/word_wrap/max_log_lines/auto_scroll_default` 键，`_sc_apply_persisted_state` 尾部经组件 `set_display_font()/set_word_wrap()/set_max_lines()/set_auto_scroll()` 回放主面板；改字体/换行只走组件方法，禁 Mixin 直写 QSS；Settings OK 立即 `_sc_save_persisted_state()`。
 5. **热插拔共享单例**，禁止各页面自建监控线程；串口下拉项填充统一 `serial_style.add_serial_port_item()`。
 6. **关键不变量**（细节见父级）：顶部控制状态唯一经 `_sc_sync_top_control_state()` 同步；主面板发送固定 `_sc_primary_send()`；额外面板 session_id = `extra_{uid}`；持久化只恢复布局不自动回连；端口匹配一律精确 `==`。
 7. 读线程三处装配（主/额外/浮窗）必须 `worker.finished → thread.quit` + `thread.finished → worker.deleteLater`。

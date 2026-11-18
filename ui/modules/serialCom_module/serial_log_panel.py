@@ -460,6 +460,7 @@ class SerialLogPanel(QFrame):
 
     def _build_log_edit(self, layout, edit_padding, compact):
         padding = edit_padding if edit_padding is not None else ("6px 8px" if compact else "8px 10px")
+        self._log_edit_padding = padding
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1191,3 +1192,18 @@ class SerialLogPanel(QFrame):
             del self.all_logs[:-value]
             if not self.is_filter_active():
                 self.rebuild_view()
+
+    def set_display_font(self, font_family, font_size):
+        self.log_edit.setStyleSheet(
+            log_edit_style(
+                font_family=font_family,
+                font_size=int(font_size),
+                padding=self._log_edit_padding,
+                include_line_height=True,
+            ) + SERIAL_SCROLLBAR_STYLE
+        )
+
+    def set_word_wrap(self, enabled):
+        self.log_edit.setLineWrapMode(
+            QTextEdit.WidgetWidth if enabled else QTextEdit.NoWrap
+        )
