@@ -49,9 +49,9 @@
 </ul>
 <h4>运行与恢复</h4>
 <ol>
-  <li>选择芯片，在 rail 表 Run 列勾选要检查的 rail（双击 rail 行可快捷编辑）。</li>
+  <li>选择芯片，在 <b>DUT (Rail)</b> 下拉中选择本次要校准的 1 路 rail（当前仅支持单路）；下方 EFUSE / Vbit 地址与配置区可直接查看并修改，校验通过即写回芯片库 JSON 并生效。</li>
   <li>选择测量仪器并连接，按需勾选 Restore registers（默认开）与 Stop on first FAIL。</li>
-  <li>点击 Start Check 逐 rail 执行；结果表给出 EFUSE/码/目标/实测/误差/判定，误差图带 ±容差参考。</li>
+  <li>点击 Start Check 执行所选 rail；结果表给出 EFUSE/码/目标/实测/误差/判定，误差图带 ±容差参考。</li>
   <li>结束（含停止/异常）后按勾选统一恢复所有写过的 Vbit 寄存器原值；Export CSV 导出到 Results/。</li>
 </ol>
 <p><b>注意</b>：EFUSE 脚本读取与 DMM 批量采样为不可中断的仪器操作，Stop 响应粒度为 rail 边界；EFUSE 读失败会中止整轮（避免错码调压）。写码后自动 readback 校验，不一致会告警并记录。</p>

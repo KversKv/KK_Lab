@@ -30,8 +30,8 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
-from core.pmu_test.ft_calib_ov.ft_calib_ov_analysis import validate_chip_config
-from core.pmu_test.ft_calib_ov.ft_calib_ov_store import load_library
+from core.pmu_test.ft_calib_ov.ft_calib_ov_analysis import validate_chip_config, validate_rail
+from core.pmu_test.ft_calib_ov.ft_calib_ov_store import load_library, save_library
 from core.pmu_test.ft_calib_ov.ft_calib_ov_worker import FtCalibOvWorker
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
@@ -44,6 +44,7 @@ from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, get_page_base_qss, get_t
 from ui.widgets.config_memory import ConfigMemory
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.start_sequence import update_start_btn_state
+from ui.widgets.wheel_line_edit import HexWheelLineEdit, WheelLineEdit
 
 _logger = get_logger(__name__)
 
@@ -107,7 +108,7 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         self._test_mode = "ft_calib_ov"
         self._test_id = ""
         self._chip_library = load_library()
-        self._selected_rails = set()
+        self._rail_loading = False
 
         self._setup_style()
         self._create_layout()
@@ -172,17 +173,12 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
 
-        # ---- 顶部：Chip（整行宽度） ----
-        self.chip_card = _Card("Chip")
-        self._build_chip_card()
-        root.addWidget(self.chip_card)
-
-        # ---- 下部：左配置 / 右结果 ----
+        # ---- 左配置 / 右（Chip + 结果） ----
         content = QHBoxLayout()
         content.setSpacing(14)
         root.addLayout(content, 1)
 
-        # ---- 左：配置 ----
+        # ---- 左：仪器等配置 ----
         left_wrapper = QVBoxLayout()
         left_wrapper.setContentsMargins(0, 0, 0, 0)
         left_wrapper.setSpacing(8)
@@ -225,6 +221,15 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.hide()
         content.addLayout(left_wrapper)
+
+        # ---- 右：Chip（顶部） + 结果 ----
+        right_wrapper = QVBoxLayout()
+        right_wrapper.setContentsMargins(0, 0, 0, 0)
+        right_wrapper.setSpacing(10)
+
+        self.chip_card = _Card("Chip")
+        self._build_chip_card()
+        right_wrapper.addWidget(self.chip_card)
 
         # ---- 右：结果 ----
         self.result_container = QWidget()
@@ -285,7 +290,8 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         )
         self.log_edit = self.execution_logs.log_edit
         self.progress_bar = self.execution_logs.progress_bar
-        content.addWidget(splitter, 1)
+        right_wrapper.addWidget(splitter, 1)
+        content.addLayout(right_wrapper, 1)
 
     def _build_chip_card(self):
         layout = self.chip_card.main_layout
@@ -298,27 +304,85 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         row.addWidget(self.manage_chips_btn)
         layout.addLayout(row)
 
-        self.rail_table = QTableWidget(0, 6)
-        self.rail_table.setHorizontalHeaderLabels(
-            ["Run", "Rail", "Type", "Mode", "Target (mV)", "Tol (mV)"])
-        self.rail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.rail_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.rail_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.rail_table.verticalHeader().setVisible(False)
-        header = self.rail_table.horizontalHeader()
-        for col in (1, 4):
-            header.setSectionResizeMode(col, QHeaderView.Stretch)
-        for col in (0, 2, 3, 5):
-            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        self.rail_table.setStyleSheet(get_table_qss())
-        self.rail_table.setMinimumHeight(140)
-        self.rail_table.setMaximumHeight(240)
-        layout.addWidget(self.rail_table)
+        # ---- DUT 单选（先只支持 1 路校准/测试） ----
+        dut_row = QHBoxLayout()
+        dut_row.setSpacing(6)
+        dut_label = QLabel("DUT (Rail)")
+        dut_label.setObjectName("fieldLabel")
+        dut_row.addWidget(dut_label)
+        self.dut_combo = DarkComboBox()
+        dut_row.addWidget(self.dut_combo, 1)
+        self.rail_meta_label = QLabel("")
+        self.rail_meta_label.setObjectName("mutedLabel")
+        dut_row.addWidget(self.rail_meta_label)
+        layout.addLayout(dut_row)
+
+        # ---- EFUSE / Vbit 地址与配置（可编辑，落库） ----
+        self.efuse_addr_edit = HexWheelLineEdit()
+        self.efuse_addr_edit.setPlaceholderText("0x0000")
+        self.efuse_msb_spin = QSpinBox()
+        self.efuse_msb_spin.setRange(0, 31)
+        self.efuse_lsb_spin = QSpinBox()
+        self.efuse_lsb_spin.setRange(0, 31)
+        self.efuse_sign_bit_spin = QSpinBox()
+        self.efuse_sign_bit_spin.setRange(-1, 31)
+        self.efuse_sign_bit_spin.setToolTip(
+            "-1 = no sign bit; >= 0 = sign-magnitude sign bit index")
+
+        self.vbit_addr_edit = HexWheelLineEdit()
+        self.vbit_addr_edit.setPlaceholderText("0x0000")
+        self.vbit_msb_spin = QSpinBox()
+        self.vbit_msb_spin.setRange(0, 31)
+        self.vbit_lsb_spin = QSpinBox()
+        self.vbit_lsb_spin.setRange(0, 31)
+        self.mode_combo = DarkComboBox()
+        self.mode_combo.addItem("offset", "offset")
+        self.mode_combo.addItem("absolute", "absolute")
+
+        self.base_code_edit = HexWheelLineEdit()
+        self.base_code_edit.setPlaceholderText("0x00")
+        self.offset_lsb_edit = WheelLineEdit(wheel_step=1)
+        self.target_mv_edit = WheelLineEdit(wheel_step=1)
+        self.tolerance_edit = WheelLineEdit(wheel_step=0.5)
+
+        fields = [
+            ("EFUSE Addr (hex)", self.efuse_addr_edit),
+            ("EFUSE MSB", self.efuse_msb_spin),
+            ("EFUSE LSB", self.efuse_lsb_spin),
+            ("Sign Bit (-1 = none)", self.efuse_sign_bit_spin),
+            ("Vbit Addr (hex)", self.vbit_addr_edit),
+            ("Vbit MSB", self.vbit_msb_spin),
+            ("Vbit LSB", self.vbit_lsb_spin),
+            ("Mode", self.mode_combo),
+            ("Base Code (hex)", self.base_code_edit),
+            ("Offset (LSB)", self.offset_lsb_edit),
+            ("Target (mV)", self.target_mv_edit),
+            ("Tol (mV)", self.tolerance_edit),
+        ]
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(4)
+        for index, (text, widget) in enumerate(fields):
+            row_idx, col = divmod(index, 4)
+            label = QLabel(text)
+            label.setObjectName("fieldLabel")
+            grid.addWidget(label, row_idx * 2, col)
+            grid.addWidget(widget, row_idx * 2 + 1, col)
+            grid.setColumnStretch(col, 1)
+        layout.addLayout(grid)
 
         self.chip_hint_label = QLabel("No chips configured. Click Manage Chips to add.")
         self.chip_hint_label.setObjectName("mutedLabel")
         self.chip_hint_label.setWordWrap(True)
         layout.addWidget(self.chip_hint_label)
+
+    def _config_editors(self):
+        return (
+            self.efuse_addr_edit, self.efuse_msb_spin, self.efuse_lsb_spin,
+            self.efuse_sign_bit_spin, self.vbit_addr_edit, self.vbit_msb_spin,
+            self.vbit_lsb_spin, self.mode_combo, self.base_code_edit,
+            self.offset_lsb_edit, self.target_mv_edit, self.tolerance_edit,
+        )
 
     def _build_measure_card(self):
         layout = self.measure_card.main_layout
@@ -422,7 +486,14 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         self.manage_chips_btn.clicked.connect(self._on_manage_chips)
         self.chip_combo.currentIndexChanged.connect(self._on_chip_changed)
         self.measure_instr_combo.currentIndexChanged.connect(self._on_instrument_changed)
-        self.rail_table.itemChanged.connect(self._on_rail_item_changed)
+        self.dut_combo.currentIndexChanged.connect(self._on_dut_changed)
+        for editor in self._config_editors():
+            if isinstance(editor, DarkComboBox):
+                editor.currentIndexChanged.connect(self._apply_rail_edits)
+            elif isinstance(editor, QSpinBox):
+                editor.valueChanged.connect(self._apply_rail_edits)
+            else:
+                editor.editingFinished.connect(self._apply_rail_edits)
         self.dmm_card.log_message.connect(self.append_log)
         self.execution_logs.clear_log_btn.clicked.connect(self.execution_logs.clear_log)
         self._on_instrument_changed()
@@ -451,55 +522,132 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         self._on_chip_changed()
 
     def _on_chip_changed(self):
-        chip = self._current_chip()
-        self._selected_rails = set()
-        if chip is not None:
-            self._selected_rails = {
-                r["name"] for r in chip.get("rails", []) if r.get("enabled", True)
-            }
-        self._refresh_rail_table()
+        self._refresh_dut_combo()
 
-    def _refresh_rail_table(self):
+    def _current_rail(self):
         chip = self._current_chip()
-        rails = chip.get("rails", []) if chip is not None else []
+        if chip is None:
+            return None
+        name = self.dut_combo.currentText()
+        for rail in chip.get("rails", []):
+            if str(rail.get("name", "")) == name:
+                return rail
+        return None
+
+    def _refresh_dut_combo(self, select_name=None):
+        chip = self._current_chip()
+        rails = [r for r in (chip.get("rails", []) if chip else [])
+                 if r.get("enabled", True)]
+        previous = select_name or self.dut_combo.currentText()
+        self.dut_combo.blockSignals(True)
+        self.dut_combo.clear()
+        for rail in rails:
+            self.dut_combo.addItem(str(rail.get("name", "")), rail.get("name"))
+        self.dut_combo.blockSignals(False)
+        if previous:
+            idx = self.dut_combo.findText(previous)
+            if idx >= 0:
+                self.dut_combo.setCurrentIndex(idx)
         self.chip_hint_label.setVisible(chip is None or not rails)
-        self.rail_table.blockSignals(True)
-        self.rail_table.setRowCount(len(rails))
-        for row, rail in enumerate(rails):
-            target = rail.get("target") or {}
-            target_text = (f"{target.get('voltage_mv', 0):g}"
-                           if target.get("source") == "config" else "derived")
-            run_item = QTableWidgetItem()
-            run_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            enabled = rail.get("enabled", True)
-            checked = enabled and rail["name"] in self._selected_rails
-            run_item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
-            if not enabled:
-                run_item.setFlags(Qt.ItemIsEnabled)
-                run_item.setToolTip("Rail disabled in chip library")
-            self.rail_table.setItem(row, 0, run_item)
-            values = [
-                str(rail.get("name", "")),
-                str(rail.get("type", "")),
-                str(rail.get("mode", "")),
-                target_text,
-                f"{rail.get('tolerance_mv', 0):g}",
-            ]
-            for col, text in enumerate(values, start=1):
-                self.rail_table.setItem(row, col, QTableWidgetItem(text))
-        self.rail_table.blockSignals(False)
+        self._load_rail_fields()
 
-    def _on_rail_item_changed(self, item):
-        if item.column() != 0:
+    def _on_dut_changed(self):
+        self._load_rail_fields()
+
+    def _load_rail_fields(self):
+        """把当前 DUT 的 EFUSE / Vbit / 校准配置回填到编辑区。"""
+        rail = self._current_rail()
+        self._rail_loading = True
+        try:
+            for editor in self._config_editors():
+                editor.setEnabled(rail is not None)
+            if rail is None:
+                self.rail_meta_label.setText("")
+                self.efuse_addr_edit.clear()
+                self.vbit_addr_edit.clear()
+                self.base_code_edit.clear()
+                self.offset_lsb_edit.clear()
+                self.target_mv_edit.clear()
+                self.tolerance_edit.clear()
+                return
+
+            efuse = rail.get("efuse_field") or {}
+            vbit = rail.get("vbit") or {}
+            target = rail.get("target") or {}
+            sign_bit = efuse.get("sign_bit")
+            self.efuse_addr_edit.setText(str(efuse.get("reg_addr", "0x0000")))
+            self.efuse_msb_spin.setValue(int(efuse.get("msb", 7)))
+            self.efuse_lsb_spin.setValue(int(efuse.get("lsb", 0)))
+            self.efuse_sign_bit_spin.setValue(
+                -1 if sign_bit is None else int(sign_bit))
+            self.vbit_addr_edit.setText(str(vbit.get("reg_addr", "0x0000")))
+            self.vbit_msb_spin.setValue(int(vbit.get("msb", 7)))
+            self.vbit_lsb_spin.setValue(int(vbit.get("lsb", 0)))
+            idx = self.mode_combo.findData(str(rail.get("mode", "offset")))
+            self.mode_combo.setCurrentIndex(max(idx, 0))
+            self.base_code_edit.setText(str(rail.get("base_code", "0x0")))
+            self.offset_lsb_edit.setText(str(rail.get("offset_lsb", 0)))
+            if target.get("source") == "config":
+                self.target_mv_edit.setText(f"{target.get('voltage_mv', 0):g}")
+            else:
+                self.target_mv_edit.setText("derived")
+            self.tolerance_edit.setText(f"{rail.get('tolerance_mv', 0):g}")
+            self.target_mv_edit.setReadOnly(target.get("source") != "config")
+            self.rail_meta_label.setText(
+                f"{rail.get('type', '')} | step {rail.get('step_mv', 0):g} mV/LSB"
+                f" | base {rail.get('base_voltage_mv', 0):g} mV"
+            )
+        finally:
+            self._rail_loading = False
+
+    def _apply_rail_edits(self):
+        """把编辑区改动写回芯片库并落盘（校验失败仅告警，不落库）。"""
+        if self._rail_loading or self.is_test_running:
             return
-        name_item = self.rail_table.item(item.row(), 1)
-        if name_item is None:
+        rail = self._current_rail()
+        if rail is None:
             return
-        name = name_item.text()
-        if item.checkState() == Qt.Checked:
-            self._selected_rails.add(name)
-        else:
-            self._selected_rails.discard(name)
+        try:
+            efuse = dict(rail.get("efuse_field") or {})
+            efuse["reg_addr"] = self.efuse_addr_edit.text().strip()
+            efuse["msb"] = self.efuse_msb_spin.value()
+            efuse["lsb"] = self.efuse_lsb_spin.value()
+            sign_bit = self.efuse_sign_bit_spin.value()
+            if sign_bit < 0:
+                efuse.pop("sign_bit", None)
+            else:
+                efuse["sign_bit"] = sign_bit
+                efuse["signed"] = False
+            rail["efuse_field"] = efuse
+
+            vbit = dict(rail.get("vbit") or {})
+            vbit["reg_addr"] = self.vbit_addr_edit.text().strip()
+            vbit["msb"] = self.vbit_msb_spin.value()
+            vbit["lsb"] = self.vbit_lsb_spin.value()
+            rail["vbit"] = vbit
+
+            rail["mode"] = self.mode_combo.currentData() or "offset"
+            rail["base_code"] = self.base_code_edit.text().strip() or "0x0"
+            rail["offset_lsb"] = int(float(self.offset_lsb_edit.text() or 0))
+            target = dict(rail.get("target") or {})
+            if target.get("source", "config") == "config":
+                target["voltage_mv"] = float(self.target_mv_edit.text())
+            rail["target"] = target
+            rail["tolerance_mv"] = float(self.tolerance_edit.text())
+            validate_rail(rail)
+        except (ValueError, TypeError) as e:
+            self.append_log(f"[WARN] {rail.get('name')} config not saved: {e}")
+            return
+        try:
+            save_library(self._chip_library)
+        except OSError:
+            self.append_log("[ERROR] Failed to save chip library.")
+            _logger.error("保存芯片库失败", exc_info=True)
+            return
+        self.append_log(
+            f"[CONFIG] {rail['name']}: EFUSE 0x{efuse['reg_addr']} "
+            f"[{efuse['msb']}:{efuse['lsb']}] saved."
+        )
 
     def _on_manage_chips(self):
         if self.is_test_running:
@@ -555,8 +703,8 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
             validate_chip_config(chip)
         except ValueError as e:
             return str(e)
-        if not self._selected_rails:
-            return "No rails selected. Check at least one rail in the Run column."
+        if self._current_rail() is None:
+            return "No DUT selected. Pick a rail in the DUT dropdown."
         instrument = self.measure_instr_combo.currentData()
         if instrument == _INSTR_DMM:
             if not DEBUG_MOCK and (not self.dmm_card.is_connected
@@ -591,11 +739,12 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
         if error is not None:
             self.append_log(f"[ERROR] {error}")
             return
+        rail = self._current_rail()
         chip = copy.deepcopy(self._current_chip())
         instrument = self.measure_instr_combo.currentData()
         options = {
             "instrument": instrument,
-            "selected_rails": sorted(self._selected_rails),
+            "selected_rails": [rail["name"]],
             "vmeter_channel": int(
                 self.vmeter_channel_combo.currentText().replace("CH ", "")),
             "dmm_samples": self.dmm_samples_spin.value(),
@@ -642,7 +791,8 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
                                start_text="▷ Start Check", stop_text="■ Stop")
         self.stop_test_btn.setEnabled(running)
         widgets = [
-            self.chip_combo, self.manage_chips_btn, self.rail_table,
+            self.chip_combo, self.manage_chips_btn, self.dut_combo,
+            *self._config_editors(),
             self.measure_instr_combo, self.vmeter_channel_combo,
             self.dmm_samples_spin, self.dmm_nplc_combo, self.dmm_range_combo,
             self.restore_registers_check, self.stop_on_fail_check,
@@ -816,9 +966,10 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
     # ------------------------------------------------------------------
 
     def get_test_config(self):
+        rail = self._current_rail()
         return {
             "chip_name": self.chip_combo.currentText(),
-            "selected_rails": sorted(self._selected_rails),
+            "selected_rails": [rail["name"]] if rail else [],
             "measure_instrument": self.measure_instr_combo.currentData(),
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
             "dmm_resource": self.dmm_card.resource_text(),
@@ -852,11 +1003,17 @@ class FtCalibOvCheckUI(N6705CConnectionMixin, QWidget):
                 touched.append(self.chip_combo)
 
         selected = cfg.get("selected_rails")
-        if isinstance(selected, list):
+        if isinstance(selected, str):
+            selected = [selected]
+        if isinstance(selected, list) and selected:
             chip = self._current_chip()
             valid = {r["name"] for r in (chip.get("rails", []) if chip else [])}
-            self._selected_rails = {str(n) for n in selected if str(n) in valid}
-            self._refresh_rail_table()
+            for name in selected:
+                if str(name) in valid:
+                    idx = self.dut_combo.findText(str(name))
+                    if idx >= 0:
+                        self.dut_combo.setCurrentIndex(idx)
+                        break
             applied.append("selected_rails")
 
         instrument = cfg.get("measure_instrument")
