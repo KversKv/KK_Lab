@@ -2,8 +2,10 @@
   "schema_version": 1,
   "config": {
     "chip_name": "BES1811",
-    "selected_rails": [],
-    "measure_instrument": "dmm",
+    "selected_rails": [
+      "BUCK1"
+    ],
+    "measure_instrument": "vmeter",
     "vmeter_channel": "CH 2",
     "dmm_resource": "",
     "dmm_samples": 10,
