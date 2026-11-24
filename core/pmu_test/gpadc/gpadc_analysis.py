@@ -352,6 +352,97 @@ def select_best_linearity_group(groups, noise_aware=False):
     return best_index
 
 
+def build_linearity_auto_search_timeline(result):
+    """按真实评价顺序重建 Auto Best 动画事件，不修改原结果。"""
+    search = result.get("auto_search")
+    if not isinstance(search, dict):
+        raise ValueError("缺少 Auto Best 搜索结果，无法生成动画")
+    groups = result.get("groups") or []
+    group_by_value = {}
+    for group in groups:
+        value = int(group["n_value"])
+        if value in group_by_value:
+            raise ValueError("Auto Best 结果包含重复候选组")
+        group_by_value[value] = group
+
+    evaluated_values = [int(value) for value in search.get("evaluated_values") or []]
+    if not evaluated_values:
+        raise ValueError("Auto Best 没有已完成的候选，无法生成动画")
+    if len(set(evaluated_values)) != len(evaluated_values):
+        raise ValueError("Auto Best 评价顺序包含重复候选")
+    missing = [value for value in evaluated_values if value not in group_by_value]
+    if missing:
+        raise ValueError("Auto Best 评价顺序与候选组不匹配")
+
+    best_index = result.get("best_index")
+    if not isinstance(best_index, int) or not 0 <= best_index < len(groups):
+        raise ValueError("Auto Best 缺少有效最佳候选")
+    final_best_value = int(groups[best_index]["n_value"])
+    terminal_value = search.get("terminal_value")
+    completed = bool(search.get("completed")) and not bool(result.get("stopped"))
+    if completed and terminal_value is not None and int(terminal_value) != final_best_value:
+        raise ValueError("Auto Best 终止值与最佳候选不一致")
+
+    interval = (int(search["start"]), int(search["end"]))
+    comparisons = list(search.get("comparisons") or [])
+    comparison_index = 0
+    visible_values = []
+    events = []
+    for value in evaluated_values:
+        visible_values.append(value)
+        visible_groups = [group_by_value[item] for item in visible_values]
+        current_best_index = select_best_linearity_group(visible_groups, noise_aware=True)
+        current_best_value = visible_groups[current_best_index]["n_value"]
+        events.append({
+            "kind": "candidate",
+            "value": value,
+            "group": group_by_value[value],
+            "evaluated_values": tuple(visible_values),
+            "best_value": current_best_value,
+            "interval": interval,
+        })
+
+        while comparison_index < len(comparisons):
+            comparison = comparisons[comparison_index]
+            required = (
+                int(comparison["left_value"]), int(comparison["right_value"]),
+                int(comparison["mid_value"]),
+            )
+            if any(item not in visible_values for item in required):
+                break
+            previous_interval = (
+                int(comparison["previous_low"]), int(comparison["previous_high"]),
+            )
+            if previous_interval != interval or required[:2] != previous_interval:
+                raise ValueError("Auto Best 比较记录与搜索区间不一致")
+            direction = comparison.get("direction")
+            if direction == "right":
+                next_interval = (required[2], interval[1])
+            elif direction == "left":
+                next_interval = (interval[0], required[2])
+            else:
+                raise ValueError("Auto Best 比较记录缺少有效收缩方向")
+            events.append({
+                "kind": "comparison",
+                "evaluated_values": tuple(visible_values),
+                "best_value": current_best_value,
+                "previous_interval": interval,
+                "interval": next_interval,
+                "comparison": comparison,
+            })
+            interval = next_interval
+            comparison_index += 1
+
+    if comparison_index != len(comparisons):
+        raise ValueError("Auto Best 存在无法按评价顺序回放的比较记录")
+    events[-1].update({
+        "is_final": True,
+        "best_value": final_best_value,
+        "completed": completed,
+    })
+    return events
+
+
 def compute_detailed_stats(raw_data):
     """1000CNT 详细统计（纯算法，无 Qt）。
 

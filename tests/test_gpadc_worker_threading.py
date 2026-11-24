@@ -705,6 +705,43 @@ def test_linearity_independent_ignores_auto_and_repeat_error_restores(monkeypatc
     assert acquisition.weight_writes[-2:] == _np_restore_writes()
 
 
+def test_search_gif_renderer_and_encoder(app, monkeypatch, tmp_path):
+    from PIL import Image, ImageSequence
+    from core.pmu_test.gpadc.gpadc_gif import encode_search_gif_frames
+    from ui.pages.pmu_test.gpadc_test.search_gif_renderer import SearchGifFrameRenderer
+
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    _patch_auto_linearity_metrics(
+        runner, monkeypatch, lambda value, repeat: (value - 7) ** 2,
+    )
+    _, result = runner.run("linearity_traverse", _auto_linearity_runner_config())
+    renderer = SearchGifFrameRenderer(result)
+
+    assert len(renderer) == 10
+    first = renderer.render_image(renderer.events[0], 0)
+    comparison = renderer.render_image(renderer.events[3], 3)
+    assert (first.width(), first.height()) == (1200, 760)
+    assert bytes(first.bits()) != bytes(comparison.bits())
+
+    frames = [renderer.render_event(index) for index in range(len(renderer))]
+    output = tmp_path / "search.gif"
+    encoded = encode_search_gif_frames(frames, output)
+    assert encoded["saved"] and encoded["frame_count"] == 10
+    with Image.open(output) as image:
+        assert image.n_frames == 10
+        assert image.info["loop"] == 0
+        durations = [frame.info["duration"] for frame in ImageSequence.Iterator(image)]
+    assert durations[:3] == [700, 700, 700]
+    assert durations[3] == 1000 and durations[-1] == 2800
+
+    stopped_output = tmp_path / "stopped.gif"
+    stopped = encode_search_gif_frames(frames, stopped_output, stop_check=lambda: True)
+    assert stopped["stopped"] and not stopped["saved"]
+    assert not stopped_output.exists()
+    assert not stopped_output.with_suffix(".gif.tmp").exists()
+
+
 @pytest.mark.parametrize("outcome", ["success", "stop", "error"])
 @pytest.mark.parametrize("initial_enabled", [False, True])
 def test_force_voltage_restores_snapshot_on_all_paths(outcome, initial_enabled, monkeypatch):
@@ -1193,6 +1230,7 @@ def test_page_mock_linearity_traverse_plots_best_and_exports(
 def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
     import debug_config
     import openpyxl
+    from PIL import Image
     import pyqtgraph as pg
     from ui.pages.pmu_test.gpadc_test.mixins import acquisition_mixin, execution_mixin
     from ui.widgets.config_memory import ConfigMemory
@@ -1211,6 +1249,7 @@ def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
     worker = None
     thread = None
     exported = []
+    gif_exported = []
     try:
         page._on_test_error = errors.append
         page.test_item_combo.setCurrentIndex(
@@ -1270,8 +1309,34 @@ def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
             ) == 3
         finally:
             workbook.close()
+
+        assert page._can_export_search_gif()
+        chart_stream = page._chart_image_bytes
+        before_gif = set(results_dir.glob("GPADC_AutoBestSearch_*.gif"))
+        assert page.export_search_gif()
+        page._start_test()
+        assert not page.is_test_running and page.test_thread is None
+        _drain_until(
+            app, lambda: page._search_gif_runtime()["state"] == "idle", timeout=15.0,
+        )
+        gif_exported = list(set(results_dir.glob("GPADC_AutoBestSearch_*.gif")) - before_gif)
+        assert len(gif_exported) == 1
+        with Image.open(gif_exported[0]) as image:
+            assert image.n_frames == 1
+            assert image.size == (1200, 760)
+            assert image.info["duration"] == 2800
+        assert page._chart_image_bytes is chart_stream
+        assert page.export_search_gif_btn.isEnabled()
+
+        before_gif = set(results_dir.glob("GPADC_AutoBestSearch_*.gif"))
+        assert page.export_search_gif()
+        assert page._search_gif_runtime()["state"] == "rendering"
+        page.export_search_gif()
+        assert page._search_gif_runtime()["state"] == "idle"
+        app.processEvents()
+        assert set(results_dir.glob("GPADC_AutoBestSearch_*.gif")) == before_gif
     finally:
-        for path in exported:
+        for path in exported + gif_exported:
             path.unlink(missing_ok=True)
         if isValid(page):
             page.cleanup_threads()

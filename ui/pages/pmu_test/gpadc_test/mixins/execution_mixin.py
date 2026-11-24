@@ -184,6 +184,9 @@ class _ExecutionMixin:
     def _start_test(self):
         if self.is_test_running:
             return
+        if self._search_gif_runtime()["state"] != "idle":
+            self._append_log("[WARN] Wait for Auto Best GIF export to finish before starting a test.")
+            return
 
         test_item = self.current_test_item
         range_error = self._validate_test_ranges(test_item)
@@ -721,6 +724,7 @@ class _ExecutionMixin:
         self.stop_test_btn.setEnabled(False)
         self._update_test_button_state(False)
         self._set_ui_enabled(True)
+        self._refresh_search_gif_export_ui()
         # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
         stopped = bool(getattr(self, "_test_stop_requested", False))
         summary = "测试被中止" if stopped else "测试完成"
@@ -765,3 +769,13 @@ class _ExecutionMixin:
         # 置空可避免 CleanupMixin 再次在主线程 wait；worker 引用保留到 run 返回。
         self._test_runner = None
         self.test_thread = None
+        self._cleanup_search_gif_export()
+        gif_runtime = self._search_gif_runtime()
+        gif_thread = gif_runtime.get("thread")
+        gif_worker = gif_runtime.get("worker")
+        if gif_thread is not None and isValid(gif_thread):
+            _retire_thread(
+                gif_thread, gif_worker if gif_worker is None or isValid(gif_worker) else None,
+            )
+        gif_runtime["thread"] = None
+        gif_runtime["worker"] = None

@@ -143,6 +143,47 @@ def _run_linearity_auto_search(low, high, metric):
     raise AssertionError("自动二分未在限定次数内收敛")
 
 
+def _make_linearity_timeline_result(low, high):
+    range_start, range_end = low, high
+    cache = {}
+    evaluated = []
+    comparisons = []
+    for _ in range(100):
+        step = ga.advance_linearity_auto_best(low, high, cache)
+        low, high = step["low"], step["high"]
+        if step["comparison"] is not None:
+            comparisons.append(step["comparison"])
+        value = step["evaluate_value"]
+        if value is not None:
+            evaluated.append(value)
+            score = float((value - 7) ** 2)
+            cache[value] = {
+                "n_value": value, "p_value": value,
+                "max_abs_mv": score, "rms_mv": score,
+                "error_mv": [score], "raw": {"voltage": [1.0], "mean": [score]},
+            }
+            continue
+        if step["done"]:
+            break
+    else:
+        raise AssertionError("自动二分未收敛")
+    groups = [cache[value] for value in sorted(cache)]
+    best_index = ga.select_best_linearity_group(groups, noise_aware=True)
+    best_value = groups[best_index]["n_value"]
+    return {
+        "groups": groups,
+        "best_index": best_index,
+        "stopped": False,
+        "auto_search": {
+            "start": range_start, "end": range_end,
+            "evaluated_values": evaluated,
+            "comparisons": comparisons,
+            "completed": True,
+            "terminal_value": best_value,
+        },
+    }
+
+
 def test_gpadc_normalize_linearity_auto_range():
     assert ga.normalize_linearity_auto_range(0.4, 2.5) == (0, 3)
     assert ga.normalize_linearity_auto_range(3, 3) == (3, 3)
@@ -189,6 +230,44 @@ def test_gpadc_auto_best_non_unimodal_returns_best_evaluated():
     assert groups[best_index]["max_abs_mv"] == min(
         group["max_abs_mv"] for group in groups
     )
+
+
+def test_gpadc_build_auto_search_timeline_preserves_real_order():
+    result = _make_linearity_timeline_result(0, 20)
+    original_values = list(result["auto_search"]["evaluated_values"])
+    events = ga.build_linearity_auto_search_timeline(result)
+
+    candidates = [event for event in events if event["kind"] == "candidate"]
+    comparisons = [event for event in events if event["kind"] == "comparison"]
+    assert [event["value"] for event in candidates] == [0, 20, 10, 5, 7, 6]
+    assert [event["best_value"] for event in candidates] == [0, 0, 10, 5, 7, 7]
+    assert [event["interval"] for event in comparisons] == [
+        (0, 10), (5, 10), (5, 7), (6, 7),
+    ]
+    assert events[3]["kind"] == "comparison"
+    assert events[-1]["is_final"] and events[-1]["completed"]
+    assert events[-1]["best_value"] == 7
+    assert result["auto_search"]["evaluated_values"] == original_values
+
+    single = ga.build_linearity_auto_search_timeline(_make_linearity_timeline_result(3, 3))
+    assert len(single) == 1 and single[0]["is_final"]
+    adjacent = ga.build_linearity_auto_search_timeline(_make_linearity_timeline_result(4, 5))
+    assert [event["value"] for event in adjacent] == [4, 5]
+    assert adjacent[-1]["interval"] == (4, 5)
+
+    result["stopped"] = True
+    result["auto_search"]["completed"] = False
+    result["auto_search"]["terminal_value"] = None
+    stopped = ga.build_linearity_auto_search_timeline(result)
+    assert stopped[-1]["is_final"] and not stopped[-1]["completed"]
+
+    result["groups"].pop()
+    try:
+        ga.build_linearity_auto_search_timeline(result)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("缺失候选组时未拒绝生成动画")
 
 
 def test_gpadc_aggregate_linearity_repeats_and_noise_comparison():

@@ -68,6 +68,7 @@ a = Analysis(
         'PIL',
         'PIL.Image',
         'PIL.ImageDraw',
+        'PIL.GifImagePlugin',
         'openpyxl.drawing.image',
         'reportlab.lib.pagesizes',
         'reportlab.lib.colors',

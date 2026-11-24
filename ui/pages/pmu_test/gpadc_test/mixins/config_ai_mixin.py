@@ -62,6 +62,16 @@ class _ConfigAiMixin:
                 enabled_when=lambda: self._export_data is not None,
                 description="导出当前 GPADC 测试结果为 Excel。需已有测试结果数据。",
             ),
+            UIActionSpec(
+                id="pmu_gpadc.export_search_gif",
+                label="导出寻优动图",
+                page_key="pmu_gpadc",
+                handler=_wrap("启动寻优动图导出", self.export_search_gif),
+                risk="low",
+                confirm=False,
+                enabled_when=self._can_export_search_gif,
+                description="后台导出 GPADC Auto Best 搜索过程 GIF，需已有完整候选结果。",
+            ),
         ])
 
     def _on_save_multi_ch_config(self):

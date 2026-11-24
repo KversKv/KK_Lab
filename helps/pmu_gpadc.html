@@ -33,6 +33,7 @@
 <p><b>Auto Best（仅 Link 开启）</b>：Shared Step (Value) 下方的滑动开关启用后禁用 Step，在 Start/End (Value) 的整数闭区间内先测 Start、End、Mid，再按端点指标保留更优半区；每轮复用已测端点、仅新增一个 Mid，直至相邻整数点。<b>Repeat (Runs)</b> 可设 1～10 次（默认 3，建议至少 3），每个候选重复执行完整扫压，Max Abs Error 与 RMS Error 分别取中位数，并保存波动范围；Max Abs 接近时比较 RMS，两者均落在 Repeat 波动带内则按并列处理、固定向低 Value 收缩并标记 Noise Tie。每个唯一候选仅显示一条最接近中位数的真实 Repeat 代表曲线，Excel 保存全部 Repeat 明细。该算法以误差响应近似单峰为前提，非单峰时只保证返回最佳已测候选，不等同全范围穷举；独立 N/P 不受 Auto 开关影响。</p>
 <p>结果区只显示所有 <b>Error (mV)</b> 曲线，不显示 Mean、Min-Max、性能指标卡、Curve View 或 Recent Tests；按全点 <b>Max Abs Error 最小</b>选择最佳曲线（并列比较 RMS Error），最佳 N/P 组合加粗高亮，其余曲线淡化。手动 Stop 会丢弃当前未完成组，仅保留完整组。</p>
 <p>测试完成、停止或异常后均按 P、N 顺序恢复双寄存器原值，Auto Best 找到最佳候选后同样不自动写回；Export Result 生成 Summary（模式、遍历范围、各组指标与最佳 N/P）及 Sweep Data（N/P、电压、Raw Mean、校准值与 Error），并嵌入 Error 图。</p>
+<p><b>Export Search GIF</b>：Auto Best 测试完成后可将找点过程导出为循环 GIF，直接用于文档展示。动画按真实 evaluated_values 顺序逐候选显示代表 Repeat Error 曲线和中位数指标，并插入端点比较/半区收缩帧；双面板同时展示 Error 曲线与 Max Abs 搜索轨迹、当前区间和当前最佳，最后定格最佳已测点。停止的测试仅回放已完成候选并标记 Search Incomplete。渲染在 GUI 线程逐帧执行，Pillow 编码与 Results 写盘在独立后台线程完成，导出中可停止且不会启动新测试；输出文件名为 <code>GPADC_AutoBestSearch_芯片_通道_CASE_时间戳.gif</code>。</p>
 
 <h3>Data Acquisition — IIC Speed</h3>
 <p>I2C 采集模式下可选择总线速度 <b>IIC Speed</b>（20 / 100 / 400 / 750 kHz，默认 100 kHz），对 GPADC 采样读寄存器与多通道测试的通道切换写/前置配置写统一生效。DUT 支持快速模式时可缩短大批量采样（如 1000CNT）的采集耗时；出现通信不稳定时请降回 100 kHz。</p>

@@ -4,6 +4,7 @@
 from .gpadc_analysis import (
     compute_reg_stats,
     compute_calibration,
+    build_linearity_auto_search_timeline,
     compute_detailed_stats,
     generate_linearity_values,
     normalize_linearity_auto_range,
@@ -34,6 +35,7 @@ from .gpadc_multi_temp import (
 __all__ = [
     "compute_reg_stats",
     "compute_calibration",
+    "build_linearity_auto_search_timeline",
     "compute_detailed_stats",
     "generate_linearity_values",
     "normalize_linearity_auto_range",

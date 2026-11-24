@@ -304,6 +304,7 @@ class _PlottingMixin:
         self._fv_hover_data = None
         self._fv_hover_last_idx = -1
         self._build_default_chart_placeholder()
+        self._refresh_search_gif_export_ui()
 
     def _clear_chart_placeholder(self):
         # 重绘/清空图表前隐藏悬浮预览，避免旧预览残留

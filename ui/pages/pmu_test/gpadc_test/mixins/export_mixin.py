@@ -5,10 +5,206 @@
 
 import datetime
 from pathlib import Path
+import re
+
+from PySide6.QtCore import QThread, QTimer
+
+from core.pmu_test.gpadc import TestWorker, build_linearity_auto_search_timeline
+from core.pmu_test.gpadc.gpadc_gif import encode_search_gif_frames
+from log_config import get_logger
+from ui.pages.pmu_test.gpadc_test.search_gif_renderer import SearchGifFrameRenderer
+
+logger = get_logger(__name__)
 
 
 class _ExportMixin:
-    """Excel 导出 Mixin"""
+    """Excel / Auto Best 搜索 GIF 导出 Mixin"""
+
+    def _search_gif_runtime(self):
+        if not hasattr(self, "_search_gif_state"):
+            self._search_gif_state = {
+                "state": "idle", "timer": None, "renderer": None,
+                "index": 0, "frames": [], "output": None,
+                "thread": None, "worker": None,
+            }
+        return self._search_gif_state
+
+    def _auto_best_export_result(self):
+        if not isinstance(self._export_data, dict):
+            return None
+        result = self._export_data.get("linearity_traverse")
+        if not isinstance(result, dict):
+            return None
+        if not (result.get("linearity") or {}).get("auto_best"):
+            return None
+        if not result.get("groups") or result.get("best_index") is None:
+            return None
+        if not (result.get("auto_search") or {}).get("evaluated_values"):
+            return None
+        return result
+
+    def _can_export_search_gif(self):
+        runtime = self._search_gif_runtime()
+        if self.is_test_running or runtime["state"] != "idle":
+            return False
+        result = self._auto_best_export_result()
+        if result is None:
+            return False
+        try:
+            build_linearity_auto_search_timeline(result)
+        except (KeyError, TypeError, ValueError):
+            return False
+        return True
+
+    def _refresh_search_gif_export_ui(self):
+        button = getattr(self, "export_search_gif_btn", None)
+        if button is None:
+            return
+        state = self._search_gif_runtime()["state"]
+        if state == "idle":
+            button.setText("Export Search GIF")
+            button.setEnabled(self._can_export_search_gif())
+        elif state == "stopping":
+            button.setText("Stopping GIF Export...")
+            button.setEnabled(False)
+        else:
+            button.setText("Stop GIF Export")
+            button.setEnabled(state in ("rendering", "encoding"))
+
+    def export_search_gif(self):
+        runtime = self._search_gif_runtime()
+        if runtime["state"] != "idle":
+            self._stop_search_gif_export()
+            return False
+        result = self._auto_best_export_result()
+        if result is None or self.is_test_running:
+            self._append_log("[WARN] No completed Auto Best result available for GIF export.")
+            return False
+        try:
+            renderer = SearchGifFrameRenderer(result)
+        except Exception as exc:
+            logger.error("Unable to prepare Auto Best GIF", exc_info=True)
+            self._append_log(f"[ERROR] Unable to prepare Auto Best GIF: {exc}")
+            return False
+
+        chip, channel, case = self._naming_fields()
+
+        def _safe(text):
+            return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", text).strip() or "UNKNOWN"
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = (
+            f"GPADC_AutoBestSearch_{_safe(chip)}_{_safe(channel)}_{_safe(case)}_{timestamp}.gif"
+        )
+        output = Path(__file__).resolve().parents[5] / "Results" / filename
+        timer = QTimer(self)
+        timer.setInterval(0)
+        timer.timeout.connect(self._render_next_search_gif_frame)
+        runtime.update({
+            "state": "rendering", "timer": timer, "renderer": renderer,
+            "index": 0, "frames": [], "output": output,
+            "thread": None, "worker": None,
+        })
+        self._append_log(f"[INFO] Rendering Auto Best search GIF: {len(renderer)} frames")
+        self._refresh_search_gif_export_ui()
+        timer.start()
+        return True
+
+    def _render_next_search_gif_frame(self):
+        runtime = self._search_gif_runtime()
+        if runtime["state"] != "rendering":
+            return
+        try:
+            index = runtime["index"]
+            runtime["frames"].append(runtime["renderer"].render_event(index))
+            runtime["index"] = index + 1
+            if runtime["index"] < len(runtime["renderer"]):
+                return
+            runtime["timer"].stop()
+            self._start_search_gif_encoding()
+        except Exception as exc:
+            logger.error("Auto Best GIF frame rendering failed", exc_info=True)
+            self._append_log(f"[ERROR] Auto Best GIF frame rendering failed: {exc}")
+            self._reset_search_gif_export()
+
+    def _start_search_gif_encoding(self):
+        runtime = self._search_gif_runtime()
+        runtime["state"] = "encoding"
+        thread = QThread()
+        worker = TestWorker(
+            encode_search_gif_frames,
+            {"frames": runtime["frames"], "output_path": runtime["output"]},
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_search_gif_finished)
+        worker.error.connect(self._on_search_gif_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_search_gif_thread_finished)
+        runtime["thread"] = thread
+        runtime["worker"] = worker
+        self._append_log("[INFO] Encoding Auto Best search GIF in background...")
+        self._refresh_search_gif_export_ui()
+        thread.start()
+
+    def _on_search_gif_finished(self, result):
+        runtime = self._search_gif_runtime()
+        runtime["state"] = "finishing"
+        if result.get("saved"):
+            self._append_log(f"[INFO] Auto Best search GIF exported to: {result['path']}")
+            self.set_system_status("Auto Best search GIF exported")
+        else:
+            self._append_log("[INFO] Auto Best search GIF export stopped.")
+        self._refresh_search_gif_export_ui()
+
+    def _on_search_gif_error(self, message):
+        runtime = self._search_gif_runtime()
+        runtime["state"] = "finishing"
+        logger.error("Auto Best GIF encoding failed: %s", message, exc_info=True)
+        self._append_log(f"[ERROR] Auto Best GIF encoding failed: {message}")
+        self.set_system_status("Auto Best GIF export failed", is_error=True)
+        self._refresh_search_gif_export_ui()
+
+    def _on_search_gif_thread_finished(self):
+        self._reset_search_gif_export()
+
+    def _reset_search_gif_export(self):
+        runtime = self._search_gif_runtime()
+        timer = runtime.get("timer")
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+        runtime.update({
+            "state": "idle", "timer": None, "renderer": None,
+            "index": 0, "frames": [], "output": None,
+            "thread": None, "worker": None,
+        })
+        self._refresh_search_gif_export_ui()
+
+    def _stop_search_gif_export(self):
+        runtime = self._search_gif_runtime()
+        state = runtime["state"]
+        if state == "rendering":
+            self._append_log("[INFO] Auto Best search GIF export stopped during rendering.")
+            self._reset_search_gif_export()
+        elif state == "encoding":
+            runtime["state"] = "stopping"
+            worker = runtime.get("worker")
+            if worker is not None:
+                worker.request_stop()
+            self._refresh_search_gif_export_ui()
+
+    def _cleanup_search_gif_export(self):
+        runtime = self._search_gif_runtime()
+        timer = runtime.get("timer")
+        if timer is not None:
+            timer.stop()
+        worker = runtime.get("worker")
+        if worker is not None:
+            worker.request_stop()
 
     def export_result(self):
         import openpyxl

@@ -1060,6 +1060,8 @@ class _LayoutMixin:
 
         self.export_result_btn = QPushButton("Export Result")
         self.export_result_btn.setObjectName("tool_btn")
+        self.export_search_gif_btn = QPushButton("Export Search GIF")
+        self.export_search_gif_btn.setObjectName("tool_btn")
 
         # Recent 管理栏折叠/展开开关（面板在 Curve 右侧，默认折叠）
         self.toggle_recent_btn = QPushButton("Recent ▶")
@@ -1071,6 +1073,7 @@ class _LayoutMixin:
         chart_top.addWidget(chart_title)
         chart_top.addStretch()
         chart_top.addWidget(self.toggle_recent_btn)
+        chart_top.addWidget(self.export_search_gif_btn)
         chart_top.addWidget(self.export_result_btn)
         chart_layout.addLayout(chart_top)
 
@@ -1160,6 +1163,7 @@ class _LayoutMixin:
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
+        self.export_search_gif_btn.clicked.connect(self.export_search_gif)
 
         self.compare_recent_btn.clicked.connect(self._on_compare_recent_tests)
         self.load_recent_btn.clicked.connect(self._on_load_recent_test)
@@ -1301,6 +1305,8 @@ class _LayoutMixin:
         if is_linearity_test:
             self.toggle_recent_btn.setChecked(False)
         self.toggle_recent_btn.setVisible(not is_linearity_test)
+        self.export_search_gif_btn.setVisible(is_linearity_test)
+        self._refresh_search_gif_export_ui()
 
         self._update_temp_hint()
 

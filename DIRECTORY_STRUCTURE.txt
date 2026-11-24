@@ -211,7 +211,8 @@ core/
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
 ├── pmu_test/                # PMU 子测试算法与 Worker（clk/dcdc/gpadc/isgain/oscp/output_voltage/psrr/ft_calib_ov）
 │   ├── gpadc/               # GPADC 纯采样、六类测试编排、算法与 QtCore Worker
-│   │   └── gpadc_runner.py  # GPADCAcquisition + GPADCTestRunner（无 Qt，显式依赖注入）
+│   │   ├── gpadc_runner.py  # GPADCAcquisition + GPADCTestRunner（无 Qt，显式依赖注入）
+│   │   └── gpadc_gif.py     # Auto Best 搜索 GIF 共享调色板编码、停止清理与原子写盘（纯 Python）
 │   ├── ft_calib_ov/         # FT Calibration Check - Output Voltage Check（EFUSE 校准码调压验证）
 │   │   ├── __init__.py      # 导出纯算法、芯片库持久化与 Worker
 │   │   ├── ft_calib_ov_analysis.py # 位提取/双模式码计算/钳位/目标解析/容差判定/配置校验（无 Qt）
@@ -498,6 +499,7 @@ ui/
 │   │   ├── gpadc_test_ui.py          # GPADC 测试界面（薄壳：GPADCTestUI 装配 7 职责 Mixin + __main__，对外入口不变）
 │   │   ├── gpadc_test/               # GPADC 页拆分产物（自 gpadc_test_ui.py 平移，行为零变更）
 │   │   │   ├── toggle_switch.py          # 页内私有滑动开关 _ToggleSwitch
+│   │   │   ├── search_gif_renderer.py    # Auto Best 搜索时间轴双面板离屏 QImage 帧渲染
 │   │   │   └── mixins/                   # 7 职责 Mixin：layout/execution/acquisition/plotting/recent_tests/export/config_ai
 │   │   ├── gpadc_multi_temp_panel.py # GPADC 多通道高低温联合测试配置面板（通道表/前置配置/存取）
 │   │   ├── clk_test_ui.py            # 时钟测试界面
