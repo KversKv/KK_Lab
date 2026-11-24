@@ -159,11 +159,16 @@ class _ConfigAiMixin:
             'pre_config': self.multi_ch_panel.get_pre_config(),
         }
 
+    @staticmethod
+    def _fmt_code_hex(v):
+        """ADC code 指标卡格式：十进制 + 括号内十六进制（均值取整换算）。"""
+        return f"{float(v):.3f} (0x{int(round(float(v))):X})"
+
     def update_test_result(self, result):
         if self.current_test_item == self.TEST_1000CNT:
-            self.avg_value.setText(f"{result['avg']:.3f}" if 'avg' in result else "---")
-            self.min_value.setText(f"{result['min']:.3f}" if 'min' in result else "---")
-            self.max_value.setText(f"{result['max']:.3f}" if 'max' in result else "---")
+            self.avg_value.setText(self._fmt_code_hex(result['avg']) if 'avg' in result else "---")
+            self.min_value.setText(self._fmt_code_hex(result['min']) if 'min' in result else "---")
+            self.max_value.setText(self._fmt_code_hex(result['max']) if 'max' in result else "---")
             self.std_value.setText(f"{result['std']:.3f}" if 'std' in result else "---")
             self.pp_value.setText(f"{result['pp']:.0f}" if 'pp' in result else "---")
             self.samples_value.setText(str(result['count']) if 'count' in result else "---")

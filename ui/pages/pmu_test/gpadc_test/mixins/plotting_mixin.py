@@ -256,7 +256,7 @@ class _PlottingMixin:
         is_ft_test = self.current_test_item == self.TEST_FT_CALIB_CHECK
 
         if is_cnt_test:
-            actual_text, ideal_text = "● Deviation from AVG", "─ AVG Level"
+            actual_text, ideal_text = "● ADC Code (LSB)", "─ AVG Level"
         elif is_ft_test:
             actual_text, ideal_text = "● Calib Error (mV)", "┄ Limit Lines"
         else:
@@ -457,7 +457,7 @@ class _PlottingMixin:
                 lines.append(f"RAW 经算法重采样 {len(before)}→{n} 点，逐样本不对应"
                              f"（RAW AVG={before_avg:.2f}）")
         ys = data.get('y') or []
-        dev = ys[idx] if idx < len(ys) else None
+        dev = ys[idx] - data.get('avg', 0.0) if idx < len(ys) else None
         tag = f"PROC ({describe_algorithm(data.get('algorithm'))})" if before else "RAW"
         text = f"{tag} = {self._fmt_data_value(raw[idx])}"
         if dev is not None:
@@ -843,7 +843,7 @@ class _PlottingMixin:
             logger.error("Error plotting FT calibration curve: %s", e, exc_info=True)
 
     def _plot_cnt_distribution(self, result, algorithm=None):
-        """1000CNT 原始数据分布图：逐样本画相对 AVG 的偏差波动（code）。
+        """1000CNT 原始数据分布图：逐样本画 ADC code，纵轴以 AVG 为中心。
 
         algorithm 为该次测试的算法配置快照（载入记录时传 record['algorithm']），
         供逐样本悬浮预览标注 PROC 段算法名。
@@ -874,7 +874,7 @@ class _PlottingMixin:
 
             legend_row = QHBoxLayout()
             legend_row.addStretch()
-            dev_legend = QLabel(f"● {record_name}Deviation from AVG (code)")
+            dev_legend = QLabel(f"● {record_name}ADC Code (LSB)")
             dev_legend.setStyleSheet(f"color: {curve_color}; font-size: 12px;")
             avg_legend = QLabel("─ AVG Level")
             avg_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
@@ -891,7 +891,7 @@ class _PlottingMixin:
             pw = pg.PlotWidget()
             pw.setBackground("#0a1735")
             pw.showGrid(x=True, y=True, alpha=0.15)
-            pw.setLabel("left", "Deviation from AVG (code)", color="#a0b4d8")
+            pw.setLabel("left", "ADC Code (LSB)", color="#a0b4d8")
             pw.setLabel("bottom", "Sample Index", color="#a0b4d8")
             for axis_name in ("left", "bottom"):
                 axis = pw.getAxis(axis_name)
@@ -899,17 +899,17 @@ class _PlottingMixin:
                 axis.setPen(pg.mkPen("#3a4f7a"))
 
             x = np.arange(1, len(raw) + 1)
-            dev = np.array(raw, dtype=float) - avg
+            codes = np.array(raw, dtype=float)
 
-            # AVG 零基准线 + ±1 STD 虚线
-            pw.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1))
+            # AVG 基准线（纵轴中心）+ ±1 STD 虚线
+            pw.addLine(y=avg, pen=pg.mkPen("#7e96bf", width=1))
             if std > 0:
-                pw.addLine(y=std, pen=pg.mkPen(color="#f0a040", width=1,
+                pw.addLine(y=avg + std, pen=pg.mkPen(color="#f0a040", width=1,
                            style=pg.QtCore.Qt.DashLine))
-                pw.addLine(y=-std, pen=pg.mkPen(color="#f0a040", width=1,
+                pw.addLine(y=avg - std, pen=pg.mkPen(color="#f0a040", width=1,
                            style=pg.QtCore.Qt.DashLine))
 
-            pw.plot(x, dev, pen=pg.mkPen(color=curve_color, width=2),
+            pw.plot(x, codes, pen=pg.mkPen(color=curve_color, width=2),
                     symbol="o", symbolSize=4,
                     symbolBrush=curve_color, symbolPen=None)
 
@@ -919,7 +919,8 @@ class _PlottingMixin:
             self._fv_hover_data = {
                 'mode': 'cnt',
                 'x': [int(v) for v in x],
-                'y': [float(v) for v in dev],
+                'y': [float(v) for v in codes],
+                'avg': avg,
                 'raw_samples': list(raw),
                 'raw_before': list(raw_before),
                 'before_avg': before_avg,
