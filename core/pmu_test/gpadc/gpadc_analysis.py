@@ -455,7 +455,22 @@ def assess_fluctuation(std, pp):
         level = "一般"
     else:
         level = "明显波动"
-    return f"噪声等级={level} (STD={std:.3f} code, P-P={pp:.0f} code)"
+    return f"噪声等级={level} (STD={std:.2f} code, P-P={pp:.0f} code)"
+
+
+def format_log_table(headers, rows, sep=","):
+    """日志表格按列对齐：每列取表头与数据的最大宽度，右对齐后以 sep 连接。
+
+    单元格须为已格式化字符串（浮点最多两位小数由调用侧保证）；
+    返回行不含 [DATA] 标签，由调用侧自行添加以触发日志区等宽渲染。
+    """
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    lines = [sep.join(h.rjust(w) for h, w in zip(headers, widths))]
+    lines.extend(sep.join(c.rjust(w) for c, w in zip(row, widths)) for row in rows)
+    return lines
 
 
 def _improve_pct(before, after):

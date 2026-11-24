@@ -21,6 +21,7 @@ from .gpadc_analysis import (
     compute_detailed_stats,
     compute_reg_stats,
     filter_mean_deviation,
+    format_log_table,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
 )
@@ -31,7 +32,7 @@ logger = get_logger(__name__)
 
 
 def _fmt_data_value(value):
-    return str(int(value)) if float(value).is_integer() else f"{float(value):.3f}"
+    return str(int(value)) if float(value).is_integer() else f"{float(value):.2f}"
 
 
 class GPADCAcquisition:
@@ -123,8 +124,13 @@ class GPADCAcquisition:
 
     def _emit_data_lines(self, header, data):
         self.log_fn(header)
-        for index in range(0, len(data), 20):
-            self.log_fn(",".join(_fmt_data_value(value) for value in data[index:index + 20]))
+        if not data:
+            return
+        texts = [_fmt_data_value(value) for value in data]
+        width = max(len(text) for text in texts)
+        for index in range(0, len(texts), 20):
+            self.log_fn("[DATA] " + ",".join(
+                text.rjust(width) for text in texts[index:index + 20]))
 
     def apply_outlier_filter(self, raw_data):
         cfg = self.outlier_filter
@@ -379,7 +385,7 @@ class GPADCTestRunner:
             for channel, state in saved.items():
                 try:
                     self.n6705c.set_voltage(channel, state["voltage"])
-                    self.log_fn(f"[INFO] CH{channel} 电压已恢复测试前设定: {state['voltage']:.3f} V")
+                    self.log_fn(f"[INFO] CH{channel} 电压已恢复测试前设定: {state['voltage']:.2f} V")
                 except Exception as exc:
                     self._report_cleanup_error(f"CH{channel} 电压恢复", exc)
                 try:
@@ -451,7 +457,7 @@ class GPADCTestRunner:
         spread = max(head_m) - min(head_m)
         net = head_m[-1] - head_m[0]
         detail = (
-            f"前{count}点 V={[f'{v:.3f}' for v in head_v]}, "
+            f"前{count}点 V={[f'{v:.2f}' for v in head_v]}, "
             f"RawMean={[f'{m:.1f}' for m in head_m]}, "
             f"极差={spread:.1f} LSB, 净变化={net:+.1f} LSB"
         )
@@ -644,9 +650,9 @@ class GPADCTestRunner:
                 adc_max.append(max_val)
                 if monitor_enabled:
                     current_data.append(current_a)
-                point_log = f"[INFO] T={current_temp:.1f}°C, avg={avg:.3f}, min={min_val}, max={max_val}"
+                point_log = f"[INFO] T={current_temp:.1f}°C, avg={avg:.2f}, min={min_val}, max={max_val}"
                 if monitor_enabled:
-                    point_log += f", CH{monitor_channel} current={current_a:.6e} A"
+                    point_log += f", CH{monitor_channel} current={current_a:.2e} A"
                 self.log_fn(point_log)
                 current_temp += config["temp_step"]
                 point_idx += 1
@@ -659,18 +665,20 @@ class GPADCTestRunner:
                 self._report_cleanup_error("恢复温箱 25°C", exc)
 
         self.log_fn("===== HIGH/LOW TEMP TEST 结果 =====")
-        result_header = "Temp, RawMean, RawMin, RawMax"
+        result_headers = ["Temp", "RawMean", "RawMin", "RawMax"]
         if monitor_enabled:
-            result_header += f", CH{monitor_channel} Current (A)"
-        self.log_fn(result_header)
+            result_headers.append(f"CH{monitor_channel} Current (A)")
+        result_rows = []
         for index in range(len(temp_data)):
-            result_line = (
-                f"{temp_data[index]:.2f}, {adc_mean[index]:.3f}, "
-                f"{adc_min[index]}, {adc_max[index]}"
-            )
+            row = [
+                f"{temp_data[index]:.2f}", f"{adc_mean[index]:.2f}",
+                str(adc_min[index]), str(adc_max[index]),
+            ]
             if monitor_enabled:
-                result_line += f", {current_data[index]:.6e}"
-            self.log_fn(result_line)
+                row.append(f"{current_data[index]:.2e}")
+            result_rows.append(row)
+        for line in format_log_table(result_headers, result_rows):
+            self.log_fn("[DATA] " + line)
         result = {
             "voltage": temp_data, "mean": adc_mean, "min": adc_min, "max": adc_max,
         }
@@ -686,22 +694,28 @@ class GPADCTestRunner:
         )
         if k == 0.0:
             self.log_fn("[WARN] 标定斜率 k=0（ADC 读数无变化或采样点电压相同），跳过标定，使用原始数据")
-        self.log_fn(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
-        self.log_fn("Voltage,RawMean,mean_cali,Δmean(mV),RawMin,RawMax,min_cali,max_cali,Δmin(mV),Δmax(mV)")
+        self.log_fn(f"[INFO] Calibration: k={k:.2f} (LSB/V), b={b:.2f} (LSB)")
+        cali_headers = ["Voltage", "RawMean", "mean_cali", "Δmean(mV)", "RawMin",
+                        "RawMax", "min_cali", "max_cali", "Δmin(mV)", "Δmax(mV)"]
+        cali_rows = []
         for index, input_voltage in enumerate(result["voltage"]):
             delta_mean_mv = (mean_cali[index] - input_voltage) * 1000
             delta_min_mv = (min_cali[index] - input_voltage) * 1000
             delta_max_mv = (max_cali[index] - input_voltage) * 1000
-            self.log_fn(
-                f"{input_voltage:.4f},{result['mean'][index]:.3f},{mean_cali[index]:.6f},{delta_mean_mv:+.3f}"
-                f",{result['min'][index]},{result['max'][index]}"
-                f",{min_cali[index]:.6f},{max_cali[index]:.6f},{delta_min_mv:+.3f},{delta_max_mv:+.3f}"
-            )
+            cali_rows.append([
+                f"{input_voltage:.2f}", f"{result['mean'][index]:.2f}",
+                f"{mean_cali[index]:.2f}", f"{delta_mean_mv:+.2f}",
+                str(result['min'][index]), str(result['max'][index]),
+                f"{min_cali[index]:.2f}", f"{max_cali[index]:.2f}",
+                f"{delta_min_mv:+.2f}", f"{delta_max_mv:+.2f}",
+            ])
+        for line in format_log_table(cali_headers, cali_rows):
+            self.log_fn("[DATA] " + line)
         self.log_fn(
-            f"[INFO] calibration points: v_low={v_low:.4f}, m_low={m_low:.3f}, "
-            f"v_high={v_high:.4f}, m_high={m_high:.3f}"
+            f"[INFO] calibration points: v_low={v_low:.2f}, m_low={m_low:.2f}, "
+            f"v_high={v_high:.2f}, m_high={m_high:.2f}"
         )
-        self.log_fn(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
+        self.log_fn(f"[INFO] Calibration: k={k:.2f} (LSB/V), b={b:.2f} (LSB)")
         return mean_cali, min_cali, max_cali
 
     def _run_temp_consistency(self, config, stop_check):
@@ -799,14 +813,15 @@ class GPADCTestRunner:
             self.log_fn(f"[INFO] T={current_temp:.1f}°C  voltage sweep done ({len(mean_row)} points)")
             current_temp = round(current_temp + config["temp_step"], 6)
 
-        voltage_header = "  ".join(f"{voltage:.3f}" for voltage in voltage_points)
+        voltage_headers = [f"{voltage:.2f}" for voltage in voltage_points]
         for title, matrix in (("Mean", mean_matrix), ("Min", min_matrix), ("Max", max_matrix)):
             self.log_fn(f"===== TEMP CONSISTENCY TEST 结果 ({title}) =====")
-            self.log_fn("Temp\\Voltage  " + voltage_header)
-            for index, temp in enumerate(temp_list):
-                if index < len(matrix):
-                    row = "  ".join(f"{value:.1f}" for value in matrix[index])
-                    self.log_fn(f"T={temp:.1f}  {row}")
+            rows = [
+                [f"T={temp:.1f}"] + [f"{value:.2f}" for value in matrix[index]]
+                for index, temp in enumerate(temp_list) if index < len(matrix)
+            ]
+            for line in format_log_table(["Temp\\Voltage"] + voltage_headers, rows, sep="  "):
+                self.log_fn("[DATA] " + line)
 
         mean_cali_matrix, min_cali_matrix, max_cali_matrix = [], [], []
         for index in range(len(temp_list)):
@@ -825,11 +840,12 @@ class GPADCTestRunner:
             ("Mean Cali", mean_cali_matrix), ("Min Cali", min_cali_matrix), ("Max Cali", max_cali_matrix),
         ):
             self.log_fn(f"===== TEMP CONSISTENCY TEST 校准结果 ({title}) =====")
-            self.log_fn("Temp\\Voltage  " + voltage_header)
-            for index, temp in enumerate(temp_list):
-                if index < len(matrix):
-                    row = "  ".join(f"{value:.6f}" for value in matrix[index])
-                    self.log_fn(f"T={temp:.1f}  {row}")
+            rows = [
+                [f"T={temp:.1f}"] + [f"{value:.2f}" for value in matrix[index]]
+                for index, temp in enumerate(temp_list) if index < len(matrix)
+            ]
+            for line in format_log_table(["Temp\\Voltage"] + voltage_headers, rows, sep="  "):
+                self.log_fn("[DATA] " + line)
         return "temp_consistency", {
             "temp": temp_list,
             "voltage": voltage_points,

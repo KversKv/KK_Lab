@@ -17,6 +17,7 @@ from .gpadc_analysis import (
     assess_fluctuation,
     compare_algorithm_effect,
     filter_mean_deviation,
+    format_log_table,
 )
 from .gpadc_worker import TestWorker, freeze_config
 from .gpadc_runner import GPADCAcquisition, GPADCTestRunner
@@ -44,6 +45,7 @@ __all__ = [
     "assess_fluctuation",
     "compare_algorithm_effect",
     "filter_mean_deviation",
+    "format_log_table",
     "TestWorker",
     "freeze_config",
     "GPADCAcquisition",

@@ -67,10 +67,10 @@ def run_ft_calib_check(
     k, b = solve_ft_kb(v1, c1, v2, c2)
 
     log(f"===== FT CALIBRATION CHECK ({mode}) =====")
-    log(f"[INFO] 校准点: P1=({v1:.3f} V, {c1:.1f} LSB), P2=({v2:.3f} V, {c2:.1f} LSB)")
-    log(f"[INFO] 由用户两点解得 K={k:.4f} LSB/V, B={b:.2f} LSB")
+    log(f"[INFO] 校准点: P1=({v1:.2f} V, {c1:.1f} LSB), P2=({v2:.2f} V, {c2:.1f} LSB)")
+    log(f"[INFO] 由用户两点解得 K={k:.2f} LSB/V, B={b:.2f} LSB")
     log(f"[INFO] 误差限 ±{err_limit_mv:.1f} mV, 校准码容差 ±{raw_tol_lsb:.1f} LSB, "
-        f"每点采样 {sample_cnt} 次, 分压比={divider_ratio:g}")
+        f"每点采样 {sample_cnt} 次, 分压比={divider_ratio:.2f}")
     if divider_ratio != 1.0:
         log("[INFO] 外部分压生效：DUT 实际电压 = 源设定 / 分压比；"
             "DUT 侧校准电压按 × 分压比还原后评估；"
@@ -126,9 +126,9 @@ def run_ft_calib_check(
                 'dev_lsb': dev,
                 'passed': ok,
             })
-            src_note = f"（源={v_set:.3f} V）" if divider_ratio != 1.0 else ""
-            log(f"[CHECK] V={v_pt:.3f}{src_note} 校准码={c_pt:.1f} 实测={avg:.2f} "
-                f"偏差={dev:+.2f} LSB → {'PASS' if ok else 'FAIL'}")
+            src_note = f"（源={v_set:.2f} V）" if divider_ratio != 1.0 else ""
+            log(f"[MEAS] V={v_pt:7.2f} 校准码={c_pt:10.1f} 实测={avg:10.2f} "
+                f"偏差={dev:+9.2f} LSB → {'PASS' if ok else 'FAIL'}{src_note}")
             _tick()
 
     if mode == 'UART' and sample_uart_fn is None:
@@ -164,8 +164,8 @@ def run_ft_calib_check(
             cal_dut_v = (avg - b) / k
             cal_v = cal_dut_v * divider_ratio
             err = (cal_v - v_pt) * 1000.0
-            log(f"[MEAS] V={v_pt:.3f}（DUT={actual_v:.3f}） raw={avg:.2f} "
-                f"cal={cal_v:.4f} V err={err:+.2f} mV")
+            log(f"[MEAS] V={v_pt:7.2f}（DUT={actual_v:7.2f}） raw={avg:10.2f} "
+                f"cal={cal_v:7.2f} V err={err:+9.2f} mV")
         else:
             raw_avg, volt_avg = sample_uart_fn(sample_cnt, stop_check)
             cal_v = volt_avg / 1000.0 * divider_ratio
@@ -173,8 +173,8 @@ def run_ft_calib_check(
             cons = (raw_avg - b) / k * 1000.0 - volt_avg
             dut_volt_mv.append(volt_avg)
             cons_mv.append(cons)
-            log(f"[MEAS] V={v_pt:.3f}（DUT={actual_v:.3f}） raw={raw_avg:.2f} "
-                f"volt={volt_avg:.1f} mV err={err:+.2f} mV cons={cons:+.2f} mV")
+            log(f"[MEAS] V={v_pt:7.2f}（DUT={actual_v:7.2f}） raw={raw_avg:10.2f} "
+                f"volt={volt_avg:9.1f} mV err={err:+9.2f} mV cons={cons:+9.2f} mV")
 
         voltage_data.append(v_pt)
         actual_voltage.append(actual_v)

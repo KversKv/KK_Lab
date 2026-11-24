@@ -290,7 +290,8 @@ def test_temp_consistency_calibration_uses_worker_signals(app, worker_threads):
     assert len(result["mean_cali"]) == 1
     assert len(result["mean_cali"][0]) == 2
     assert any(line.startswith("[INFO] Calibration: k=") for line in probe.logs)
-    assert any(line.startswith("Voltage,RawMean,mean_cali") for line in probe.logs)
+    assert any(line.startswith("[DATA]") and "Voltage" in line and "RawMean" in line
+               for line in probe.logs)
     assert ("设置温箱温度到 25.0°C", False) in probe.statuses
     probe.assert_slots_in_gui_thread()
 
@@ -523,7 +524,8 @@ def test_high_low_temp_current_monitoring_records_each_temperature(monkeypatch):
     assert result["current_channel"] == 3
     assert result["current_a"] == pytest.approx([0.001, 0.002, 0.003])
     assert len(result["current_a"]) == len(result["voltage"])
-    assert "Temp, RawMean, RawMin, RawMax, CH3 Current (A)" in logs
+    assert any(line.startswith("[DATA]") and "RawMean" in line and "CH3 Current (A)" in line
+               for line in logs)
 
     source.calls.clear()
     config["current_monitor_enabled"] = False

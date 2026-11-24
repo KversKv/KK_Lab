@@ -141,7 +141,7 @@ def main() -> int:
     _check("启用: 输出 [FILTER] 日志",
            any("[FILTER]" in line for line in page._test_worker.log.lines))
     _check("启用: 日志打印被剔除值 120",
-           any(line.strip() == "120" for line in page._test_worker.log.lines))
+           any(line.strip() == "[DATA] 120" for line in page._test_worker.log.lines))
 
     page._test_worker = _WorkerStub()
     out = page._apply_outlier_filter([100, 200])
@@ -149,7 +149,7 @@ def main() -> int:
     _check("全剔除: 输出 [WARN] 日志",
            any("[WARN]" in line for line in page._test_worker.log.lines))
     _check("全剔除: 日志打印被剔除值 100,200",
-           any(line.strip() == "100,200" for line in page._test_worker.log.lines))
+           any(line.strip() == "[DATA] 100,200" for line in page._test_worker.log.lines))
 
     # ---- FT 测试项隐藏两区（offscreen 下 isVisible 恒 False，用 isHidden 判定） ----
     ft_idx = page.test_item_combo.findData(page.TEST_FT_CALIB_CHECK)

@@ -18,6 +18,8 @@ import time
 from instruments.chambers import TemperatureStabilizer
 from log_config import get_logger
 
+from .gpadc_analysis import format_log_table
+
 logger = get_logger(__name__)
 
 
@@ -414,7 +416,7 @@ def run_multi_ch_temp_test(
                         completed_steps += 1
                         if progress_callback:
                             progress_callback(int(completed_steps * 100 / total_steps))
-                        _log(f"[CH {name}] T={current_temp:.1f}°C, avg={avg:.3f}, min={mn}, max={mx}")
+                        _log(f"[CH {name}] T={current_temp:.1f}°C, avg={avg:.2f}, min={mn}, max={mx}")
 
                 if _stopped():
                     _log("[INFO] Multi-Ch temp test stopped by user.")
@@ -443,18 +445,23 @@ def run_multi_ch_temp_test(
         for res in results:
             name = res["name"]
             if res["sweep"]:
-                vol_header = "  ".join(f"{v:.3f}" for v in (res["voltage"] or []))
+                vol_headers = [f"{v:.2f}" for v in (res["voltage"] or [])]
                 for tag, matrix in (("Mean", res["mean"]), ("Min", res["min"]), ("Max", res["max"])):
                     _log(f"--- [CH {name}] {tag} (Temp x Voltage) ---")
-                    _log("Temp\\Voltage  " + vol_header)
-                    for i, t in enumerate(temp_list):
-                        if i < len(matrix):
-                            _log(f"T={t:.1f}  " + "  ".join(f"{x:.1f}" for x in matrix[i]))
+                    rows = [
+                        [f"T={t:.1f}"] + [f"{x:.2f}" for x in matrix[i]]
+                        for i, t in enumerate(temp_list) if i < len(matrix)
+                    ]
+                    for line in format_log_table(["Temp\\Voltage"] + vol_headers, rows, sep="  "):
+                        _log("[DATA] " + line)
             else:
                 _log(f"--- [CH {name}] 定点采样 (Temp, Mean, Min, Max) ---")
-                for i, t in enumerate(temp_list):
-                    if i < len(res["mean"]):
-                        _log(f"{t:.2f}, {res['mean'][i]:.3f}, {res['min'][i]}, {res['max'][i]}")
+                rows = [
+                    [f"{t:.2f}", f"{res['mean'][i]:.2f}", str(res['min'][i]), str(res['max'][i])]
+                    for i, t in enumerate(temp_list) if i < len(res["mean"])
+                ]
+                for line in format_log_table(["Temp", "Mean", "Min", "Max"], rows):
+                    _log("[DATA] " + line)
 
         return {
             "temp": temp_list,

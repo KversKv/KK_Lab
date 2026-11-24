@@ -190,26 +190,31 @@ class GPADCTestUI(
 
     @staticmethod
     def _fmt_data_value(v):
-        """数据日志格式化：整数原样输出，浮点保留 3 位小数。"""
-        return str(int(v)) if float(v).is_integer() else f"{float(v):.3f}"
+        """数据日志格式化：整数原样输出，浮点保留 2 位小数。"""
+        return str(int(v)) if float(v).is_integer() else f"{float(v):.2f}"
 
-    def _fmt_data_value_marked(self, v, avg):
-        """数据日志单值格式：远离均值的轨码（0/65535）包红粗标记。"""
-        text = self._fmt_data_value(v)
+    def _fmt_data_value_marked(self, v, avg, width=0):
+        """数据日志单值格式：先按列宽右对齐，远离均值的轨码（0/65535）包红粗标记。"""
+        text = self._fmt_data_value(v).rjust(width)
         fv = float(v)
         if fv in self._GLITCH_CODES and abs(fv - avg) >= self._GLITCH_MARK_MIN_DEV_LSB:
             return LOG_MARK_START + text + LOG_MARK_END
         return text
 
     def _log_data_series(self, tag, data):
-        """把一串样本数据按 20 个/行分块输出到日志（首行带 [DATA] 标签与样本数）。"""
+        """把一串样本数据按 20 个/行分块输出到日志（首行带 [DATA] 标签与样本数）。
+
+        数值按全序列最大宽度右对齐；数据行带 [DATA] 标签触发日志区等宽保空格渲染。
+        """
         if not data:
             return
         self._append_log(f"[DATA] {tag} (N={len(data)}):")
         avg = sum(float(v) for v in data) / len(data)
+        width = max(len(self._fmt_data_value(v)) for v in data)
         chunk = 20
         for i in range(0, len(data), chunk):
-            self._append_log(",".join(self._fmt_data_value_marked(v, avg) for v in data[i:i + chunk]))
+            self._append_log("[DATA] " + ",".join(
+                self._fmt_data_value_marked(v, avg, width) for v in data[i:i + chunk]))
 
     def set_progress(self, value: int):
         self.execution_logs.set_progress(value)

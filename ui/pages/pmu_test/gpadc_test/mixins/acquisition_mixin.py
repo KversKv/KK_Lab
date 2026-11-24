@@ -9,7 +9,7 @@ import time
 from lib.i2c.i2c_interface_x64 import I2CInterface
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C
-from core.pmu_test.gpadc import GPADCAcquisition, compute_calibration
+from core.pmu_test.gpadc import GPADCAcquisition, compute_calibration, format_log_table
 
 
 class _AcquisitionMixin:
@@ -193,24 +193,28 @@ class _AcquisitionMixin:
 
         if k == 0.0:
             log("[WARN] 标定斜率 k=0（ADC 读数无变化或采样点电压相同），跳过标定，使用原始数据")
-        log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
-        log('Voltage,RawMean,mean_cali,Δmean(mV),RawMin,RawMax,min_cali,max_cali,Δmin(mV),Δmax(mV)')
+        log(f"[INFO] Calibration: k={k:.2f} (LSB/V), b={b:.2f} (LSB)")
+        cali_headers = ["Voltage", "RawMean", "mean_cali", "Δmean(mV)", "RawMin",
+                        "RawMax", "min_cali", "max_cali", "Δmin(mV)", "Δmax(mV)"]
+        cali_rows = []
         for i in range(len(adc_raw_data)):
             v_in = adc_raw_data[i]
             delta_mean_mv = (mean_cali[i] - v_in) * 1000
             delta_min_mv = (adc_min_cali[i] - v_in) * 1000
             delta_max_mv = (adc_max_cali[i] - v_in) * 1000
-            log(
-                f'{v_in:.4f},{adc_mean[i]:.3f},{mean_cali[i]:.6f},{delta_mean_mv:+.3f}'
-                f',{adc_min[i]},{adc_max[i]}'
-                f',{adc_min_cali[i]:.6f},{adc_max_cali[i]:.6f}'
-                f',{delta_min_mv:+.3f},{delta_max_mv:+.3f}'
-            )
+            cali_rows.append([
+                f"{v_in:.2f}", f"{adc_mean[i]:.2f}", f"{mean_cali[i]:.2f}",
+                f"{delta_mean_mv:+.2f}", str(adc_min[i]), str(adc_max[i]),
+                f"{adc_min_cali[i]:.2f}", f"{adc_max_cali[i]:.2f}",
+                f"{delta_min_mv:+.2f}", f"{delta_max_mv:+.2f}",
+            ])
+        for line in format_log_table(cali_headers, cali_rows):
+            log("[DATA] " + line)
         log(
-            f"[INFO] calibration points: v_low={v_low:.4f}, m_low={m_low:.3f}, "
-            f"v_high={v_high:.4f}, m_high={m_high:.3f}"
+            f"[INFO] calibration points: v_low={v_low:.2f}, m_low={m_low:.2f}, "
+            f"v_high={v_high:.2f}, m_high={m_high:.2f}"
         )
-        log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
+        log(f"[INFO] Calibration: k={k:.2f} (LSB/V), b={b:.2f} (LSB)")
         return adc_raw_data, mean_cali, adc_min_cali, adc_max_cali
 
     def _compute_multi_ch_calibration(self, result):
@@ -245,7 +249,7 @@ class _AcquisitionMixin:
             ch['max_cali'] = max_cali_rows
             if mean_cali_rows:
                 self._append_log(
-                    f"[INFO] CH {ch.get('name')}: Calibration k={k:.6f} (LSB/V), b={b:.6f} (LSB)"
+                    f"[INFO] CH {ch.get('name')}: Calibration k={k:.2f} (LSB/V), b={b:.2f} (LSB)"
                 )
 
     def _calculate_gpadc_parameters(self, force_voltage_result):
@@ -303,8 +307,8 @@ class _AcquisitionMixin:
             params['gain_error'] = 0.0
         params['offset_error'] = float(adc_ideal[0] - adc_mean[0])
         self._append_log(
-            f"[RESULT] INL={params['inl']:.3f}, DNL={params['dnl']:.3f}, "
-            f"ENOB={params['enob']:.3f}, Gain Error: {params['gain_error']:.3f}%, "
-            f"Offset Error: {params['offset_error']:.3f} LSB"
+            f"[RESULT] INL={params['inl']:.2f}, DNL={params['dnl']:.2f}, "
+            f"ENOB={params['enob']:.2f}, Gain Error: {params['gain_error']:.2f}%, "
+            f"Offset Error: {params['offset_error']:.2f} LSB"
         )
         return params

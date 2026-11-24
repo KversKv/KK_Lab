@@ -220,7 +220,7 @@ class _RecentTestsMixin:
         if kind == '1000cnt':
             record['params'] = dict(result)
             record['summary'] = (
-                f"AVG={result.get('avg', 0):.3f} STD={result.get('std', 0):.3f} "
+                f"AVG={result.get('avg', 0):.2f} STD={result.get('std', 0):.2f} "
                 f"P-P={result.get('pp', 0):.0f} N={result.get('count', 0)}"
             )
         elif kind in ('force_voltage', 'high_low_temp'):
@@ -230,8 +230,8 @@ class _RecentTestsMixin:
             record['calibration'] = export_data.get('calibration')
             params = record['params'] or {}
             record['summary'] = (
-                f"INL={params.get('inl', 0.0):.3f} DNL={params.get('dnl', 0.0):.3f} "
-                f"ENOB={params.get('enob', 0.0):.3f} R²={params.get('linearity', 0.0):.4f}"
+                f"INL={params.get('inl', 0.0):.2f} DNL={params.get('dnl', 0.0):.2f} "
+                f"ENOB={params.get('enob', 0.0):.2f} R²={params.get('linearity', 0.0):.2f}"
             )
         elif kind == 'multi_ch_temp':
             record['raw'] = result
@@ -404,15 +404,15 @@ class _RecentTestsMixin:
     def _compare_stats_to_log(self, records):
         self._append_log("===== 1000CNT 记录对比 =====")
         self._append_log(
-            f"{'#':<4}{'Time':<14}{'AVG':>10}{'MIN':>10}{'MAX':>10}{'STD':>10}{'P-P':>8}{'N':>8}"
+            f"[DATA] {'#':<4}{'Time':<14}{'AVG':>10}{'MIN':>10}{'MAX':>10}{'STD':>10}{'P-P':>8}{'N':>8}"
         )
         for r in records:
             p = r.get('params') or {}
             ts = r['time'].strftime("%m-%d %H:%M")
             self._append_log(
-                f"#{r['id']:<3}{ts:<14}"
-                f"{p.get('avg', 0):>10.3f}{p.get('min', 0):>10.3f}{p.get('max', 0):>10.3f}"
-                f"{p.get('std', 0):>10.3f}{p.get('pp', 0):>8.0f}{p.get('count', 0):>8d}"
+                f"[DATA] #{r['id']:<3}{ts:<14}"
+                f"{p.get('avg', 0):>10.2f}{p.get('min', 0):>10.2f}{p.get('max', 0):>10.2f}"
+                f"{p.get('std', 0):>10.2f}{p.get('pp', 0):>8.0f}{p.get('count', 0):>8d}"
             )
 
     def _on_load_recent_test(self):
@@ -435,8 +435,8 @@ class _RecentTestsMixin:
         if kind == '1000cnt':
             params = record.get('params') or {}
             self._append_log(
-                f"[INFO] 已载入记录 #{record['id']}：AVG={params.get('avg', 0):.3f}, "
-                f"STD={params.get('std', 0):.3f}, P-P={params.get('pp', 0):.0f}, N={params.get('count', 0)}"
+                f"[INFO] 已载入记录 #{record['id']}：AVG={params.get('avg', 0):.2f}, "
+                f"STD={params.get('std', 0):.2f}, P-P={params.get('pp', 0):.0f}, N={params.get('count', 0)}"
             )
             if self.current_test_item == self.TEST_1000CNT:
                 self.update_test_result(params)

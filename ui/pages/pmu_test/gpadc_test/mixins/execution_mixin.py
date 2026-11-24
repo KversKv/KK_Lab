@@ -109,7 +109,7 @@ class _ExecutionMixin:
         self._calib_points_snapshot = self._parse_calib_points()
         if self._calib_points_snapshot is not None:
             v_lo, v_hi = self._calib_points_snapshot
-            self._append_log(f"[INFO] 使用手动校准点: low={v_lo}, high={v_hi}")
+            self._append_log(f"[INFO] 使用手动校准点: low={v_lo:.2f}, high={v_hi:.2f}")
         self._algorithm_snapshot = freeze_config(self._collect_algorithm_config())
         if self._algorithm_snapshot is not None:
             self._append_log(f"[INFO] 启用采样算法: {describe_algorithm(self._algorithm_snapshot)}")
@@ -412,8 +412,8 @@ class _ExecutionMixin:
         if kind == '1000cnt':
             self.update_test_result(result)
             self._append_log(
-                f"[RESULT] 1000CNT TEST: AVG={result.get('avg', 0):.3f}, MIN={result.get('min', 0):.3f}, "
-                f"MAX={result.get('max', 0):.3f}, STD={result.get('std', 0):.3f}, "
+                f"[RESULT] 1000CNT TEST: AVG={result.get('avg', 0):.2f}, MIN={result.get('min', 0):.2f}, "
+                f"MAX={result.get('max', 0):.2f}, STD={result.get('std', 0):.2f}, "
                 f"P-P={result.get('pp', 0):.0f} code, N={result.get('count', 0)}"
             )
             # 原始数据波动评估（STD 分级，阈值为 gpadc_analysis 的 FLUCT_STD_* 常量）
@@ -430,7 +430,7 @@ class _ExecutionMixin:
                           else f"{effect['pp_improve_pct']:+.1f}%")
                 self._append_log(
                     f"[ALGO] {describe_algorithm(self._algorithm_snapshot)} 波动改善: "
-                    f"STD {effect['std_before']:.3f}→{effect['std_after']:.3f} code ({std_pct}), "
+                    f"STD {effect['std_before']:.2f}→{effect['std_after']:.2f} code ({std_pct}), "
                     f"P-P {effect['pp_before']:.0f}→{effect['pp_after']:.0f} code ({pp_pct}), "
                     f"N {effect['count_before']}→{effect['count_after']}"
                 )
