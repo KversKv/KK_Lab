@@ -7,6 +7,7 @@ GPADC测试UI组件
 
 
 from ui.widgets.config_memory import ConfigMemory
+from ui.modules.execution_logs_module_frame import LOG_MARK_START, LOG_MARK_END
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
@@ -66,6 +67,11 @@ class GPADCTestUI(
     # 扫描响应保护：电压扫描前 N 点 Raw 均值极差（LSB）低于阈值或无净增量 → 判定 DUT 无响应
     _SWEEP_GUARD_POINTS = 3
     _SWEEP_GUARD_MIN_SPREAD_LSB = 2
+
+    # 数据日志异常样本红粗标记：轨码（0 / 0xFFFF）且偏离批均值超阈值才标；
+    # 均值本身贴近轨（偏差低于阈值）时不标，避免合法低/高码值误报
+    _GLITCH_CODES = (0, 65535)
+    _GLITCH_MARK_MIN_DEV_LSB = 100
 
     INSTRUMENT_MAP = {
         TEST_1000CNT: [],
@@ -187,14 +193,23 @@ class GPADCTestUI(
         """数据日志格式化：整数原样输出，浮点保留 3 位小数。"""
         return str(int(v)) if float(v).is_integer() else f"{float(v):.3f}"
 
+    def _fmt_data_value_marked(self, v, avg):
+        """数据日志单值格式：远离均值的轨码（0/65535）包红粗标记。"""
+        text = self._fmt_data_value(v)
+        fv = float(v)
+        if fv in self._GLITCH_CODES and abs(fv - avg) >= self._GLITCH_MARK_MIN_DEV_LSB:
+            return LOG_MARK_START + text + LOG_MARK_END
+        return text
+
     def _log_data_series(self, tag, data):
         """把一串样本数据按 20 个/行分块输出到日志（首行带 [DATA] 标签与样本数）。"""
         if not data:
             return
         self._append_log(f"[DATA] {tag} (N={len(data)}):")
+        avg = sum(float(v) for v in data) / len(data)
         chunk = 20
         for i in range(0, len(data), chunk):
-            self._append_log(",".join(self._fmt_data_value(v) for v in data[i:i + chunk]))
+            self._append_log(",".join(self._fmt_data_value_marked(v, avg) for v in data[i:i + chunk]))
 
     def set_progress(self, value: int):
         self.execution_logs.set_progress(value)

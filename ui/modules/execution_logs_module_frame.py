@@ -44,6 +44,16 @@ _LEVEL_COLORS = {
 
 _DEFAULT_LOG_COLOR = "#c8d8f0"
 
+# 行内红粗标记：页面用 \x01/\x02 包裹异常值，_format_html 渲染为红粗体；
+# 复制/导出经 strip_log_marks 剥离，纯文本保持干净。
+LOG_MARK_START = "\x01"
+LOG_MARK_END = "\x02"
+
+
+def strip_log_marks(text: str) -> str:
+    """去除行内红粗标记控制符（复制/导出纯文本用）。"""
+    return text.replace(LOG_MARK_START, "").replace(LOG_MARK_END, "")
+
 _COLLAPSED_HEIGHT = 30
 _DEFAULT_HEIGHT = 200
 
@@ -752,7 +762,7 @@ class ExecutionLogsFrame(QFrame):
     def _copy_logs(self):
         clipboard = QApplication.clipboard()
         if clipboard:
-            plain = "\n".join(raw for raw, _ in self._all_logs)
+            plain = "\n".join(strip_log_marks(raw) for raw, _ in self._all_logs)
             clipboard.setText(plain)
 
     def _export_logs(self):
@@ -765,7 +775,7 @@ class ExecutionLogsFrame(QFrame):
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     for raw, _ in self._all_logs:
-                        f.write(raw + "\n")
+                        f.write(strip_log_marks(raw) + "\n")
                 self.log_exported.emit(path)
             except Exception:
                 pass
@@ -804,9 +814,14 @@ class ExecutionLogsFrame(QFrame):
             .replace(">", "&gt;")
         )
         # 表格类日志（对齐敏感）：HTML 富文本会折叠连续空格，须替换为 &nbsp; 逐字保宽
-        if ("[SUMMARY]" in message or "[DATA]" in message
-                or "[MEAS]" in message or "[TEST]" in message or "\t" in message):
+        tabular = ("[SUMMARY]" in message or "[DATA]" in message
+                   or "[MEAS]" in message or "[TEST]" in message or "\t" in message)
+        if tabular:
             escaped = escaped.replace(" ", "&nbsp;")
+        # 行内红粗标记须在 &nbsp; 转换后注入，避免标签内空格被转义
+        escaped = (escaped.replace(LOG_MARK_START, '<b style="color:#f87171;">')
+                          .replace(LOG_MARK_END, "</b>"))
+        if tabular:
             return (
                 f'<span style="color:#5a6a8a;">[{ts}]</span>&nbsp;&nbsp;'
                 f'<span style="color:{color};font-family:Consolas,\'Courier New\',monospace;white-space:pre;">{escaped}</span>'
