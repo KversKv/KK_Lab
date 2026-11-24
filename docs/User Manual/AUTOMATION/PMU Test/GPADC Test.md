@@ -53,7 +53,7 @@ GPADC（General Purpose ADC）测试：验证芯片内部通用 ADC 的采样精
 
 | 参数 | 单位 | 说明 |
 |---|---|---|
-| Sample Count | — | 1000CNT 测试的采样次数（默认 1000） |
+| Points | — | 最终测试点数（默认 1000）；启用分组聚合算法时原始采样自动按 Group Size 倍数扩算，保证算法后点数等于 Points |
 | Voltage Range | V | Force Voltage 扫描范围 |
 | Temperature Points | °C | 高低温测试的温度点列表 |
 | ADC Code | — | DUT 回读的原始 ADC 码值 |

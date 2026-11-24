@@ -14,6 +14,7 @@ from instruments.chambers import TemperatureStabilizer
 from log_config import get_logger
 
 from .gpadc_analysis import (
+    algorithm_length_divisor,
     apply_algorithm,
     compare_algorithm_effect,
     compute_calibration,
@@ -892,6 +893,8 @@ class GPADCTestRunner:
             stop_check=stop_check,
             progress_callback=self.progress_callback,
         )
+        # sample_cnt 为扩算后的原始采样数；points 还原为最终测试点数供导出
+        result["points"] = config["sample_cnt"] // algorithm_length_divisor(self.acquisition.algorithm)
         return "multi_ch_temp", result
 
     def _run_ft_calib_check(self, config, stop_check):

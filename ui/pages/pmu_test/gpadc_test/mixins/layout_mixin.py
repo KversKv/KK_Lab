@@ -588,7 +588,7 @@ class _LayoutMixin:
         params_layout.addWidget(self.ft_params_frame)
         self.ft_params_frame.hide()
 
-        self.sample_count_label = QLabel("Sample Count")
+        self.sample_count_label = QLabel("Points")
         self.sample_count_label.setObjectName("muted_label")
         params_layout.addWidget(self.sample_count_label)
 
@@ -855,7 +855,7 @@ class _LayoutMixin:
         max_card, self.max_value = self._create_metric_card("MAX", "---", "metric_value_yellow")
         std_card, self.std_value = self._create_metric_card("STD (code)", "---", "metric_value_blue")
         pp_card, self.pp_value = self._create_metric_card("P-P NOISE (code)", "---", "metric_value_yellow")
-        samples_card, self.samples_value = self._create_metric_card("SAMPLES", "---", "metric_value_green")
+        samples_card, self.samples_value = self._create_metric_card("POINTS", "---", "metric_value_green")
 
         # 按测试项分组显隐：1000CNT 展示详细统计卡组，其余测试项展示线性度卡组
         self._cnt_cards = [avg_card, min_card, max_card, std_card, pp_card, samples_card]

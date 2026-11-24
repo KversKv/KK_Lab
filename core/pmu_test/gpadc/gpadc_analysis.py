@@ -365,8 +365,9 @@ ALGORITHM_REGISTRY = {
         'desc': '每 N 个连续样本去掉最大/最小值后取平均（每组输出 1 个值，长度缩短为 1/N）',
         'principle': '思路: 每 count 个连续样本为一组，排序后去掉最大值与最小值，剩余取平均作为该组输出（每组 1 值，长度缩为 1/count）',
         'func': algo_trimmed_mean,
+        'length_divisor': {'param': 'count', 'min': 3},
         'params': {
-            'count': {'label': 'Sample Count', 'default': 10, 'min': 3, 'max': 10000,
+            'count': {'label': 'Group Size', 'default': 10, 'min': 3, 'max': 10000,
                       'step': 1, 'decimals': 0},
         },
     },
@@ -375,8 +376,9 @@ ALGORITHM_REGISTRY = {
         'desc': '每 N 个连续样本先求均值，剔除偏差超过 Tolerance% 的样本后取平均（每组输出 1 个值）',
         'principle': '思路: 每 count 个连续样本为一组，先求组内均值，剔除与均值偏差超过 tolerance_pct% 的样本，剩余取平均作为该组输出（每组 1 值，长度缩为 1/count）',
         'func': algo_deviation_trim_mean,
+        'length_divisor': {'param': 'count', 'min': 1},
         'params': {
-            'count': {'label': 'Sample Count', 'default': 10, 'min': 2, 'max': 10000,
+            'count': {'label': 'Group Size', 'default': 10, 'min': 2, 'max': 10000,
                       'step': 1, 'decimals': 0},
             'tolerance_pct': {'label': 'Tolerance (%)', 'default': 5.0, 'min': 0.1,
                               'max': 100.0, 'step': 0.5, 'decimals': 1},
@@ -412,6 +414,25 @@ def describe_algorithm(algo_config):
         param_text = ", ".join(f"{k}={v}" for k, v in params.items())
         return f"{spec['name']} ({param_text})"
     return spec['name']
+
+
+def algorithm_length_divisor(algo_config):
+    """分组聚合类算法的长度除数：原始采样数 = Points × 除数；非缩短类返回 1。
+
+    除数元信息来自注册表 ``length_divisor``（param + min），新增分组类算法
+    登记该键即可自动获得 Points 换算，无需改 UI。
+    """
+    if not algo_config:
+        return 1
+    spec = ALGORITHM_REGISTRY.get(algo_config.get('id'))
+    if not spec:
+        return 1
+    meta = spec.get('length_divisor')
+    if not meta:
+        return 1
+    params = algo_config.get('params') or {}
+    default = spec['params'][meta['param']]['default']
+    return max(meta['min'], int(params.get(meta['param'], default)))
 
 
 # ---------------------------------------------------------------------------

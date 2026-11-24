@@ -452,7 +452,7 @@ class _ExportMixin:
             ("Test Time", ts),
             ("Temp Range (°C)", f"{temp_list[0]:.1f} ~ {temp_list[-1]:.1f}" if temp_list else "N/A"),
             ("Temp Points", len(temp_list)),
-            ("Sample Count", result.get('sample_cnt', 0)),
+            ("Points", result.get('points', result.get('sample_cnt', 0))),
             ("Channel Count", len(channels)),
         ]
         for key, value in meta_items:

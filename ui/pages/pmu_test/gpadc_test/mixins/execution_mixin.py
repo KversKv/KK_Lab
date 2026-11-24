@@ -14,7 +14,8 @@ from instruments.mock.mock_instruments import MockChamber, MockN6705C
 from ui.theme import apply_qss
 from core.pmu_test.gpadc import (
     TestWorker as _TestWorker, GPADCTestRunner,
-    ALGORITHM_REGISTRY, describe_algorithm, assess_fluctuation, freeze_config,
+    ALGORITHM_REGISTRY, describe_algorithm, algorithm_length_divisor,
+    assess_fluctuation, freeze_config,
 )
 
 _RETIRED_THREAD_WORKERS = {}
@@ -149,7 +150,15 @@ class _ExecutionMixin:
         iic_device_addr = int(self.iic_device_address.text(), 16)
         iic_reg_addr = int(self.iic_data_address.text(), 16)
         iic_width = self.iic_width_combo.currentData()
-        sample_cnt = self.sample_count.value()
+        # Points = 最终测试点数；分组聚合算法按除数扩原始采样（FT 不应用算法，豁免）
+        points = self.sample_count.value()
+        divisor = (1 if test_item == self.TEST_FT_CALIB_CHECK
+                   else algorithm_length_divisor(self._algorithm_snapshot))
+        sample_cnt = points * divisor
+        if divisor > 1:
+            self._append_log(
+                f"[INFO] Points={points}, 分组聚合算法 ×{divisor} → 原始采样数 {sample_cnt}"
+            )
 
         if test_item == self.TEST_1000CNT:
             kind = "1000cnt"
