@@ -136,13 +136,19 @@ class _ConfigAiMixin:
             'linearity_link_np': self.linearity_link_np.isChecked(),
             'linearity_start': self.linearity_start.text(),
             'linearity_end': self.linearity_end.text(),
-            'linearity_step': self.linearity_step.text(),
+            'linearity_value_start': self.linearity_value_start.text(),
+            'linearity_value_end': self.linearity_value_end.text(),
+            'linearity_value_step': self.linearity_value_step.text(),
             'linearity_n_start': self.linearity_n_start.text(),
             'linearity_n_end': self.linearity_n_end.text(),
-            'linearity_n_step': self.linearity_n_step.text(),
+            'linearity_n_value_start': self.linearity_n_value_start.text(),
+            'linearity_n_value_end': self.linearity_n_value_end.text(),
+            'linearity_n_value_step': self.linearity_n_value_step.text(),
             'linearity_p_start': self.linearity_p_start.text(),
             'linearity_p_end': self.linearity_p_end.text(),
-            'linearity_p_step': self.linearity_p_step.text(),
+            'linearity_p_value_start': self.linearity_p_value_start.text(),
+            'linearity_p_value_end': self.linearity_p_value_end.text(),
+            'linearity_p_value_step': self.linearity_p_value_step.text(),
             'temp_min': self.temp_min.value(),
             'temp_max': self.temp_max.value(),
             'temp_step': self.temp_step.value(),
@@ -487,13 +493,19 @@ class _ConfigAiMixin:
             touched.append(self.linearity_link_np)
         _set_text(self.linearity_start, "linearity_start")
         _set_text(self.linearity_end, "linearity_end")
-        _set_text(self.linearity_step, "linearity_step")
+        _set_text(self.linearity_value_start, "linearity_value_start")
+        _set_text(self.linearity_value_end, "linearity_value_end")
+        _set_text(self.linearity_value_step, "linearity_value_step")
         _set_text(self.linearity_n_start, "linearity_n_start")
         _set_text(self.linearity_n_end, "linearity_n_end")
-        _set_text(self.linearity_n_step, "linearity_n_step")
+        _set_text(self.linearity_n_value_start, "linearity_n_value_start")
+        _set_text(self.linearity_n_value_end, "linearity_n_value_end")
+        _set_text(self.linearity_n_value_step, "linearity_n_value_step")
         _set_text(self.linearity_p_start, "linearity_p_start")
         _set_text(self.linearity_p_end, "linearity_p_end")
-        _set_text(self.linearity_p_step, "linearity_p_step")
+        _set_text(self.linearity_p_value_start, "linearity_p_value_start")
+        _set_text(self.linearity_p_value_end, "linearity_p_value_end")
+        _set_text(self.linearity_p_value_step, "linearity_p_value_step")
         self._on_linearity_link_toggled(self.linearity_link_np.isChecked())
 
         # 温度扫描参数

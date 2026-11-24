@@ -46,9 +46,18 @@ def test_gpadc_compute_calibration():
 
 
 def test_gpadc_generate_linearity_values():
-    assert ga.generate_linearity_values(0, 5, 2) == [0, 2, 4]
-    assert ga.generate_linearity_values(3, 3, 1) == [3]
-    for args in ((2, 1, 1), (0, 1, 0), (-1, 1, 1)):
+    assert ga.generate_linearity_values(0.0, 10.0, 2.0) == [0, 2, 4, 6, 8, 10]
+    assert ga.generate_linearity_values(0.0, 10.0, 3.0) == [0, 3, 6, 9, 10]
+    assert ga.generate_linearity_values(0.0, 1.0, 0.1) == [0, 1]
+    assert ga.generate_linearity_values(5.0, 5.0, 1.0) == [5]
+    expected = [0x3B00 + index * 10 for index in range(34)] + [0x3C50]
+    assert ga.generate_linearity_values(0x3B00, 0x3C50, 10) == expected
+    for args in (
+        (1.0, 0.0, 1.0),
+        (0.0, 1.0, 0.0),
+        (-1.0, 1.0, 1.0),
+        (0.0, float("nan"), 1.0),
+    ):
         try:
             ga.generate_linearity_values(*args)
         except ValueError:
@@ -60,13 +69,19 @@ def test_gpadc_generate_linearity_values():
 def test_gpadc_generate_linearity_pairs():
     linked = {
         "linearity_link_np": True,
-        "linearity_start": 0, "linearity_end": 2, "linearity_step": 1,
+        "linearity_start": 0, "linearity_end": 2,
+        "linearity_value_start": 0.0, "linearity_value_end": 2.0,
+        "linearity_value_step": 1.0,
     }
     assert ga.generate_linearity_pairs(linked) == [(0, 0), (1, 1), (2, 2)]
     independent = {
         "linearity_link_np": False,
-        "linearity_n_start": 0, "linearity_n_end": 2, "linearity_n_step": 2,
-        "linearity_p_start": 1, "linearity_p_end": 3, "linearity_p_step": 1,
+        "linearity_n_start": 0, "linearity_n_end": 2,
+        "linearity_n_value_start": 0.0, "linearity_n_value_end": 2.0,
+        "linearity_n_value_step": 2.0,
+        "linearity_p_start": 1, "linearity_p_end": 3,
+        "linearity_p_value_start": 1.0, "linearity_p_value_end": 3.0,
+        "linearity_p_value_step": 1.0,
     }
     assert ga.generate_linearity_pairs(independent) == [
         (0, 1), (0, 2), (0, 3), (2, 1), (2, 2), (2, 3),

@@ -322,7 +322,8 @@ _BASE_RUNNER_CONFIG = {
         ("linearity_traverse", {
             "linearity_n_reg_addr": 0x60, "linearity_p_reg_addr": 0x61,
             "linearity_link_np": True, "linearity_start": 0,
-            "linearity_end": 2, "linearity_step": 1,
+            "linearity_end": 2, "linearity_value_start": 0.0,
+            "linearity_value_end": 2.0, "linearity_value_step": 1.0,
         }, {"voltage", "groups", "best_index", "stopped", "original_n", "original_p",
             "linearity"}),
         ("high_low_temp", {}, {"voltage", "mean", "min", "max"}),
@@ -472,10 +473,14 @@ def _linearity_runner_config():
         "linearity_link_np": False,
         "linearity_n_start": 1,
         "linearity_n_end": 2,
-        "linearity_n_step": 1,
+        "linearity_n_value_start": 1.0,
+        "linearity_n_value_end": 2.0,
+        "linearity_n_value_step": 1.0,
         "linearity_p_start": 3,
         "linearity_p_end": 4,
-        "linearity_p_step": 1,
+        "linearity_p_value_start": 3.0,
+        "linearity_p_value_end": 4.0,
+        "linearity_p_value_step": 1.0,
     }
 
 
@@ -802,22 +807,28 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
         page.linearity_n_reg_addr.setText("0x60")
         page.linearity_p_reg_addr.setText("0x61")
         page.linearity_start.setText("0x0")
-        page.linearity_end.setText("0x2")
-        page.linearity_step.setText("0x1")
+        page.linearity_end.setText("13")
+        page.linearity_value_start.setText("0x3b00")
+        page.linearity_value_end.setText("0x3c50")
+        page.linearity_value_step.setText("10")
         config = page.get_test_config()
         assert config["linearity_n_reg_addr"] == "0x60"
         assert config["linearity_p_reg_addr"] == "0x61"
         assert config["linearity_link_np"] is True
         assert config["linearity_start"] == "0x0"
-        assert config["linearity_end"] == "0x2"
-        assert config["linearity_step"] == "0x1"
+        assert config["linearity_end"] == "13"
+        assert config["linearity_value_start"] == "0x3b00"
+        assert config["linearity_value_end"] == "0x3c50"
+        assert config["linearity_value_step"] == "10"
         assert page._parse_linearity_inputs() == {
             "linearity_n_reg_addr": 0x60,
             "linearity_p_reg_addr": 0x61,
             "linearity_link_np": True,
             "linearity_start": 0,
-            "linearity_end": 2,
-            "linearity_step": 1,
+            "linearity_end": 13,
+            "linearity_value_start": float(0x3B00),
+            "linearity_value_end": float(0x3C50),
+            "linearity_value_step": 10.0,
         }
 
         ok, _ = page.apply_config_to_controls({
@@ -826,10 +837,14 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
             "linearity_link_np": False,
             "linearity_n_start": "2",
             "linearity_n_end": "4",
-            "linearity_n_step": "2",
+            "linearity_n_value_start": "2",
+            "linearity_n_value_end": "4",
+            "linearity_n_value_step": "2",
             "linearity_p_start": "1",
             "linearity_p_end": "3",
-            "linearity_p_step": "1",
+            "linearity_p_value_start": "1",
+            "linearity_p_value_end": "3",
+            "linearity_p_value_step": "1",
         }, silent=True)
         assert ok
         assert not page.linearity_link_np.isChecked()
@@ -843,10 +858,14 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
             "linearity_link_np": False,
             "linearity_n_start": 2,
             "linearity_n_end": 4,
-            "linearity_n_step": 2,
+            "linearity_n_value_start": 2.0,
+            "linearity_n_value_end": 4.0,
+            "linearity_n_value_step": 2.0,
             "linearity_p_start": 1,
             "linearity_p_end": 3,
-            "linearity_p_step": 1,
+            "linearity_p_value_start": 1.0,
+            "linearity_p_value_end": 3.0,
+            "linearity_p_value_step": 1.0,
         }
 
         page._set_ui_enabled(False)
@@ -854,15 +873,15 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
         assert not page.linearity_n_reg_addr.isEnabled()
         assert not page.linearity_p_reg_addr.isEnabled()
         assert not page.linearity_n_start.isEnabled()
-        assert not page.linearity_p_step.isEnabled()
+        assert not page.linearity_p_value_step.isEnabled()
         page._set_ui_enabled(True)
         assert page.linearity_link_np.isEnabled()
 
-        page.linearity_n_step.setText("0")
+        page.linearity_n_value_step.setText("0")
         assert page._parse_linearity_inputs() is None
         page._start_test()
         assert not page.is_test_running and page.test_thread is None
-        page.linearity_n_step.setText("2")
+        page.linearity_n_value_step.setText("2")
         page.uart_radio.setChecked(True)
         assert page._parse_linearity_inputs() is None
         page.iic_radio.setChecked(True)
@@ -930,14 +949,20 @@ def test_page_mock_linearity_traverse_plots_best_and_exports(
         if link_np:
             page.linearity_start.setText("0")
             page.linearity_end.setText("1")
-            page.linearity_step.setText("1")
+            page.linearity_value_start.setText("0")
+            page.linearity_value_end.setText("1")
+            page.linearity_value_step.setText("1")
         else:
             page.linearity_n_start.setText("0")
             page.linearity_n_end.setText("1")
-            page.linearity_n_step.setText("1")
+            page.linearity_n_value_start.setText("0")
+            page.linearity_n_value_end.setText("1")
+            page.linearity_n_value_step.setText("1")
             page.linearity_p_start.setText("2")
             page.linearity_p_end.setText("3")
-            page.linearity_p_step.setText("1")
+            page.linearity_p_value_start.setText("2")
+            page.linearity_p_value_end.setText("3")
+            page.linearity_p_value_step.setText("1")
         page._start_test()
         worker = page._test_worker
         thread = page.test_thread

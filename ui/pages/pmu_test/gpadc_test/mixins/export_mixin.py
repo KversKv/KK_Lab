@@ -297,16 +297,22 @@ class _ExportMixin:
             summary_items.extend([
                 ("Shared Start (LSB)", linearity.get('start')),
                 ("Shared End (LSB)", linearity.get('end')),
-                ("Shared Step (LSB)", linearity.get('step')),
+                ("Shared Start (Value)", linearity.get('value_start')),
+                ("Shared End (Value)", linearity.get('value_end')),
+                ("Shared Step (Value)", linearity.get('value_step')),
             ])
         else:
             summary_items.extend([
                 ("N Start (LSB)", linearity.get('n_start')),
                 ("N End (LSB)", linearity.get('n_end')),
-                ("N Step (LSB)", linearity.get('n_step')),
+                ("N Start (Value)", linearity.get('n_value_start')),
+                ("N End (Value)", linearity.get('n_value_end')),
+                ("N Step (Value)", linearity.get('n_value_step')),
                 ("P Start (LSB)", linearity.get('p_start')),
                 ("P End (LSB)", linearity.get('p_end')),
-                ("P Step (LSB)", linearity.get('p_step')),
+                ("P Start (Value)", linearity.get('p_value_start')),
+                ("P End (Value)", linearity.get('p_value_end')),
+                ("P Step (Value)", linearity.get('p_value_step')),
             ])
         summary_items.extend([
             ("Best N", f"0x{best.get('n_value', 0):X}"),

@@ -698,13 +698,19 @@ class _LayoutMixin:
         shared_layout.addWidget(QLabel("SHARED SWEEP"), 0, 0, 1, 3)
         shared_layout.addWidget(QLabel("Start (LSB)"), 1, 0)
         shared_layout.addWidget(QLabel("End (LSB)"), 1, 1)
-        shared_layout.addWidget(QLabel("Step (LSB)"), 1, 2)
         self.linearity_start = QLineEdit("0")
         self.linearity_end = QLineEdit("7")
-        self.linearity_step = QLineEdit("1")
         shared_layout.addWidget(self.linearity_start, 2, 0)
         shared_layout.addWidget(self.linearity_end, 2, 1)
-        shared_layout.addWidget(self.linearity_step, 2, 2)
+        shared_layout.addWidget(QLabel("Start (Value)"), 3, 0)
+        shared_layout.addWidget(QLabel("End (Value)"), 3, 1)
+        shared_layout.addWidget(QLabel("Step (Value)"), 3, 2)
+        self.linearity_value_start = WheelLineEdit("0")
+        self.linearity_value_end = WheelLineEdit("7")
+        self.linearity_value_step = WheelLineEdit("1")
+        shared_layout.addWidget(self.linearity_value_start, 4, 0)
+        shared_layout.addWidget(self.linearity_value_end, 4, 1)
+        shared_layout.addWidget(self.linearity_value_step, 4, 2)
         linearity_layout.addWidget(self.linearity_shared_range_frame)
 
         self.linearity_independent_range_frame = QFrame()
@@ -715,31 +721,53 @@ class _LayoutMixin:
         independent_layout.addWidget(QLabel("N WEIGHT SWEEP"), 0, 0, 1, 3)
         independent_layout.addWidget(QLabel("Start (LSB)"), 1, 0)
         independent_layout.addWidget(QLabel("End (LSB)"), 1, 1)
-        independent_layout.addWidget(QLabel("Step (LSB)"), 1, 2)
         self.linearity_n_start = QLineEdit("0")
         self.linearity_n_end = QLineEdit("7")
-        self.linearity_n_step = QLineEdit("1")
         independent_layout.addWidget(self.linearity_n_start, 2, 0)
         independent_layout.addWidget(self.linearity_n_end, 2, 1)
-        independent_layout.addWidget(self.linearity_n_step, 2, 2)
-        independent_layout.addWidget(QLabel("P WEIGHT SWEEP"), 3, 0, 1, 3)
-        independent_layout.addWidget(QLabel("Start (LSB)"), 4, 0)
-        independent_layout.addWidget(QLabel("End (LSB)"), 4, 1)
-        independent_layout.addWidget(QLabel("Step (LSB)"), 4, 2)
+        independent_layout.addWidget(QLabel("Start (Value)"), 3, 0)
+        independent_layout.addWidget(QLabel("End (Value)"), 3, 1)
+        independent_layout.addWidget(QLabel("Step (Value)"), 3, 2)
+        self.linearity_n_value_start = WheelLineEdit("0")
+        self.linearity_n_value_end = WheelLineEdit("7")
+        self.linearity_n_value_step = WheelLineEdit("1")
+        independent_layout.addWidget(self.linearity_n_value_start, 4, 0)
+        independent_layout.addWidget(self.linearity_n_value_end, 4, 1)
+        independent_layout.addWidget(self.linearity_n_value_step, 4, 2)
+        independent_layout.addWidget(QLabel("P WEIGHT SWEEP"), 5, 0, 1, 3)
+        independent_layout.addWidget(QLabel("Start (LSB)"), 6, 0)
+        independent_layout.addWidget(QLabel("End (LSB)"), 6, 1)
         self.linearity_p_start = QLineEdit("0")
         self.linearity_p_end = QLineEdit("7")
-        self.linearity_p_step = QLineEdit("1")
-        independent_layout.addWidget(self.linearity_p_start, 5, 0)
-        independent_layout.addWidget(self.linearity_p_end, 5, 1)
-        independent_layout.addWidget(self.linearity_p_step, 5, 2)
+        independent_layout.addWidget(self.linearity_p_start, 7, 0)
+        independent_layout.addWidget(self.linearity_p_end, 7, 1)
+        independent_layout.addWidget(QLabel("Start (Value)"), 8, 0)
+        independent_layout.addWidget(QLabel("End (Value)"), 8, 1)
+        independent_layout.addWidget(QLabel("Step (Value)"), 8, 2)
+        self.linearity_p_value_start = WheelLineEdit("0")
+        self.linearity_p_value_end = WheelLineEdit("7")
+        self.linearity_p_value_step = WheelLineEdit("1")
+        independent_layout.addWidget(self.linearity_p_value_start, 9, 0)
+        independent_layout.addWidget(self.linearity_p_value_end, 9, 1)
+        independent_layout.addWidget(self.linearity_p_value_step, 9, 2)
         linearity_layout.addWidget(self.linearity_independent_range_frame)
 
         for edit in (
-            self.linearity_start, self.linearity_end, self.linearity_step,
-            self.linearity_n_start, self.linearity_n_end, self.linearity_n_step,
-            self.linearity_p_start, self.linearity_p_end, self.linearity_p_step,
+            self.linearity_start, self.linearity_end,
+            self.linearity_n_start, self.linearity_n_end,
+            self.linearity_p_start, self.linearity_p_end,
         ):
             edit.setToolTip("Decimal or 0x-prefixed hexadecimal integer")
+        for edit in (
+            self.linearity_value_start, self.linearity_value_end, self.linearity_value_step,
+            self.linearity_n_value_start, self.linearity_n_value_end,
+            self.linearity_n_value_step,
+            self.linearity_p_value_start, self.linearity_p_value_end,
+            self.linearity_p_value_step,
+        ):
+            edit.setToolTip(
+                "Decimal or 0x-prefixed hexadecimal N/P register values"
+            )
         self.linearity_link_np.toggled.connect(self._on_linearity_link_toggled)
         self._on_linearity_link_toggled(True)
 
@@ -1292,9 +1320,14 @@ class _LayoutMixin:
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.linearity_n_reg_addr, self.linearity_p_reg_addr,
             self.linearity_link_np,
-            self.linearity_start, self.linearity_end, self.linearity_step,
-            self.linearity_n_start, self.linearity_n_end, self.linearity_n_step,
-            self.linearity_p_start, self.linearity_p_end, self.linearity_p_step,
+            self.linearity_start, self.linearity_end,
+            self.linearity_value_start, self.linearity_value_end, self.linearity_value_step,
+            self.linearity_n_start, self.linearity_n_end,
+            self.linearity_n_value_start, self.linearity_n_value_end,
+            self.linearity_n_value_step,
+            self.linearity_p_start, self.linearity_p_end,
+            self.linearity_p_value_start, self.linearity_p_value_end,
+            self.linearity_p_value_step,
             self.temp_min, self.temp_max, self.temp_step,
             self.soak_time, self.sample_count,
             self.calib_low, self.calib_high,

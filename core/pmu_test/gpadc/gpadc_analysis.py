@@ -91,30 +91,55 @@ def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max, calib_points=N
     return k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high
 
 
-def generate_linearity_values(start, end, step):
-    """生成线性度寄存器遍历值；与电压扫描一致，不额外补不可达终点。"""
-    start, end, step = int(start), int(end), int(step)
-    if start < 0 or end < 0:
+def generate_linearity_values(start_value, end_value, step_value):
+    """按 Value 步进直接生成寄存器写入值，补入终点并对取整后的重复值去重。"""
+    start_value, end_value, step_value = (
+        float(start_value), float(end_value), float(step_value),
+    )
+    if not all(math.isfinite(value) for value in (start_value, end_value, step_value)):
+        raise ValueError("线性度 Value 参数必须为有限数值")
+    if start_value < 0 or end_value < 0:
         raise ValueError("线性度寄存器值不能为负数")
-    if start > end:
-        raise ValueError("线性度寄存器 Start <= End 必须成立")
-    if step <= 0:
-        raise ValueError("线性度寄存器 Step 必须大于 0")
-    return list(range(start, end + 1, step))
+    if start_value > end_value:
+        raise ValueError("线性度 Start (Value) <= End (Value) 必须成立")
+    if step_value <= 0:
+        raise ValueError("线性度 Step (Value) 必须大于 0")
+
+    values = [start_value]
+    tolerance = max(1e-12, step_value * 1e-9)
+    index = 1
+    while start_value < end_value:
+        value = start_value + index * step_value
+        if value >= end_value - tolerance:
+            break
+        values.append(value)
+        index += 1
+    if end_value != start_value:
+        values.append(end_value)
+
+    register_values = []
+    for value in values:
+        register_value = int(math.floor(value + 0.5))
+        if not register_values or register_value != register_values[-1]:
+            register_values.append(register_value)
+    return register_values
 
 
 def generate_linearity_pairs(config):
     """生成 N/P 同值对角组合或 N 外层、P 内层的独立矩阵组合。"""
     if config["linearity_link_np"]:
         values = generate_linearity_values(
-            config["linearity_start"], config["linearity_end"], config["linearity_step"],
+            config["linearity_value_start"], config["linearity_value_end"],
+            config["linearity_value_step"],
         )
         return [(value, value) for value in values]
     n_values = generate_linearity_values(
-        config["linearity_n_start"], config["linearity_n_end"], config["linearity_n_step"],
+        config["linearity_n_value_start"], config["linearity_n_value_end"],
+        config["linearity_n_value_step"],
     )
     p_values = generate_linearity_values(
-        config["linearity_p_start"], config["linearity_p_end"], config["linearity_p_step"],
+        config["linearity_p_value_start"], config["linearity_p_value_end"],
+        config["linearity_p_value_step"],
     )
     return [(n_value, p_value) for n_value in n_values for p_value in p_values]
 

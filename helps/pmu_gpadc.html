@@ -27,8 +27,9 @@
 <p><b>注意</b>：两种方式都需要连接 N6705C 扫压；本测试项不应用 Algorithm 采样算法与 Outlier Filter 离群筛选（保持 raw 与 volt 配对一致），切到该测试项时两区自动隐藏。</p>
 
 <h3>Linearity Traverse（线性度配置遍历）</h3>
-<p>仅支持 IIC 采集。Test Parameters 在 Force Voltage 同款 Voltage Sweep、校准点和采样配置之外，增加 <b>Linearity Settings</b>：N Weight Register、P Weight Register 与 <b>Link N = P</b> 滑动开关。配置值支持十进制或 <code>0x</code> 十六进制整数；Device Address 与 IIC Width 同时用于 N/P 整寄存器读写。</p>
-<p><b>Link 开启（默认）</b>：N、P 共用一套 Start / End / Step，逐点写入相同值 <code>(N=v, P=v)</code>。<b>Link 关闭</b>：N、P 分别设置 Start / End / Step，按 N 外层、P 内层执行完整 N×P 矩阵遍历。每组依次写入 N、P 后执行一次完整 Voltage Sweep，并独立进行两点校准。</p>
+<p>仅支持 IIC 采集。Test Parameters 在 Force Voltage 同款 Voltage Sweep、校准点和采样配置之外，增加 <b>Linearity Settings</b>：N Weight Register、P Weight Register 与 <b>Link N = P</b> 滑动开关。Start / End (LSB) 与 Start / End / Step (Value) 均支持十进制或 <code>0x</code> 十六进制整数，Value 另支持十进制小数；Device Address 与 IIC Width 同时用于 N/P 整寄存器读写。</p>
+<p>N/P 寄存器写入值由 <b>Start / End / Step (Value)</b> 直接生成，不经过 Start / End (LSB) 映射。Value 范围不能被 Step 整除时自动补测 End；写入值取整后出现重复时仅测试一次，避免重复组合。</p>
+<p><b>Link 开启（默认）</b>：N、P 共用一套范围，逐点写入相同值 <code>(N=v, P=v)</code>。<b>Link 关闭</b>：N、P 分别设置范围，按 N 外层、P 内层执行完整 N×P 矩阵遍历。每组依次写入 N、P 后执行一次完整 Voltage Sweep，并独立进行两点校准。</p>
 <p>结果区只显示所有 <b>Error (mV)</b> 曲线，不显示 Mean、Min-Max、性能指标卡、Curve View 或 Recent Tests；按全点 <b>Max Abs Error 最小</b>选择最佳曲线（并列比较 RMS Error），最佳 N/P 组合加粗高亮，其余曲线淡化。手动 Stop 会丢弃当前未完成组，仅保留完整组。</p>
 <p>测试完成、停止或异常后均按 P、N 顺序恢复双寄存器原值，不自动写回最佳值；Export Result 生成 Summary（模式、遍历范围、各组指标与最佳 N/P）及 Sweep Data（N/P、电压、Raw Mean、校准值与 Error），并嵌入 Error 图。</p>
 

@@ -15,7 +15,7 @@ from ui.theme import apply_qss
 from core.pmu_test.gpadc import (
     TestWorker as _TestWorker, GPADCTestRunner,
     ALGORITHM_REGISTRY, describe_algorithm, algorithm_length_divisor,
-    assess_fluctuation, freeze_config,
+    assess_fluctuation, freeze_config, generate_linearity_values,
 )
 
 _RETIRED_THREAD_WORKERS = {}
@@ -102,26 +102,34 @@ class _ExecutionMixin:
             if n_reg_addr < 0 or p_reg_addr < 0:
                 raise ValueError("N/P Weight Register must be non-negative")
 
-            def _parse_value(edit, label):
+            def _parse_lsb(edit, label):
                 text = edit.text().strip()
                 if not text:
                     raise ValueError(f"{label} is required")
                 return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
 
+            def _parse_value(edit, label):
+                text = edit.text().strip()
+                if not text:
+                    raise ValueError(f"{label} is required")
+                return float(int(text, 16)) if text.lower().startswith("0x") else float(text)
+
             max_value = (1 << int(self.iic_width_combo.currentData())) - 1
 
-            def _parse_range(start_edit, end_edit, step_edit, label):
-                start = _parse_value(start_edit, f"{label} Start")
-                end = _parse_value(end_edit, f"{label} End")
-                step = _parse_value(step_edit, f"{label} Step")
-                if start > end:
-                    raise ValueError(f"{label} Start must be less than or equal to End")
-                if step <= 0:
-                    raise ValueError(f"{label} Step must be greater than 0")
-                for name, value in (("Start", start), ("End", end), ("Step", step)):
+            def _parse_range(start_edit, end_edit, value_start_edit,
+                             value_end_edit, value_step_edit, label):
+                start = _parse_lsb(start_edit, f"{label} Start (LSB)")
+                end = _parse_lsb(end_edit, f"{label} End (LSB)")
+                for name, value in (("Start", start), ("End", end)):
                     if not 0 <= value <= max_value:
-                        raise ValueError(f"{label} {name} must be between 0 and 0x{max_value:X}")
-                return start, end, step
+                        raise ValueError(f"{label} {name} (LSB) must be between 0 and 0x{max_value:X}")
+                if start > end:
+                    raise ValueError(f"{label} Start (LSB) must be less than or equal to End")
+                value_start = _parse_value(value_start_edit, f"{label} Start (Value)")
+                value_end = _parse_value(value_end_edit, f"{label} End (Value)")
+                value_step = _parse_value(value_step_edit, f"{label} Step (Value)")
+                generate_linearity_values(value_start, value_end, value_step)
+                return start, end, value_start, value_end, value_step
 
             link_np = self.linearity_link_np.isChecked()
             config = {
@@ -129,25 +137,32 @@ class _ExecutionMixin:
                 "linearity_p_reg_addr": p_reg_addr,
                 "linearity_link_np": link_np,
             }
+            range_keys = ("start", "end", "value_start", "value_end", "value_step")
             if link_np:
                 values = _parse_range(
-                    self.linearity_start, self.linearity_end, self.linearity_step, "Shared",
+                    self.linearity_start, self.linearity_end,
+                    self.linearity_value_start, self.linearity_value_end,
+                    self.linearity_value_step, "Shared",
                 )
                 config.update(zip(
-                    ("linearity_start", "linearity_end", "linearity_step"), values,
+                    tuple(f"linearity_{key}" for key in range_keys), values,
                 ))
             else:
                 n_values = _parse_range(
-                    self.linearity_n_start, self.linearity_n_end, self.linearity_n_step, "N Weight",
+                    self.linearity_n_start, self.linearity_n_end,
+                    self.linearity_n_value_start, self.linearity_n_value_end,
+                    self.linearity_n_value_step, "N Weight",
                 )
                 p_values = _parse_range(
-                    self.linearity_p_start, self.linearity_p_end, self.linearity_p_step, "P Weight",
+                    self.linearity_p_start, self.linearity_p_end,
+                    self.linearity_p_value_start, self.linearity_p_value_end,
+                    self.linearity_p_value_step, "P Weight",
                 )
                 config.update(zip(
-                    ("linearity_n_start", "linearity_n_end", "linearity_n_step"), n_values,
+                    tuple(f"linearity_n_{key}" for key in range_keys), n_values,
                 ))
                 config.update(zip(
-                    ("linearity_p_start", "linearity_p_end", "linearity_p_step"), p_values,
+                    tuple(f"linearity_p_{key}" for key in range_keys), p_values,
                 ))
         except ValueError as exc:
             self._append_log(f"[ERROR] Invalid Linearity Traverse parameters: {exc}")
