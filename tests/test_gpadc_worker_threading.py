@@ -576,6 +576,135 @@ def test_linearity_p_restore_failure_still_restores_n(outcome, monkeypatch):
     assert any(is_error and "P Weight 寄存器恢复失败" in message for message, is_error in statuses)
 
 
+def _patch_auto_linearity_metrics(runner, monkeypatch, metric):
+    from core.pmu_test.gpadc import gpadc_runner
+
+    calls = {}
+
+    def fake_sweep(config, stop_check, progress_callback=None, context=""):
+        value = runner.acquisition.regs[(0x17, _N_REG)]
+        calls[value] = calls.get(value, 0) + 1
+        if progress_callback is not None:
+            progress_callback(100)
+        return {"voltage": [1.0, 2.0], "mean": [value, value]}, True
+
+    def fake_analyze(n_value, p_value, sweep, calib_points=None):
+        score = float(metric(n_value, calls[n_value]))
+        return {
+            "n_value": n_value, "p_value": p_value,
+            "k": 1.0, "b": 0.0, "mean_cali": [1.0, 2.0],
+            "error_mv": [score], "max_abs_mv": score, "rms_mv": score,
+            "raw": sweep,
+        }
+
+    monkeypatch.setattr(runner, "_sweep_force_voltage", fake_sweep)
+    monkeypatch.setattr(gpadc_runner, "analyze_linearity_group", fake_analyze)
+    return calls
+
+
+def _auto_linearity_runner_config(repeat=3):
+    return {
+        **_linearity_runner_config(),
+        "linearity_link_np": True,
+        "linearity_auto_best": True,
+        "linearity_auto_repeat": repeat,
+        "linearity_value_start": 0.0,
+        "linearity_value_end": 20.0,
+        "linearity_value_step": None,
+    }
+
+
+def test_linearity_auto_best_repeats_candidates_and_restores(monkeypatch):
+    acquisition = _LinearityAcquisition()
+    progress = []
+    runner = _make_sweep_runner(
+        _VoltageSource(), acquisition, [], [], progress_callback=progress.append,
+    )
+    calls = _patch_auto_linearity_metrics(
+        runner, monkeypatch, lambda value, repeat: (value - 7) ** 2,
+    )
+
+    kind, result = runner.run("linearity_traverse", _auto_linearity_runner_config())
+
+    assert kind == "linearity_traverse"
+    evaluated = result["auto_search"]["evaluated_values"]
+    assert evaluated == [0, 20, 10, 5, 7, 6]
+    assert calls == {value: 3 for value in evaluated}
+    assert [group["n_value"] for group in result["groups"]] == sorted(evaluated)
+    assert all(group["repeat_count"] == 3 for group in result["groups"])
+    assert all(len(group["repeat_results"]) == 3 for group in result["groups"])
+    best = result["groups"][result["best_index"]]
+    assert best["n_value"] == 7 and best["p_value"] == 7
+    assert result["auto_search"]["completed"]
+    assert result["auto_search"]["terminal_value"] == 7
+    assert len(acquisition.weight_writes) == 2 * len(evaluated) + 2
+    assert acquisition.weight_writes[-2:] == _np_restore_writes()
+    assert progress == sorted(progress) and progress[-1] == 100
+
+
+def test_linearity_auto_best_single_point_and_stop_during_repeat(monkeypatch):
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    calls = _patch_auto_linearity_metrics(runner, monkeypatch, lambda value, repeat: value)
+    config = _auto_linearity_runner_config(repeat=2)
+    config["linearity_value_start"] = config["linearity_value_end"] = 5.0
+
+    _, result = runner.run("linearity_traverse", config)
+    assert result["auto_search"]["evaluated_values"] == [5]
+    assert calls == {5: 2} and len(result["groups"]) == 1
+
+    acquisition = _LinearityAcquisition()
+    progress = []
+    runner = _make_sweep_runner(
+        _VoltageSource(), acquisition, [], [], progress_callback=progress.append,
+    )
+    calls = _patch_auto_linearity_metrics(runner, monkeypatch, lambda value, repeat: value)
+    _, result = runner.run(
+        "linearity_traverse", _auto_linearity_runner_config(),
+        stop_check=lambda: sum(calls.values()) >= 4,
+    )
+    assert result["stopped"] and not result["auto_search"]["completed"]
+    assert result["auto_search"]["evaluated_values"] == [0]
+    assert [group["n_value"] for group in result["groups"]] == [0]
+    assert calls == {0: 3, 20: 1}
+    assert 20 not in [group["n_value"] for group in result["groups"]]
+    assert acquisition.weight_writes[-2:] == _np_restore_writes()
+    assert not progress or progress[-1] < 100
+
+
+def test_linearity_independent_ignores_auto_and_repeat_error_restores(monkeypatch):
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    _patch_auto_linearity_metrics(runner, monkeypatch, lambda value, repeat: value)
+    config = _linearity_runner_config()
+    config["linearity_auto_best"] = True
+    config["linearity_auto_repeat"] = 3
+
+    _, result = runner.run("linearity_traverse", config)
+    assert result["auto_search"] is None
+    assert [(group["n_value"], group["p_value"]) for group in result["groups"]] == [
+        (1, 3), (1, 4), (2, 3), (2, 4),
+    ]
+    assert all("repeat_results" not in group for group in result["groups"])
+
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    calls = _patch_auto_linearity_metrics(runner, monkeypatch, lambda value, repeat: value)
+    original_sweep = runner._sweep_force_voltage
+    error = RuntimeError("auto repeat boom")
+
+    def failing_sweep(config, stop_check, progress_callback=None, context=""):
+        if sum(calls.values()) == 1:
+            raise error
+        return original_sweep(config, stop_check, progress_callback, context)
+
+    monkeypatch.setattr(runner, "_sweep_force_voltage", failing_sweep)
+    with pytest.raises(RuntimeError) as caught:
+        runner.run("linearity_traverse", _auto_linearity_runner_config())
+    assert caught.value is error
+    assert acquisition.weight_writes[-2:] == _np_restore_writes()
+
+
 @pytest.mark.parametrize("outcome", ["success", "stop", "error"])
 @pytest.mark.parametrize("initial_enabled", [False, True])
 def test_force_voltage_restores_snapshot_on_all_paths(outcome, initial_enabled, monkeypatch):
@@ -890,6 +1019,43 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
         assert page.linearity_independent_range_frame.isHidden()
         assert page.linearity_start.text() == "0x0"
 
+        assert not page.linearity_auto_best.isChecked()
+        assert page.linearity_auto_repeat.value() == 3
+        assert page.linearity_auto_repeat.minimum() == 1
+        assert page.linearity_auto_repeat.maximum() == 10
+        assert page.linearity_value_step.isEnabled()
+        assert not page.linearity_auto_repeat.isEnabled()
+        page.linearity_auto_best.setChecked(True)
+        assert not page.linearity_value_step.isEnabled()
+        assert page.linearity_auto_repeat.isEnabled()
+        page.linearity_value_step.setText("invalid")
+        page.linearity_auto_repeat.setValue(4)
+        auto_config = page._parse_linearity_inputs()
+        assert auto_config["linearity_auto_best"] is True
+        assert auto_config["linearity_auto_repeat"] == 4
+        assert auto_config["linearity_value_start"] == float(0x3B00)
+        assert auto_config["linearity_value_end"] == float(0x3C50)
+        assert auto_config["linearity_value_step"] is None
+        assert page.get_test_config()["linearity_auto_best"] is True
+        assert page.get_test_config()["linearity_auto_repeat"] == 4
+
+        page._set_ui_enabled(False)
+        assert not page.linearity_auto_best.isEnabled()
+        assert not page.linearity_auto_repeat.isEnabled()
+        assert not page.linearity_value_step.isEnabled()
+        page._set_ui_enabled(True)
+        assert page.linearity_auto_best.isEnabled()
+        assert page.linearity_auto_repeat.isEnabled()
+        assert not page.linearity_value_step.isEnabled()
+        ok, _ = page.apply_config_to_controls({
+            "linearity_auto_best": False, "linearity_auto_repeat": 5,
+        }, silent=True)
+        assert ok and not page.linearity_auto_best.isChecked()
+        assert page.linearity_auto_repeat.value() == 5
+        assert page.linearity_value_step.isEnabled()
+        assert not page.linearity_auto_repeat.isEnabled()
+        page.linearity_value_step.setText("10")
+
         page.test_item_combo.setCurrentIndex(
             page.test_item_combo.findData(page.TEST_FORCE_VOLTAGE)
         )
@@ -1006,6 +1172,102 @@ def test_page_mock_linearity_traverse_plots_best_and_exports(
             ]
             expected_mode = "Link N = P" if link_np else "Independent N/P Matrix"
             assert workbook["Summary"]["B6"].value == expected_mode
+        finally:
+            workbook.close()
+    finally:
+        for path in exported:
+            path.unlink(missing_ok=True)
+        if isValid(page):
+            page.cleanup_threads()
+            page.deleteLater()
+        if worker is not None and isValid(worker):
+            worker.request_stop()
+            worker.respond_confirm(False)
+        if thread is not None and isValid(thread):
+            thread.quit()
+        app.processEvents()
+        _drain_until(app, lambda: not isValid(page))
+        _drain_until(app, lambda: not isValid(thread) or not thread.isRunning())
+
+
+def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
+    import debug_config
+    import openpyxl
+    import pyqtgraph as pg
+    from ui.pages.pmu_test.gpadc_test.mixins import acquisition_mixin, execution_mixin
+    from ui.widgets.config_memory import ConfigMemory
+
+    monkeypatch.setattr(debug_config, "DEBUG_MOCK", True)
+    monkeypatch.setattr(acquisition_mixin, "DEBUG_MOCK", True)
+    monkeypatch.setattr(execution_mixin, "DEBUG_MOCK", True)
+    monkeypatch.setattr(ConfigMemory, "watch", lambda self, widget: None)
+    monkeypatch.setattr(ConfigMemory, "restore", lambda self: None)
+    monkeypatch.setattr(ConfigMemory, "save_now", lambda self: None)
+
+    from ui.pages.pmu_test.gpadc_test_ui import GPADCTestUI
+
+    page = GPADCTestUI()
+    errors = []
+    worker = None
+    thread = None
+    exported = []
+    try:
+        page._on_test_error = errors.append
+        page.test_item_combo.setCurrentIndex(
+            page.test_item_combo.findData(page.TEST_LINEARITY_TRAVERSE)
+        )
+        page.sample_count.setValue(4)
+        page.voltage_min.setValue(0.1)
+        page.voltage_max.setValue(0.3)
+        page.voltage_step.setValue(0.1)
+        page.linearity_n_reg_addr.setText("0x60")
+        page.linearity_p_reg_addr.setText("0x61")
+        page.linearity_value_start.setText("0x3B00")
+        page.linearity_value_end.setText("0x3B00")
+        page.linearity_value_step.setText("invalid")
+        page.linearity_auto_best.setChecked(True)
+        page.linearity_auto_repeat.setValue(2)
+        page._start_test()
+        worker = page._test_worker
+        thread = page.test_thread
+        assert worker is not None and thread is not None
+        _drain_until(app, lambda: not page.is_test_running)
+
+        assert errors == []
+        result = page._export_data["linearity_traverse"]
+        assert result["auto_search"]["evaluated_values"] == [0x3B00]
+        assert len(result["groups"]) == 1
+        assert result["groups"][0]["repeat_count"] == 2
+        assert len(result["groups"][0]["repeat_results"]) == 2
+        params = page._export_data["params"]
+        assert params["auto_best"] is True and params["auto_repeat"] == 2
+        assert params["group_count"] == 1 and params["sweep_count"] == 2
+
+        plots = page.chart_placeholder.findChildren(pg.PlotWidget)
+        curves = [
+            item for item in plots[0].plotItem.items
+            if isinstance(item, pg.PlotDataItem)
+        ]
+        assert len(curves) == 1
+
+        results_dir = Path(__file__).resolve().parents[1] / "Results"
+        before = set(results_dir.glob("GPADC_LinearityTraverse_*.xlsx"))
+        page.export_result()
+        exported = list(set(results_dir.glob("GPADC_LinearityTraverse_*.xlsx")) - before)
+        assert len(exported) == 1
+        workbook = openpyxl.load_workbook(exported[0], read_only=True, data_only=True)
+        try:
+            summary = workbook["Summary"]
+            assert summary["B6"].value == "Link N = P"
+            assert summary["B7"].value == "Enabled (Binary Search)"
+            sweep = workbook["Sweep Data"]
+            assert sweep.max_row == 1 + 3 * 2
+            assert sweep.cell(1, 7).value == "Repeat"
+            assert sweep.cell(1, 8).value == "Representative"
+            assert [sweep.cell(row, 7).value for row in range(2, 8)] == [1, 1, 1, 2, 2, 2]
+            assert sum(
+                sweep.cell(row, 8).value == "YES" for row in range(2, 8)
+            ) == 3
         finally:
             workbook.close()
     finally:

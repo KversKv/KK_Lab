@@ -134,6 +134,8 @@ class _ConfigAiMixin:
             'linearity_n_reg_addr': self.linearity_n_reg_addr.text(),
             'linearity_p_reg_addr': self.linearity_p_reg_addr.text(),
             'linearity_link_np': self.linearity_link_np.isChecked(),
+            'linearity_auto_best': self.linearity_auto_best.isChecked(),
+            'linearity_auto_repeat': self.linearity_auto_repeat.value(),
             'linearity_start': self.linearity_start.text(),
             'linearity_end': self.linearity_end.text(),
             'linearity_value_start': self.linearity_value_start.text(),
@@ -491,6 +493,13 @@ class _ConfigAiMixin:
             self.linearity_link_np.setChecked(bool(link_np))
             applied.append("linearity_link_np")
             touched.append(self.linearity_link_np)
+        auto_best = cfg.get("linearity_auto_best")
+        if auto_best is not None:
+            self.linearity_auto_best.setChecked(bool(auto_best))
+            applied.append("linearity_auto_best")
+            touched.append(self.linearity_auto_best)
+        _set_int_spin(self.linearity_auto_repeat, "linearity_auto_repeat")
+        self._sync_linearity_auto_controls()
         _set_text(self.linearity_start, "linearity_start")
         _set_text(self.linearity_end, "linearity_end")
         _set_text(self.linearity_value_start, "linearity_value_start")

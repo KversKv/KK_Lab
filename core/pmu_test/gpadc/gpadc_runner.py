@@ -6,6 +6,7 @@
 """
 
 from contextlib import contextmanager
+import math
 import queue
 import random
 import time
@@ -14,6 +15,8 @@ from instruments.chambers import TemperatureStabilizer
 from log_config import get_logger
 
 from .gpadc_analysis import (
+    advance_linearity_auto_best,
+    aggregate_linearity_repeats,
     algorithm_length_divisor,
     analyze_linearity_group,
     apply_algorithm,
@@ -24,6 +27,7 @@ from .gpadc_analysis import (
     filter_mean_deviation,
     format_log_table,
     generate_linearity_pairs,
+    normalize_linearity_auto_range,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
     select_best_linearity_group,
@@ -546,8 +550,127 @@ class GPADCTestRunner:
             "raw_before_samples": raw_before_samples,
         }, completed
 
+    def _evaluate_linearity_auto_candidate(
+            self, config, value, repeat, stop_check, progress_offset, progress_total):
+        device_addr = config["device_addr"]
+        n_reg = config["linearity_n_reg_addr"]
+        p_reg = config["linearity_p_reg_addr"]
+        width = config["iic_weight"]
+        self.acquisition.write_reg(device_addr, n_reg, value, width)
+        self.acquisition.write_reg(device_addr, p_reg, value, width)
+        pair_label = f"N=0x{value:X}, P=0x{value:X}"
+        repeat_groups = []
+        for repeat_index in range(repeat):
+            if stop_check and stop_check():
+                return None, "stopped"
+            self.log_fn(f"[INFO] Auto Best {pair_label}, Repeat {repeat_index + 1}/{repeat}")
+
+            def _repeat_progress(progress, _repeat_index=repeat_index):
+                progress = min(100, max(0, int(progress))) / 100
+                completed = progress_offset + _repeat_index + progress
+                self.progress_callback(min(99, int(completed * 100 / progress_total)))
+
+            sweep, completed = self._sweep_force_voltage(
+                config,
+                stop_check,
+                progress_callback=_repeat_progress,
+                context=f"Auto Best {pair_label} Repeat {repeat_index + 1}",
+            )
+            if sweep is None:
+                return None, "failed"
+            if not completed:
+                return None, "stopped"
+            group = analyze_linearity_group(
+                value, value, sweep, calib_points=self.calib_points,
+            )
+            repeat_groups.append(group)
+            self.log_fn(
+                f"[RESULT] {pair_label}, Repeat {repeat_index + 1}, "
+                f"Max Abs Error={group['max_abs_mv']:.2f} mV, "
+                f"RMS Error={group['rms_mv']:.2f} mV"
+            )
+        return aggregate_linearity_repeats(repeat_groups), "complete"
+
+    def _run_linearity_auto_best(self, config, stop_check):
+        repeat = int(config.get("linearity_auto_repeat", 3))
+        if not 1 <= repeat <= 10:
+            raise ValueError("Linearity Auto Repeat must be between 1 and 10")
+        low, high = normalize_linearity_auto_range(
+            config["linearity_value_start"], config["linearity_value_end"],
+        )
+        range_start, range_end = low, high
+        point_count = high - low + 1
+        max_candidates = (2 + max(1, math.ceil(math.log2(point_count)))) if point_count > 1 else 1
+        progress_total = max_candidates * repeat
+        progress_offset = 0
+        cache = {}
+        evaluated_values = []
+        comparisons = []
+        ambiguous = False
+        stopped = False
+        converged = False
+        self.log_fn(
+            f"[INFO] Auto Best binary search: 0x{low:X} ~ 0x{high:X}, "
+            f"Repeat={repeat}, median metrics"
+        )
+
+        while True:
+            if stop_check and stop_check():
+                stopped = True
+                break
+            step = advance_linearity_auto_best(low, high, cache)
+            low, high = step["low"], step["high"]
+            comparison = step["comparison"]
+            if comparison is not None:
+                comparisons.append(comparison)
+                if comparison["ambiguous"]:
+                    ambiguous = True
+                self.log_fn(
+                    f"[AUTO] Compare 0x{comparison['left_value']:X} / "
+                    f"0x{comparison['right_value']:X}, "
+                    f"mid=0x{comparison['mid_value']:X}: "
+                    f"direction={comparison['direction']}, "
+                    f"noise_tie={comparison['ambiguous']}"
+                )
+            if step["done"]:
+                converged = True
+                break
+            value = step["evaluate_value"]
+            if value is None:
+                continue
+            group, status = self._evaluate_linearity_auto_candidate(
+                config, value, repeat, stop_check, progress_offset, progress_total,
+            )
+            if status == "failed":
+                return None
+            if status == "stopped":
+                stopped = True
+                break
+            progress_offset += repeat
+            cache[value] = group
+            evaluated_values.append(value)
+            self.log_fn(
+                f"[RESULT] Auto candidate N=0x{value:X}, P=0x{value:X}, "
+                f"Median Max Abs={group['max_abs_mv']:.2f} mV, "
+                f"Median RMS={group['rms_mv']:.2f} mV, "
+                f"Max Range={group['max_abs_range_mv']:.2f} mV"
+            )
+
+        groups = [cache[value] for value in sorted(cache)]
+        auto_search = {
+            "start": range_start,
+            "end": range_end,
+            "evaluated_values": evaluated_values,
+            "terminal_value": None,
+            "comparisons": comparisons,
+            "ambiguous": ambiguous,
+            "completed": converged,
+        }
+        return groups, stopped, auto_search
+
     def _run_linearity_traverse(self, config, stop_check):
         link_np = bool(config["linearity_link_np"])
+        auto_best = link_np and bool(config.get("linearity_auto_best", False))
         self.log_fn(
             f"[INFO] Running LINEARITY TRAVERSE with I2C address: 0x{config['device_addr']:x}, "
             f"Raw Register: 0x{config['reg_addr']:x}, "
@@ -564,7 +687,7 @@ class GPADCTestRunner:
             self.status_fn("错误: N6705C未连接", True)
             return "linearity_traverse", None
 
-        weight_pairs = generate_linearity_pairs(config)
+        weight_pairs = None if auto_best else generate_linearity_pairs(config)
         device_addr = config["device_addr"]
         n_reg = config["linearity_n_reg_addr"]
         p_reg = config["linearity_p_reg_addr"]
@@ -574,44 +697,53 @@ class GPADCTestRunner:
         self.log_fn(f"[INFO] Original N=0x{int(original_n):X}, P=0x{int(original_p):X}")
         groups = []
         stopped = False
+        auto_search = None
         try:
-            total_groups = len(weight_pairs)
-            for group_idx, (n_value, p_value) in enumerate(weight_pairs):
-                if stop_check and stop_check():
-                    stopped = True
-                    self.log_fn("[INFO] Linearity Traverse stopped by user.")
-                    break
-                self.acquisition.write_reg(device_addr, n_reg, n_value, width)
-                self.acquisition.write_reg(device_addr, p_reg, p_value, width)
-                pair_label = f"N=0x{n_value:X}, P=0x{p_value:X}"
-                self.log_fn(
-                    f"[INFO] Linearity {pair_label} ({group_idx + 1}/{total_groups})"
-                )
-
-                def _group_progress(value, _group_idx=group_idx):
-                    value = min(100, max(0, int(value)))
-                    self.progress_callback(int((_group_idx * 100 + value) * 100 / (total_groups * 100)))
-
-                sweep, completed = self._sweep_force_voltage(
-                    config,
-                    stop_check,
-                    progress_callback=_group_progress,
-                    context=f"Linearity Traverse {pair_label}",
-                )
-                if sweep is None:
+            if auto_best:
+                auto_result = self._run_linearity_auto_best(config, stop_check)
+                if auto_result is None:
                     return "linearity_traverse", None
-                if not completed:
-                    stopped = True
-                    break
-                group = analyze_linearity_group(
-                    n_value, p_value, sweep, calib_points=self.calib_points,
-                )
-                groups.append(group)
-                self.log_fn(
-                    f"[RESULT] {pair_label}, "
-                    f"Max Abs Error={group['max_abs_mv']:.2f} mV, "
-                    f"RMS Error={group['rms_mv']:.2f} mV"
-                )
+                groups, stopped, auto_search = auto_result
+            else:
+                total_groups = len(weight_pairs)
+                for group_idx, (n_value, p_value) in enumerate(weight_pairs):
+                    if stop_check and stop_check():
+                        stopped = True
+                        self.log_fn("[INFO] Linearity Traverse stopped by user.")
+                        break
+                    self.acquisition.write_reg(device_addr, n_reg, n_value, width)
+                    self.acquisition.write_reg(device_addr, p_reg, p_value, width)
+                    pair_label = f"N=0x{n_value:X}, P=0x{p_value:X}"
+                    self.log_fn(
+                        f"[INFO] Linearity {pair_label} ({group_idx + 1}/{total_groups})"
+                    )
+
+                    def _group_progress(value, _group_idx=group_idx):
+                        value = min(100, max(0, int(value)))
+                        self.progress_callback(
+                            int((_group_idx * 100 + value) * 100 / (total_groups * 100))
+                        )
+
+                    sweep, completed = self._sweep_force_voltage(
+                        config,
+                        stop_check,
+                        progress_callback=_group_progress,
+                        context=f"Linearity Traverse {pair_label}",
+                    )
+                    if sweep is None:
+                        return "linearity_traverse", None
+                    if not completed:
+                        stopped = True
+                        break
+                    group = analyze_linearity_group(
+                        n_value, p_value, sweep, calib_points=self.calib_points,
+                    )
+                    groups.append(group)
+                    self.log_fn(
+                        f"[RESULT] {pair_label}, "
+                        f"Max Abs Error={group['max_abs_mv']:.2f} mV, "
+                        f"RMS Error={group['rms_mv']:.2f} mV"
+                    )
         finally:
             try:
                 self.acquisition.write_reg(device_addr, p_reg, int(original_p), width)
@@ -624,14 +756,18 @@ class GPADCTestRunner:
             except Exception as exc:
                 self._report_cleanup_error("N Weight 寄存器恢复", exc)
 
-        best_index = select_best_linearity_group(groups)
+        best_index = select_best_linearity_group(groups, noise_aware=auto_best)
         if best_index is not None:
             best = groups[best_index]
+            if auto_search is not None and auto_search["completed"]:
+                auto_search["terminal_value"] = best["n_value"]
             self.log_fn(
-                f"[RESULT] Best N=0x{best['n_value']:X}, P=0x{best['p_value']:X}, "
+                f"[RESULT] Best evaluated N=0x{best['n_value']:X}, P=0x{best['p_value']:X}, "
                 f"Max Abs Error={best['max_abs_mv']:.2f} mV, "
                 f"RMS Error={best['rms_mv']:.2f} mV"
             )
+        if auto_best and not stopped:
+            self.progress_callback(100)
         return "linearity_traverse", {
             "voltage": list(groups[0]["raw"]["voltage"]) if groups else [],
             "groups": groups,
@@ -639,10 +775,13 @@ class GPADCTestRunner:
             "stopped": stopped,
             "original_n": int(original_n),
             "original_p": int(original_p),
+            "auto_search": auto_search,
             "linearity": {
                 "n_reg_addr": n_reg,
                 "p_reg_addr": p_reg,
                 "link_np": link_np,
+                "auto_best": auto_best,
+                "auto_repeat": config.get("linearity_auto_repeat", 3),
                 "start": config.get("linearity_start"),
                 "end": config.get("linearity_end"),
                 "value_start": config.get("linearity_value_start"),

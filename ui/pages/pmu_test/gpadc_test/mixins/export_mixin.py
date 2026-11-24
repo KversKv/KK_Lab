@@ -280,12 +280,14 @@ class _ExportMixin:
         best_index = result.get('best_index')
         best = groups[best_index] if best_index is not None else {}
         linearity = result.get('linearity') or {}
+        auto_best = bool(linearity.get('auto_best'))
+        auto_search = result.get('auto_search') or {}
 
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Summary"
         _header(ws, 1, 1, "Linearity Traverse Summary")
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=7)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11 if auto_best else 7)
         summary_items = [
             ("N Weight Register", f"0x{linearity.get('n_reg_addr', 0):X}"),
             ("P Weight Register", f"0x{linearity.get('p_reg_addr', 0):X}"),
@@ -299,7 +301,7 @@ class _ExportMixin:
                 ("Shared End (LSB)", linearity.get('end')),
                 ("Shared Start (Value)", linearity.get('value_start')),
                 ("Shared End (Value)", linearity.get('value_end')),
-                ("Shared Step (Value)", linearity.get('value_step')),
+                ("Shared Step (Value)", "Auto (Disabled)" if auto_best else linearity.get('value_step')),
             ])
         else:
             summary_items.extend([
@@ -314,12 +316,22 @@ class _ExportMixin:
                 ("P End (Value)", linearity.get('p_value_end')),
                 ("P Step (Value)", linearity.get('p_value_step')),
             ])
+        if auto_best:
+            summary_items[5:5] = [
+                ("Auto Best", "Enabled (Binary Search)"),
+                ("Repeat (Runs)", linearity.get('auto_repeat')),
+                ("Evaluated Values", ", ".join(
+                    f"0x{value:X}" for value in auto_search.get('evaluated_values', [])
+                )),
+                ("Search Ambiguous", bool(auto_search.get('ambiguous'))),
+            ]
         summary_items.extend([
             ("Best N", f"0x{best.get('n_value', 0):X}"),
             ("Best P", f"0x{best.get('p_value', 0):X}"),
             ("Best Max Abs Error (mV)", best.get('max_abs_mv')),
             ("Best RMS Error (mV)", best.get('rms_mv')),
             ("Completed Groups", len(groups)),
+            ("Total Sweeps", sum(group.get('repeat_count', 1) for group in groups)),
             ("Stopped", bool(result.get('stopped'))),
         ])
         row = 2
@@ -331,6 +343,8 @@ class _ExportMixin:
         row += 1
         headers = ("N Weight", "P Weight", "K (LSB/V)", "B (LSB)",
                    "Max Abs Error (mV)", "RMS Error (mV)", "Result")
+        if auto_best:
+            headers += ("Repeat", "Representative", "Max Abs Range (mV)", "RMS Range (mV)")
         for col, name in enumerate(headers, 1):
             _header(ws, row, col, name)
         row += 1
@@ -341,11 +355,19 @@ class _ExportMixin:
                 group['k'], group['b'], group['max_abs_mv'], group['rms_mv'],
                 "BEST" if is_best else "",
             )
+            if auto_best:
+                values += (
+                    group.get('repeat_count', 1), group.get('representative_repeat', 1),
+                    group.get('max_abs_range_mv'), group.get('rms_range_mv'),
+                )
             for col, value in enumerate(values, 1):
                 _value(ws, row, col, value, best=is_best)
             row += 1
 
-        for col, width in enumerate((28, 20, 20, 20, 22, 20, 14), 1):
+        widths = (28, 20, 20, 20, 22, 20, 14)
+        if auto_best:
+            widths += (12, 18, 22, 20)
+        for col, width in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(col)].width = width
 
         if self._chart_image_bytes is not None:
@@ -354,31 +376,46 @@ class _ExportMixin:
             image = XLImage(self._chart_image_bytes)
             image.width = 600
             image.height = 350
-            ws.add_image(image, "H2")
+            ws.add_image(image, "M2" if auto_best else "H2")
 
         sweep_ws = wb.create_sheet("Sweep Data")
         sweep_headers = ("N Weight", "P Weight", "Input Voltage (V)",
                          "ADC Mean (LSB)", "Mean Cali (V)", "Error (mV)")
+        if auto_best:
+            sweep_headers += (
+                "Repeat", "Representative", "Repeat Max Abs Error (mV)",
+                "Repeat RMS Error (mV)",
+            )
         for col, name in enumerate(sweep_headers, 1):
             _header(sweep_ws, 1, col, name)
             sweep_ws.column_dimensions[get_column_letter(col)].width = 22
         row = 2
         for group in groups:
-            raw = group.get('raw') or {}
-            voltage = raw.get('voltage') or result.get('voltage') or []
-            raw_mean = raw.get('mean') or []
-            mean_cali = group.get('mean_cali') or []
-            error_mv = group.get('error_mv') or []
-            count = min(len(voltage), len(raw_mean), len(mean_cali), len(error_mv))
-            for index in range(count):
-                values = (
-                    f"0x{group['n_value']:X}", f"0x{group['p_value']:X}",
-                    float(voltage[index]), float(raw_mean[index]),
-                    float(mean_cali[index]), float(error_mv[index]),
-                )
-                for col, value in enumerate(values, 1):
-                    _value(sweep_ws, row, col, value)
-                row += 1
+            repeat_groups = (group.get('repeat_results') or [group]) if auto_best else [group]
+            representative = group.get('representative_repeat', 1)
+            for repeat_group in repeat_groups:
+                raw = repeat_group.get('raw') or {}
+                voltage = raw.get('voltage') or result.get('voltage') or []
+                raw_mean = raw.get('mean') or []
+                mean_cali = repeat_group.get('mean_cali') or []
+                error_mv = repeat_group.get('error_mv') or []
+                count = min(len(voltage), len(raw_mean), len(mean_cali), len(error_mv))
+                for index in range(count):
+                    values = (
+                        f"0x{group['n_value']:X}", f"0x{group['p_value']:X}",
+                        float(voltage[index]), float(raw_mean[index]),
+                        float(mean_cali[index]), float(error_mv[index]),
+                    )
+                    if auto_best:
+                        repeat_index = repeat_group.get('repeat_index', 1)
+                        values += (
+                            repeat_index,
+                            "YES" if repeat_index == representative else "",
+                            repeat_group.get('max_abs_mv'), repeat_group.get('rms_mv'),
+                        )
+                    for col, value in enumerate(values, 1):
+                        _value(sweep_ws, row, col, value)
+                    row += 1
 
         wb.save(str(filename))
         self._append_log(f"[INFO] Linearity Traverse result exported to: {filename}")

@@ -491,11 +491,18 @@ class _PlottingMixin:
             best_index = result.get('best_index')
             best = groups[best_index] if best_index is not None else None
             if best is not None:
-                summary = QLabel(
-                    f"BEST N=0x{best['n_value']:X}, P=0x{best['p_value']:X}  |  "
+                auto_best = bool((result.get('linearity') or {}).get('auto_best'))
+                prefix = "BEST EVALUATED" if auto_best else "BEST"
+                summary_text = (
+                    f"{prefix} N=0x{best['n_value']:X}, P=0x{best['p_value']:X}  |  "
                     f"Max Abs Error {best['max_abs_mv']:.2f} mV  |  "
                     f"RMS Error {best['rms_mv']:.2f} mV"
                 )
+                if auto_best:
+                    summary_text += f"  |  Median of {best.get('repeat_count', 1)} repeats"
+                    if (result.get('auto_search') or {}).get('ambiguous'):
+                        summary_text += "  |  Noise ties present"
+                summary = QLabel(summary_text)
                 summary.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 700;")
                 summary.setAlignment(Qt.AlignCenter)
                 layout.addWidget(summary)

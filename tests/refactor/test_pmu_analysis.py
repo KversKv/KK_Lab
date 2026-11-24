@@ -120,6 +120,112 @@ def test_gpadc_select_best_linearity_group_tie_breakers():
     assert ga.select_best_linearity_group([]) is None
 
 
+def _run_linearity_auto_search(low, high, metric):
+    cache = {}
+    evaluated = []
+    for _ in range(100):
+        step = ga.advance_linearity_auto_best(low, high, cache)
+        low, high = step["low"], step["high"]
+        value = step["evaluate_value"]
+        if value is not None:
+            assert value not in cache
+            evaluated.append(value)
+            score = float(metric(value))
+            cache[value] = {
+                "n_value": value, "p_value": value,
+                "max_abs_mv": score, "rms_mv": score, "error_mv": [score],
+            }
+            continue
+        if step["done"]:
+            groups = [cache[value] for value in sorted(cache)]
+            best = groups[ga.select_best_linearity_group(groups, noise_aware=True)]
+            return best["n_value"], evaluated, cache
+    raise AssertionError("自动二分未在限定次数内收敛")
+
+
+def test_gpadc_normalize_linearity_auto_range():
+    assert ga.normalize_linearity_auto_range(0.4, 2.5) == (0, 3)
+    assert ga.normalize_linearity_auto_range(3, 3) == (3, 3)
+    for args in ((-1, 2), (2, 1), (0, float("nan"))):
+        try:
+            ga.normalize_linearity_auto_range(*args)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"非法自动寻优范围未拒绝: {args}")
+
+
+def test_gpadc_auto_best_binary_boundaries_and_cache():
+    low, evaluated, cache = _run_linearity_auto_search(3, 3, lambda value: value)
+    assert low == 3 and evaluated == [3] and list(cache) == [3]
+
+    low, evaluated, cache = _run_linearity_auto_search(4, 5, lambda value: value)
+    assert low == 4 and evaluated == [4, 5]
+
+    low, evaluated, cache = _run_linearity_auto_search(
+        0, 20, lambda value: (value - 7) ** 2,
+    )
+    assert low == 7 and evaluated == [0, 20, 10, 5, 7, 6]
+    groups = [cache[value] for value in sorted(cache)]
+    best = groups[ga.select_best_linearity_group(groups, noise_aware=True)]
+    assert best["n_value"] == 7
+
+    low, _, _ = _run_linearity_auto_search(0, 20, lambda value: value)
+    assert low == 0
+    low, _, _ = _run_linearity_auto_search(0, 20, lambda value: 20 - value)
+    assert low == 20
+
+
+def test_gpadc_auto_best_non_unimodal_returns_best_evaluated():
+    def metric(value):
+        if value == 13:
+            return -100.0
+        return float((value - 7) ** 2)
+
+    _, _, cache = _run_linearity_auto_search(0, 20, metric)
+    assert 13 not in cache
+    groups = [cache[value] for value in sorted(cache)]
+    best_index = ga.select_best_linearity_group(groups, noise_aware=True)
+    assert groups[best_index]["max_abs_mv"] == min(
+        group["max_abs_mv"] for group in groups
+    )
+
+
+def test_gpadc_aggregate_linearity_repeats_and_noise_comparison():
+    repeats = [
+        {"n_value": 8, "p_value": 8, "max_abs_mv": 10.0, "rms_mv": 4.0,
+         "error_mv": [10.0], "raw": {"id": 1}},
+        {"n_value": 8, "p_value": 8, "max_abs_mv": 12.0, "rms_mv": 3.0,
+         "error_mv": [12.0], "raw": {"id": 2}},
+        {"n_value": 8, "p_value": 8, "max_abs_mv": 11.0, "rms_mv": 5.0,
+         "error_mv": [11.0], "raw": {"id": 3}},
+    ]
+    group = ga.aggregate_linearity_repeats(repeats)
+    assert group["max_abs_mv"] == 11.0 and group["rms_mv"] == 4.0
+    assert group["max_abs_range_mv"] == 2.0 and group["rms_range_mv"] == 2.0
+    assert group["representative_repeat"] == 3
+    assert group["raw"] == {"id": 3} and group["repeat_count"] == 3
+    assert [item["repeat_index"] for item in group["repeat_results"]] == [1, 2, 3]
+
+    even = ga.aggregate_linearity_repeats(repeats[:2])
+    assert even["max_abs_mv"] == 11.0 and even["rms_mv"] == 3.5
+
+    left = dict(group, max_abs_mv=10.0, rms_mv=5.0,
+                max_abs_range_mv=2.0, rms_range_mv=1.0)
+    right = dict(group, max_abs_mv=11.0, rms_mv=3.0,
+                 max_abs_range_mv=2.0, rms_range_mv=1.0)
+    assert ga.compare_linearity_candidates(left, right)["order"] == 1
+    right["rms_mv"] = 5.5
+    comparison = ga.compare_linearity_candidates(left, right)
+    assert comparison["order"] == 0 and comparison["ambiguous"]
+
+    single_left = dict(group, max_abs_mv=10.0, rms_mv=5.0,
+                       max_abs_range_mv=0.0, rms_range_mv=0.0)
+    single_right = dict(group, max_abs_mv=11.0, rms_mv=3.0,
+                        max_abs_range_mv=0.0, rms_range_mv=0.0)
+    assert ga.compare_linearity_candidates(single_left, single_right)["order"] == -1
+
+
 # ── dcdc ───────────────────────────────────────────────
 
 def test_dcdc_polyfit_linear():

@@ -7,6 +7,7 @@ GPADC 测试纯算法/解析函数（无 PySide6，可 pytest 直测）。
 
 import math
 import re
+import statistics
 
 # 匹配 UART 日志中的 GPADC raw/volt 行，如：
 #   gpadc_ch1_irq_cb: raw/volt=2844/1248 sample_time=575us
@@ -91,6 +92,10 @@ def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max, calib_points=N
     return k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high
 
 
+def _round_linearity_value(value):
+    return int(math.floor(value + 0.5))
+
+
 def generate_linearity_values(start_value, end_value, step_value):
     """按 Value 步进直接生成寄存器写入值，补入终点并对取整后的重复值去重。"""
     start_value, end_value, step_value = (
@@ -119,10 +124,150 @@ def generate_linearity_values(start_value, end_value, step_value):
 
     register_values = []
     for value in values:
-        register_value = int(math.floor(value + 0.5))
+        register_value = _round_linearity_value(value)
         if not register_values or register_value != register_values[-1]:
             register_values.append(register_value)
     return register_values
+
+
+def normalize_linearity_auto_range(start_value, end_value):
+    """将自动寻优范围规范化为非负整数闭区间。"""
+    start_value, end_value = float(start_value), float(end_value)
+    if not math.isfinite(start_value) or not math.isfinite(end_value):
+        raise ValueError("线性度 Value 参数必须为有限数值")
+    if start_value < 0 or end_value < 0:
+        raise ValueError("线性度寄存器值不能为负数")
+    if start_value > end_value:
+        raise ValueError("线性度 Start (Value) <= End (Value) 必须成立")
+    return _round_linearity_value(start_value), _round_linearity_value(end_value)
+
+
+def aggregate_linearity_repeats(repeat_groups):
+    """聚合同一候选的 Repeat 指标，并选择一次真实测量作为代表曲线。"""
+    if not repeat_groups:
+        raise ValueError("Repeat 结果为空，无法聚合")
+    repeats = [
+        dict(group, repeat_index=index)
+        for index, group in enumerate(repeat_groups, 1)
+    ]
+    max_values = [float(group["max_abs_mv"]) for group in repeats]
+    rms_values = [float(group["rms_mv"]) for group in repeats]
+    max_median = statistics.median(max_values)
+    rms_median = statistics.median(rms_values)
+    representative_index = min(
+        range(len(repeats)),
+        key=lambda index: (
+            abs(max_values[index] - max_median) + abs(rms_values[index] - rms_median),
+            abs(max_values[index] - max_median),
+            abs(rms_values[index] - rms_median),
+            index,
+        ),
+    )
+    group = dict(repeats[representative_index])
+    group.update({
+        "max_abs_mv": max_median,
+        "rms_mv": rms_median,
+        "max_abs_range_mv": max(max_values) - min(max_values),
+        "rms_range_mv": max(rms_values) - min(rms_values),
+        "repeat_count": len(repeats),
+        "representative_repeat": representative_index + 1,
+        "repeat_results": repeats,
+    })
+    return group
+
+
+def compare_linearity_candidates(left, right):
+    """按中位数指标和 Repeat 波动带比较两个候选；-1 左优、0 并列、1 右优。"""
+    epsilon = 1e-12
+    max_delta = float(left["max_abs_mv"]) - float(right["max_abs_mv"])
+    rms_delta = float(left["rms_mv"]) - float(right["rms_mv"])
+    max_band = max(
+        epsilon,
+        float(left.get("max_abs_range_mv", 0.0)),
+        float(right.get("max_abs_range_mv", 0.0)),
+    )
+    rms_band = max(
+        epsilon,
+        float(left.get("rms_range_mv", 0.0)),
+        float(right.get("rms_range_mv", 0.0)),
+    )
+    order = 0
+    if abs(max_delta) > max_band:
+        order = -1 if max_delta < 0 else 1
+    elif abs(rms_delta) > rms_band:
+        order = -1 if rms_delta < 0 else 1
+    return {
+        "order": order,
+        "max_delta_mv": max_delta,
+        "rms_delta_mv": rms_delta,
+        "max_band_mv": max_band,
+        "rms_band_mv": rms_band,
+        "ambiguous": order == 0 and (max_band > epsilon or rms_band > epsilon),
+    }
+
+
+def advance_linearity_auto_best(low, high, cache):
+    """用已测端点选择更优半区，每轮仅补充一个新区间中点。"""
+    low, high = int(low), int(high)
+    if low < 0 or low > high:
+        raise ValueError("自动寻优区间无效")
+    if low == high:
+        return {
+            "low": low,
+            "high": high,
+            "evaluate_value": None if low in cache else low,
+            "done": low in cache,
+            "comparison": None,
+        }
+    if high - low == 1:
+        for value in (low, high):
+            if value not in cache:
+                return {
+                    "low": low,
+                    "high": high,
+                    "evaluate_value": value,
+                    "done": False,
+                    "comparison": None,
+                }
+        return {
+            "low": low,
+            "high": high,
+            "evaluate_value": None,
+            "done": True,
+            "comparison": None,
+        }
+
+    mid = (low + high) // 2
+    for value in (low, high, mid):
+        if value not in cache:
+            return {
+                "low": low,
+                "high": high,
+                "evaluate_value": value,
+                "done": False,
+                "comparison": None,
+            }
+
+    comparison = compare_linearity_candidates(cache[low], cache[high])
+    comparison.update({
+        "left_value": low,
+        "right_value": high,
+        "mid_value": mid,
+        "previous_low": low,
+        "previous_high": high,
+    })
+    if comparison["order"] == 1:
+        low = mid
+    else:
+        high = mid
+    comparison["direction"] = "right" if comparison["order"] == 1 else "left"
+    return {
+        "low": low,
+        "high": high,
+        "evaluate_value": None,
+        "done": high - low == 1 and low in cache and high in cache,
+        "comparison": comparison,
+    }
 
 
 def generate_linearity_pairs(config):
@@ -179,21 +324,32 @@ def analyze_linearity_group(n_value, p_value, sweep_result, calib_points=None):
     }
 
 
-def select_best_linearity_group(groups):
-    """按 Max Abs Error、RMS Error、N/P 值依次升序选择最佳组。"""
+def select_best_linearity_group(groups, noise_aware=False):
+    """选择最佳组；自动模式用波动带比较，手动模式保持精确指标排序。"""
     valid = [
         (index, group) for index, group in enumerate(groups)
         if group.get("error_mv")
     ]
     if not valid:
         return None
-    return min(
-        valid,
-        key=lambda item: (
-            item[1]["max_abs_mv"], item[1]["rms_mv"],
-            item[1]["n_value"], item[1]["p_value"],
-        ),
-    )[0]
+    if not noise_aware:
+        return min(
+            valid,
+            key=lambda item: (
+                item[1]["max_abs_mv"], item[1]["rms_mv"],
+                item[1]["n_value"], item[1]["p_value"],
+            ),
+        )[0]
+
+    best_index, best = valid[0]
+    for index, candidate in valid[1:]:
+        comparison = compare_linearity_candidates(candidate, best)
+        candidate_key = (candidate["n_value"], candidate["p_value"])
+        best_key = (best["n_value"], best["p_value"])
+        if comparison["order"] == -1 or (
+                comparison["order"] == 0 and candidate_key < best_key):
+            best_index, best = index, candidate
+    return best_index
 
 
 def compute_detailed_stats(raw_data):

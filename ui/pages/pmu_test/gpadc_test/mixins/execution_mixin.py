@@ -16,6 +16,7 @@ from core.pmu_test.gpadc import (
     TestWorker as _TestWorker, GPADCTestRunner,
     ALGORITHM_REGISTRY, describe_algorithm, algorithm_length_divisor,
     assess_fluctuation, freeze_config, generate_linearity_values,
+    normalize_linearity_auto_range,
 )
 
 _RETIRED_THREAD_WORKERS = {}
@@ -117,7 +118,7 @@ class _ExecutionMixin:
             max_value = (1 << int(self.iic_width_combo.currentData())) - 1
 
             def _parse_range(start_edit, end_edit, value_start_edit,
-                             value_end_edit, value_step_edit, label):
+                             value_end_edit, value_step_edit, label, auto_best=False):
                 start = _parse_lsb(start_edit, f"{label} Start (LSB)")
                 end = _parse_lsb(end_edit, f"{label} End (LSB)")
                 for name, value in (("Start", start), ("End", end)):
@@ -127,8 +128,12 @@ class _ExecutionMixin:
                     raise ValueError(f"{label} Start (LSB) must be less than or equal to End")
                 value_start = _parse_value(value_start_edit, f"{label} Start (Value)")
                 value_end = _parse_value(value_end_edit, f"{label} End (Value)")
-                value_step = _parse_value(value_step_edit, f"{label} Step (Value)")
-                generate_linearity_values(value_start, value_end, value_step)
+                if auto_best:
+                    normalize_linearity_auto_range(value_start, value_end)
+                    value_step = None
+                else:
+                    value_step = _parse_value(value_step_edit, f"{label} Step (Value)")
+                    generate_linearity_values(value_start, value_end, value_step)
                 return start, end, value_start, value_end, value_step
 
             link_np = self.linearity_link_np.isChecked()
@@ -139,14 +144,20 @@ class _ExecutionMixin:
             }
             range_keys = ("start", "end", "value_start", "value_end", "value_step")
             if link_np:
+                auto_best = self.linearity_auto_best.isChecked()
                 values = _parse_range(
                     self.linearity_start, self.linearity_end,
                     self.linearity_value_start, self.linearity_value_end,
-                    self.linearity_value_step, "Shared",
+                    self.linearity_value_step, "Shared", auto_best=auto_best,
                 )
                 config.update(zip(
                     tuple(f"linearity_{key}" for key in range_keys), values,
                 ))
+                if auto_best:
+                    config.update({
+                        "linearity_auto_best": True,
+                        "linearity_auto_repeat": self.linearity_auto_repeat.value(),
+                    })
             else:
                 n_values = _parse_range(
                     self.linearity_n_start, self.linearity_n_end,
@@ -577,12 +588,21 @@ class _ExecutionMixin:
             if result is not None:
                 self._plot_linearity_traverse(result)
                 best = result['groups'][result['best_index']]
+                linearity = result.get('linearity') or {}
+                auto_search = result.get('auto_search') or {}
+                auto_best = bool(linearity.get('auto_best'))
                 params = {
                     'best_n': best['n_value'],
                     'best_p': best['p_value'],
                     'best_max_abs_error_mv': best['max_abs_mv'],
                     'best_rms_error_mv': best['rms_mv'],
                     'group_count': len(result['groups']),
+                    'sweep_count': sum(
+                        group.get('repeat_count', 1) for group in result['groups']
+                    ),
+                    'auto_best': auto_best,
+                    'auto_repeat': linearity.get('auto_repeat') if auto_best else None,
+                    'search_ambiguous': bool(auto_search.get('ambiguous')),
                 }
                 self._export_data = {
                     'params': params,

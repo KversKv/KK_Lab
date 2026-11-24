@@ -711,6 +711,24 @@ class _LayoutMixin:
         shared_layout.addWidget(self.linearity_value_start, 4, 0)
         shared_layout.addWidget(self.linearity_value_end, 4, 1)
         shared_layout.addWidget(self.linearity_value_step, 4, 2)
+        auto_row = QHBoxLayout()
+        auto_row.addWidget(QLabel("Auto Best"))
+        auto_row.addStretch()
+        self.linearity_auto_best = _ToggleSwitch(checked=False)
+        self.linearity_auto_best.setToolTip(
+            "Link N=P only: discrete binary search assuming a unimodal error response"
+        )
+        auto_row.addWidget(self.linearity_auto_best)
+        shared_layout.addLayout(auto_row, 5, 0, 1, 3)
+        shared_layout.addWidget(QLabel("Repeat (Runs)"), 6, 0)
+        self.linearity_auto_repeat = QSpinBox()
+        self.linearity_auto_repeat.setRange(1, 10)
+        self.linearity_auto_repeat.setValue(3)
+        self.linearity_auto_repeat.setToolTip(
+            "Repeat each candidate and use median Max Abs/RMS metrics; 3 or more is recommended"
+        )
+        shared_layout.addWidget(self.linearity_auto_repeat, 6, 1)
+        self.linearity_auto_best.toggled.connect(self._on_linearity_auto_best_toggled)
         linearity_layout.addWidget(self.linearity_shared_range_frame)
 
         self.linearity_independent_range_frame = QFrame()
@@ -770,10 +788,22 @@ class _LayoutMixin:
             )
         self.linearity_link_np.toggled.connect(self._on_linearity_link_toggled)
         self._on_linearity_link_toggled(True)
+        self._sync_linearity_auto_controls()
 
     def _on_linearity_link_toggled(self, checked):
         self.linearity_shared_range_frame.setVisible(checked)
         self.linearity_independent_range_frame.setVisible(not checked)
+
+    def _on_linearity_auto_best_toggled(self, checked):
+        self._sync_linearity_auto_controls()
+
+    def _sync_linearity_auto_controls(self, enabled=None):
+        auto = self.linearity_auto_best.isChecked()
+        if enabled is None:
+            enabled = not self.is_test_running
+        self.linearity_auto_best.setEnabled(enabled)
+        self.linearity_value_step.setEnabled(enabled and not auto)
+        self.linearity_auto_repeat.setEnabled(enabled and auto)
 
     def _build_temp_params_frame(self):
         self.temp_params_frame = QFrame()
@@ -1320,6 +1350,7 @@ class _LayoutMixin:
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.linearity_n_reg_addr, self.linearity_p_reg_addr,
             self.linearity_link_np,
+            self.linearity_auto_best, self.linearity_auto_repeat,
             self.linearity_start, self.linearity_end,
             self.linearity_value_start, self.linearity_value_end, self.linearity_value_step,
             self.linearity_n_start, self.linearity_n_end,
@@ -1351,6 +1382,7 @@ class _LayoutMixin:
         self.outlier_pos_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
         self.outlier_neg_offset.setEnabled(enabled and self.outlier_filter_switch.isChecked())
         self.current_monitor_channel.setEnabled(enabled and self.current_monitor_switch.isChecked())
+        self._sync_linearity_auto_controls(enabled)
 
     def _rebuild_algorithm_params(self):
         """按当前选中算法重建参数行（参数元信息来自 ALGORITHM_REGISTRY）。"""
