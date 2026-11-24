@@ -2788,3 +2788,7 @@
 {"ts": "2026-11-13 23:04:54", "action": "apply_test_config_draft", "status": "executed", "risk_level": "high", "arguments": {"draft_id": "draft_001"}, "message": "已将 Arb 配置应用到 CH1 编辑器（Sine / Voltage），面板已展开可预览；确认无误后点击 RUN 下发到仪器。"}
 {"ts": "2026-11-13 23:04:57", "action": "list_ui_actions", "status": "executed", "risk_level": "low", "arguments": {}, "message": "当前页面「power_analyser」无可用 UI 动作。"}
 {"ts": "2026-11-13 23:04:59", "action": "get_instrument_status", "status": "executed", "risk_level": "low", "arguments": {}, "message": "共 1 个仪器会话，其中 1 个已连接。已连接会话可直接用其 session_id 操作（测量/查询/设置），无需重新扫描或连接。"}
+{"ts": "2026-11-24 14:55:55", "action": "get_test_result_summary", "status": "executed", "risk_level": "low", "arguments": {}, "message": ""}
+{"ts": "2026-11-24 14:55:55", "action": "get_current_test_config", "status": "executed", "risk_level": "low", "arguments": {}, "message": ""}
+{"ts": "2026-11-24 14:57:11", "action": "get_test_result_summary", "status": "executed", "risk_level": "low", "arguments": {}, "message": ""}
+{"ts": "2026-11-24 14:57:11", "action": "get_current_test_config", "status": "executed", "risk_level": "low", "arguments": {}, "message": ""}
