@@ -198,8 +198,8 @@ class _RecentTestsMixin:
         return "\n".join(lines)
 
     def _record_recent_test(self, kind, result):
-        """测试完成后记入最近测试列表（result 为 None 时不记录）。"""
-        if result is None:
+        """测试完成后记入最近测试列表（None 或 Linearity Traverse 不记录）。"""
+        if result is None or kind == 'linearity_traverse':
             return
         self._recent_test_seq += 1
         chip, channel, case = self._naming_fields()

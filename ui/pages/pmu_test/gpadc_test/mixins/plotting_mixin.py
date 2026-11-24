@@ -52,6 +52,8 @@ class _PlottingMixin:
 
     def _show_curve_view_menu(self, pos):
         """图表右键菜单：勾选启用单次数据显示项（与 Curve View 按钮同步）。"""
+        if self.current_test_item == self.TEST_LINEARITY_TRAVERSE:
+            return
         sender = self.sender()
         menu = QMenu("Curve View", self)
         entries = (
@@ -254,11 +256,14 @@ class _PlottingMixin:
 
         is_cnt_test = self.current_test_item == self.TEST_1000CNT
         is_ft_test = self.current_test_item == self.TEST_FT_CALIB_CHECK
+        is_linearity_test = self.current_test_item == self.TEST_LINEARITY_TRAVERSE
 
         if is_cnt_test:
             actual_text, ideal_text = "● ADC Code (LSB)", "─ AVG Level"
         elif is_ft_test:
             actual_text, ideal_text = "● Calib Error (mV)", "┄ Limit Lines"
+        elif is_linearity_test:
+            actual_text, ideal_text = "● Trim Error (mV)", "─ Zero Error"
         else:
             actual_text, ideal_text = "↔ Actual Code", "↔ Ideal Code"
         actual_legend = QLabel(actual_text)
@@ -464,6 +469,101 @@ class _PlottingMixin:
             text += f"（偏差 {dev:+.3f}）"
         lines.append(text)
         return "<br>".join(lines)
+
+    def _plot_linearity_traverse(self, result):
+        """绘制全部 Trim 的 Error 曲线，并高亮 Max Abs Error 最小的配置。"""
+        try:
+            import io
+            import numpy as np
+            import pyqtgraph as pg
+            from pyqtgraph.exporters import ImageExporter
+            from PySide6.QtCore import QBuffer, QIODevice
+            from PySide6.QtGui import QImage
+
+            self._clear_chart_placeholder()
+            layout = self.chart_placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.chart_placeholder)
+            layout.setContentsMargins(14, 14, 14, 10)
+            layout.setSpacing(8)
+
+            groups = result.get('groups') or []
+            best_index = result.get('best_index')
+            best = groups[best_index] if best_index is not None else None
+            if best is not None:
+                summary = QLabel(
+                    f"BEST N=0x{best['n_value']:X}, P=0x{best['p_value']:X}  |  "
+                    f"Max Abs Error {best['max_abs_mv']:.2f} mV  |  "
+                    f"RMS Error {best['rms_mv']:.2f} mV"
+                )
+                summary.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 700;")
+                summary.setAlignment(Qt.AlignCenter)
+                layout.addWidget(summary)
+
+            pw = pg.PlotWidget()
+            pw.setBackground("#0a1735")
+            pw.showGrid(x=True, y=True, alpha=0.15)
+            pw.setLabel("left", "Error (mV)", color="#a0b4d8")
+            pw.setLabel("bottom", "Input Voltage (V)", color="#a0b4d8")
+            pw.plotItem.vb.setMenuEnabled(False)
+            for axis_name in ("left", "bottom"):
+                axis = pw.getAxis(axis_name)
+                axis.setTextPen(pg.mkPen("#a0b4d8"))
+                axis.setPen(pg.mkPen("#3a4f7a"))
+            pw.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1, style=Qt.DashLine))
+            legend = pw.addLegend(offset=(10, 10))
+            legend.setLabelTextColor("#a0b4d8")
+            legend.setBrush(pg.mkBrush(10, 23, 53, 220))
+            legend.setPen(pg.mkPen("#3a4f7a"))
+
+            x = np.array(result.get('voltage') or [], dtype=float)
+
+            def _plot_group(group, index):
+                color = QColor(self._COMPARE_PALETTE[index % len(self._COMPARE_PALETTE)])
+                is_best = index == best_index
+                if not is_best:
+                    color.setAlpha(85)
+                n = min(len(x), len(group.get('error_mv') or []))
+                if n == 0:
+                    return
+                y = np.array(group['error_mv'][:n], dtype=float)
+                name = f"N=0x{group['n_value']:X}, P=0x{group['p_value']:X}"
+                if is_best:
+                    name = f"BEST {name}"
+                pw.plot(
+                    x[:n], y,
+                    pen=pg.mkPen(color, width=3 if is_best else 1),
+                    symbol="o", symbolSize=6 if is_best else 3,
+                    symbolBrush=color, symbolPen=None,
+                    name=name,
+                )
+
+            for index, group in enumerate(groups):
+                if index != best_index:
+                    _plot_group(group, index)
+            if best is not None:
+                _plot_group(best, best_index)
+
+            layout.addWidget(pw, 1)
+            x_label = QLabel("Input Voltage (V)")
+            x_label.setAlignment(Qt.AlignCenter)
+            x_label.setObjectName("muted_label")
+            layout.addWidget(x_label)
+
+            exporter = ImageExporter(pw.plotItem)
+            exporter.parameters()['width'] = 1200
+            snapshot = exporter.export(toBytes=True)
+            if not isinstance(snapshot, QImage):
+                snapshot = QImage.fromData(bytes(snapshot))
+            qbuf = QBuffer()
+            qbuf.open(QIODevice.WriteOnly)
+            snapshot.save(qbuf, "PNG")
+            self._chart_image_bytes = io.BytesIO(bytes(qbuf.data()))
+            qbuf.close()
+        except Exception as exc:
+            self._chart_image_bytes = None
+            self._append_log(f"[ERROR] Error plotting Linearity Traverse: {exc}")
+            logger.error("Error plotting Linearity Traverse: %s", exc, exc_info=True)
 
     def _plot_voltage_adc_curve(self, voltage_data, mean_cali, adc_min_cali=None, adc_max_cali=None, is_temp_mode=False):
         try:

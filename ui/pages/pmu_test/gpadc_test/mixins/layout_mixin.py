@@ -381,6 +381,7 @@ class _LayoutMixin:
         self.test_item_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.test_item_combo.addItem(self.TEST_1000CNT, self.TEST_1000CNT)
         self.test_item_combo.addItem(self.TEST_FORCE_VOLTAGE, self.TEST_FORCE_VOLTAGE)
+        self.test_item_combo.addItem(self.TEST_LINEARITY_TRAVERSE, self.TEST_LINEARITY_TRAVERSE)
         self.test_item_combo.addItem(self.TEST_HIGH_LOW_TEMP, self.TEST_HIGH_LOW_TEMP)
         self.test_item_combo.addItem(self.TEST_TEMP_CONSISTENCY, self.TEST_TEMP_CONSISTENCY)
         self.test_item_combo.addItem(self.TEST_MULTI_CH_TEMP, self.TEST_MULTI_CH_TEMP)
@@ -575,8 +576,11 @@ class _LayoutMixin:
 
         self._build_voltage_params_frame()
         self._build_temp_params_frame()
+        self._build_linearity_params_frame()
         params_layout.addWidget(self.voltage_params_frame)
         params_layout.addWidget(self.temp_params_frame)
+        params_layout.addWidget(self.linearity_params_frame)
+        self.linearity_params_frame.hide()
 
         # 校准参数：默认留空 = 自动取 1/4、3/4 扫描点；两格都填写时作为手动校准两点
         self._build_calib_params_frame()
@@ -651,6 +655,97 @@ class _LayoutMixin:
         voltage_layout.addWidget(self.voltage_min, 1, 0)
         voltage_layout.addWidget(self.voltage_max, 1, 1)
         voltage_layout.addWidget(self.voltage_step, 1, 2)
+
+    def _build_linearity_params_frame(self):
+        self.linearity_params_frame = QFrame()
+        self.linearity_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        linearity_layout = QVBoxLayout(self.linearity_params_frame)
+        linearity_layout.setContentsMargins(0, 0, 0, 0)
+        linearity_layout.setSpacing(6)
+
+        title = QLabel("LINEARITY SETTINGS")
+        title.setStyleSheet("color: #7e96bf; font-size: 11px; font-weight: 700; border: none;")
+        linearity_layout.addWidget(title)
+
+        register_frame = QFrame()
+        register_layout = QGridLayout(register_frame)
+        register_layout.setContentsMargins(0, 0, 0, 0)
+        register_layout.setHorizontalSpacing(6)
+        register_layout.setVerticalSpacing(6)
+        register_layout.addWidget(QLabel("N Weight Register (Hex)"), 0, 0)
+        register_layout.addWidget(QLabel("P Weight Register (Hex)"), 0, 1)
+        self.linearity_n_reg_addr = HexWheelLineEdit("0x00")
+        self.linearity_p_reg_addr = HexWheelLineEdit("0x00")
+        register_layout.addWidget(self.linearity_n_reg_addr, 1, 0)
+        register_layout.addWidget(self.linearity_p_reg_addr, 1, 1)
+        linearity_layout.addWidget(register_frame)
+
+        link_row = QHBoxLayout()
+        link_row.addWidget(QLabel("Link N = P"))
+        link_row.addStretch()
+        self.linearity_link_np = _ToggleSwitch(checked=True)
+        self.linearity_link_np.setToolTip(
+            "ON: shared N = P sweep; OFF: independent N/P matrix ranges"
+        )
+        link_row.addWidget(self.linearity_link_np)
+        linearity_layout.addLayout(link_row)
+
+        self.linearity_shared_range_frame = QFrame()
+        shared_layout = QGridLayout(self.linearity_shared_range_frame)
+        shared_layout.setContentsMargins(0, 0, 0, 0)
+        shared_layout.setHorizontalSpacing(6)
+        shared_layout.setVerticalSpacing(6)
+        shared_layout.addWidget(QLabel("SHARED SWEEP"), 0, 0, 1, 3)
+        shared_layout.addWidget(QLabel("Start (LSB)"), 1, 0)
+        shared_layout.addWidget(QLabel("End (LSB)"), 1, 1)
+        shared_layout.addWidget(QLabel("Step (LSB)"), 1, 2)
+        self.linearity_start = QLineEdit("0")
+        self.linearity_end = QLineEdit("7")
+        self.linearity_step = QLineEdit("1")
+        shared_layout.addWidget(self.linearity_start, 2, 0)
+        shared_layout.addWidget(self.linearity_end, 2, 1)
+        shared_layout.addWidget(self.linearity_step, 2, 2)
+        linearity_layout.addWidget(self.linearity_shared_range_frame)
+
+        self.linearity_independent_range_frame = QFrame()
+        independent_layout = QGridLayout(self.linearity_independent_range_frame)
+        independent_layout.setContentsMargins(0, 0, 0, 0)
+        independent_layout.setHorizontalSpacing(6)
+        independent_layout.setVerticalSpacing(6)
+        independent_layout.addWidget(QLabel("N WEIGHT SWEEP"), 0, 0, 1, 3)
+        independent_layout.addWidget(QLabel("Start (LSB)"), 1, 0)
+        independent_layout.addWidget(QLabel("End (LSB)"), 1, 1)
+        independent_layout.addWidget(QLabel("Step (LSB)"), 1, 2)
+        self.linearity_n_start = QLineEdit("0")
+        self.linearity_n_end = QLineEdit("7")
+        self.linearity_n_step = QLineEdit("1")
+        independent_layout.addWidget(self.linearity_n_start, 2, 0)
+        independent_layout.addWidget(self.linearity_n_end, 2, 1)
+        independent_layout.addWidget(self.linearity_n_step, 2, 2)
+        independent_layout.addWidget(QLabel("P WEIGHT SWEEP"), 3, 0, 1, 3)
+        independent_layout.addWidget(QLabel("Start (LSB)"), 4, 0)
+        independent_layout.addWidget(QLabel("End (LSB)"), 4, 1)
+        independent_layout.addWidget(QLabel("Step (LSB)"), 4, 2)
+        self.linearity_p_start = QLineEdit("0")
+        self.linearity_p_end = QLineEdit("7")
+        self.linearity_p_step = QLineEdit("1")
+        independent_layout.addWidget(self.linearity_p_start, 5, 0)
+        independent_layout.addWidget(self.linearity_p_end, 5, 1)
+        independent_layout.addWidget(self.linearity_p_step, 5, 2)
+        linearity_layout.addWidget(self.linearity_independent_range_frame)
+
+        for edit in (
+            self.linearity_start, self.linearity_end, self.linearity_step,
+            self.linearity_n_start, self.linearity_n_end, self.linearity_n_step,
+            self.linearity_p_start, self.linearity_p_end, self.linearity_p_step,
+        ):
+            edit.setToolTip("Decimal or 0x-prefixed hexadecimal integer")
+        self.linearity_link_np.toggled.connect(self._on_linearity_link_toggled)
+        self._on_linearity_link_toggled(True)
+
+    def _on_linearity_link_toggled(self, checked):
+        self.linearity_shared_range_frame.setVisible(checked)
+        self.linearity_independent_range_frame.setVisible(not checked)
 
     def _build_temp_params_frame(self):
         self.temp_params_frame = QFrame()
@@ -1052,16 +1147,19 @@ class _LayoutMixin:
         # 1000CNT 不再隐藏图表面板：改用于展示原始数据相对 AVG 的分布图，指标区改显详细统计卡组
         is_cnt_test = test_item == self.TEST_1000CNT
         is_ft_test = test_item == self.TEST_FT_CALIB_CHECK
+        is_linearity_test = test_item == self.TEST_LINEARITY_TRAVERSE
         if is_cnt_test:
             self.chart_title.setText("Raw Data Distribution")
         elif is_ft_test:
             self.chart_title.setText("FT Calibration Curve")
+        elif is_linearity_test:
+            self.chart_title.setText("Linearity Error Curves")
         else:
             self.chart_title.setText("ADC Transfer Curve")
         for card in self._cnt_cards:
             card.setVisible(is_cnt_test)
         for card in self._fv_cards:
-            card.setVisible(not is_cnt_test and not is_ft_test)
+            card.setVisible(not is_cnt_test and not is_ft_test and not is_linearity_test)
         for card in self._ft_cards:
             card.setVisible(is_ft_test)
 
@@ -1073,8 +1171,10 @@ class _LayoutMixin:
             self.voltage_channel.hide()
             self.start_test_btn.setText("▶ START TEST")
             self._start_btn_text = "▶ START TEST"
-        elif test_item == self.TEST_FORCE_VOLTAGE:
-            self.params_mode_label.setText("VOLTAGE SWEEP")
+        elif test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_LINEARITY_TRAVERSE):
+            self.params_mode_label.setText(
+                "LINEARITY TRAVERSE" if is_linearity_test else "VOLTAGE SWEEP"
+            )
             self.voltage_params_frame.show()
             self.temp_params_frame.hide()
             self.voltage_channel_label.show()
@@ -1138,6 +1238,11 @@ class _LayoutMixin:
 
         # 多通道高低温测试的通道配置面板
         self.multi_ch_panel.setVisible(test_item == self.TEST_MULTI_CH_TEMP)
+        self.linearity_params_frame.setVisible(is_linearity_test)
+        self.metrics_row.setVisible(not is_linearity_test)
+        if is_linearity_test:
+            self.toggle_recent_btn.setChecked(False)
+        self.toggle_recent_btn.setVisible(not is_linearity_test)
 
         self._update_temp_hint()
 
@@ -1185,6 +1290,11 @@ class _LayoutMixin:
             self.test_item_combo,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
+            self.linearity_n_reg_addr, self.linearity_p_reg_addr,
+            self.linearity_link_np,
+            self.linearity_start, self.linearity_end, self.linearity_step,
+            self.linearity_n_start, self.linearity_n_end, self.linearity_n_step,
+            self.linearity_p_start, self.linearity_p_end, self.linearity_p_step,
             self.temp_min, self.temp_max, self.temp_step,
             self.soak_time, self.sample_count,
             self.calib_low, self.calib_high,

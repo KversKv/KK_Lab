@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPADC 采样与六类测试编排（纯 Python，无 UI / Qt 依赖）。
+"""GPADC 采样与七类测试编排（纯 Python，无 UI / Qt 依赖）。
 
 仪器、UART 队列、IIC、采样配置和通知回调均由调用方显式注入；
 返回协议保持为 ``(kind, result)``，供 ``gpadc_worker.TestWorker`` 直接调用。
@@ -15,6 +15,7 @@ from log_config import get_logger
 
 from .gpadc_analysis import (
     algorithm_length_divisor,
+    analyze_linearity_group,
     apply_algorithm,
     compare_algorithm_effect,
     compute_calibration,
@@ -22,8 +23,10 @@ from .gpadc_analysis import (
     compute_reg_stats,
     filter_mean_deviation,
     format_log_table,
+    generate_linearity_pairs,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
+    select_best_linearity_group,
 )
 from .gpadc_ft_check import run_ft_calib_check
 from .gpadc_multi_temp import parse_hw_int, run_multi_ch_temp_test
@@ -349,6 +352,7 @@ class GPADCTestRunner:
         methods = {
             "1000cnt": self._run_1000cnt,
             "force_voltage": self._run_force_voltage,
+            "linearity_traverse": self._run_linearity_traverse,
             "high_low_temp": self._run_high_low_temp,
             "temp_consistency": self._run_temp_consistency,
             "multi_ch_temp": self._run_multi_ch_temp,
@@ -410,7 +414,7 @@ class GPADCTestRunner:
 
     @staticmethod
     def _voltage_channels_for_test(kind, config):
-        if kind in ("force_voltage", "temp_consistency", "ft_calib_check"):
+        if kind in ("force_voltage", "linearity_traverse", "temp_consistency", "ft_calib_check"):
             return [config["voltage_channel"]]
         if kind == "multi_ch_temp":
             channels = []
@@ -477,6 +481,15 @@ class GPADCTestRunner:
             self.status_fn("错误: N6705C未连接", True)
             return "force_voltage", None
 
+        result, _ = self._sweep_force_voltage(config, stop_check)
+        if result is not None:
+            self.log_fn("===== FORCE VOLTAGE TEST 结果 =====")
+        return "force_voltage", result
+
+    def _sweep_force_voltage(
+        self, config, stop_check, progress_callback=None, context="Force voltage test",
+    ):
+        """执行一次完整电压扫描，返回 (结果, 是否完整)，供单次及线性度遍历复用。"""
         settle_time = 0.0 if self.mock_mode else 0.5
         step_time = 0.0 if self.mock_mode else 0.2
         voltage_data, adc_mean, adc_min, adc_max = [], [], [], []
@@ -485,15 +498,18 @@ class GPADCTestRunner:
         voltage_max = config["voltage_max"]
         voltage_step = config["voltage_step"]
         channel = config["voltage_channel"]
+        notify_progress = self.progress_callback if progress_callback is None else progress_callback
 
         self.n6705c.set_voltage(channel, voltage_min)
         time.sleep(settle_time)
         current_voltage = voltage_min
         total_points = max(1, int(round((voltage_max - voltage_min) / voltage_step)) + 1)
         point_idx = 0
+        completed = True
         while current_voltage <= voltage_max + voltage_step * 0.001:
             if stop_check and stop_check():
-                self.log_fn("[INFO] Force voltage test stopped by user.")
+                self.log_fn(f"[INFO] {context} stopped by user.")
+                completed = False
                 break
             self.n6705c.set_voltage(channel, current_voltage)
             time.sleep(step_time)
@@ -513,22 +529,130 @@ class GPADCTestRunner:
                 guard_reason = self._check_sweep_response(voltage_data, adc_mean)
                 if guard_reason is not None:
                     self.log_fn(f"[WARN] GPADC response guard: {guard_reason}")
-                    self.log_fn("[WARN] Force voltage test 已中止，请检查 DUT 供电/接线/通道与采集配置")
+                    self.log_fn(f"[WARN] {context} 已中止，请检查 DUT 供电/接线/通道与采集配置")
                     self.status_fn("警告: GPADC 无响应，测试已提前中止", True)
-                    return "force_voltage", None
+                    return None, False
 
             current_voltage = round(current_voltage + voltage_step, 6)
             point_idx += 1
-            self.progress_callback(int(point_idx * 100 / total_points))
+            notify_progress(int(point_idx * 100 / total_points))
 
-        self.log_fn("===== FORCE VOLTAGE TEST 结果 =====")
-        return "force_voltage", {
+        return {
             "voltage": voltage_data,
             "mean": adc_mean,
             "min": adc_min,
             "max": adc_max,
             "raw_samples": raw_samples,
             "raw_before_samples": raw_before_samples,
+        }, completed
+
+    def _run_linearity_traverse(self, config, stop_check):
+        link_np = bool(config["linearity_link_np"])
+        self.log_fn(
+            f"[INFO] Running LINEARITY TRAVERSE with I2C address: 0x{config['device_addr']:x}, "
+            f"Raw Register: 0x{config['reg_addr']:x}, "
+            f"N Register: 0x{config['linearity_n_reg_addr']:x}, "
+            f"P Register: 0x{config['linearity_p_reg_addr']:x}, "
+            f"Mode: {'Link N = P' if link_np else 'Independent N/P Matrix'}"
+        )
+        if self.acquisition.mode != "IIC":
+            self.log_fn("[ERROR] Linearity Traverse requires I2C acquisition")
+            self.status_fn("错误: Linearity Traverse 仅支持 I2C 采集", True)
+            return "linearity_traverse", None
+        if not self.mock_mode and (self.n6705c is None or not self.n6705c_connected):
+            self.log_fn("[ERROR] N6705C not connected")
+            self.status_fn("错误: N6705C未连接", True)
+            return "linearity_traverse", None
+
+        weight_pairs = generate_linearity_pairs(config)
+        device_addr = config["device_addr"]
+        n_reg = config["linearity_n_reg_addr"]
+        p_reg = config["linearity_p_reg_addr"]
+        width = config["iic_weight"]
+        original_n = self.acquisition.read_reg(device_addr, n_reg, width)
+        original_p = self.acquisition.read_reg(device_addr, p_reg, width)
+        self.log_fn(f"[INFO] Original N=0x{int(original_n):X}, P=0x{int(original_p):X}")
+        groups = []
+        stopped = False
+        try:
+            total_groups = len(weight_pairs)
+            for group_idx, (n_value, p_value) in enumerate(weight_pairs):
+                if stop_check and stop_check():
+                    stopped = True
+                    self.log_fn("[INFO] Linearity Traverse stopped by user.")
+                    break
+                self.acquisition.write_reg(device_addr, n_reg, n_value, width)
+                self.acquisition.write_reg(device_addr, p_reg, p_value, width)
+                pair_label = f"N=0x{n_value:X}, P=0x{p_value:X}"
+                self.log_fn(
+                    f"[INFO] Linearity {pair_label} ({group_idx + 1}/{total_groups})"
+                )
+
+                def _group_progress(value, _group_idx=group_idx):
+                    value = min(100, max(0, int(value)))
+                    self.progress_callback(int((_group_idx * 100 + value) * 100 / (total_groups * 100)))
+
+                sweep, completed = self._sweep_force_voltage(
+                    config,
+                    stop_check,
+                    progress_callback=_group_progress,
+                    context=f"Linearity Traverse {pair_label}",
+                )
+                if sweep is None:
+                    return "linearity_traverse", None
+                if not completed:
+                    stopped = True
+                    break
+                group = analyze_linearity_group(
+                    n_value, p_value, sweep, calib_points=self.calib_points,
+                )
+                groups.append(group)
+                self.log_fn(
+                    f"[RESULT] {pair_label}, "
+                    f"Max Abs Error={group['max_abs_mv']:.2f} mV, "
+                    f"RMS Error={group['rms_mv']:.2f} mV"
+                )
+        finally:
+            try:
+                self.acquisition.write_reg(device_addr, p_reg, int(original_p), width)
+                self.log_fn(f"[INFO] P Weight restored to original value: 0x{int(original_p):X}")
+            except Exception as exc:
+                self._report_cleanup_error("P Weight 寄存器恢复", exc)
+            try:
+                self.acquisition.write_reg(device_addr, n_reg, int(original_n), width)
+                self.log_fn(f"[INFO] N Weight restored to original value: 0x{int(original_n):X}")
+            except Exception as exc:
+                self._report_cleanup_error("N Weight 寄存器恢复", exc)
+
+        best_index = select_best_linearity_group(groups)
+        if best_index is not None:
+            best = groups[best_index]
+            self.log_fn(
+                f"[RESULT] Best N=0x{best['n_value']:X}, P=0x{best['p_value']:X}, "
+                f"Max Abs Error={best['max_abs_mv']:.2f} mV, "
+                f"RMS Error={best['rms_mv']:.2f} mV"
+            )
+        return "linearity_traverse", {
+            "voltage": list(groups[0]["raw"]["voltage"]) if groups else [],
+            "groups": groups,
+            "best_index": best_index,
+            "stopped": stopped,
+            "original_n": int(original_n),
+            "original_p": int(original_p),
+            "linearity": {
+                "n_reg_addr": n_reg,
+                "p_reg_addr": p_reg,
+                "link_np": link_np,
+                "start": config.get("linearity_start"),
+                "end": config.get("linearity_end"),
+                "step": config.get("linearity_step"),
+                "n_start": config.get("linearity_n_start"),
+                "n_end": config.get("linearity_n_end"),
+                "n_step": config.get("linearity_n_step"),
+                "p_start": config.get("linearity_p_start"),
+                "p_end": config.get("linearity_p_end"),
+                "p_step": config.get("linearity_p_step"),
+            },
         }
 
     def _run_high_low_temp(self, config, stop_check):

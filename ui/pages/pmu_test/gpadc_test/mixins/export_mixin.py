@@ -32,6 +32,10 @@ class _ExportMixin:
             self._export_ft_calib(self._export_data['ft_calib'])
             return
 
+        if 'linearity_traverse' in self._export_data:
+            self._export_linearity_traverse(self._export_data['linearity_traverse'])
+            return
+
         params   = self._export_data['params']
         raw      = self._export_data['raw']
         calib    = self._export_data['calibration']
@@ -229,6 +233,149 @@ class _ExportMixin:
         chart.series[1].graphicalProperties.line.solidFill = "F0A040"
         chart.series[2].graphicalProperties.line.solidFill = "F0A040"
         ws.add_chart(chart, f"{chart_anchor_col}{chart_data_start_row}")
+
+    def _export_linearity_traverse(self, result):
+        """导出 Linearity Traverse 汇总、各组指标及逐点 Error 数据。"""
+        import datetime
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
+        results_dir = Path(__file__).resolve().parents[5] / "Results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = results_dir / f"GPADC_LinearityTraverse_{ts}.xlsx"
+
+        hdr_fill = PatternFill("solid", fgColor="0A1735")
+        hdr_font = Font(bold=True, color="00D39A", size=11)
+        sub_fill = PatternFill("solid", fgColor="0D1F40")
+        sub_font = Font(bold=True, color="7E96BF", size=10)
+        best_fill = PatternFill("solid", fgColor="D9EAD3")
+
+        def _header(ws, row, col, text):
+            cell = ws.cell(row=row, column=col, value=text)
+            cell.fill = hdr_fill
+            cell.font = hdr_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            return cell
+
+        def _sub(ws, row, col, text):
+            cell = ws.cell(row=row, column=col, value=text)
+            cell.fill = sub_fill
+            cell.font = sub_font
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            return cell
+
+        def _value(ws, row, col, value, best=False):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if isinstance(value, float):
+                cell.number_format = "0.000000"
+            if best:
+                cell.fill = best_fill
+                cell.font = Font(bold=True, color="006100")
+            return cell
+
+        groups = result.get('groups') or []
+        best_index = result.get('best_index')
+        best = groups[best_index] if best_index is not None else {}
+        linearity = result.get('linearity') or {}
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Summary"
+        _header(ws, 1, 1, "Linearity Traverse Summary")
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=7)
+        summary_items = [
+            ("N Weight Register", f"0x{linearity.get('n_reg_addr', 0):X}"),
+            ("P Weight Register", f"0x{linearity.get('p_reg_addr', 0):X}"),
+            ("Original N", f"0x{result.get('original_n', 0):X}"),
+            ("Original P", f"0x{result.get('original_p', 0):X}"),
+            ("Mode", "Link N = P" if linearity.get('link_np') else "Independent N/P Matrix"),
+        ]
+        if linearity.get('link_np'):
+            summary_items.extend([
+                ("Shared Start (LSB)", linearity.get('start')),
+                ("Shared End (LSB)", linearity.get('end')),
+                ("Shared Step (LSB)", linearity.get('step')),
+            ])
+        else:
+            summary_items.extend([
+                ("N Start (LSB)", linearity.get('n_start')),
+                ("N End (LSB)", linearity.get('n_end')),
+                ("N Step (LSB)", linearity.get('n_step')),
+                ("P Start (LSB)", linearity.get('p_start')),
+                ("P End (LSB)", linearity.get('p_end')),
+                ("P Step (LSB)", linearity.get('p_step')),
+            ])
+        summary_items.extend([
+            ("Best N", f"0x{best.get('n_value', 0):X}"),
+            ("Best P", f"0x{best.get('p_value', 0):X}"),
+            ("Best Max Abs Error (mV)", best.get('max_abs_mv')),
+            ("Best RMS Error (mV)", best.get('rms_mv')),
+            ("Completed Groups", len(groups)),
+            ("Stopped", bool(result.get('stopped'))),
+        ])
+        row = 2
+        for name, value in summary_items:
+            _sub(ws, row, 1, name)
+            _value(ws, row, 2, value)
+            row += 1
+
+        row += 1
+        headers = ("N Weight", "P Weight", "K (LSB/V)", "B (LSB)",
+                   "Max Abs Error (mV)", "RMS Error (mV)", "Result")
+        for col, name in enumerate(headers, 1):
+            _header(ws, row, col, name)
+        row += 1
+        for index, group in enumerate(groups):
+            is_best = index == best_index
+            values = (
+                f"0x{group['n_value']:X}", f"0x{group['p_value']:X}",
+                group['k'], group['b'], group['max_abs_mv'], group['rms_mv'],
+                "BEST" if is_best else "",
+            )
+            for col, value in enumerate(values, 1):
+                _value(ws, row, col, value, best=is_best)
+            row += 1
+
+        for col, width in enumerate((28, 20, 20, 20, 22, 20, 14), 1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        if self._chart_image_bytes is not None:
+            from openpyxl.drawing.image import Image as XLImage
+            self._chart_image_bytes.seek(0)
+            image = XLImage(self._chart_image_bytes)
+            image.width = 600
+            image.height = 350
+            ws.add_image(image, "H2")
+
+        sweep_ws = wb.create_sheet("Sweep Data")
+        sweep_headers = ("N Weight", "P Weight", "Input Voltage (V)",
+                         "ADC Mean (LSB)", "Mean Cali (V)", "Error (mV)")
+        for col, name in enumerate(sweep_headers, 1):
+            _header(sweep_ws, 1, col, name)
+            sweep_ws.column_dimensions[get_column_letter(col)].width = 22
+        row = 2
+        for group in groups:
+            raw = group.get('raw') or {}
+            voltage = raw.get('voltage') or result.get('voltage') or []
+            raw_mean = raw.get('mean') or []
+            mean_cali = group.get('mean_cali') or []
+            error_mv = group.get('error_mv') or []
+            count = min(len(voltage), len(raw_mean), len(mean_cali), len(error_mv))
+            for index in range(count):
+                values = (
+                    f"0x{group['n_value']:X}", f"0x{group['p_value']:X}",
+                    float(voltage[index]), float(raw_mean[index]),
+                    float(mean_cali[index]), float(error_mv[index]),
+                )
+                for col, value in enumerate(values, 1):
+                    _value(sweep_ws, row, col, value)
+                row += 1
+
+        wb.save(str(filename))
+        self._append_log(f"[INFO] Linearity Traverse result exported to: {filename}")
 
     def _export_ft_calib(self, result):
         """FT Calibration Check 导出：Summary（K/B + 校准点确认 + 误差统计 + 判定）+ Sweep Data。"""

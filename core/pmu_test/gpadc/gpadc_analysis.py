@@ -91,6 +91,86 @@ def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max, calib_points=N
     return k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high
 
 
+def generate_linearity_values(start, end, step):
+    """生成线性度寄存器遍历值；与电压扫描一致，不额外补不可达终点。"""
+    start, end, step = int(start), int(end), int(step)
+    if start < 0 or end < 0:
+        raise ValueError("线性度寄存器值不能为负数")
+    if start > end:
+        raise ValueError("线性度寄存器 Start <= End 必须成立")
+    if step <= 0:
+        raise ValueError("线性度寄存器 Step 必须大于 0")
+    return list(range(start, end + 1, step))
+
+
+def generate_linearity_pairs(config):
+    """生成 N/P 同值对角组合或 N 外层、P 内层的独立矩阵组合。"""
+    if config["linearity_link_np"]:
+        values = generate_linearity_values(
+            config["linearity_start"], config["linearity_end"], config["linearity_step"],
+        )
+        return [(value, value) for value in values]
+    n_values = generate_linearity_values(
+        config["linearity_n_start"], config["linearity_n_end"], config["linearity_n_step"],
+    )
+    p_values = generate_linearity_values(
+        config["linearity_p_start"], config["linearity_p_end"], config["linearity_p_step"],
+    )
+    return [(n_value, p_value) for n_value in n_values for p_value in p_values]
+
+
+def analyze_linearity_group(n_value, p_value, sweep_result, calib_points=None):
+    """对一组扫压结果独立两点校准，并计算电压误差及最佳值评选指标。"""
+    pair_label = f"N=0x{int(n_value):X}, P=0x{int(p_value):X}"
+    voltage = list(sweep_result.get("voltage") or [])
+    adc_mean = list(sweep_result.get("mean") or [])
+    adc_min = list(sweep_result.get("min") or [])
+    adc_max = list(sweep_result.get("max") or [])
+    if len(voltage) < 2:
+        raise ValueError(f"{pair_label} 至少需要两个完整扫压点")
+    if not (len(voltage) == len(adc_mean) == len(adc_min) == len(adc_max)):
+        raise ValueError(f"{pair_label} 扫压数据长度不一致")
+
+    k, b, mean_cali, _, _, v_low, m_low, v_high, m_high = compute_calibration(
+        voltage, adc_mean, adc_min, adc_max, calib_points=calib_points,
+    )
+    if k == 0.0:
+        raise ValueError(f"{pair_label} 标定斜率 k=0，无法计算 Error")
+
+    error_mv = [(cali - vin) * 1000.0 for vin, cali in zip(voltage, mean_cali)]
+    max_abs_mv = max(abs(error) for error in error_mv)
+    rms_mv = math.sqrt(sum(error * error for error in error_mv) / len(error_mv))
+    return {
+        "n_value": int(n_value),
+        "p_value": int(p_value),
+        "k": k,
+        "b": b,
+        "mean_cali": mean_cali,
+        "error_mv": error_mv,
+        "max_abs_mv": max_abs_mv,
+        "rms_mv": rms_mv,
+        "calib_points": (v_low, m_low, v_high, m_high),
+        "raw": sweep_result,
+    }
+
+
+def select_best_linearity_group(groups):
+    """按 Max Abs Error、RMS Error、N/P 值依次升序选择最佳组。"""
+    valid = [
+        (index, group) for index, group in enumerate(groups)
+        if group.get("error_mv")
+    ]
+    if not valid:
+        return None
+    return min(
+        valid,
+        key=lambda item: (
+            item[1]["max_abs_mv"], item[1]["rms_mv"],
+            item[1]["n_value"], item[1]["p_value"],
+        ),
+    )[0]
+
+
 def compute_detailed_stats(raw_data):
     """1000CNT 详细统计（纯算法，无 Qt）。
 

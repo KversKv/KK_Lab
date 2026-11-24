@@ -49,6 +49,7 @@ class GPADCTestUI(
 
     TEST_1000CNT = "1000CNT TEST"
     TEST_FORCE_VOLTAGE = "Force Voltage Test"
+    TEST_LINEARITY_TRAVERSE = "Linearity Traverse"
     TEST_HIGH_LOW_TEMP = "High-Low Temp Test"
     TEST_TEMP_CONSISTENCY = "Temp Consistency Test"
     TEST_MULTI_CH_TEMP = "Multi-Ch Temp Test"
@@ -76,6 +77,7 @@ class GPADCTestUI(
     INSTRUMENT_MAP = {
         TEST_1000CNT: [],
         TEST_FORCE_VOLTAGE: ["n6705c"],
+        TEST_LINEARITY_TRAVERSE: ["n6705c"],
         TEST_HIGH_LOW_TEMP: ["chamber"],
         TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
         TEST_MULTI_CH_TEMP: ["n6705c", "chamber"],

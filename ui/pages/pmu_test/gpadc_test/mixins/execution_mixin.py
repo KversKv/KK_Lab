@@ -77,8 +77,8 @@ class _ExecutionMixin:
             self._start_test()
 
     def _validate_test_ranges(self, test_item):
-        if (test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_TEMP_CONSISTENCY,
-                          self.TEST_FT_CALIB_CHECK)
+        if (test_item in (self.TEST_FORCE_VOLTAGE, self.TEST_LINEARITY_TRAVERSE,
+                          self.TEST_TEMP_CONSISTENCY, self.TEST_FT_CALIB_CHECK)
                 and self.voltage_min.value() > self.voltage_max.value()):
             return "电压扫描范围无效：Start <= End 必须成立"
         if (test_item in (self.TEST_HIGH_LOW_TEMP, self.TEST_TEMP_CONSISTENCY,
@@ -93,6 +93,68 @@ class _ExecutionMixin:
                     return f"通道 {name} 电压扫描范围无效：Start <= End 必须成立"
         return None
 
+    def _parse_linearity_inputs(self):
+        try:
+            if not self.iic_radio.isChecked():
+                raise ValueError("Linearity Traverse requires I2C acquisition")
+            n_reg_addr = int(self.linearity_n_reg_addr.text().strip(), 16)
+            p_reg_addr = int(self.linearity_p_reg_addr.text().strip(), 16)
+            if n_reg_addr < 0 or p_reg_addr < 0:
+                raise ValueError("N/P Weight Register must be non-negative")
+
+            def _parse_value(edit, label):
+                text = edit.text().strip()
+                if not text:
+                    raise ValueError(f"{label} is required")
+                return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
+
+            max_value = (1 << int(self.iic_width_combo.currentData())) - 1
+
+            def _parse_range(start_edit, end_edit, step_edit, label):
+                start = _parse_value(start_edit, f"{label} Start")
+                end = _parse_value(end_edit, f"{label} End")
+                step = _parse_value(step_edit, f"{label} Step")
+                if start > end:
+                    raise ValueError(f"{label} Start must be less than or equal to End")
+                if step <= 0:
+                    raise ValueError(f"{label} Step must be greater than 0")
+                for name, value in (("Start", start), ("End", end), ("Step", step)):
+                    if not 0 <= value <= max_value:
+                        raise ValueError(f"{label} {name} must be between 0 and 0x{max_value:X}")
+                return start, end, step
+
+            link_np = self.linearity_link_np.isChecked()
+            config = {
+                "linearity_n_reg_addr": n_reg_addr,
+                "linearity_p_reg_addr": p_reg_addr,
+                "linearity_link_np": link_np,
+            }
+            if link_np:
+                values = _parse_range(
+                    self.linearity_start, self.linearity_end, self.linearity_step, "Shared",
+                )
+                config.update(zip(
+                    ("linearity_start", "linearity_end", "linearity_step"), values,
+                ))
+            else:
+                n_values = _parse_range(
+                    self.linearity_n_start, self.linearity_n_end, self.linearity_n_step, "N Weight",
+                )
+                p_values = _parse_range(
+                    self.linearity_p_start, self.linearity_p_end, self.linearity_p_step, "P Weight",
+                )
+                config.update(zip(
+                    ("linearity_n_start", "linearity_n_end", "linearity_n_step"), n_values,
+                ))
+                config.update(zip(
+                    ("linearity_p_start", "linearity_p_end", "linearity_p_step"), p_values,
+                ))
+        except ValueError as exc:
+            self._append_log(f"[ERROR] Invalid Linearity Traverse parameters: {exc}")
+            self.set_system_status(f"Invalid Linearity Traverse parameters: {exc}", is_error=True)
+            return None
+        return config
+
     def _start_test(self):
         if self.is_test_running:
             return
@@ -103,6 +165,11 @@ class _ExecutionMixin:
             self._append_log(f"[ERROR] {range_error}")
             self.set_system_status(f"错误: {range_error}", is_error=True)
             return
+        linearity_cfg = None
+        if test_item == self.TEST_LINEARITY_TRAVERSE:
+            linearity_cfg = self._parse_linearity_inputs()
+            if linearity_cfg is None:
+                return
 
         self._acq_mode_snapshot = 'UART' if self.uart_radio.isChecked() else 'IIC'
         self._uart_keyword_snapshot = self.uart_keyword.text().strip()
@@ -179,6 +246,19 @@ class _ExecutionMixin:
                 voltage_step=self.voltage_step.value(),
                 voltage_channel=self.voltage_channel.currentData(),
                 sample_cnt=sample_cnt,
+            )
+        elif test_item == self.TEST_LINEARITY_TRAVERSE:
+            kind = "linearity_traverse"
+            kwargs = dict(
+                device_addr=iic_device_addr,
+                reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
+                voltage_min=self.voltage_min.value(),
+                voltage_max=self.voltage_max.value(),
+                voltage_step=self.voltage_step.value(),
+                voltage_channel=self.voltage_channel.currentData(),
+                sample_cnt=sample_cnt,
+                **linearity_cfg,
             )
         elif test_item == self.TEST_HIGH_LOW_TEMP:
             kind = "high_low_temp"
@@ -379,6 +459,8 @@ class _ExecutionMixin:
     def _result_has_samples(kind, result):
         if kind in ('force_voltage', 'high_low_temp'):
             return bool(result.get('voltage')) and bool(result.get('mean'))
+        if kind == 'linearity_traverse':
+            return bool(result.get('groups')) and result.get('best_index') is not None
         if kind == 'temp_consistency':
             return bool(result.get('temp')) and any(result.get('mean') or [])
         if kind == 'multi_ch_temp':
@@ -398,6 +480,7 @@ class _ExecutionMixin:
 
         empty_result_labels = {
             'force_voltage': "GPADC电压扫描",
+            'linearity_traverse': "GPADC Linearity Traverse",
             'high_low_temp': "GPADC高低温测试",
             'temp_consistency': "GPADC温度一致性测试",
             'multi_ch_temp': "GPADC多通道温度测试",
@@ -475,6 +558,31 @@ class _ExecutionMixin:
                     }
                 }
 
+        elif kind == 'linearity_traverse':
+            if result is not None:
+                self._plot_linearity_traverse(result)
+                best = result['groups'][result['best_index']]
+                params = {
+                    'best_n': best['n_value'],
+                    'best_p': best['p_value'],
+                    'best_max_abs_error_mv': best['max_abs_mv'],
+                    'best_rms_error_mv': best['rms_mv'],
+                    'group_count': len(result['groups']),
+                }
+                self._export_data = {
+                    'params': params,
+                    'linearity_traverse': result,
+                }
+                self._append_log(
+                    f"[RESULT] Linearity Traverse: Best N=0x{best['n_value']:X}, "
+                    f"P=0x{best['p_value']:X}, "
+                    f"Max Abs Error={best['max_abs_mv']:.2f} mV, "
+                    f"RMS Error={best['rms_mv']:.2f} mV"
+                )
+                status = ("Linearity Traverse stopped; completed groups displayed"
+                          if result.get('stopped') else "Linearity Traverse completed")
+                self.set_system_status(status)
+
         elif kind == 'high_low_temp':
             if result is not None:
                 # 新测试完成：默认显示单次全部波形（Voltage / Min-Max / Error）
@@ -540,7 +648,8 @@ class _ExecutionMixin:
         # 记入最近测试列表，供后续对比/载入
         self._record_recent_test(kind, result)
         # 曲线类测试完成后，当前图上显示的就是这条记录（右键切换 Curve View 时据此重绘）
-        if self._recent_test_records and self._recent_test_records[-1]['kind'] in self._CURVE_KINDS:
+        if (kind in self._CURVE_KINDS and self._recent_test_records
+                and self._recent_test_records[-1]['kind'] == kind):
             self._loaded_record = self._recent_test_records[-1]
 
     def _on_test_error(self, err):

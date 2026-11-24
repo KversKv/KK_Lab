@@ -45,6 +45,66 @@ def test_gpadc_compute_calibration():
     assert mc == [1.0, 2.0, 3.0, 4.0]
 
 
+def test_gpadc_generate_linearity_values():
+    assert ga.generate_linearity_values(0, 5, 2) == [0, 2, 4]
+    assert ga.generate_linearity_values(3, 3, 1) == [3]
+    for args in ((2, 1, 1), (0, 1, 0), (-1, 1, 1)):
+        try:
+            ga.generate_linearity_values(*args)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"非法线性度序列未拒绝: {args}")
+
+
+def test_gpadc_generate_linearity_pairs():
+    linked = {
+        "linearity_link_np": True,
+        "linearity_start": 0, "linearity_end": 2, "linearity_step": 1,
+    }
+    assert ga.generate_linearity_pairs(linked) == [(0, 0), (1, 1), (2, 2)]
+    independent = {
+        "linearity_link_np": False,
+        "linearity_n_start": 0, "linearity_n_end": 2, "linearity_n_step": 2,
+        "linearity_p_start": 1, "linearity_p_end": 3, "linearity_p_step": 1,
+    }
+    assert ga.generate_linearity_pairs(independent) == [
+        (0, 1), (0, 2), (0, 3), (2, 1), (2, 2), (2, 3),
+    ]
+
+
+def test_gpadc_analyze_linearity_group_independent_calibration():
+    mean = [11.0, 20.0, 31.0, 40.0]
+    sweep = {
+        "voltage": [1.0, 2.0, 3.0, 4.0],
+        "mean": mean,
+        "min": [value - 1.0 for value in mean],
+        "max": [value + 1.0 for value in mean],
+    }
+    group = ga.analyze_linearity_group(0x12, 0x34, sweep)
+    assert group["n_value"] == 0x12
+    assert group["p_value"] == 0x34
+    assert group["k"] == 10.0 and group["b"] == 0.0
+    assert all(
+        abs(actual - expected) < 1e-9
+        for actual, expected in zip(group["error_mv"], [100.0, 0.0, 100.0, 0.0])
+    )
+    assert abs(group["max_abs_mv"] - 100.0) < 1e-9
+    assert abs(group["rms_mv"] - (5000.0 ** 0.5)) < 1e-9
+    assert group["raw"] is sweep
+
+
+def test_gpadc_select_best_linearity_group_tie_breakers():
+    groups = [
+        {"n_value": 4, "p_value": 0, "max_abs_mv": 5.0, "rms_mv": 2.0, "error_mv": [5.0]},
+        {"n_value": 1, "p_value": 9, "max_abs_mv": 5.0, "rms_mv": 1.0, "error_mv": [5.0]},
+        {"n_value": 1, "p_value": 2, "max_abs_mv": 5.0, "rms_mv": 1.0, "error_mv": [5.0]},
+        {"n_value": 0, "p_value": 1, "max_abs_mv": 6.0, "rms_mv": 0.1, "error_mv": [6.0]},
+    ]
+    assert ga.select_best_linearity_group(groups) == 2
+    assert ga.select_best_linearity_group([]) is None
+
+
 # ── dcdc ───────────────────────────────────────────────
 
 def test_dcdc_polyfit_linear():

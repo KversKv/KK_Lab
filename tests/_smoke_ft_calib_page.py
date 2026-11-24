@@ -72,12 +72,12 @@ assert not ok
 ft.tab_widget.setCurrentIndex(0)
 assert ft.ai_capabilities()
 
-# 原 GPADC Test 页不受影响（6 测试项仍在，Test Item 面板可见）——首次切到才构建
+# 原 GPADC Test 页不受影响（7 测试项仍在，Test Item 面板可见）——首次切到才构建
 assert ui.gpadc_test_ui is None
 ui.set_current_test("gpadc_test")
 gp = ui.gpadc_test_ui
 assert gp is not None
-assert gp.test_item_combo.count() == 6
+assert gp.test_item_combo.count() == 7
 assert not gp.test_item_panel.isHidden()
 
 # 全部 8 子页懒加载均可构建且 tab 位置正确

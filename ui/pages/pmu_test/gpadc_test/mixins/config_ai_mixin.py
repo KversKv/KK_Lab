@@ -131,6 +131,18 @@ class _ConfigAiMixin:
             'voltage_min': self.voltage_min.value(),
             'voltage_max': self.voltage_max.value(),
             'voltage_step': self.voltage_step.value(),
+            'linearity_n_reg_addr': self.linearity_n_reg_addr.text(),
+            'linearity_p_reg_addr': self.linearity_p_reg_addr.text(),
+            'linearity_link_np': self.linearity_link_np.isChecked(),
+            'linearity_start': self.linearity_start.text(),
+            'linearity_end': self.linearity_end.text(),
+            'linearity_step': self.linearity_step.text(),
+            'linearity_n_start': self.linearity_n_start.text(),
+            'linearity_n_end': self.linearity_n_end.text(),
+            'linearity_n_step': self.linearity_n_step.text(),
+            'linearity_p_start': self.linearity_p_start.text(),
+            'linearity_p_end': self.linearity_p_end.text(),
+            'linearity_p_step': self.linearity_p_step.text(),
             'temp_min': self.temp_min.value(),
             'temp_max': self.temp_max.value(),
             'temp_step': self.temp_step.value(),
@@ -466,6 +478,23 @@ class _ConfigAiMixin:
         _set_spin(self.voltage_min, "voltage_min")
         _set_spin(self.voltage_max, "voltage_max")
         _set_spin(self.voltage_step, "voltage_step")
+        _set_text(self.linearity_n_reg_addr, "linearity_n_reg_addr")
+        _set_text(self.linearity_p_reg_addr, "linearity_p_reg_addr")
+        link_np = cfg.get("linearity_link_np")
+        if link_np is not None:
+            self.linearity_link_np.setChecked(bool(link_np))
+            applied.append("linearity_link_np")
+            touched.append(self.linearity_link_np)
+        _set_text(self.linearity_start, "linearity_start")
+        _set_text(self.linearity_end, "linearity_end")
+        _set_text(self.linearity_step, "linearity_step")
+        _set_text(self.linearity_n_start, "linearity_n_start")
+        _set_text(self.linearity_n_end, "linearity_n_end")
+        _set_text(self.linearity_n_step, "linearity_n_step")
+        _set_text(self.linearity_p_start, "linearity_p_start")
+        _set_text(self.linearity_p_end, "linearity_p_end")
+        _set_text(self.linearity_p_step, "linearity_p_step")
+        self._on_linearity_link_toggled(self.linearity_link_np.isChecked())
 
         # 温度扫描参数
         _set_spin(self.temp_min, "temp_min")
