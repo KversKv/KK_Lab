@@ -206,68 +206,185 @@ def compare_linearity_candidates(left, right):
     }
 
 
+LINEARITY_AUTO_COARSE_STEP = 16
+LINEARITY_AUTO_FINALIST_LIMIT = 3
+
+
+def normalize_linearity_auto_strategy(value):
+    strategy = str(value or "coarse_fine").strip().lower()
+    if strategy not in ("coarse_fine", "unimodal"):
+        raise ValueError(f"未知 Linearity Auto Strategy: {value}")
+    return strategy
+
+
+def _longest_uncached_midpoint(low, high, cache):
+    """返回最长连续未测段的中点；等长时取最左段。"""
+    best_start = best_end = None
+    start = None
+    for value in range(low, high + 2):
+        if value <= high and value not in cache:
+            if start is None:
+                start = value
+            continue
+        if start is not None:
+            end = value - 1
+            if best_start is None or end - start > best_end - best_start:
+                best_start, best_end = start, end
+            start = None
+    if best_start is None:
+        return None
+    return (best_start + best_end) // 2
+
+
 def advance_linearity_auto_best(low, high, cache):
-    """用已测端点选择更优半区，每轮仅补充一个新区间中点。"""
+    """离散单峰搜索：比较相邻内部点，Tie 时保持区间并加密。"""
     low, high = int(low), int(high)
     if low < 0 or low > high:
         raise ValueError("自动寻优区间无效")
-    if low == high:
+
+    def _result(evaluate_value=None, done=False, comparison=None):
         return {
             "low": low,
             "high": high,
-            "evaluate_value": None if low in cache else low,
-            "done": low in cache,
-            "comparison": None,
+            "evaluate_value": evaluate_value,
+            "done": done,
+            "comparison": comparison,
         }
-    if high - low == 1:
-        for value in (low, high):
+
+    if high - low <= 3:
+        for value in range(low, high + 1):
             if value not in cache:
-                return {
-                    "low": low,
-                    "high": high,
-                    "evaluate_value": value,
-                    "done": False,
-                    "comparison": None,
-                }
-        return {
-            "low": low,
-            "high": high,
-            "evaluate_value": None,
-            "done": True,
-            "comparison": None,
-        }
+                return _result(evaluate_value=value)
+        return _result(done=True)
 
     mid = (low + high) // 2
-    for value in (low, high, mid):
+    right = mid + 1
+    for value in (mid, right):
         if value not in cache:
-            return {
-                "low": low,
-                "high": high,
-                "evaluate_value": value,
-                "done": False,
-                "comparison": None,
-            }
+            return _result(evaluate_value=value)
 
-    comparison = compare_linearity_candidates(cache[low], cache[high])
+    comparison = compare_linearity_candidates(cache[mid], cache[right])
     comparison.update({
-        "left_value": low,
-        "right_value": high,
-        "mid_value": mid,
+        "left_value": mid,
+        "right_value": right,
+        "probe_values": (mid, right),
         "previous_low": low,
         "previous_high": high,
     })
-    if comparison["order"] == 1:
-        low = mid
+    if comparison["order"] < 0:
+        next_low, next_high = low, mid
+        direction = "left"
+    elif comparison["order"] > 0:
+        next_low, next_high = right, high
+        direction = "right"
     else:
-        high = mid
-    comparison["direction"] = "right" if comparison["order"] == 1 else "left"
-    return {
-        "low": low,
-        "high": high,
-        "evaluate_value": None,
-        "done": high - low == 1 and low in cache and high in cache,
-        "comparison": comparison,
-    }
+        next_low, next_high = low, high
+        direction = "hold"
+    comparison.update({
+        "direction": direction,
+        "low": next_low,
+        "high": next_high,
+    })
+    if direction != "hold":
+        comparison["next_value"] = None
+        return {
+            "low": next_low,
+            "high": next_high,
+            "evaluate_value": None,
+            "done": False,
+            "comparison": comparison,
+        }
+
+    evaluate_value = _longest_uncached_midpoint(low, high, cache)
+    comparison["next_value"] = evaluate_value
+    return _result(
+        evaluate_value=evaluate_value,
+        done=evaluate_value is None,
+        comparison=comparison,
+    )
+
+
+def generate_linearity_coarse_values(start_value, end_value, step=LINEARITY_AUTO_COARSE_STEP):
+    """生成含端点的粗扫点；小范围直接退化为 Step=1 全扫。"""
+    low, high = normalize_linearity_auto_range(start_value, end_value)
+    step = int(step)
+    if step <= 0:
+        raise ValueError("Linearity coarse step must be positive")
+    if high - low + 1 <= 2 * step + 1:
+        return list(range(low, high + 1))
+    return generate_linearity_values(low, high, step)
+
+
+def _linearity_score(group):
+    return float(group["max_abs_mv"]), float(group["rms_mv"])
+
+
+def _linearity_rank(group):
+    return (*_linearity_score(group), int(group["n_value"]), int(group["p_value"]))
+
+
+def find_linearity_local_minima(values, cache):
+    """识别粗扫边界/内部低谷；指标平台全部保留。"""
+    values = sorted(int(value) for value in values)
+    if not values:
+        return []
+    if len(set(values)) != len(values) or any(value not in cache for value in values):
+        raise ValueError("粗扫低谷识别需要唯一且完整测量的候选")
+    scores = [_linearity_score(cache[value]) for value in values]
+    minima = []
+    for index, value in enumerate(values):
+        score = scores[index]
+        if index > 0 and score > scores[index - 1]:
+            continue
+        if index + 1 < len(values) and score > scores[index + 1]:
+            continue
+        minima.append(value)
+    return minima
+
+
+def build_linearity_neighborhoods(low, high, minima, radius=LINEARITY_AUTO_COARSE_STEP):
+    """将各低谷邻域裁剪到搜索范围，并合并重叠或相邻区间。"""
+    low, high = int(low), int(high)
+    radius = int(radius)
+    if low < 0 or low > high or radius < 0:
+        raise ValueError("Linearity 低谷邻域参数无效")
+    intervals = sorted(
+        (max(low, int(value) - radius), min(high, int(value) + radius))
+        for value in minima
+    )
+    merged = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def select_linearity_finalists(cache, neighborhoods, limit=LINEARITY_AUTO_FINALIST_LIMIT):
+    """每个细扫邻域优先推荐一名胜者，再从全部候选补足。"""
+    limit = int(limit)
+    if limit <= 0:
+        return []
+    winners = []
+    for start, end in neighborhoods:
+        values = [value for value in range(int(start), int(end) + 1) if value in cache]
+        if values:
+            winners.append(min((cache[value] for value in values), key=_linearity_rank))
+    finalists = []
+    for group in sorted(winners, key=_linearity_rank):
+        value = int(group["n_value"])
+        if value not in finalists:
+            finalists.append(value)
+        if len(finalists) == limit:
+            return finalists
+    for group in sorted(cache.values(), key=_linearity_rank):
+        value = int(group["n_value"])
+        if value not in finalists:
+            finalists.append(value)
+        if len(finalists) == limit:
+            break
+    return finalists
 
 
 def generate_linearity_pairs(config):
@@ -383,54 +500,81 @@ def build_linearity_auto_search_timeline(result):
     if completed and terminal_value is not None and int(terminal_value) != final_best_value:
         raise ValueError("Auto Best 终止值与最佳候选不一致")
 
-    interval = (int(search["start"]), int(search["end"]))
     comparisons = list(search.get("comparisons") or [])
+    strategy = search.get("strategy") or ("unimodal" if comparisons else "coarse_fine")
+    interval = (int(search["start"]), int(search["end"]))
+    fine_values = {int(value) for value in search.get("fine_values") or []}
+    neighborhoods = [tuple(interval) for interval in search.get("neighborhoods") or []]
     comparison_index = 0
     visible_values = []
     events = []
+
+    def _emit_comparison(comparison, best_value):
+        nonlocal interval
+        required = tuple(int(value) for value in comparison.get("probe_values") or (
+            comparison["left_value"], comparison["right_value"],
+        ))
+        previous_interval = (
+            int(comparison["previous_low"]), int(comparison["previous_high"]),
+        )
+        next_interval = (int(comparison["low"]), int(comparison["high"]))
+        if previous_interval != interval or any(value not in visible_values for value in required):
+            raise ValueError("Auto Best 比较记录与搜索区间不一致")
+        if comparison.get("direction") not in ("left", "right", "hold"):
+            raise ValueError("Auto Best 比较记录缺少有效收缩方向")
+        events.append({
+            "kind": "comparison",
+            "evaluated_values": tuple(visible_values),
+            "best_value": best_value,
+            "previous_interval": interval,
+            "interval": next_interval,
+            "comparison": comparison,
+        })
+        interval = next_interval
+
     for value in evaluated_values:
+        current_groups = [group_by_value[item] for item in visible_values]
+        current_best_index = select_best_linearity_group(current_groups, noise_aware=True)
+        current_best_value = (
+            current_groups[current_best_index]["n_value"] if current_groups else final_best_value
+        )
+        while (comparison_index < len(comparisons)
+               and comparisons[comparison_index].get("next_value") == value):
+            _emit_comparison(comparisons[comparison_index], current_best_value)
+            comparison_index += 1
+
         visible_values.append(value)
         visible_groups = [group_by_value[item] for item in visible_values]
         current_best_index = select_best_linearity_group(visible_groups, noise_aware=True)
         current_best_value = visible_groups[current_best_index]["n_value"]
+        candidate_interval = interval
+        phase = "search"
+        if strategy == "coarse_fine":
+            phase = "fine" if value in fine_values else "coarse"
+            if phase == "fine":
+                containing = [item for item in neighborhoods if item[0] <= value <= item[1]]
+                if containing:
+                    candidate_interval = containing[0]
         events.append({
             "kind": "candidate",
             "value": value,
             "group": group_by_value[value],
             "evaluated_values": tuple(visible_values),
             "best_value": current_best_value,
-            "interval": interval,
+            "interval": candidate_interval,
+            "phase": phase,
         })
 
         while comparison_index < len(comparisons):
             comparison = comparisons[comparison_index]
-            required = (
-                int(comparison["left_value"]), int(comparison["right_value"]),
-                int(comparison["mid_value"]),
-            )
+            if comparison.get("next_value") is not None:
+                break
+            required = tuple(int(item) for item in comparison.get("probe_values") or (
+                comparison["left_value"], comparison["right_value"],
+            ))
             if any(item not in visible_values for item in required):
                 break
-            previous_interval = (
-                int(comparison["previous_low"]), int(comparison["previous_high"]),
-            )
-            if previous_interval != interval or required[:2] != previous_interval:
-                raise ValueError("Auto Best 比较记录与搜索区间不一致")
-            direction = comparison.get("direction")
-            if direction == "right":
-                next_interval = (required[2], interval[1])
-            elif direction == "left":
-                next_interval = (interval[0], required[2])
-            else:
-                raise ValueError("Auto Best 比较记录缺少有效收缩方向")
-            events.append({
-                "kind": "comparison",
-                "evaluated_values": tuple(visible_values),
-                "best_value": current_best_value,
-                "previous_interval": interval,
-                "interval": next_interval,
-                "comparison": comparison,
-            })
-            interval = next_interval
+            _emit_comparison(comparison, current_best_value)
             comparison_index += 1
 
     if comparison_index != len(comparisons):

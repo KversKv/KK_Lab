@@ -608,6 +608,7 @@ def _auto_linearity_runner_config(repeat=3):
         "linearity_link_np": True,
         "linearity_auto_best": True,
         "linearity_auto_repeat": repeat,
+        "linearity_auto_strategy": "unimodal",
         "linearity_value_start": 0.0,
         "linearity_value_end": 20.0,
         "linearity_value_step": None,
@@ -628,7 +629,7 @@ def test_linearity_auto_best_repeats_candidates_and_restores(monkeypatch):
 
     assert kind == "linearity_traverse"
     evaluated = result["auto_search"]["evaluated_values"]
-    assert evaluated == [0, 20, 10, 5, 7, 6]
+    assert evaluated == [10, 11, 5, 6, 8, 9, 7]
     assert calls == {value: 3 for value in evaluated}
     assert [group["n_value"] for group in result["groups"]] == sorted(evaluated)
     assert all(group["repeat_count"] == 3 for group in result["groups"])
@@ -640,6 +641,76 @@ def test_linearity_auto_best_repeats_candidates_and_restores(monkeypatch):
     assert len(acquisition.weight_writes) == 2 * len(evaluated) + 2
     assert acquisition.weight_writes[-2:] == _np_restore_writes()
     assert progress == sorted(progress) and progress[-1] == 100
+
+
+def _coarse_linearity_runner_config(repeat=1):
+    config = _auto_linearity_runner_config(repeat=repeat)
+    config.update({
+        "linearity_auto_strategy": "coarse_fine",
+        "linearity_value_start": 0.0,
+        "linearity_value_end": 80.0,
+    })
+    return config
+
+
+def test_linearity_coarse_fine_multiple_basins_and_finalist_repeats(monkeypatch):
+    acquisition = _LinearityAcquisition()
+    progress = []
+    runner = _make_sweep_runner(
+        _VoltageSource(), acquisition, [], [], progress_callback=progress.append,
+    )
+    calls = _patch_auto_linearity_metrics(
+        runner, monkeypatch,
+        lambda value, repeat: min(abs(value - 20), abs(value - 60)),
+    )
+
+    kind, result = runner.run("linearity_traverse", _coarse_linearity_runner_config())
+
+    assert kind == "linearity_traverse"
+    search = result["auto_search"]
+    assert search["strategy"] == "coarse_fine" and search["completed"]
+    assert search["coarse_values"] == [0, 16, 32, 48, 64, 80]
+    assert search["neighborhoods"] == [(0, 32), (48, 80)]
+    assert len(search["evaluated_values"]) == 66
+    assert len(search["fine_values"]) == 60
+    assert not set(search["evaluated_values"]) & set(range(33, 48))
+    assert search["finalist_values"] == [20, 60, 19]
+    assert search["finalist_repeat_target"] == 3
+    assert sum(calls.values()) == 72
+    assert calls[20] == calls[60] == calls[19] == 3
+    assert all(calls[value] == 1 for value in search["evaluated_values"]
+               if value not in search["finalist_values"])
+    for group in result["groups"]:
+        expected = 3 if group["n_value"] in search["finalist_values"] else 1
+        assert group["repeat_count"] == expected
+        assert len(group["repeat_results"]) == expected
+    best = result["groups"][result["best_index"]]
+    assert best["n_value"] == 20 and search["terminal_value"] == 20
+    assert acquisition.weight_writes[-2:] == _np_restore_writes()
+    assert progress == sorted(progress) and progress[-1] == 100
+
+
+def test_linearity_coarse_fine_stop_during_finalist_preserves_complete_cache(monkeypatch):
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    calls = _patch_auto_linearity_metrics(
+        runner, monkeypatch,
+        lambda value, repeat: min(abs(value - 20), abs(value - 60)),
+    )
+
+    _, result = runner.run(
+        "linearity_traverse", _coarse_linearity_runner_config(),
+        stop_check=lambda: sum(calls.values()) >= 67,
+    )
+
+    search = result["auto_search"]
+    assert result["stopped"] and not search["completed"]
+    assert search["terminal_value"] is None
+    assert len(search["evaluated_values"]) == 66
+    assert calls[20] == 2
+    assert all(group["repeat_count"] == 1 for group in result["groups"])
+    assert all(len(group["repeat_results"]) == 1 for group in result["groups"])
+    assert acquisition.weight_writes[-2:] == _np_restore_writes()
 
 
 def test_linearity_auto_best_single_point_and_stop_during_repeat(monkeypatch):
@@ -664,10 +735,10 @@ def test_linearity_auto_best_single_point_and_stop_during_repeat(monkeypatch):
         stop_check=lambda: sum(calls.values()) >= 4,
     )
     assert result["stopped"] and not result["auto_search"]["completed"]
-    assert result["auto_search"]["evaluated_values"] == [0]
-    assert [group["n_value"] for group in result["groups"]] == [0]
-    assert calls == {0: 3, 20: 1}
-    assert 20 not in [group["n_value"] for group in result["groups"]]
+    assert result["auto_search"]["evaluated_values"] == [10]
+    assert [group["n_value"] for group in result["groups"]] == [10]
+    assert calls == {10: 3, 11: 1}
+    assert 11 not in [group["n_value"] for group in result["groups"]]
     assert acquisition.weight_writes[-2:] == _np_restore_writes()
     assert not progress or progress[-1] < 100
 
@@ -720,7 +791,7 @@ def test_search_gif_renderer_and_encoder(app, monkeypatch, tmp_path):
 
     assert len(renderer) == 10
     first = renderer.render_image(renderer.events[0], 0)
-    comparison = renderer.render_image(renderer.events[3], 3)
+    comparison = renderer.render_image(renderer.events[2], 2)
     assert (first.width(), first.height()) == (1200, 760)
     assert bytes(first.bits()) != bytes(comparison.bits())
 
@@ -732,14 +803,36 @@ def test_search_gif_renderer_and_encoder(app, monkeypatch, tmp_path):
         assert image.n_frames == 10
         assert image.info["loop"] == 0
         durations = [frame.info["duration"] for frame in ImageSequence.Iterator(image)]
-    assert durations[:3] == [700, 700, 700]
-    assert durations[3] == 1000 and durations[-1] == 2800
+    assert durations[:3] == [700, 700, 1000]
+    assert durations[-1] == 2800
 
     stopped_output = tmp_path / "stopped.gif"
     stopped = encode_search_gif_frames(frames, stopped_output, stop_check=lambda: True)
     assert stopped["stopped"] and not stopped["saved"]
     assert not stopped_output.exists()
     assert not stopped_output.with_suffix(".gif.tmp").exists()
+
+
+def test_coarse_fine_search_gif_uses_real_candidate_phases(app, monkeypatch):
+    from ui.pages.pmu_test.gpadc_test.search_gif_renderer import SearchGifFrameRenderer
+
+    acquisition = _LinearityAcquisition()
+    runner = _make_sweep_runner(_VoltageSource(), acquisition, [], [])
+    _patch_auto_linearity_metrics(
+        runner, monkeypatch,
+        lambda value, repeat: min(abs(value - 20), abs(value - 60)),
+    )
+    _, result = runner.run("linearity_traverse", _coarse_linearity_runner_config())
+    renderer = SearchGifFrameRenderer(result)
+
+    assert len(renderer) == len(result["auto_search"]["evaluated_values"]) == 66
+    assert [event["phase"] for event in renderer.events[:6]] == ["coarse"] * 6
+    assert renderer.events[6]["phase"] == "fine"
+    assert renderer.events[6]["interval"] == (0, 32)
+    assert renderer.events[-1]["interval"] == (48, 80)
+    assert renderer.events[-1]["is_final"] and renderer.events[-1]["completed"]
+    image = renderer.render_image(renderer.events[6], 6)
+    assert (image.width(), image.height()) == (1200, 760)
 
 
 @pytest.mark.parametrize("outcome", ["success", "stop", "error"])
@@ -1062,23 +1155,32 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
         assert page.linearity_auto_repeat.maximum() == 10
         assert page.linearity_value_step.isEnabled()
         assert not page.linearity_auto_repeat.isEnabled()
+        assert not page.linearity_auto_strategy.isEnabled()
+        assert page.linearity_auto_strategy.currentData() == "coarse_fine"
         page.linearity_auto_best.setChecked(True)
         assert not page.linearity_value_step.isEnabled()
         assert page.linearity_auto_repeat.isEnabled()
+        assert page.linearity_auto_strategy.isEnabled()
+        page.linearity_auto_strategy.setCurrentIndex(
+            page.linearity_auto_strategy.findData("unimodal")
+        )
         page.linearity_value_step.setText("invalid")
         page.linearity_auto_repeat.setValue(4)
         auto_config = page._parse_linearity_inputs()
         assert auto_config["linearity_auto_best"] is True
         assert auto_config["linearity_auto_repeat"] == 4
+        assert auto_config["linearity_auto_strategy"] == "unimodal"
         assert auto_config["linearity_value_start"] == float(0x3B00)
         assert auto_config["linearity_value_end"] == float(0x3C50)
         assert auto_config["linearity_value_step"] is None
         assert page.get_test_config()["linearity_auto_best"] is True
         assert page.get_test_config()["linearity_auto_repeat"] == 4
+        assert page.get_test_config()["linearity_auto_strategy"] == "unimodal"
 
         page._set_ui_enabled(False)
         assert not page.linearity_auto_best.isEnabled()
         assert not page.linearity_auto_repeat.isEnabled()
+        assert not page.linearity_auto_strategy.isEnabled()
         assert not page.linearity_value_step.isEnabled()
         page._set_ui_enabled(True)
         assert page.linearity_auto_best.isEnabled()
@@ -1089,8 +1191,10 @@ def test_page_linearity_controls_config_and_validation(app, monkeypatch):
         }, silent=True)
         assert ok and not page.linearity_auto_best.isChecked()
         assert page.linearity_auto_repeat.value() == 5
+        assert page.get_test_config()["linearity_auto_strategy"] == "coarse_fine"
         assert page.linearity_value_step.isEnabled()
         assert not page.linearity_auto_repeat.isEnabled()
+        assert not page.linearity_auto_strategy.isEnabled()
         page.linearity_value_step.setText("10")
 
         page.test_item_combo.setCurrentIndex(
@@ -1276,11 +1380,11 @@ def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
         result = page._export_data["linearity_traverse"]
         assert result["auto_search"]["evaluated_values"] == [0x3B00]
         assert len(result["groups"]) == 1
-        assert result["groups"][0]["repeat_count"] == 2
-        assert len(result["groups"][0]["repeat_results"]) == 2
+        assert result["groups"][0]["repeat_count"] == 4
+        assert len(result["groups"][0]["repeat_results"]) == 4
         params = page._export_data["params"]
         assert params["auto_best"] is True and params["auto_repeat"] == 2
-        assert params["group_count"] == 1 and params["sweep_count"] == 2
+        assert params["group_count"] == 1 and params["sweep_count"] == 4
 
         plots = page.chart_placeholder.findChildren(pg.PlotWidget)
         curves = [
@@ -1298,14 +1402,16 @@ def test_page_mock_auto_best_repeats_and_exports(app, monkeypatch):
         try:
             summary = workbook["Summary"]
             assert summary["B6"].value == "Link N = P"
-            assert summary["B7"].value == "Enabled (Binary Search)"
+            assert summary["B7"].value == "Coarse + Fine (Multi-Basin)"
             sweep = workbook["Sweep Data"]
-            assert sweep.max_row == 1 + 3 * 2
+            assert sweep.max_row == 1 + 3 * 4
             assert sweep.cell(1, 7).value == "Repeat"
             assert sweep.cell(1, 8).value == "Representative"
-            assert [sweep.cell(row, 7).value for row in range(2, 8)] == [1, 1, 1, 2, 2, 2]
+            assert [sweep.cell(row, 7).value for row in range(2, 14)] == [
+                repeat for repeat in range(1, 5) for _ in range(3)
+            ]
             assert sum(
-                sweep.cell(row, 8).value == "YES" for row in range(2, 8)
+                sweep.cell(row, 8).value == "YES" for row in range(2, 14)
             ) == 3
         finally:
             workbook.close()

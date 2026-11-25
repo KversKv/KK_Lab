@@ -143,7 +143,8 @@ def _run_linearity_auto_search(low, high, metric):
     raise AssertionError("自动二分未在限定次数内收敛")
 
 
-def _make_linearity_timeline_result(low, high):
+def _make_linearity_timeline_result(low, high, metric=None):
+    metric = metric or (lambda value: float((value - 7) ** 2))
     range_start, range_end = low, high
     cache = {}
     evaluated = []
@@ -156,7 +157,7 @@ def _make_linearity_timeline_result(low, high):
         value = step["evaluate_value"]
         if value is not None:
             evaluated.append(value)
-            score = float((value - 7) ** 2)
+            score = float(metric(value))
             cache[value] = {
                 "n_value": value, "p_value": value,
                 "max_abs_mv": score, "rms_mv": score,
@@ -175,6 +176,7 @@ def _make_linearity_timeline_result(low, high):
         "best_index": best_index,
         "stopped": False,
         "auto_search": {
+            "strategy": "unimodal",
             "start": range_start, "end": range_end,
             "evaluated_values": evaluated,
             "comparisons": comparisons,
@@ -196,7 +198,7 @@ def test_gpadc_normalize_linearity_auto_range():
             raise AssertionError(f"非法自动寻优范围未拒绝: {args}")
 
 
-def test_gpadc_auto_best_binary_boundaries_and_cache():
+def test_gpadc_auto_best_unimodal_boundaries_and_cache():
     low, evaluated, cache = _run_linearity_auto_search(3, 3, lambda value: value)
     assert low == 3 and evaluated == [3] and list(cache) == [3]
 
@@ -206,7 +208,7 @@ def test_gpadc_auto_best_binary_boundaries_and_cache():
     low, evaluated, cache = _run_linearity_auto_search(
         0, 20, lambda value: (value - 7) ** 2,
     )
-    assert low == 7 and evaluated == [0, 20, 10, 5, 7, 6]
+    assert low == 7 and evaluated == [10, 11, 5, 6, 8, 9, 7]
     groups = [cache[value] for value in sorted(cache)]
     best = groups[ga.select_best_linearity_group(groups, noise_aware=True)]
     assert best["n_value"] == 7
@@ -217,19 +219,87 @@ def test_gpadc_auto_best_binary_boundaries_and_cache():
     assert low == 20
 
 
-def test_gpadc_auto_best_non_unimodal_returns_best_evaluated():
-    def metric(value):
-        if value == 13:
-            return -100.0
-        return float((value - 7) ** 2)
+def test_gpadc_auto_best_asymmetric_unimodal_finds_3bd4():
+    anchors = [
+        (0x3B00, 69.15), (0x3BD4, 2.0), (0x3C00, 5.83),
+        (0x3C01, 6.11), (0x3D00, 59.43),
+    ]
 
-    _, _, cache = _run_linearity_auto_search(0, 20, metric)
-    assert 13 not in cache
-    groups = [cache[value] for value in sorted(cache)]
-    best_index = ga.select_best_linearity_group(groups, noise_aware=True)
-    assert groups[best_index]["max_abs_mv"] == min(
-        group["max_abs_mv"] for group in groups
+    def metric(value):
+        for (left_x, left_y), (right_x, right_y) in zip(anchors, anchors[1:]):
+            if value <= right_x:
+                ratio = (value - left_x) / (right_x - left_x)
+                return left_y + ratio * (right_y - left_y)
+        return anchors[-1][1]
+
+    best, _, cache = _run_linearity_auto_search(0x3B00, 0x3D00, metric)
+    assert best == 0x3BD4 and 0x3BD4 in cache
+    assert abs(cache[0x3C00]["max_abs_mv"] - 5.83) < 1e-9
+    assert abs(cache[0x3C01]["max_abs_mv"] - 6.11) < 1e-9
+
+
+def test_gpadc_auto_best_tie_holds_and_evaluates_whole_interval():
+    result = _make_linearity_timeline_result(0, 20, metric=lambda value: 5.0)
+    search = result["auto_search"]
+    assert set(search["evaluated_values"]) == set(range(21))
+    assert search["comparisons"]
+    assert all(item["direction"] == "hold" for item in search["comparisons"])
+    assert all(
+        (item["previous_low"], item["previous_high"]) == (item["low"], item["high"])
+        for item in search["comparisons"]
     )
+    events = ga.build_linearity_auto_search_timeline(result)
+    assert events[-1]["is_final"] and events[-1]["completed"]
+    assert result["groups"][result["best_index"]]["n_value"] == 0
+
+
+def test_gpadc_coarse_fine_minima_neighborhoods_and_finalists():
+    values = ga.generate_linearity_coarse_values(0x3B00, 0x3C00)
+    assert len(values) == 17 and values[0] == 0x3B00 and values[-1] == 0x3C00
+    assert values[1] - values[0] == 0x10
+    assert ga.generate_linearity_coarse_values(0, 32) == list(range(33))
+
+    coarse_values = list(range(0, 257, 16))
+    cache = {}
+    for value in coarse_values:
+        score = 100.0 if value == 0 else 50.0 + value / 100.0
+        if value == 32:
+            score = 5.0
+        elif value == 160:
+            score = 2.0
+        cache[value] = {
+            "n_value": value, "p_value": value,
+            "max_abs_mv": score, "rms_mv": score,
+        }
+    minima = ga.find_linearity_local_minima(coarse_values, cache)
+    assert minima == [32, 160]
+    neighborhoods = ga.build_linearity_neighborhoods(0, 256, minima)
+    assert neighborhoods == [(16, 48), (144, 176)]
+
+    for start, end in neighborhoods:
+        for value in range(start, end + 1):
+            if start == 16:
+                score = abs(value - 40) / 100.0
+            else:
+                score = 10.0 + abs(value - 150) / 100.0
+            cache[value] = {
+                "n_value": value, "p_value": value,
+                "max_abs_mv": score, "rms_mv": score,
+            }
+    finalists = ga.select_linearity_finalists(cache, neighborhoods)
+    assert len(finalists) == 3 and len(set(finalists)) == 3
+    assert 40 in finalists and 150 in finalists
+
+    plateau_cache = {
+        value: {
+            "n_value": value, "p_value": value,
+            "max_abs_mv": 5.0, "rms_mv": 5.0,
+        }
+        for value in coarse_values
+    }
+    plateau = ga.find_linearity_local_minima(coarse_values, plateau_cache)
+    assert plateau == coarse_values
+    assert ga.build_linearity_neighborhoods(0, 256, plateau) == [(0, 256)]
 
 
 def test_gpadc_build_auto_search_timeline_preserves_real_order():
@@ -239,12 +309,12 @@ def test_gpadc_build_auto_search_timeline_preserves_real_order():
 
     candidates = [event for event in events if event["kind"] == "candidate"]
     comparisons = [event for event in events if event["kind"] == "comparison"]
-    assert [event["value"] for event in candidates] == [0, 20, 10, 5, 7, 6]
-    assert [event["best_value"] for event in candidates] == [0, 0, 10, 5, 7, 7]
+    assert [event["value"] for event in candidates] == [10, 11, 5, 6, 8, 9, 7]
+    assert [event["best_value"] for event in candidates] == [10, 10, 5, 6, 6, 6, 7]
     assert [event["interval"] for event in comparisons] == [
-        (0, 10), (5, 10), (5, 7), (6, 7),
+        (0, 10), (6, 10), (6, 8),
     ]
-    assert events[3]["kind"] == "comparison"
+    assert events[2]["kind"] == "comparison"
     assert events[-1]["is_final"] and events[-1]["completed"]
     assert events[-1]["best_value"] == 7
     assert result["auto_search"]["evaluated_values"] == original_values

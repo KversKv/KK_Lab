@@ -716,18 +716,27 @@ class _LayoutMixin:
         auto_row.addStretch()
         self.linearity_auto_best = _ToggleSwitch(checked=False)
         self.linearity_auto_best.setToolTip(
-            "Link N=P only: discrete binary search assuming a unimodal error response"
+            "Link N=P only: choose multi-basin coarse/fine search or fast unimodal search"
         )
         auto_row.addWidget(self.linearity_auto_best)
         shared_layout.addLayout(auto_row, 5, 0, 1, 3)
-        shared_layout.addWidget(QLabel("Repeat (Runs)"), 6, 0)
+        shared_layout.addWidget(QLabel("Strategy"), 6, 0)
+        self.linearity_auto_strategy = DarkComboBox(bg="#0a1733", border="#24365e")
+        self.linearity_auto_strategy.addItem("Coarse + Fine (Multi-Basin)", "coarse_fine")
+        self.linearity_auto_strategy.addItem("Unimodal (Fast)", "unimodal")
+        self.linearity_auto_strategy.setToolTip(
+            "Coarse + Fine searches multiple basins; Unimodal is faster for known single-valley responses"
+        )
+        shared_layout.addWidget(self.linearity_auto_strategy, 6, 1, 1, 2)
+        shared_layout.addWidget(QLabel("Repeat (Runs)"), 7, 0)
         self.linearity_auto_repeat = QSpinBox()
         self.linearity_auto_repeat.setRange(1, 10)
         self.linearity_auto_repeat.setValue(3)
         self.linearity_auto_repeat.setToolTip(
-            "Repeat each candidate and use median Max Abs/RMS metrics; 3 or more is recommended"
+            "Initial runs per coarse/fine candidate; finalists use "
+            "min(10, max(3, Repeat + 2)) total runs"
         )
-        shared_layout.addWidget(self.linearity_auto_repeat, 6, 1)
+        shared_layout.addWidget(self.linearity_auto_repeat, 7, 1)
         self.linearity_auto_best.toggled.connect(self._on_linearity_auto_best_toggled)
         linearity_layout.addWidget(self.linearity_shared_range_frame)
 
@@ -803,6 +812,7 @@ class _LayoutMixin:
             enabled = not self.is_test_running
         self.linearity_auto_best.setEnabled(enabled)
         self.linearity_value_step.setEnabled(enabled and not auto)
+        self.linearity_auto_strategy.setEnabled(enabled and auto)
         self.linearity_auto_repeat.setEnabled(enabled and auto)
 
     def _build_temp_params_frame(self):
@@ -1356,7 +1366,8 @@ class _LayoutMixin:
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.linearity_n_reg_addr, self.linearity_p_reg_addr,
             self.linearity_link_np,
-            self.linearity_auto_best, self.linearity_auto_repeat,
+            self.linearity_auto_best, self.linearity_auto_strategy,
+            self.linearity_auto_repeat,
             self.linearity_start, self.linearity_end,
             self.linearity_value_start, self.linearity_value_end, self.linearity_value_step,
             self.linearity_n_start, self.linearity_n_end,

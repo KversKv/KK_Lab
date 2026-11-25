@@ -145,6 +145,7 @@ class _ConfigAiMixin:
             'linearity_p_reg_addr': self.linearity_p_reg_addr.text(),
             'linearity_link_np': self.linearity_link_np.isChecked(),
             'linearity_auto_best': self.linearity_auto_best.isChecked(),
+            'linearity_auto_strategy': self.linearity_auto_strategy.currentData(),
             'linearity_auto_repeat': self.linearity_auto_repeat.value(),
             'linearity_start': self.linearity_start.text(),
             'linearity_end': self.linearity_end.text(),
@@ -508,6 +509,14 @@ class _ConfigAiMixin:
             self.linearity_auto_best.setChecked(bool(auto_best))
             applied.append("linearity_auto_best")
             touched.append(self.linearity_auto_best)
+        auto_strategy = cfg.get("linearity_auto_strategy", "coarse_fine")
+        strategy_idx = self.linearity_auto_strategy.findData(auto_strategy)
+        if strategy_idx < 0:
+            strategy_idx = self.linearity_auto_strategy.findData("coarse_fine")
+        self.linearity_auto_strategy.setCurrentIndex(strategy_idx)
+        if "linearity_auto_strategy" in cfg:
+            applied.append("linearity_auto_strategy")
+            touched.append(self.linearity_auto_strategy)
         _set_int_spin(self.linearity_auto_repeat, "linearity_auto_repeat")
         self._sync_linearity_auto_controls()
         _set_text(self.linearity_start, "linearity_start")

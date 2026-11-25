@@ -156,6 +156,7 @@ class _ExecutionMixin:
                 if auto_best:
                     config.update({
                         "linearity_auto_best": True,
+                        "linearity_auto_strategy": self.linearity_auto_strategy.currentData(),
                         "linearity_auto_repeat": self.linearity_auto_repeat.value(),
                     })
             else:

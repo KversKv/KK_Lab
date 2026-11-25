@@ -20,17 +20,23 @@ from .gpadc_analysis import (
     algorithm_length_divisor,
     analyze_linearity_group,
     apply_algorithm,
+    build_linearity_neighborhoods,
     compare_algorithm_effect,
+    compare_linearity_candidates,
     compute_calibration,
     compute_detailed_stats,
     compute_reg_stats,
     filter_mean_deviation,
+    find_linearity_local_minima,
     format_log_table,
+    generate_linearity_coarse_values,
     generate_linearity_pairs,
     normalize_linearity_auto_range,
+    normalize_linearity_auto_strategy,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
     select_best_linearity_group,
+    select_linearity_finalists,
 )
 from .gpadc_ft_check import run_ft_calib_check
 from .gpadc_multi_temp import parse_hw_int, run_multi_ch_temp_test
@@ -551,23 +557,29 @@ class GPADCTestRunner:
         }, completed
 
     def _evaluate_linearity_auto_candidate(
-            self, config, value, repeat, stop_check, progress_offset, progress_total):
+            self, config, value, repeat, stop_check, progress_offset, progress_total,
+            prior_group=None):
+        """执行新增 Repeat；prior_group 用于 Finalist 在已有结果上追加复测。"""
         device_addr = config["device_addr"]
         n_reg = config["linearity_n_reg_addr"]
         p_reg = config["linearity_p_reg_addr"]
         width = config["iic_weight"]
+        prior_repeats = list((prior_group or {}).get("repeat_results") or [])
+        repeat_groups = [dict(group) for group in prior_repeats]
+        prior_count = len(repeat_groups)
+        target_count = prior_count + int(repeat)
         self.acquisition.write_reg(device_addr, n_reg, value, width)
         self.acquisition.write_reg(device_addr, p_reg, value, width)
         pair_label = f"N=0x{value:X}, P=0x{value:X}"
-        repeat_groups = []
-        for repeat_index in range(repeat):
+        for new_index in range(int(repeat)):
+            repeat_index = prior_count + new_index
             if stop_check and stop_check():
                 return None, "stopped"
-            self.log_fn(f"[INFO] Auto Best {pair_label}, Repeat {repeat_index + 1}/{repeat}")
+            self.log_fn(f"[INFO] Auto Best {pair_label}, Repeat {repeat_index + 1}/{target_count}")
 
-            def _repeat_progress(progress, _repeat_index=repeat_index):
+            def _repeat_progress(progress, _new_index=new_index):
                 progress = min(100, max(0, int(progress))) / 100
-                completed = progress_offset + _repeat_index + progress
+                completed = progress_offset + _new_index + progress
                 self.progress_callback(min(99, int(completed * 100 / progress_total)))
 
             sweep, completed = self._sweep_force_voltage(
@@ -595,13 +607,18 @@ class GPADCTestRunner:
         repeat = int(config.get("linearity_auto_repeat", 3))
         if not 1 <= repeat <= 10:
             raise ValueError("Linearity Auto Repeat must be between 1 and 10")
+        strategy = normalize_linearity_auto_strategy(config.get("linearity_auto_strategy"))
+        if strategy == "unimodal":
+            return self._run_linearity_unimodal(config, stop_check, repeat)
+        return self._run_linearity_coarse_fine(config, stop_check, repeat)
+
+    def _run_linearity_unimodal(self, config, stop_check, repeat):
         low, high = normalize_linearity_auto_range(
             config["linearity_value_start"], config["linearity_value_end"],
         )
         range_start, range_end = low, high
         point_count = high - low + 1
-        max_candidates = (2 + max(1, math.ceil(math.log2(point_count)))) if point_count > 1 else 1
-        progress_total = max_candidates * repeat
+        progress_total = max(1, point_count * repeat)
         progress_offset = 0
         cache = {}
         evaluated_values = []
@@ -610,11 +627,11 @@ class GPADCTestRunner:
         stopped = False
         converged = False
         self.log_fn(
-            f"[INFO] Auto Best binary search: 0x{low:X} ~ 0x{high:X}, "
-            f"Repeat={repeat}, median metrics"
+            f"[INFO] Auto Best unimodal search: 0x{low:X} ~ 0x{high:X}, "
+            f"Repeat={repeat}, adjacent interior probes"
         )
 
-        while True:
+        for _ in range(2 * point_count + 1):
             if stop_check and stop_check():
                 stopped = True
                 break
@@ -628,7 +645,9 @@ class GPADCTestRunner:
                 self.log_fn(
                     f"[AUTO] Compare 0x{comparison['left_value']:X} / "
                     f"0x{comparison['right_value']:X}, "
-                    f"mid=0x{comparison['mid_value']:X}: "
+                    f"interval=[0x{comparison['previous_low']:X}, "
+                    f"0x{comparison['previous_high']:X}] -> "
+                    f"[0x{comparison['low']:X}, 0x{comparison['high']:X}]: "
                     f"direction={comparison['direction']}, "
                     f"noise_tie={comparison['ambiguous']}"
                 )
@@ -655,15 +674,150 @@ class GPADCTestRunner:
                 f"Median RMS={group['rms_mv']:.2f} mV, "
                 f"Max Range={group['max_abs_range_mv']:.2f} mV"
             )
+        else:
+            raise RuntimeError("Linearity unimodal search exceeded its iteration limit")
 
         groups = [cache[value] for value in sorted(cache)]
         auto_search = {
+            "strategy": "unimodal",
             "start": range_start,
             "end": range_end,
             "evaluated_values": evaluated_values,
             "terminal_value": None,
             "comparisons": comparisons,
             "ambiguous": ambiguous,
+            "noise_detectable": repeat > 1,
+            "completed": converged,
+        }
+        return groups, stopped, auto_search
+
+    def _run_linearity_coarse_fine(self, config, stop_check, repeat):
+        low, high = normalize_linearity_auto_range(
+            config["linearity_value_start"], config["linearity_value_end"],
+        )
+        range_start, range_end = low, high
+        point_count = high - low + 1
+        coarse_values = generate_linearity_coarse_values(low, high)
+        finalist_target = min(10, max(3, repeat + 2))
+        max_finalists = min(3, point_count)
+        additional_per_finalist = max(0, finalist_target - repeat)
+        progress_total = max(
+            1, point_count * repeat + max_finalists * additional_per_finalist,
+        )
+        progress_offset = 0
+        cache = {}
+        evaluated_values = []
+        fine_values = []
+        neighborhoods = []
+        finalist_values = []
+        stopped = False
+        converged = False
+        self.log_fn(
+            f"[INFO] Auto Best coarse+fine: 0x{low:X} ~ 0x{high:X}, "
+            f"Coarse Points={len(coarse_values)}, Repeat={repeat}, "
+            f"Finalist Repeat={finalist_target}"
+        )
+
+        def _measure(value, stage, finalist=False):
+            nonlocal progress_offset
+            prior_group = cache.get(value) if finalist else None
+            sweep_count = (
+                max(0, finalist_target - int(prior_group.get("repeat_count", 0)))
+                if finalist else repeat
+            )
+            if sweep_count == 0:
+                return "complete"
+            group, status = self._evaluate_linearity_auto_candidate(
+                config, value, sweep_count, stop_check, progress_offset, progress_total,
+                prior_group=prior_group,
+            )
+            if status != "complete":
+                return status
+            progress_offset += sweep_count
+            cache[value] = group
+            if not finalist:
+                evaluated_values.append(value)
+            self.log_fn(
+                f"[RESULT] {stage} N=0x{value:X}, P=0x{value:X}, "
+                f"Median Max Abs={group['max_abs_mv']:.2f} mV, "
+                f"Median RMS={group['rms_mv']:.2f} mV, "
+                f"Max Range={group['max_abs_range_mv']:.2f} mV"
+            )
+            return "complete"
+
+        for value in coarse_values:
+            if stop_check and stop_check():
+                stopped = True
+                break
+            status = _measure(value, "Auto coarse")
+            if status == "failed":
+                return None
+            if status == "stopped":
+                stopped = True
+                break
+
+        if not stopped:
+            minima = find_linearity_local_minima(coarse_values, cache)
+            neighborhoods = build_linearity_neighborhoods(low, high, minima)
+            self.log_fn(
+                "[INFO] Coarse minima: " + ", ".join(f"0x{value:X}" for value in minima)
+            )
+            self.log_fn(
+                "[INFO] Fine neighborhoods: " + ", ".join(
+                    f"[0x{start:X}, 0x{end:X}]" for start, end in neighborhoods
+                )
+            )
+            for start, end in neighborhoods:
+                for value in range(start, end + 1):
+                    if value in cache:
+                        continue
+                    if stop_check and stop_check():
+                        stopped = True
+                        break
+                    status = _measure(value, "Auto fine")
+                    if status == "failed":
+                        return None
+                    if status == "stopped":
+                        stopped = True
+                        break
+                    fine_values.append(value)
+                if stopped:
+                    break
+
+        if not stopped:
+            finalist_values = select_linearity_finalists(cache, neighborhoods)
+            self.log_fn(
+                "[INFO] Auto finalists: " + ", ".join(
+                    f"0x{value:X}" for value in finalist_values
+                ) + f", target Repeat={finalist_target}"
+            )
+            for value in finalist_values:
+                if stop_check and stop_check():
+                    stopped = True
+                    break
+                status = _measure(value, "Auto finalist", finalist=True)
+                if status == "failed":
+                    return None
+                if status == "stopped":
+                    stopped = True
+                    break
+            converged = not stopped
+
+        groups = [cache[value] for value in sorted(cache)]
+        auto_search = {
+            "strategy": "coarse_fine",
+            "start": range_start,
+            "end": range_end,
+            "coarse_values": coarse_values,
+            "fine_values": fine_values,
+            "neighborhoods": neighborhoods,
+            "finalist_values": finalist_values,
+            "finalist_repeat_target": finalist_target,
+            "evaluated_values": evaluated_values,
+            "terminal_value": None,
+            "comparisons": [],
+            "ambiguous": False,
+            "noise_detectable": repeat > 1,
             "completed": converged,
         }
         return groups, stopped, auto_search
@@ -756,11 +910,24 @@ class GPADCTestRunner:
             except Exception as exc:
                 self._report_cleanup_error("N Weight 寄存器恢复", exc)
 
-        best_index = select_best_linearity_group(groups, noise_aware=auto_best)
+        best_pool = groups
+        if (auto_search is not None and auto_search["completed"]
+                and auto_search.get("strategy") == "coarse_fine"
+                and auto_search.get("finalist_values")):
+            finalists = set(auto_search["finalist_values"])
+            best_pool = [group for group in groups if group["n_value"] in finalists]
+        best_index = select_best_linearity_group(best_pool, noise_aware=auto_best)
         if best_index is not None:
-            best = groups[best_index]
-            if auto_search is not None and auto_search["completed"]:
-                auto_search["terminal_value"] = best["n_value"]
+            best = best_pool[best_index]
+            best_index = groups.index(best)
+            if auto_search is not None:
+                if auto_search["completed"]:
+                    auto_search["terminal_value"] = best["n_value"]
+                for candidate in best_pool:
+                    if candidate is best:
+                        continue
+                    if compare_linearity_candidates(candidate, best)["ambiguous"]:
+                        auto_search["ambiguous"] = True
             self.log_fn(
                 f"[RESULT] Best evaluated N=0x{best['n_value']:X}, P=0x{best['p_value']:X}, "
                 f"Max Abs Error={best['max_abs_mv']:.2f} mV, "
@@ -782,6 +949,7 @@ class GPADCTestRunner:
                 "link_np": link_np,
                 "auto_best": auto_best,
                 "auto_repeat": config.get("linearity_auto_repeat", 3),
+                "auto_strategy": config.get("linearity_auto_strategy", "coarse_fine"),
                 "start": config.get("linearity_start"),
                 "end": config.get("linearity_end"),
                 "value_start": config.get("linearity_value_start"),

@@ -478,6 +478,20 @@ class _ExportMixin:
         linearity = result.get('linearity') or {}
         auto_best = bool(linearity.get('auto_best'))
         auto_search = result.get('auto_search') or {}
+        strategy = auto_search.get('strategy') or 'unimodal'
+        strategy_label = {
+            'coarse_fine': "Coarse + Fine (Multi-Basin)",
+            'unimodal': "Unimodal (Fast)",
+        }.get(strategy, "Unimodal (Fast)")
+
+        def _format_hex_values(values):
+            return ", ".join(f"0x{int(value):X}" for value in values or [])
+
+        def _format_neighborhoods(neighborhoods):
+            return ", ".join(
+                f"0x{int(start):X}-0x{int(end):X}"
+                for start, end in neighborhoods or []
+            )
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -513,14 +527,25 @@ class _ExportMixin:
                 ("P Step (Value)", linearity.get('p_value_step')),
             ])
         if auto_best:
-            summary_items[5:5] = [
-                ("Auto Best", "Enabled (Binary Search)"),
+            auto_items = [
+                ("Auto Best", strategy_label),
                 ("Repeat (Runs)", linearity.get('auto_repeat')),
-                ("Evaluated Values", ", ".join(
-                    f"0x{value:X}" for value in auto_search.get('evaluated_values', [])
-                )),
+                ("Evaluated Values", _format_hex_values(auto_search.get('evaluated_values'))),
                 ("Search Ambiguous", bool(auto_search.get('ambiguous'))),
             ]
+            stage_items = []
+            if strategy == 'coarse_fine':
+                stage_items.extend([
+                    ("Coarse Values", _format_hex_values(auto_search.get('coarse_values'))),
+                    ("Fine Values", _format_hex_values(auto_search.get('fine_values'))),
+                    ("Neighborhoods", _format_neighborhoods(auto_search.get('neighborhoods'))),
+                    ("Finalist Values", _format_hex_values(auto_search.get('finalist_values'))),
+                ])
+            elif auto_search.get('finalist_values'):
+                stage_items.append((
+                    "Finalist Values", _format_hex_values(auto_search.get('finalist_values')),
+                ))
+            summary_items[5:5] = auto_items + stage_items
         summary_items.extend([
             ("Best N", f"0x{best.get('n_value', 0):X}"),
             ("Best P", f"0x{best.get('p_value', 0):X}"),
