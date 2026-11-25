@@ -19,6 +19,7 @@
     "linearity_p_reg_addr": "0x7e",
     "linearity_link_np": true,
     "linearity_auto_best": true,
+    "linearity_auto_strategy": "coarse_fine",
     "linearity_auto_repeat": 1,
     "linearity_start": "0",
     "linearity_end": "13",
