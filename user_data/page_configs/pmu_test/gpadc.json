@@ -11,7 +11,7 @@
     "iic_speed": 1,
     "dut_port": "",
     "uart_keyword": "raw/volt",
-    "voltage_channel": 2,
+    "voltage_channel": 4,
     "voltage_min": 0.01,
     "voltage_max": 1.5,
     "voltage_step": 0.001,
@@ -59,6 +59,13 @@
     "current_monitor": {
       "enabled": true,
       "channel": 4
+    },
+    "metrics_options": {
+      "n_bits": 16,
+      "v_spec_range": null,
+      "k_ideal": null,
+      "b_ideal": null,
+      "ref_mode": "none"
     },
     "multi_channels": [
       {

@@ -227,11 +227,24 @@
   "window": {
     "x": 2,
     "y": 2,
-    "width": 1323,
+    "width": 1218,
     "height": 500,
     "maximized": false
   },
   "extra_panels": [
+    {
+      "title": "P2",
+      "port": "COM5",
+      "baudrate": 115200,
+      "databit": 8,
+      "stopbit": "1",
+      "parity": "None",
+      "flow": "None",
+      "auto_detect": false,
+      "independent_window": false,
+      "auto_connect": false,
+      "connected": false
+    },
     {
       "title": "P2",
       "port": "COM5",
