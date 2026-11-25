@@ -12,9 +12,10 @@
   的误差，同时用用户两点 K/B 反推电压校验与 DUT volt 的一致性。
 """
 
+import math
 import time
 
-from .gpadc_analysis import assess_ft_errors, solve_ft_kb
+from .gpadc_analysis import assess_ft_errors, sample_std, solve_ft_kb
 
 
 def run_ft_calib_check(
@@ -47,7 +48,8 @@ def run_ft_calib_check(
         默认 1（无分压）。扫压 Start/End/Step 为源设定电压（不缩放输出）；
         DUT 侧得出的校准电压按 × 分压比还原到源域后与设定值比对。
     set_voltage_fn(v): N6705C 施加电压（V，源设定值）。
-    sample_iic_fn(cnt, stop_check) -> (avg, max, min): IIC 实时采样 GPADC raw。
+    sample_iic_fn(cnt, stop_check) -> (avg, max, min[, raw]): IIC 实时采样 GPADC raw；
+        第 4 元 raw（原始样本列表）可选，提供时报告 P1/P2 样本数与 σ。
     sample_uart_fn(cnt, stop_check) -> (raw_avg, volt_avg): UART 日志解析
         raw/volt 对的截尾均值（volt 单位 mV）。
     """
@@ -115,7 +117,11 @@ def run_ft_calib_check(
             set_voltage_fn(v_set)
             time.sleep(settle_s if first else step_s)
             first = False
-            avg, _, _ = sample_iic_fn(sample_cnt, stop_check)
+            sample = sample_iic_fn(sample_cnt, stop_check)
+            avg = sample[0]
+            raw = sample[3] if len(sample) > 3 else None
+            n_pts = len(raw) if raw else None
+            sigma = sample_std(raw) if raw else None
             dev = avg - c_pt
             ok = abs(dev) <= raw_tol_lsb
             point_checks.append({
@@ -125,10 +131,19 @@ def run_ft_calib_check(
                 'measured': avg,
                 'dev_lsb': dev,
                 'passed': ok,
+                'n': n_pts,
+                'sigma_lsb': sigma,
             })
             src_note = f"（源={v_set:.2f} V）" if divider_ratio != 1.0 else ""
+            noise_note = (f" N={n_pts} σ={sigma:.2f} LSB"
+                          if n_pts is not None and sigma is not None else "")
             log(f"[MEAS] V={v_pt:7.2f} 校准码={c_pt:10.1f} 实测={avg:10.2f} "
-                f"偏差={dev:+9.2f} LSB → {'PASS' if ok else 'FAIL'}{src_note}")
+                f"偏差={dev:+9.2f} LSB → {'PASS' if ok else 'FAIL'}{src_note}{noise_note}")
+            if n_pts and sigma is not None:
+                noise_floor = 4.0 * sigma / math.sqrt(n_pts)
+                if raw_tol_lsb < noise_floor:
+                    log(f"[WARN] Raw Tol {raw_tol_lsb:.2f} LSB 低于噪声水平 "
+                        f"4σ/√n={noise_floor:.2f} LSB，容限可能过严")
             _tick()
 
     if mode == 'UART' and sample_uart_fn is None:
@@ -160,7 +175,7 @@ def run_ft_calib_check(
         # 误差 = 还原后电压 - 源设定值（源域评估）
         actual_v = v_pt / divider_ratio
         if mode == 'IIC':
-            avg, _, _ = sample_iic_fn(sample_cnt, stop_check)
+            avg = sample_iic_fn(sample_cnt, stop_check)[0]
             cal_dut_v = (avg - b) / k
             cal_v = cal_dut_v * divider_ratio
             err = (cal_v - v_pt) * 1000.0
@@ -168,8 +183,10 @@ def run_ft_calib_check(
                 f"cal={cal_v:7.2f} V err={err:+9.2f} mV")
         else:
             raw_avg, volt_avg = sample_uart_fn(sample_cnt, stop_check)
-            cal_v = volt_avg / 1000.0 * divider_ratio
-            err = volt_avg * divider_ratio - v_pt * 1000.0
+            # volt_avg 原始单位为 mV（DUT 日志 raw/volt 的 volt 字段），先换算为 V
+            volt_avg_v = volt_avg / 1000.0
+            cal_v = volt_avg_v * divider_ratio
+            err = (volt_avg_v * divider_ratio - v_pt) * 1000.0
             cons = (raw_avg - b) / k * 1000.0 - volt_avg
             dut_volt_mv.append(volt_avg)
             cons_mv.append(cons)

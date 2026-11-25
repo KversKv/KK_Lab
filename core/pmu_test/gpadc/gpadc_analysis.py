@@ -587,32 +587,243 @@ def build_linearity_auto_search_timeline(result):
     return events
 
 
-def compute_detailed_stats(raw_data):
+def sample_std(values):
+    """样本标准差（ddof=1）；样本数 < 2 时返回 0.0。"""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+
+
+def compute_detailed_stats(raw_data, *, n_bits=16, raw_before_filter=None,
+                           outliers_removed=0):
     """1000CNT 详细统计（纯算法，无 Qt）。
 
-    AVG / MIN / MAX 沿用 ``compute_reg_stats``（5% 截尾均值、全量极值），
-    另补充全量样本的 STD（样本标准差，code）、P-P（峰峰噪声，code）与
-    实际样本数 count。
+    AVG 为全量算术平均（5% 截尾均值另存 trimmed_avg 供 tooltip 展示）；
+    MIN / MAX 为全量极值；STD 为样本标准差（ddof=1，均值与 AVG 同一口径）；
+    P-P 为峰峰噪声（MAX-MIN）；noise_free_bits = log2(fs_codes / (6.6*STD))。
+    raw_before_filter 为离群筛选前的原始数据（供 Raw MIN/MAX），
+    outliers_removed 为被离群筛选剔除的样本数。
     """
     if not raw_data:
         raise ValueError("raw_data 为空，无法统计")
 
-    avg, reg_max, reg_min = compute_reg_stats(raw_data)
-
     n = len(raw_data)
     mean_full = sum(raw_data) / n
-    if n > 1:
-        std = math.sqrt(sum((v - mean_full) ** 2 for v in raw_data) / (n - 1))
-    else:
-        std = 0.0
+    sorted_data = sorted(raw_data)
+    reg_min, reg_max = sorted_data[0], sorted_data[-1]
+    trim = max(1, int(n * 0.05))
+    trimmed = sorted_data[trim:-trim] if n > 2 * trim else sorted_data
+    trimmed_avg = sum(trimmed) / len(trimmed)
+    std = sample_std(raw_data)
+    fs_codes = 2 ** int(n_bits)
+    before = raw_before_filter if raw_before_filter else raw_data
 
     return {
-        'avg': avg,
+        'avg': mean_full,
+        'trimmed_avg': trimmed_avg,
         'min': reg_min,
         'max': reg_max,
         'std': std,
         'pp': reg_max - reg_min,
         'count': n,
+        'noise_free_bits': (math.log2(fs_codes / (6.6 * std)) if std > 0 else None),
+        'raw_min': min(before),
+        'raw_max': max(before),
+        'outliers_removed': int(outliers_removed),
+    }
+
+
+def resolve_metric_reference(ref_mode="none", k_ideal=None, b_ideal=None,
+                             batch_history=None):
+    """解析 GAIN/OFFSET 参照来源，返回 (effective_mode, ref_k, ref_b)。
+
+    - spec：k_ideal、b_ideal 都有值时采用（二者齐全且 ref_mode 未显式指定时自动采用）；
+    - batch_nominal：取历史 (k_fit, b_fit) 各自的中位数，至少 3 颗 DUT，不足退回 none；
+    - none：无参照（默认）。
+    """
+    mode = str(ref_mode or "none").lower()
+    has_spec = k_ideal is not None and b_ideal is not None
+    if mode == "batch_nominal":
+        pairs = [
+            (float(k), float(b)) for k, b in (batch_history or [])
+            if k is not None and b is not None
+        ]
+        if len(pairs) >= 3:
+            return (
+                "batch_nominal",
+                statistics.median(k for k, _ in pairs),
+                statistics.median(b for _, b in pairs),
+            )
+        return "none", None, None
+    if mode == "spec" or (mode == "none" and has_spec):
+        if has_spec and float(k_ideal) != 0.0:
+            return "spec", float(k_ideal), float(b_ideal)
+        return "none", None, None
+    return "none", None, None
+
+
+def compute_force_voltage_metrics(
+    voltage, mean, *, std=None, n=None, raw_samples=None,
+    n_bits=16, v_spec_range=None, k_ideal=None, b_ideal=None,
+    ref_mode="none", batch_history=None,
+):
+    """Force Voltage 性能指标（纯算法，无 Qt）。
+
+    k_fit/b_fit 为 (voltage, mean) 的最小二乘拟合直线；
+    INL = mean - (k_fit*v + b_fit)；Step NL = diff(mean)/(k_fit*diff(v)) - 1；
+    σ noise = sqrt(mean(std²))；mean_noise = rms(std)/sqrt(mean(n))。
+    ENOB 满量程取 fs_codes = 2**n_bits（不再使用 P-P 与扫描范围）：
+      ENOB_noise = log2(fs_codes / (σ*sqrt(12)))
+      ENOB_DC    = log2(fs_codes / (hypot(σ, rms(INL))*sqrt(12)))
+    v_spec_range 有值时另算 ENOB_spec（满量程 = k_fit*v_spec_range）。
+    std/n 缺省时从 raw_samples 逐点推导（ddof=1）。
+    有效点数 < 3 时返回 {'valid': False, 'points': ...}，UI 显示 N/A。
+    """
+    points = [
+        (float(v), float(m)) for v, m in zip(voltage, mean)
+        if v is not None and m is not None
+        and math.isfinite(float(v)) and math.isfinite(float(m))
+    ]
+    count = len(points)
+    if count < 3:
+        return {'valid': False, 'points': count}
+    vs = [p[0] for p in points]
+    ms = [p[1] for p in points]
+    v_bar = sum(vs) / count
+    m_bar = sum(ms) / count
+    sxx = sum((v - v_bar) ** 2 for v in vs)
+    if sxx <= 0:
+        return {'valid': False, 'points': count}
+    k_fit = sum((v - v_bar) * (m - m_bar) for v, m in points) / sxx
+    b_fit = m_bar - k_fit * v_bar
+    inl = [m - (k_fit * v + b_fit) for v, m in points]
+    ss_res = sum(e * e for e in inl)
+    ss_tot = sum((m - m_bar) ** 2 for m in ms)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 1.0
+
+    # 逐点样本标准差与样本数（优先 runner 记录，缺省从 raw_samples 推导）
+    if std is None or n is None:
+        std, n = [], []
+        for samples in (raw_samples or [])[:count]:
+            samples = list(samples or [])
+            std.append(sample_std(samples))
+            n.append(len(samples))
+    std = [float(s) for s in list(std)[:count]]
+    n = [int(x) for x in list(n)[:count]]
+    have_noise = len(std) == count and len(n) == count and sum(n) > 0
+    sigma = math.sqrt(sum(s * s for s in std) / count) if have_noise else None
+    mean_n = sum(n) / count if have_noise else 0.0
+    mean_noise = sigma / math.sqrt(mean_n) if have_noise and mean_n > 0 else None
+    inl_abs_max = max(abs(e) for e in inl)
+    inl_below_noise = bool(
+        mean_noise is not None and mean_noise > 0 and inl_abs_max < 4 * mean_noise
+    )
+
+    step_nl = []
+    for i in range(count - 1):
+        denom = k_fit * (vs[i + 1] - vs[i])
+        if denom != 0:
+            step_nl.append((ms[i + 1] - ms[i]) / denom - 1.0)
+
+    fs_codes = 2 ** int(n_bits)
+    sqrt12 = math.sqrt(12.0)
+    enob_noise = (math.log2(fs_codes / (sigma * sqrt12))
+                  if sigma is not None and sigma > 0 else None)
+    rms_inl = math.sqrt(ss_res / count)
+    dc_noise = math.hypot(sigma, rms_inl) if sigma is not None else None
+    enob_dc = (math.log2(fs_codes / (dc_noise * sqrt12))
+               if dc_noise is not None and dc_noise > 0 else None)
+    enob_spec = None
+    if v_spec_range is not None and sigma is not None and sigma > 0:
+        spec_fs = abs(k_fit * float(v_spec_range))
+        if spec_fs > 0:
+            enob_spec = math.log2(spec_fs / (sigma * sqrt12))
+
+    eff_mode, ref_k, ref_b = resolve_metric_reference(
+        ref_mode, k_ideal, b_ideal, batch_history,
+    )
+    gain_error_pct = ((k_fit / ref_k - 1.0) * 100.0
+                      if eff_mode != "none" and ref_k else None)
+    offset_error_lsb = b_fit - ref_b if eff_mode != "none" else None
+
+    return {
+        'valid': True,
+        'points': count,
+        'fs_codes': fs_codes,
+        'k_fit': k_fit,
+        'b_fit': b_fit,
+        'linearity': r2,
+        'inl': inl,
+        'inl_max': max(inl),
+        'inl_min': min(inl),
+        'inl_below_noise': inl_below_noise,
+        'mean_noise_lsb': mean_noise,
+        'step_nl_max': max(step_nl) if step_nl else None,
+        'step_nl_min': min(step_nl) if step_nl else None,
+        'sigma_noise_lsb': sigma,
+        'enob_noise': enob_noise,
+        'enob_dc': enob_dc,
+        'enob_spec': enob_spec,
+        'ref_mode': eff_mode,
+        'ref_k': ref_k,
+        'ref_b': ref_b,
+        'gain_error_pct': gain_error_pct,
+        'offset_error_lsb': offset_error_lsb,
+        'v_min': min(vs),
+        'v_max': max(vs),
+        'code_coverage_pct': (max(ms) - min(ms)) / fs_codes * 100.0,
+    }
+
+
+def histogram_dnl_inl(codes, code_lo, code_hi):
+    """慢斜坡扫描的码级直方图 DNL/INL（纯算法，无 Qt）。
+
+    统计 [code_lo, code_hi] 区间直方图 h，首尾各丢弃 1 个码；
+    DNL = h/mean(h) - 1；INL = cumsum(DNL) 再去除线性趋势；
+    平均每码命中数 < 20 时给出 warning；缺失码（h==0）DNL = -1。
+    返回 {'codes', 'dnl', 'inl', 'missing_codes', 'mean_hits', 'warning'}。
+    """
+    code_lo, code_hi = int(code_lo), int(code_hi)
+    if code_hi - code_lo < 2:
+        raise ValueError("码区间至少需 3 个码（首尾各丢弃 1 个）")
+    hist = [0] * (code_hi - code_lo + 1)
+    for code in codes:
+        c = int(code)
+        if code_lo <= c <= code_hi:
+            hist[c - code_lo] += 1
+    interior = hist[1:-1]
+    mean_hits = sum(interior) / len(interior)
+    if mean_hits <= 0:
+        raise ValueError("区间内无码命中，无法统计 DNL/INL")
+    dnl = [h / mean_hits - 1.0 for h in interior]
+    cum = []
+    acc = 0.0
+    for d in dnl:
+        acc += d
+        cum.append(acc)
+    # 去除线性趋势（对码序号做最小二乘直线后扣除）
+    m = len(cum)
+    x_bar = (m - 1) / 2.0
+    y_bar = sum(cum) / m
+    sxx = sum((i - x_bar) ** 2 for i in range(m))
+    slope = (sum((i - x_bar) * (y - y_bar) for i, y in enumerate(cum)) / sxx
+             if sxx > 0 else 0.0)
+    intercept = y_bar - slope * x_bar
+    inl = [y - (slope * i + intercept) for i, y in enumerate(cum)]
+    missing = [code_lo + 1 + i for i, h in enumerate(interior) if h == 0]
+    warning = (
+        f"Average hits per code {mean_hits:.1f} < 20; DNL/INL confidence is limited"
+        if mean_hits < 20 else None
+    )
+    return {
+        'codes': list(range(code_lo + 1, code_hi)),
+        'dnl': dnl,
+        'inl': inl,
+        'missing_codes': missing,
+        'mean_hits': mean_hits,
+        'warning': warning,
     }
 
 

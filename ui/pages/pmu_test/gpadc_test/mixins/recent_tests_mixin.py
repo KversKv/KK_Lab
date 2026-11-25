@@ -229,10 +229,15 @@ class _RecentTestsMixin:
             record['raw'] = export_data.get('raw')
             record['calibration'] = export_data.get('calibration')
             params = record['params'] or {}
-            record['summary'] = (
-                f"INL={params.get('inl', 0.0):.2f} DNL={params.get('dnl', 0.0):.2f} "
-                f"ENOB={params.get('enob', 0.0):.2f} R²={params.get('linearity', 0.0):.2f}"
-            )
+            if params.get('valid'):
+                enob_text = (f"{params['enob_noise']:.2f}"
+                             if params.get('enob_noise') is not None else "N/A")
+                record['summary'] = (
+                    f"INL={params['inl_max']:+.2f}/{params['inl_min']:+.2f} "
+                    f"ENOB={enob_text} R²={params.get('linearity', 0.0):.2f}"
+                )
+            else:
+                record['summary'] = "N/A (<3 points)"
         elif kind == 'multi_ch_temp':
             record['raw'] = result
             temps = result.get('temp') or []
@@ -476,10 +481,13 @@ class _RecentTestsMixin:
                 is_temp_mode=(kind == 'high_low_temp'),
             )
             params = record.get('params')
+            # 旧口径记录（无 k_fit）按新纯函数重算，保证指标卡口径一致
+            if params and 'k_fit' not in params and record.get('raw'):
+                params = self._calculate_gpadc_parameters(record['raw'])
             if params:
                 self.update_test_result(params)
             self._export_data = {
-                'params': record.get('params'),
+                'params': params,
                 'raw': record.get('raw'),
                 'calibration': record.get('calibration'),
             }

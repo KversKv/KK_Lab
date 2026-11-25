@@ -291,14 +291,33 @@ class _ExportMixin:
                        end_row=row, end_column=4)
         row += 1
 
+        def _p(value, fmt="{:.3f}"):
+            return fmt.format(value) if isinstance(value, (int, float)) else "N/A"
+
+        ref_mode = params.get('ref_mode') or 'none'
+        if ref_mode == 'spec':
+            gain_label, offset_label = "Gain Err (%)", "Offset Err (LSB)"
+        elif ref_mode == 'batch_nominal':
+            gain_label, offset_label = "Gain Dev vs Batch (%)", "Offset Dev vs Batch (LSB)"
+        else:
+            gain_label, offset_label = "Slope k_fit (LSB/V)", "Intercept b_fit (LSB)"
+        gain_value = params.get('gain_error_pct') if ref_mode != 'none' else params.get('k_fit')
+        offset_value = params.get('offset_error_lsb') if ref_mode != 'none' else params.get('b_fit')
         param_items = [
-            ("Linearity (R²)",   params.get("linearity",    0.0)),
-            ("INL (LSB)",        params.get("inl",          0.0)),
-            ("DNL (LSB)",        params.get("dnl",          0.0)),
-            ("ENOB (bits)",      params.get("enob",         0.0)),
-            ("Gain Error (%)",   params.get("gain_error",   0.0)),
-            ("Offset Error (LSB)", params.get("offset_error", 0.0)),
+            ("Linearity (R²)",      _p(params.get('linearity'))),
+            ("INL max (LSB)",       _p(params.get('inl_max'), "{:+.3f}")),
+            ("INL min (LSB)",       _p(params.get('inl_min'), "{:+.3f}")),
+            ("Step NL max",         _p(params.get('step_nl_max'), "{:+.4f}")),
+            ("Step NL min",         _p(params.get('step_nl_min'), "{:+.4f}")),
+            ("Sigma Noise (LSB)",   _p(params.get('sigma_noise_lsb'))),
+            ("ENOB noise (bit)",    _p(params.get('enob_noise'))),
+            ("ENOB DC (bit)",       _p(params.get('enob_dc'))),
+            (gain_label,            _p(gain_value)),
+            (offset_label,          _p(offset_value)),
+            ("Code Coverage (%)",   _p(params.get('code_coverage_pct'))),
         ]
+        if params.get('enob_spec') is not None:
+            param_items.append(("ENOB spec (bit)", _p(params['enob_spec'])))
         _sub(ws, row, 1, "Parameter")
         _sub(ws, row, 2, "Value")
         _sub(ws, row, 3, "Parameter")
@@ -359,7 +378,15 @@ class _ExportMixin:
         current_list = raw.get('current_a')
         current_channel = raw.get('current_channel')
         has_current = current_list is not None and current_channel is not None
-        raw_data_columns = 5 if has_current else 4
+        # 新增逐点 STD/N 列追加在旧列末尾（旧记录无该两列时保持原布局）
+        std_list = raw.get('std')
+        n_list = raw.get('n')
+        has_std_n = (std_list is not None and n_list is not None
+                     and len(std_list) == len(raw['voltage'])
+                     and len(n_list) == len(raw['voltage']))
+        std_col = 5 + (1 if has_current else 0)
+        raw_data_columns = (4 + (1 if has_current else 0)
+                            + (2 if has_std_n else 0))
         _hdr(ws, row, 1, "Raw Data")
         ws.merge_cells(start_row=row, start_column=1,
                        end_row=row, end_column=raw_data_columns)
@@ -371,18 +398,27 @@ class _ExportMixin:
         if has_current:
             _sub(ws, row, 5, f"CH{current_channel} Current (A)")
             ws.column_dimensions["E"].width = 20
+        if has_std_n:
+            _sub(ws, row, std_col, "Std (LSB)")
+            _sub(ws, row, std_col + 1, "N")
+            ws.column_dimensions[get_column_letter(std_col)].width = 16
+            ws.column_dimensions[get_column_letter(std_col + 1)].width = 10
         row += 1
         rv_list  = raw['voltage']
         rm_list  = raw['mean']
         rn_list  = raw['min']
         rx_list  = raw['max']
         for i in range(len(rv_list)):
-            _val(ws, row, 1, float(rv_list[i]))
+            c = _val(ws, row, 1, float(rv_list[i]))
+            c.number_format = "0.00000"
             _val(ws, row, 2, float(rm_list[i]))
             _val(ws, row, 3, float(rn_list[i]))
             _val(ws, row, 4, float(rx_list[i]))
             if has_current:
                 _val(ws, row, 5, float(current_list[i]))
+            if has_std_n:
+                _val(ws, row, std_col, float(std_list[i]))
+                _val(ws, row, std_col + 1, int(n_list[i]))
             row += 1
 
         row += 2
@@ -726,11 +762,11 @@ class _ExportMixin:
         if point_checks:
             row += 1
             _hdr(ws, row, 1, "Calib Point Check (IIC)")
-            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
             row += 1
             for col, name in enumerate(
                     ("Voltage (V)", "Set Voltage (V)", "Calib Code (LSB)",
-                     "Measured (LSB)", "Dev (LSB)", "Result"), 1):
+                     "Measured (LSB)", "Dev (LSB)", "Result", "N", "Sigma (LSB)"), 1):
                 _sub(ws, row, col, name)
             row += 1
             for pc in point_checks:
@@ -740,6 +776,9 @@ class _ExportMixin:
                 _val(ws, row, 4, pc.get('measured'))
                 _val(ws, row, 5, pc.get('dev_lsb'))
                 _val(ws, row, 6, "PASS" if pc.get('passed') else "FAIL")
+                _val(ws, row, 7, pc.get('n') if pc.get('n') is not None else "N/A")
+                _val(ws, row, 8, (f"{pc['sigma_lsb']:.3f}"
+                                  if pc.get('sigma_lsb') is not None else "N/A"))
                 row += 1
 
         row += 1

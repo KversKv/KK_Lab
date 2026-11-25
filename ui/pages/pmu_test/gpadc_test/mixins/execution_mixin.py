@@ -264,6 +264,7 @@ class _ExecutionMixin:
                 reg_addr=iic_reg_addr,
                 iic_weight=iic_width,
                 sample_cnt=sample_cnt,
+                metrics_n_bits=int(self._metrics_options.get('n_bits') or 16),
             )
         elif test_item == self.TEST_FORCE_VOLTAGE:
             kind = "force_voltage"

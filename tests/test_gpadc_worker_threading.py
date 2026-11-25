@@ -383,16 +383,19 @@ class _VoltageSource:
         self.channel_state_calls = []
         self.mode = "VMETer"
         self.channel_enabled = initial_enabled
+        self._voltage = 3.3
 
     def measure_voltage(self, channel):
         if self.snapshot_error is not None:
             raise self.snapshot_error
-        return 3.3
+        # 模拟真实 SMU：回读值跟踪最近一次成功设定
+        return self._voltage
 
     def set_voltage(self, channel, voltage):
         self.set_calls.append((channel, voltage))
         if voltage == 3.3 and self.restore_error is not None:
             raise self.restore_error
+        self._voltage = voltage
 
     def get_mode(self, channel):
         return self.mode

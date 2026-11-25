@@ -110,6 +110,14 @@ class GPADCTestUI(
         self._algorithm_snapshot = None
         # 本次测试启用的离群样本筛选配置（None = 不筛选；{'pos','neg'} 单位 LSB）
         self._outlier_filter_snapshot = None
+        # 指标卡计算配置（全部可选，默认即可运行；经 get/apply_config 持久化与 AI 回填）
+        # n_bits: ADC 位数（fs_codes=2**n_bits）；v_spec_range: 规格输入范围 (V)；
+        # k_ideal/b_ideal: 设计规格斜率 (LSB/V) / 0V 截距 (LSB)；
+        # ref_mode: GAIN/OFFSET 参照 'none'/'spec'/'batch_nominal'
+        self._metrics_options = {
+            'n_bits': 16, 'v_spec_range': None,
+            'k_ideal': None, 'b_ideal': None, 'ref_mode': 'none',
+        }
         # 本次测试的 IIC 速度模式快照（_start_test 时从 iic_speed_combo 读取）
         self._iic_speed_snapshot = I2CSpeedMode.SPEED_100K
         # 最近一次采样的算法前后统计对比（compare_algorithm_effect 结果，未启用算法为 None）

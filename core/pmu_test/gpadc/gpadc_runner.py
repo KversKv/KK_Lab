@@ -35,6 +35,7 @@ from .gpadc_analysis import (
     normalize_linearity_auto_strategy,
     parse_uart_gpadc_raw,
     parse_uart_gpadc_raw_volt,
+    sample_std,
     select_best_linearity_group,
     select_linearity_finalists,
 )
@@ -81,6 +82,8 @@ class GPADCAcquisition:
         self.status_fn = status_fn or (lambda message, is_error=False: None)
         self.last_algo_effect = None
         self.last_raw_before_algo = None
+        self.last_raw_before_filter = None
+        self.last_outliers_removed = 0
 
     @contextmanager
     def processing_disabled(self):
@@ -146,6 +149,8 @@ class GPADCAcquisition:
                 text.rjust(width) for text in texts[index:index + 20]))
 
     def apply_outlier_filter(self, raw_data):
+        self.last_raw_before_filter = list(raw_data) if raw_data else None
+        self.last_outliers_removed = 0
         cfg = self.outlier_filter
         if not cfg or not raw_data:
             return raw_data
@@ -161,6 +166,7 @@ class GPADCAcquisition:
                 removed,
             )
             return raw_data
+        self.last_outliers_removed = len(removed)
         self._emit_data_lines(
             f"[FILTER] 剔除 {len(removed)}/{len(raw_data)} 个离群样本"
             f"（均值 {_fmt_data_value(mean_val)}，+{cfg['pos']:.1f}/-{cfg['neg']:.1f} LSB），"
@@ -456,10 +462,16 @@ class GPADCTestRunner:
             stop_check=stop_check,
             progress_callback=self.progress_callback,
         )
-        stats = compute_detailed_stats(raw_data)
+        stats = compute_detailed_stats(
+            raw_data,
+            n_bits=int(config.get("metrics_n_bits", 16)),
+            raw_before_filter=self.acquisition.last_raw_before_filter,
+            outliers_removed=self.acquisition.last_outliers_removed,
+        )
         stats["raw"] = raw_data
         stats["algo_effect"] = self.acquisition.last_algo_effect
         stats["raw_before_algo"] = self.acquisition.last_raw_before_algo
+        stats["algo_divisor"] = algorithm_length_divisor(self.acquisition.algorithm)
         return "1000cnt", stats
 
     def _check_sweep_response(self, voltage_data, adc_mean):
@@ -503,6 +515,7 @@ class GPADCTestRunner:
         settle_time = 0.0 if self.mock_mode else 0.5
         step_time = 0.0 if self.mock_mode else 0.2
         voltage_data, adc_mean, adc_min, adc_max = [], [], [], []
+        adc_std, adc_n = [], []
         raw_samples, raw_before_samples = [], []
         voltage_min = config["voltage_min"]
         voltage_max = config["voltage_max"]
@@ -523,15 +536,18 @@ class GPADCTestRunner:
                 break
             self.n6705c.set_voltage(channel, current_voltage)
             time.sleep(step_time)
+            v_actual = self._readback_voltage(channel, current_voltage)
             avg, max_val, min_val, point_raw = self.acquisition.read_by_cnts(
                 config["device_addr"], config["reg_addr"], config["iic_weight"],
                 get_reg_cnt=config["sample_cnt"], return_raw=True, stop_check=stop_check,
             )
             point_before = self.acquisition.last_raw_before_algo
-            voltage_data.append(current_voltage)
+            voltage_data.append(v_actual)
             adc_mean.append(avg)
             adc_min.append(min_val)
             adc_max.append(max_val)
+            adc_std.append(sample_std(point_raw))
+            adc_n.append(len(point_raw))
             raw_samples.append(list(point_raw))
             raw_before_samples.append(list(point_before) if point_before is not None else None)
 
@@ -552,9 +568,25 @@ class GPADCTestRunner:
             "mean": adc_mean,
             "min": adc_min,
             "max": adc_max,
+            "std": adc_std,
+            "n": adc_n,
             "raw_samples": raw_samples,
             "raw_before_samples": raw_before_samples,
         }, completed
+
+    def _readback_voltage(self, channel, set_voltage):
+        """横轴电压优先 SMU 回读值；mock / 回读失败时退回设定值。"""
+        if self.mock_mode or self.n6705c is None:
+            return set_voltage
+        try:
+            measured = float(self.n6705c.measure_voltage(channel))
+            if math.isfinite(measured):
+                return measured
+        except Exception as exc:
+            logger.warning(
+                "GPADC 回读 CH%s 电压失败，使用设定值: %s", channel, exc, exc_info=True,
+            )
+        return set_voltage
 
     def _evaluate_linearity_auto_candidate(
             self, config, value, repeat, stop_check, progress_offset, progress_total,
@@ -1368,9 +1400,10 @@ class GPADCTestRunner:
                 self.acquisition.mock_i2c.set_mock_voltage(voltage / config["divider_ratio"])
 
         def sample_iic(count, stop):
+            # return_raw=True：第 4 元为原始样本，供 P1/P2 样本数与 σ 报告
             return self.acquisition.reg_read_by_cnts(
                 config["device_addr"], config["reg_addr"], config["iic_weight"],
-                get_reg_cnt=count, return_raw=False, stop_check=stop,
+                get_reg_cnt=count, return_raw=True, stop_check=stop,
             )
 
         def sample_uart(count, stop):

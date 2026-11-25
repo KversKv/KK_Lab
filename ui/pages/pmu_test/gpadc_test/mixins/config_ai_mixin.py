@@ -186,6 +186,7 @@ class _ConfigAiMixin:
                 'enabled': self.current_monitor_switch.isChecked(),
                 'channel': self.current_monitor_channel.currentData(),
             },
+            'metrics_options': dict(self._metrics_options),
             'multi_channels': self.multi_ch_panel.get_channels(),
             'pre_config': self.multi_ch_panel.get_pre_config(),
         }
@@ -195,7 +196,96 @@ class _ConfigAiMixin:
         """ADC code 指标卡格式：十进制 + 括号内十六进制（均值取整换算）。"""
         return f"{float(v):.3f} (0x{int(round(float(v))):X})"
 
+    @staticmethod
+    def _set_metric_value(label, text, object_name=None):
+        """指标卡值写入；object_name 变化时重刷 QSS 配色（绿/黄/蓝）。"""
+        label.setText(text)
+        if object_name is not None and label.objectName() != object_name:
+            label.setObjectName(object_name)
+            label.style().unpolish(label)
+            label.style().polish(label)
+
+    def _reset_fv_cards(self, text="---"):
+        self.linearity_value.setText("---")
+        for label in (self.inl_value, self.step_nl_value, self.sigma_noise_value,
+                      self.enob_value, self.gain_error_value, self.offset_error_value,
+                      self.coverage_value):
+            label.setText(text)
+        self._set_metric_value(self.inl_value, text, "metric_value_green")
+        self.gain_name_label.setText("GAIN")
+        self.offset_name_label.setText("OFFSET")
+
+    def _reset_cnt_cards(self):
+        for label in (self.avg_value, self.min_value, self.max_value,
+                      self.std_value, self.pp_value, self.samples_value,
+                      self.raw_minmax_value, self.outliers_value, self.noise_free_value):
+            label.setText("---")
+        self.std_name_label.setText("STD (code)")
+
+    def _update_fv_cards(self, params):
+        """Force Voltage 指标卡刷新（新口径：拟合残差 INL / Step NL / σ / 双 ENOB / 参照模式）。"""
+        if not params.get('valid'):
+            self._reset_fv_cards("N/A")
+            return
+        self.linearity_value.setText(f"{params['linearity']:.3f}")
+
+        inl_color = ("metric_value_yellow" if params.get('inl_below_noise')
+                     else "metric_value_green")
+        self._set_metric_value(
+            self.inl_value,
+            f"{params['inl_max']:+.2f} / {params['inl_min']:+.2f}",
+            inl_color,
+        )
+        inl_tip = ("INL = mean - (k_fit*v + b_fit), least-squares fit.\n"
+                   "Display: +max / min (LSB).")
+        if params.get('inl_below_noise'):
+            mean_noise = params.get('mean_noise_lsb')
+            inl_tip += (f"\nBelow noise floor: max|INL| < 4*mean_noise"
+                        f" (mean_noise = {mean_noise:.2f} LSB)."
+                        if mean_noise is not None else "\nBelow noise floor.")
+        self.inl_value.setToolTip(inl_tip)
+
+        if params.get('step_nl_max') is not None:
+            self.step_nl_value.setText(
+                f"{params['step_nl_max']:+.3f} / {params['step_nl_min']:+.3f}")
+        else:
+            self.step_nl_value.setText("N/A")
+
+        sigma = params.get('sigma_noise_lsb')
+        self.sigma_noise_value.setText(f"{sigma:.2f}" if sigma is not None else "N/A")
+
+        enob_parts = [
+            f"{params[key]:.2f}" if params.get(key) is not None else "N/A"
+            for key in ('enob_noise', 'enob_dc')
+        ]
+        enob_text = " / ".join(enob_parts)
+        if params.get('enob_spec') is not None:
+            enob_text += f" / {params['enob_spec']:.2f} (spec)"
+        self.enob_value.setText(enob_text)
+
+        ref_mode = params.get('ref_mode') or 'none'
+        if ref_mode == 'spec':
+            self.gain_name_label.setText("GAIN ERR")
+            self.offset_name_label.setText("OFFSET ERR")
+            self.gain_error_value.setText(f"{params['gain_error_pct']:+.3f} %")
+            self.offset_error_value.setText(f"{params['offset_error_lsb']:+.2f} LSB")
+        elif ref_mode == 'batch_nominal':
+            self.gain_name_label.setText("GAIN DEV vs BATCH")
+            self.offset_name_label.setText("OFFSET DEV vs BATCH")
+            self.gain_error_value.setText(f"{params['gain_error_pct']:+.3f} %")
+            self.offset_error_value.setText(f"{params['offset_error_lsb']:+.2f} LSB")
+        else:
+            self.gain_name_label.setText("SLOPE")
+            self.offset_name_label.setText("INTERCEPT")
+            self.gain_error_value.setText(f"{params['k_fit']:.1f} LSB/V")
+            self.offset_error_value.setText(f"{params['b_fit']:.1f} LSB")
+
+        self.coverage_value.setText(
+            f"{params['v_min']:.3f}~{params['v_max']:.3f} V | "
+            f"{params['code_coverage_pct']:.1f}%")
+
     def update_test_result(self, result):
+        result = result or {}
         if self.current_test_item == self.TEST_1000CNT:
             self.avg_value.setText(self._fmt_code_hex(result['avg']) if 'avg' in result else "---")
             self.min_value.setText(self._fmt_code_hex(result['min']) if 'min' in result else "---")
@@ -203,40 +293,33 @@ class _ConfigAiMixin:
             self.std_value.setText(f"{result['std']:.3f}" if 'std' in result else "---")
             self.pp_value.setText(f"{result['pp']:.0f}" if 'pp' in result else "---")
             self.samples_value.setText(str(result['count']) if 'count' in result else "---")
-            self.linearity_value.setText("---")
-            self.enob_value.setText("---")
-            self.dnl_value.setText("---")
-            self.inl_value.setText("---")
-            self.gain_error_value.setText("---")
-            self.offset_error_value.setText("---")
+            avg_tip = "Arithmetic mean of all samples."
+            if result.get('trimmed_avg') is not None:
+                avg_tip += f"\n5% trimmed mean: {result['trimmed_avg']:.3f}"
+            self.avg_value.setToolTip(avg_tip)
+            divisor = int(result.get('algo_divisor') or 1)
+            self.std_name_label.setText(
+                "STD (code)" if divisor <= 1 else f"STD (code, avg of {divisor})")
+            if 'raw_min' in result and 'raw_max' in result:
+                self.raw_minmax_value.setText(
+                    f"{self._fmt_data_value(result['raw_min'])} / "
+                    f"{self._fmt_data_value(result['raw_max'])}")
+            else:
+                self.raw_minmax_value.setText("---")
+            self.outliers_value.setText(
+                str(int(result['outliers_removed'])) if 'outliers_removed' in result else "---")
+            self.noise_free_value.setText(
+                f"{result['noise_free_bits']:.2f}"
+                if result.get('noise_free_bits') is not None else "N/A")
+            self._reset_fv_cards()
         else:
-            self.avg_value.setText("---")
-            self.min_value.setText("---")
-            self.max_value.setText("---")
-            self.std_value.setText("---")
-            self.pp_value.setText("---")
-            self.samples_value.setText("---")
-            self.linearity_value.setText(f"{result['linearity']:.3f}" if 'linearity' in result else "---")
-            self.enob_value.setText(f"{result['enob']:.3f}" if 'enob' in result else "---")
-            self.dnl_value.setText(f"{result['dnl']:.3f}" if 'dnl' in result else "---")
-            self.inl_value.setText(f"{result['inl']:.3f}" if 'inl' in result else "---")
-            self.gain_error_value.setText(f"{result['gain_error']:.3f}" if 'gain_error' in result else "---")
-            self.offset_error_value.setText(f"{result['offset_error']:.3f}" if 'offset_error' in result else "---")
+            self._reset_cnt_cards()
+            self._update_fv_cards(result)
 
     def clear_results(self):
-        self.linearity_value.setText("---")
-        self.enob_value.setText("---")
-        self.dnl_value.setText("---")
-        self.inl_value.setText("---")
-        self.gain_error_value.setText("---")
-        self.offset_error_value.setText("---")
+        self._reset_fv_cards()
         # 清除1000CNT TEST的结果
-        self.avg_value.setText("---")
-        self.min_value.setText("---")
-        self.max_value.setText("---")
-        self.std_value.setText("---")
-        self.pp_value.setText("---")
-        self.samples_value.setText("---")
+        self._reset_cnt_cards()
         # 清除 FT Calibration Check 的结果
         self.ft_p1_value.setText("---")
         self.ft_p2_value.setText("---")
@@ -597,6 +680,27 @@ class _ConfigAiMixin:
                 if "outlier_filter" not in applied:
                     applied.append("outlier_filter")
                 touched.append(spin)
+
+        # 指标卡计算配置（无控件，仅存 _metrics_options；全部可选）
+        metrics_cfg = cfg.get("metrics_options")
+        if isinstance(metrics_cfg, dict):
+            for key in ('n_bits', 'v_spec_range', 'k_ideal', 'b_ideal', 'ref_mode'):
+                if key not in metrics_cfg:
+                    continue
+                val = metrics_cfg[key]
+                if key == 'ref_mode':
+                    val = str(val).lower()
+                    if val not in ('none', 'spec', 'batch_nominal'):
+                        continue
+                elif val is not None:
+                    try:
+                        val = int(val) if key == 'n_bits' else float(val)
+                    except (TypeError, ValueError):
+                        continue
+                    if key == 'n_bits' and not 1 <= val <= 32:
+                        continue
+                self._metrics_options[key] = val
+            applied.append("metrics_options")
 
         # High-Low Temp Test 电流监控（启用状态 + N6705C 通道）
         monitor_cfg = cfg.get("current_monitor")

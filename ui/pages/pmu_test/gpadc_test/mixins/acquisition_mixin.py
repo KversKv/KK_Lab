@@ -9,7 +9,10 @@ import time
 from lib.i2c.i2c_interface_x64 import I2CInterface
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C
-from core.pmu_test.gpadc import GPADCAcquisition, compute_calibration, format_log_table
+from core.pmu_test.gpadc import (
+    GPADCAcquisition, compute_calibration, compute_force_voltage_metrics,
+    format_log_table,
+)
 
 
 class _AcquisitionMixin:
@@ -252,63 +255,72 @@ class _AcquisitionMixin:
                     f"[INFO] CH {ch.get('name')}: Calibration k={k:.2f} (LSB/V), b={b:.2f} (LSB)"
                 )
 
+    def _collect_batch_reference_history(self):
+        """从本会话 Recent 记录收集已测 DUT 的 (k_fit, b_fit) 历史。
+
+        按芯片名去重（同颗 DUT 取最近一次），供 batch_nominal 参照模式取中位数。
+        """
+        by_chip = {}
+        for record in getattr(self, '_recent_test_records', []) or []:
+            if record.get('kind') != 'force_voltage':
+                continue
+            params = record.get('params') or {}
+            k_fit, b_fit = params.get('k_fit'), params.get('b_fit')
+            if k_fit is None or b_fit is None:
+                continue
+            chip = (record.get('naming') or {}).get('chip') or f"record_{record.get('id')}"
+            by_chip[chip] = (k_fit, b_fit)
+        return list(by_chip.values())
+
     def _calculate_gpadc_parameters(self, force_voltage_result):
-        """基于 force_voltage 返回值计算 GPADC 性能参数。"""
-        import numpy as np
-
-        voltage = np.array(force_voltage_result["voltage"], dtype=float)
-        adc_mean = np.array(force_voltage_result["mean"], dtype=float)
-        adc_min = np.array(force_voltage_result["min"], dtype=float)
-        adc_max = np.array(force_voltage_result["max"], dtype=float)
-
-        n = len(voltage)
-        params = {}
-        params['avg'] = float(np.mean(adc_mean))
-        params['max'] = float(np.max(adc_max))
-        params['min'] = float(np.min(adc_min))
-
-        if n < 2:
-            params.update({'linearity': 0.0, 'dnl': 0.0, 'inl': 0.0,
-                           'enob': 0.0, 'gain_error': 0.0, 'offset_error': 0.0})
-            return params
-
-        coeffs = np.polyfit(voltage, adc_mean, 1)
-        slope = coeffs[0]
-        adc_ideal = np.polyval(coeffs, voltage)
-        ss_res = np.sum((adc_mean - adc_ideal) ** 2)
-        ss_tot = np.sum((adc_mean - np.mean(adc_mean)) ** 2)
-        params['linearity'] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 1.0
-
-        inl_values = adc_mean - adc_ideal
-        params['inl'] = float(np.max(np.abs(inl_values)))
-        ideal_step = slope * (voltage[1] - voltage[0])
-        actual_steps = np.diff(adc_mean)
-        if ideal_step != 0:
-            dnl_values = (actual_steps - ideal_step) / abs(ideal_step)
-            params['dnl'] = float(np.max(np.abs(dnl_values)))
-        else:
-            params['dnl'] = 0.0
-
-        noise_pp = adc_max - adc_min
-        noise_rms = np.mean(noise_pp) / (2 * np.sqrt(3))
-        adc_full_range = params['max'] - params['min']
-        if noise_rms > 0 and adc_full_range > 0:
-            snr_db = 20 * np.log10(adc_full_range / (noise_rms * 2 * np.sqrt(3)))
-            params['enob'] = float(max(0.0, (snr_db - 1.76) / 6.02))
-        else:
-            params['enob'] = 0.0
-
-        volt_range = float(voltage[-1] - voltage[0])
-        adc_range = float(adc_mean[-1] - adc_mean[0])
-        if volt_range > 0:
-            ideal_slope = adc_range / volt_range
-            params['gain_error'] = float(((slope - ideal_slope) / ideal_slope) * 100) if ideal_slope != 0 else 0.0
-        else:
-            params['gain_error'] = 0.0
-        params['offset_error'] = float(adc_ideal[0] - adc_mean[0])
-        self._append_log(
-            f"[RESULT] INL={params['inl']:.2f}, DNL={params['dnl']:.2f}, "
-            f"ENOB={params['enob']:.2f}, Gain Error: {params['gain_error']:.2f}%, "
-            f"Offset Error: {params['offset_error']:.2f} LSB"
+        """基于 force_voltage 返回值计算 GPADC 性能参数（纯函数在 core）。"""
+        opts = getattr(self, '_metrics_options', None) or {}
+        params = compute_force_voltage_metrics(
+            force_voltage_result.get("voltage") or [],
+            force_voltage_result.get("mean") or [],
+            std=force_voltage_result.get("std"),
+            n=force_voltage_result.get("n"),
+            raw_samples=force_voltage_result.get("raw_samples"),
+            n_bits=int(opts.get('n_bits') or 16),
+            v_spec_range=opts.get('v_spec_range'),
+            k_ideal=opts.get('k_ideal'),
+            b_ideal=opts.get('b_ideal'),
+            ref_mode=opts.get('ref_mode') or 'none',
+            batch_history=self._collect_batch_reference_history(),
         )
+        if not params.get('valid'):
+            self._append_log(
+                f"[WARN] 有效点数 {params.get('points', 0)} < 3，性能指标显示 N/A"
+            )
+            return params
+        step_nl_text = (
+            f"{params['step_nl_max']:+.3f}/{params['step_nl_min']:+.3f}"
+            if params.get('step_nl_max') is not None else "N/A"
+        )
+        self._append_log(
+            f"[RESULT] INL={params['inl_max']:+.2f}/{params['inl_min']:+.2f} LSB, "
+            f"Step NL={step_nl_text}, "
+            f"k_fit={params['k_fit']:.2f} LSB/V, b_fit={params['b_fit']:.2f} LSB"
+        )
+        if params.get('sigma_noise_lsb') is not None:
+            enob_text = (f"{params['enob_noise']:.2f}"
+                         if params.get('enob_noise') is not None else "N/A")
+            enob_dc_text = (f"{params['enob_dc']:.2f}"
+                            if params.get('enob_dc') is not None else "N/A")
+            self._append_log(
+                f"[RESULT] σ noise={params['sigma_noise_lsb']:.2f} LSB, "
+                f"ENOB noise/DC={enob_text}/{enob_dc_text} bit"
+            )
+        if params.get('inl_below_noise'):
+            self._append_log("[INFO] INL 低于噪声底（max|INL| < 4×mean noise）")
+        if params.get('ref_mode') == 'spec':
+            self._append_log(
+                f"[RESULT] Gain Err={params['gain_error_pct']:+.3f}%, "
+                f"Offset Err={params['offset_error_lsb']:+.2f} LSB (vs spec)"
+            )
+        elif params.get('ref_mode') == 'batch_nominal':
+            self._append_log(
+                f"[RESULT] Gain Dev={params['gain_error_pct']:+.3f}%, "
+                f"Offset Dev={params['offset_error_lsb']:+.2f} LSB (vs batch median)"
+            )
         return params

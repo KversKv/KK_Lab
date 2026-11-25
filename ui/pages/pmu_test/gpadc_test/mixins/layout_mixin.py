@@ -229,7 +229,8 @@ class _LayoutMixin:
         """ + SCROLL_AREA_STYLE
         self.setStyleSheet(get_page_base_qss() + page_extra)
 
-    def _create_metric_card(self, title, value="---", value_object_name="metric_value_green"):
+    def _create_metric_card(self, title, value="---", value_object_name="metric_value_green",
+                            tooltip=""):
         card = QFrame()
         card.setObjectName("metric_card")
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -247,9 +248,14 @@ class _LayoutMixin:
         value_label.setObjectName(value_object_name)
         value_label.setAlignment(Qt.AlignCenter)
 
+        if tooltip:
+            card.setToolTip(tooltip)
+            name_label.setToolTip(tooltip)
+            value_label.setToolTip(tooltip)
+
         layout.addWidget(name_label)
         layout.addWidget(value_label)
-        return card, value_label
+        return card, value_label, name_label
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
@@ -1006,47 +1012,115 @@ class _LayoutMixin:
         metrics_layout.setSpacing(8)
         self.metrics_row = metrics_row
 
-        inl_card, self.inl_value = self._create_metric_card("INL", "---", "metric_value_green")
-        dnl_card, self.dnl_value = self._create_metric_card("DNL", "---", "metric_value_green")
-        enob_card, self.enob_value = self._create_metric_card("ENOB", "---", "metric_value_blue")
-        offset_card, self.offset_error_value = self._create_metric_card("OFFSET ERR", "---", "metric_value_yellow")
-        gain_card, self.gain_error_value = self._create_metric_card("GAIN ERR", "---", "metric_value_yellow")
+        inl_card, self.inl_value, self.inl_name_label = self._create_metric_card(
+            "INL (LSB)", "---", "metric_value_green",
+            "INL = mean - (k_fit*v + b_fit), least-squares fit over all points.\n"
+            "Display: +max / min (LSB).\n"
+            "Yellow = below noise floor: max|INL| < 4*mean_noise,\n"
+            "mean_noise = rms(std)/sqrt(mean(n)).")
+        step_nl_card, self.step_nl_value, _ = self._create_metric_card(
+            "STEP NL (LSB)", "---", "metric_value_green",
+            "Step NL = diff(mean)/(k_fit*diff(v)) - 1, per-interval diff(v).\n"
+            "Display: max / min (signed). Step-level linearity, not code-level DNL.")
+        sigma_card, self.sigma_noise_value, _ = self._create_metric_card(
+            "σ NOISE (LSB)", "---", "metric_value_blue",
+            "sigma = sqrt(mean(std^2));\n"
+            "std = per-point sample standard deviation (ddof=1).")
+        enob_card, self.enob_value, _ = self._create_metric_card(
+            "ENOB (bit)", "---", "metric_value_blue",
+            "fs = 2^n_bits (default 16).\n"
+            "ENOB_noise = log2(fs/(sigma*sqrt(12)))\n"
+            "ENOB_DC = log2(fs/(hypot(sigma, rms(INL))*sqrt(12)))\n"
+            "Display: noise / DC. With v_spec_range: also spec variant,\n"
+            "fs = k_fit*v_spec_range.")
+        gain_card, self.gain_error_value, self.gain_name_label = self._create_metric_card(
+            "GAIN", "---", "metric_value_yellow",
+            "spec: Gain Err = (k_fit/k_ideal - 1)*100%\n"
+            "batch_nominal: Gain Dev = (k_fit/k_med - 1)*100%,\n"
+            "  k_med = median of >=3 measured DUT k_fit\n"
+            "none: shows fitted slope k_fit (LSB/V).")
+        offset_card, self.offset_error_value, self.offset_name_label = self._create_metric_card(
+            "OFFSET", "---", "metric_value_yellow",
+            "spec: Offset Err = b_fit - b_ideal (LSB)\n"
+            "batch_nominal: Offset Dev = b_fit - b_med (LSB),\n"
+            "  b_med = median of >=3 measured DUT b_fit\n"
+            "none: shows fitted intercept b_fit (LSB).")
+        coverage_card, self.coverage_value, _ = self._create_metric_card(
+            "COVERAGE", "---", "metric_value_green",
+            "Sweep voltage range and code-space coverage:\n"
+            "(max(mean) - min(mean)) / fs_codes * 100%.")
 
         # 添加1000CNT TEST的指标卡片
-        avg_card, self.avg_value = self._create_metric_card("AVG", "---", "metric_value_green")
-        min_card, self.min_value = self._create_metric_card("MIN", "---", "metric_value_blue")
-        max_card, self.max_value = self._create_metric_card("MAX", "---", "metric_value_yellow")
-        std_card, self.std_value = self._create_metric_card("STD (code)", "---", "metric_value_blue")
-        pp_card, self.pp_value = self._create_metric_card("P-P NOISE (code)", "---", "metric_value_yellow")
-        samples_card, self.samples_value = self._create_metric_card("POINTS", "---", "metric_value_green")
+        avg_card, self.avg_value, _ = self._create_metric_card(
+            "AVG", "---", "metric_value_green",
+            "Arithmetic mean of all samples.\n"
+            "5% trimmed mean is appended to this tooltip after each test.")
+        min_card, self.min_value, _ = self._create_metric_card(
+            "MIN", "---", "metric_value_blue",
+            "Minimum of all samples (after outlier filter / algorithm).")
+        max_card, self.max_value, _ = self._create_metric_card(
+            "MAX", "---", "metric_value_yellow",
+            "Maximum of all samples (after outlier filter / algorithm).")
+        std_card, self.std_value, self.std_name_label = self._create_metric_card(
+            "STD (code)", "---", "metric_value_blue",
+            "Sample standard deviation (ddof=1) about the full-sample mean\n"
+            "(same mean as AVG). Title marks '(avg of N)' when a\n"
+            "group-aggregation algorithm is enabled.")
+        pp_card, self.pp_value, _ = self._create_metric_card(
+            "P-P NOISE (code)", "---", "metric_value_yellow",
+            "Peak-peak noise = MAX - MIN (code).")
+        samples_card, self.samples_value, _ = self._create_metric_card(
+            "POINTS", "---", "metric_value_green",
+            "Number of samples after algorithm processing.")
+        raw_minmax_card, self.raw_minmax_value, _ = self._create_metric_card(
+            "RAW MIN/MAX", "---", "metric_value_blue",
+            "Extremes of raw samples before outlier filtering.")
+        outliers_card, self.outliers_value, _ = self._create_metric_card(
+            "OUTLIERS", "---", "metric_value_yellow",
+            "Number of samples removed by the outlier filter.")
+        noise_free_card, self.noise_free_value, _ = self._create_metric_card(
+            "NOISE-FREE (bit)", "---", "metric_value_green",
+            "Noise-free bits = log2(fs_codes / (6.6*STD)),\n"
+            "fs_codes = 2^n_bits (default 16).")
 
         # 按测试项分组显隐：1000CNT 展示详细统计卡组，其余测试项展示线性度卡组
-        self._cnt_cards = [avg_card, min_card, max_card, std_card, pp_card, samples_card]
-        self._fv_cards = [inl_card, dnl_card, enob_card, offset_card, gain_card]
+        self._cnt_cards = [avg_card, min_card, max_card, std_card, pp_card,
+                           samples_card, raw_minmax_card, outliers_card, noise_free_card]
+        self._fv_cards = [inl_card, step_nl_card, sigma_card, enob_card,
+                          gain_card, offset_card, coverage_card]
 
         # FT Calibration Check 指标卡组（P1/P2 偏差仅 IIC 方式有值，CONS 仅 UART 方式有值）
-        ft_p1_card, self.ft_p1_value = self._create_metric_card("P1 DEV (LSB)", "---", "metric_value_green")
-        ft_p2_card, self.ft_p2_value = self._create_metric_card("P2 DEV (LSB)", "---", "metric_value_green")
-        ft_max_card, self.ft_max_err_value = self._create_metric_card("MAX ERR (mV)", "---", "metric_value_yellow")
-        ft_rms_card, self.ft_rms_err_value = self._create_metric_card("RMS ERR (mV)", "---", "metric_value_blue")
-        ft_cons_card, self.ft_cons_value = self._create_metric_card("CONS MAX (mV)", "---", "metric_value_yellow")
-        ft_result_card, self.ft_result_value = self._create_metric_card("RESULT", "---", "metric_value_blue")
+        ft_p1_card, self.ft_p1_value, _ = self._create_metric_card(
+            "P1 DEV (LSB)", "---", "metric_value_green",
+            "IIC only: dev = measured mean - user calib code (LSB).\n"
+            "Point PASS when |dev| <= Raw Tol.")
+        ft_p2_card, self.ft_p2_value, _ = self._create_metric_card(
+            "P2 DEV (LSB)", "---", "metric_value_green",
+            "IIC only: dev = measured mean - user calib code (LSB).\n"
+            "Point PASS when |dev| <= Raw Tol.")
+        ft_max_card, self.ft_max_err_value, _ = self._create_metric_card(
+            "MAX ERR (mV)", "---", "metric_value_yellow",
+            "max|err| over sweep; err = (cal_voltage*ratio - v_set)*1000 (mV).")
+        ft_rms_card, self.ft_rms_err_value, _ = self._create_metric_card(
+            "RMS ERR (mV)", "---", "metric_value_blue",
+            "sqrt(mean(err^2)) over sweep (mV).")
+        ft_cons_card, self.ft_cons_value, _ = self._create_metric_card(
+            "CONS MAX (mV)", "---", "metric_value_yellow",
+            "UART only: max|(raw-b)/k*1000 - volt_avg| (mV),\n"
+            "user K/B back-calculated voltage vs DUT reported volt.")
+        ft_result_card, self.ft_result_value, _ = self._create_metric_card(
+            "RESULT", "---", "metric_value_blue",
+            "PASS when max|err| <= Error Limit AND both point checks pass\n"
+            "(IIC) AND consistency max|cons| <= limit (UART).")
         self._ft_cards = [ft_p1_card, ft_p2_card, ft_max_card, ft_rms_card, ft_cons_card, ft_result_card]
 
         self.linearity_value = QLabel("---")
         self.linearity_value.hide()
 
-        metrics_layout.addWidget(inl_card)
-        metrics_layout.addWidget(dnl_card)
-        metrics_layout.addWidget(enob_card)
-        metrics_layout.addWidget(offset_card)
-        metrics_layout.addWidget(gain_card)
-        metrics_layout.addWidget(avg_card)
-        metrics_layout.addWidget(min_card)
-        metrics_layout.addWidget(max_card)
-        metrics_layout.addWidget(std_card)
-        metrics_layout.addWidget(pp_card)
-        metrics_layout.addWidget(samples_card)
+        for fv_card in self._fv_cards:
+            metrics_layout.addWidget(fv_card)
+        for cnt_card in self._cnt_cards:
+            metrics_layout.addWidget(cnt_card)
         for ft_card in self._ft_cards:
             metrics_layout.addWidget(ft_card)
 
