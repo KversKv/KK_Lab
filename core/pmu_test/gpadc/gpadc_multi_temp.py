@@ -445,7 +445,7 @@ def run_multi_ch_temp_test(
         for res in results:
             name = res["name"]
             if res["sweep"]:
-                vol_headers = [f"{v:.2f}" for v in (res["voltage"] or [])]
+                vol_headers = [f"{v:.3f}" for v in (res["voltage"] or [])]
                 for tag, matrix in (("Mean", res["mean"]), ("Min", res["min"]), ("Max", res["max"])):
                     _log(f"--- [CH {name}] {tag} (Temp x Voltage) ---")
                     rows = [

@@ -1140,7 +1140,7 @@ class GPADCTestRunner:
             delta_min_mv = (min_cali[index] - input_voltage) * 1000
             delta_max_mv = (max_cali[index] - input_voltage) * 1000
             cali_rows.append([
-                f"{input_voltage:.2f}", f"{result['mean'][index]:.2f}",
+                f"{input_voltage:.3f}", f"{result['mean'][index]:.2f}",
                 f"{mean_cali[index]:.2f}", f"{delta_mean_mv:+.2f}",
                 str(result['min'][index]), str(result['max'][index]),
                 f"{min_cali[index]:.2f}", f"{max_cali[index]:.2f}",
@@ -1250,7 +1250,7 @@ class GPADCTestRunner:
             self.log_fn(f"[INFO] T={current_temp:.1f}°C  voltage sweep done ({len(mean_row)} points)")
             current_temp = round(current_temp + config["temp_step"], 6)
 
-        voltage_headers = [f"{voltage:.2f}" for voltage in voltage_points]
+        voltage_headers = [f"{voltage:.3f}" for voltage in voltage_points]
         for title, matrix in (("Mean", mean_matrix), ("Min", min_matrix), ("Max", max_matrix)):
             self.log_fn(f"===== TEMP CONSISTENCY TEST 结果 ({title}) =====")
             rows = [
