@@ -34,6 +34,11 @@ from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideTog
 
 # Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
 _UPDATE_LOG_ENTRIES = [
+    ("2026-11-25", [
+        "Primary Serial Log panel now has the same right-click menu as extra panels: Connect/Disconnect and Settings (rename) available on both the log area and the panel body.",
+    ], [
+        "主 Serial Log 面板右键菜单与额外面板对齐：日志区与面板本体均可右键 Connect/Disconnect 与 Settings（改名）。",
+    ]),
     ("2026-11-18", [
         "New Update Log tab in Settings: changes grouped by date with EN/中文 toggle.",
         "Preserve firmware alignment spaces in log display (consecutive and leading spaces kept, e.g. %4u / %9u output).",

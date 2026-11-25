@@ -220,8 +220,13 @@ class LogPanelMixin:
         panel.save_toggled.connect(self._sc_on_save_toggle)
         panel.cleared.connect(self._sc_on_primary_logs_cleared)
         panel.clicked.connect(self._sc_on_primary_panel_clicked)
-        # 主面板右键追加 Settings（改名），与额外面板同一入口语义
+        # 主面板右键追加 Connect/Disconnect + Settings（改名），与额外面板同一入口语义
         panel.context_menu_extra = self._sc_primary_panel_menu_extra
+        # 主面板本体（日志编辑区以外）右键：弹面板管理菜单，与额外面板同语义
+        panel.setContextMenuPolicy(Qt.CustomContextMenu)
+        panel.customContextMenuRequested.connect(
+            lambda pos, p=panel: self._sc_primary_panel_context_menu(p.mapToGlobal(pos))
+        )
 
         self._sc_log_panel = panel
         self._sc_log_area = panel
@@ -531,8 +536,23 @@ class LogPanelMixin:
                 self._sc_session_manager.clear_active_session()
             self._sc_update_panel_focus_style()
 
+    def _sc_primary_panel_context_menu(self, global_pos):
+        """主面板本体（日志编辑区以外）右键：仅弹面板管理菜单。"""
+        self._sc_panel_body_context_menu(self._sc_primary_panel_menu_extra, global_pos)
+
     def _sc_primary_panel_menu_extra(self, menu):
-        """主面板右键追加项：Settings（改名；串口参数由侧栏持有，不重复入口）。"""
+        """主面板右键追加项：Connect/Disconnect + Settings（改名；串口参数由侧栏持有，不重复入口）。"""
+        if getattr(self, "_serial_connected", False):
+            disconnect_act = QAction("Disconnect", self)
+            disconnect_act.triggered.connect(self._sc_do_disconnect)
+            menu.addAction(disconnect_act)
+        else:
+            connect_act = QAction("Connect", self)
+            connect_act.triggered.connect(self._sc_do_connect)
+            menu.addAction(connect_act)
+
+        menu.addSeparator()
+
         settings_act = QAction("Settings...", self)
         settings_act.triggered.connect(self._sc_primary_panel_settings)
         menu.addAction(settings_act)
@@ -606,6 +626,12 @@ class LogPanelMixin:
 
     def _sc_extra_panel_context_menu(self, panel, global_pos):
         """面板本体（日志编辑区以外）右键：仅弹面板管理菜单。"""
+        self._sc_panel_body_context_menu(
+            lambda menu: self._sc_extra_panel_menu_extra(panel, menu), global_pos
+        )
+
+    def _sc_panel_body_context_menu(self, fill, global_pos):
+        """主/额外面板共用的本体右键菜单：统一样式，由 fill(menu) 填充管理项。"""
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
@@ -622,7 +648,7 @@ class LogPanelMixin:
                 height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
             }}
         """)
-        self._sc_extra_panel_menu_extra(panel, menu)
+        fill(menu)
         if menu.isEmpty():
             return
         menu.exec(global_pos)
