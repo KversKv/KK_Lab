@@ -19,6 +19,7 @@
 
 import os
 import re
+import time
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -26,7 +27,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSpinBox, QTextEdit,
     QVBoxLayout, QWidget,
 )
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QTextCursor
 
 from log_config import get_logger
@@ -200,6 +201,7 @@ class SerialLogPanel(QFrame):
         self.log_line_counter = 0
         self.auto_scroll = True
         self.appending = False
+        self._user_scroll_input_ts = 0.0
         self.rx_bytes = 0
         self.tx_bytes = 0
         # 过滤状态
@@ -473,6 +475,8 @@ class SerialLogPanel(QFrame):
 
         if self.log_edit.verticalScrollBar():
             self.log_edit.verticalScrollBar().valueChanged.connect(self._on_user_scroll)
+            self.log_edit.verticalScrollBar().installEventFilter(self)
+        self.log_edit.viewport().installEventFilter(self)
 
         # 右键菜单（Highlight 关键词 + 宿主追加项）
         self.log_edit.customContextMenuRequested.connect(self._on_log_context_menu)
@@ -1149,18 +1153,34 @@ class SerialLogPanel(QFrame):
         if checked:
             self.scroll_to_bottom()
 
+    def eventFilter(self, obj, event):
+        if obj is self.log_edit.viewport() or obj is self.log_edit.verticalScrollBar():
+            if event.type() in (QEvent.Wheel, QEvent.MouseButtonPress, QEvent.KeyPress):
+                self._user_scroll_input_ts = time.monotonic()
+        return super().eventFilter(obj, event)
+
     def _on_user_scroll(self, value):
         if self.appending:
             return
         sb = self.log_edit.verticalScrollBar()
-        if sb and sb.maximum() > 0:
-            at_bottom = value >= sb.maximum() - 5
-            if not at_bottom and self.auto_scroll:
-                self.auto_scroll = False
-                self.scroll_lock_btn.setChecked(False)
-            elif at_bottom and not self.auto_scroll:
-                self.auto_scroll = True
-                self.scroll_lock_btn.setChecked(True)
+        if not sb or sb.maximum() <= 0:
+            return
+        # 仅真实用户滚动（滚轮/按键/拖动或按住滚动条）才允许切换 auto-scroll；
+        # 新日志 append/顶部裁行/延迟布局引起的滚动条变化不得误触发"回底自动恢复"
+        user_driven = (
+            sb.isSliderDown()
+            or bool(QApplication.mouseButtons() & Qt.LeftButton)
+            or (time.monotonic() - self._user_scroll_input_ts) < 0.2
+        )
+        if not user_driven:
+            return
+        at_bottom = value >= sb.maximum() - 5
+        if not at_bottom and self.auto_scroll:
+            self.auto_scroll = False
+            self.scroll_lock_btn.setChecked(False)
+        elif at_bottom and not self.auto_scroll:
+            self.auto_scroll = True
+            self.scroll_lock_btn.setChecked(True)
 
     def scroll_to_bottom(self):
         sb = self.log_edit.verticalScrollBar()
