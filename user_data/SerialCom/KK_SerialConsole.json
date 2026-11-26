@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "COM16",
+    "port": "",
     "baudrate": "921600",
     "auto_detect": false,
     "databits": "8",
@@ -48,6 +48,7 @@
       420,
       0
     ],
+    "show_raw_hex": true,
     "log_auto_save": false,
     "log_save_path": ""
   },
