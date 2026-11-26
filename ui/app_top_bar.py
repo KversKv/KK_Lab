@@ -215,8 +215,8 @@ class AppTopBar(QWidget):
         self._title_label.setObjectName("appTitleText")
         layout.addWidget(self._title_label, 0, Qt.AlignVCenter)
 
-        # 紧凑视图切换按钮：仅 N6705C Analyser 页显示（MainWindow 控制可见性），
-        # 默认隐藏。checked = 最小视图（仅 Quick Setup）。
+        # 紧凑视图切换按钮：仅 N6705C Analyser / Oscilloscope 页显示（MainWindow
+        # 控制可见性与 ToolTip），默认隐藏。checked = 最小视图。
         self.compact_view_button = self._make_compact_view_button()
         layout.addWidget(self.compact_view_button, 0, Qt.AlignVCenter)
 

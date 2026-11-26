@@ -199,6 +199,7 @@ class OscilloscopeBaseUI(QWidget):
 
         self._settings_dirty = False
         self._apply_pulse_timer = None
+        self._compact_view_active = False
 
         self._osc_search_thread = None
 
@@ -565,8 +566,10 @@ class OscilloscopeBaseUI(QWidget):
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(14, 12, 14, 12)
         root_layout.setSpacing(14)
+        self._root_layout = root_layout
 
-        root_layout.addLayout(self._create_top_bar())
+        self._top_bar_layout = self._create_top_bar()
+        root_layout.addLayout(self._top_bar_layout)
 
         content_grid = QGridLayout()
         content_grid.setSpacing(16)
@@ -596,11 +599,81 @@ class OscilloscopeBaseUI(QWidget):
 
         content_grid.setRowStretch(1, 1)
         content_grid.setRowStretch(2, 0)
-        content_grid.addWidget(self._create_right_settings_scroll(), 1, 1)
+        self._right_settings_scroll = self._create_right_settings_scroll()
+        content_grid.addWidget(self._right_settings_scroll, 1, 1)
 
-        content_grid.addWidget(self._create_quick_function_card(), 2, 1, Qt.AlignTop)
+        self._quick_function_card = self._create_quick_function_card()
+        content_grid.addWidget(self._quick_function_card, 2, 1, Qt.AlignTop)
 
         root_layout.addLayout(content_grid)
+
+        self._compact_panel = self._create_compact_panel()
+        root_layout.addWidget(self._compact_panel)
+
+    def _create_compact_panel(self):
+        """最小视图面板：仅承载 Capture / Invert / Run&Stop / Single 四按钮。
+
+        平时为空且隐藏；set_compact_mode(True) 时四按钮临时 reparent 到此，
+        退出时归还各自原布局位置。
+        """
+        panel = QWidget()
+        layout = QHBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self._compact_panel_layout = layout
+        panel.hide()
+        return panel
+
+    def set_compact_mode(self, compact: bool):
+        """紧凑（最小）视图：仅显示 Capture / Invert / Run&Stop / Single 四按钮。
+
+        由主窗口顶栏按钮触发；命名与语义同 power_analyser 页
+        （main_window._on_compact_view_toggled / _fit_compact_size 依赖）。
+        """
+        if self._compact_view_active == compact:
+            return
+        self._compact_view_active = compact
+        if compact:
+            for btn, stretch in (
+                (self.capture_btn, 0),
+                (self.invert_btn, 0),
+                (self.trigger_run_stop_btn, 1),
+                (self.trigger_single_btn, 1),
+            ):
+                self._compact_panel_layout.addWidget(btn, stretch)
+            # RunStopToggle 自绘无布局，minimumSizeHint 无效，窄窗下会被压扁
+            self.trigger_run_stop_btn.setMinimumWidth(110)
+        else:
+            self._capture_header_layout.insertWidget(3, self.capture_btn)
+            self._capture_header_layout.insertWidget(4, self.invert_btn)
+            self._trigger_action_layout.insertWidget(0, self.trigger_run_stop_btn, 1)
+            self._trigger_action_layout.insertWidget(1, self.trigger_single_btn, 1)
+            self.trigger_run_stop_btn.setMinimumWidth(0)
+        self._compact_panel.setVisible(compact)
+        for widget in (
+            self.visa_resource_combo,
+            self.search_btn,
+            self.connect_btn,
+            self._left_splitter,
+            self._right_settings_scroll,
+            self._quick_function_card,
+        ):
+            widget.setVisible(not compact)
+        self._set_layout_widgets_visible(self._top_bar_layout, not compact)
+        if compact:
+            self._root_layout.setContentsMargins(6, 6, 6, 6)
+        else:
+            self._root_layout.setContentsMargins(14, 12, 14, 12)
+        self._root_layout.invalidate()
+
+    def _set_layout_widgets_visible(self, layout, visible):
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.setVisible(visible)
+            elif item.layout() is not None:
+                self._set_layout_widgets_visible(item.layout(), visible)
 
     def _set_plain_background(self, widget, color):
         widget.setAutoFillBackground(True)
@@ -795,6 +868,7 @@ class OscilloscopeBaseUI(QWidget):
         """)
         header.addWidget(self.invert_btn)
 
+        self._capture_header_layout = header
         layout.addLayout(header)
 
         self.display_placeholder = QFrame()
@@ -1115,6 +1189,7 @@ class OscilloscopeBaseUI(QWidget):
         """)
         action_row.addWidget(self.trigger_single_btn, 1)
 
+        self._trigger_action_layout = action_row
         layout.addLayout(action_row)
 
         mode_row = QHBoxLayout()

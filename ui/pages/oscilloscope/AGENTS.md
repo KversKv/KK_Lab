@@ -25,6 +25,7 @@
 - **单位语义随型号动态切换**：Keysight 用秒、Tektronix 用百分比；label 与占位符随连接仪器动态更新（参考 `_update_time_offset_mode`）。
 - **多单位输入**（`100us/0.5ms/1s`）：维护"上次单位"记忆（`TimeScaleEdit._last_unit_mult`），无单位纯数字复用上次倍率，**不默认按基本单位解释**；解析成功动态更新 label 单位。
 - 测量结果卡按数值自动选档（V/mV/µV、Hz/kHz/MHz/GHz），参考 `_format_measurement_value_split`。
+- `set_compact_mode(compact)`（主窗口最小视图契约，命名语义不可改）：True 时 Capture/Invert/Run&Stop/Single 四按钮 reparent 到 `_compact_panel`，其余区块隐藏；False 按原布局索引归还（capture header 3/4、trigger action_row 0/1）。RunStopToggle 自绘无布局，紧凑态须 `setMinimumWidth(110)` 防压扁。
 
 ## 局部坑点
 

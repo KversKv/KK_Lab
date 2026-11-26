@@ -383,10 +383,12 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
         self.gpio_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
-        # 紧凑（最小）视图状态：True = 仅 Quick Setup 小窗
+        # 紧凑（最小）视图状态：True = 精简小窗（Analyser 仅 Quick Setup / 示波器仅四按钮）
         self._compact_view = False
         self._pre_compact_state = None
         self._compact_ai_was_open = False
+        # 进入紧凑态的页面引用：切页触发退出时 current_instrument_ui 已变，须按引用还原
+        self._compact_active_page = None
         self.channels = []
 
         self.nav = NavController(self)
@@ -1160,14 +1162,27 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
         self.setGeometry(geometry)
 
     def _sync_compact_view_button(self):
-        """紧凑视图按钮仅在 N6705C Analyser 页可见；切离该页时自动退出紧凑态。"""
+        """紧凑视图按钮仅在 N6705C Analyser / Oscilloscope 页可见；切离时自动退出紧凑态。"""
         top_bar = getattr(self, "top_bar", None)
         if top_bar is None:
             return
         btn = top_bar.compact_view_button
-        btn.setVisible(self.current_instrument_ui == "power_analyser")
+        key = self.current_instrument_ui
+        btn.setVisible(key in ("power_analyser", "oscilloscope"))
+        if key == "oscilloscope":
+            btn.setToolTip("最小视图（Capture / Invert / Run&Stop / Single）")
+        else:
+            btn.setToolTip("最小视图（仅 Quick Setup）")
         if not btn.isVisible() and btn.isChecked():
             btn.setChecked(False)
+
+    def _get_compact_page(self):
+        """当前页支持最小视图时返回对应页面对象，否则 None。"""
+        if self.current_instrument_ui == "power_analyser":
+            return self.n6705c_analyser_ui
+        if self.current_instrument_ui == "oscilloscope":
+            return self.oscilloscope_ui
+        return None
 
     def _sync_labels_toggle_button(self):
         """Custom Labels 按钮仅在 N6705C Datalog 页可见，并同步面板展开态。"""
@@ -1195,7 +1210,12 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
         if checked == self._compact_view:
             return
         self._compact_view = checked
-        page = self.n6705c_analyser_ui
+        if checked:
+            page = self._get_compact_page()
+            self._compact_active_page = page
+        else:
+            page = self._compact_active_page or self._get_compact_page()
+            self._compact_active_page = None
         if checked:
             # 记忆原窗口状态（是否最大化 + geometry），退出时还原
             self._pre_compact_state = (
@@ -1271,12 +1291,14 @@ class MainWindow(MainWindowAiMixin, CleanupMixin, QMainWindow):
 
         须在布局 minimum 缓存刷新后（posted LayoutRequest 已处理，进入
         紧凑后 ≥80ms）调用。窗口级 hint 会包含 Suite 内隐藏的 Datalog 页，
-        因此按 Analyser 当前尺寸与其 minimumSizeHint 的差值调整窗口。
+        因此按紧凑页面当前尺寸与其 minimumSizeHint 的差值调整窗口。
         """
         if not self._compact_view:
             return
+        page = self._compact_active_page
+        if page is None:
+            return
         self.layout().activate()
-        page = self.n6705c_analyser_ui
         page_min_hint = page.minimumSizeHint()
         width = max(
             _COMPACT_VIEW_SIZE[0],
