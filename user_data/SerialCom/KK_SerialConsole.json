@@ -45,8 +45,8 @@
     "auto_scroll_default": true,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      420,
-      0
+      287,
+      185
     ],
     "show_raw_hex": true,
     "log_auto_save": false,
