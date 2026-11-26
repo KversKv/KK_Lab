@@ -34,6 +34,7 @@ from ui.modules.serialCom_module.serial_style import (
     filter_input_style,
 )
 from ui.modules.serialCom_module.dialogs.save_dialog import _SerialSaveDialog
+from ui.modules.serialCom_module.file_dialog_memory import last_dir, remember_dir
 
 logger = get_logger(__name__)
 
@@ -257,7 +258,7 @@ class _IndependentSerialWindow(QWidget):
         title_safe = re.sub(r'[^\w\-.]', '_', str(self._config.get("title", "") or "window"))
         dlg = _SerialSaveDialog(
             self,
-            default_dir="",
+            default_dir=last_dir("save_log"),
             default_name=f"serial_log_{title_safe}_{ts}.txt",
             keep_timestamp=self._save_keep_timestamp,
         )
@@ -313,6 +314,7 @@ class _IndependentSerialWindow(QWidget):
 
         self._save_handle = handle
         self._save_path = file_path
+        remember_dir("save_log", save_dir)
         self._append_system(f"[INFO] Save started: {file_path}")
         return True
 

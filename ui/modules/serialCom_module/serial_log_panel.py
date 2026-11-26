@@ -32,6 +32,9 @@ from PySide6.QtGui import QAction, QColor, QTextCursor
 
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from ui.modules.serialCom_module.file_dialog_memory import (
+    initial_save_path, remember_path,
+)
 from ui.modules.serialCom_module.serial_style import (
     _SC_HIGHLIGHT_PALETTE,
     _SVG_LOGS_DIR,
@@ -1005,9 +1008,12 @@ class SerialLogPanel(QFrame):
         else:
             default_name = f"{self._title_slug()}.log"
             name_filter = "Log Files (*.log);;Text Files (*.txt);;All (*.*)"
-        path, _ = QFileDialog.getSaveFileName(self, "Export Log", default_name, name_filter)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Log", initial_save_path("export_log", default_name), name_filter
+        )
         if not path:
             return
+        remember_path("export_log", path)
         try:
             fast = self.export_fast_path() if self.export_fast_path else None
             if fast and os.path.isfile(fast):

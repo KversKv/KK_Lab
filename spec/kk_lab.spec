@@ -190,6 +190,7 @@ a = Analysis(
         'ui.modules.serialCom_module.serial_chart_dialog',
         'ui.modules.serialCom_module.serial_style',
         'ui.modules.serialCom_module.serial_diag_log',
+        'ui.modules.serialCom_module.file_dialog_memory',
         'ui.modules.serialCom_module.independent_window',
         'ui.modules.serialCom_module.controls.mini_slide_toggle',
         'ui.modules.serialCom_module.controls.quick_cmd_controls',

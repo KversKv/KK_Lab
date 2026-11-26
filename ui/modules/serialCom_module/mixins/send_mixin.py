@@ -38,6 +38,9 @@ from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudMonitor, AutoBaudScanWorker, AutoBaudState,
     score_rx_data,
 )
+from ui.modules.serialCom_module.file_dialog_memory import (
+    initial_save_path, last_dir, remember_path,
+)
 from ui.modules.serialCom_module.widgets import (
     _FramelessChromeDialog,
     _MixinSerialSettingsDialog,
@@ -1396,10 +1399,11 @@ class SendMixin:
 
     def _sc_import_quick_cmds(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import Quick Commands", "", "JSON Files (*.json);;All Files (*)"
+            self, "Import Quick Commands", last_dir("qc_import"), "JSON Files (*.json);;All Files (*)"
         )
         if not path:
             return
+        remember_path("qc_import", path)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -1531,10 +1535,12 @@ class SendMixin:
             return
         default_name = f"{project.get('name', 'project')}_快捷指令.json"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Quick Commands", default_name, "JSON Files (*.json);;All Files (*)"
+            self, "Export Quick Commands", initial_save_path("qc_export", default_name),
+            "JSON Files (*.json);;All Files (*)"
         )
         if not path:
             return
+        remember_path("qc_export", path)
         payload = {
             "version": "2.0",
             "quick_commands": {

@@ -38,6 +38,7 @@ from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudMonitor, AutoBaudScanWorker, AutoBaudState,
     score_rx_data,
 )
+from ui.modules.serialCom_module.file_dialog_memory import last_dir, remember_dir
 from ui.modules.serialCom_module.widgets import (
     _FramelessChromeDialog,
     _MixinSerialSettingsDialog,
@@ -264,7 +265,9 @@ class FilterSaveMixin:
     def _sc_start_manual_save(self) -> bool:
         from ui.modules.serialCom_module.dialogs.save_dialog import _SerialSaveDialog
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        default_dir = last_dir(
+            "save_log", getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        )
         default_name = f"serial_log_{ts}.txt"
         dlg = _SerialSaveDialog(
             self,
@@ -322,6 +325,7 @@ class FilterSaveMixin:
         self._sc_save_handle = handle
         self._sc_save_path = file_path
         self._sc_log_save_path = save_dir
+        remember_dir("save_log", save_dir)
         self._sc_append_system(f"[INFO] Save started: {file_path}", force_primary=True)
         return True
 
@@ -386,7 +390,9 @@ class FilterSaveMixin:
     def _sc_extra_panel_start_save(self, panel) -> bool:
         from ui.modules.serialCom_module.dialogs.save_dialog import _SerialSaveDialog
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        default_dir = last_dir(
+            "save_log", getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        )
         title = panel["config"].get("title", "") or panel["config"].get("port", "") or "extra"
         title_safe = re.sub(r'[^\w\-.]', '_', str(title))
         default_name = f"serial_log_{title_safe}_{ts}.txt"
@@ -447,6 +453,7 @@ class FilterSaveMixin:
 
         panel["save_handle"] = handle
         panel["save_path"] = file_path
+        remember_dir("save_log", save_dir)
         self._sc_extra_panel_append_log(panel, f"[INFO] Save started: {file_path}", _CLR_TEXT_INFO)
         return True
 

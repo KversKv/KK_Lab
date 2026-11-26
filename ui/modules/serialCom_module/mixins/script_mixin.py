@@ -43,6 +43,9 @@ from core.serial_script.script_engine import (
     match_wait_keyword as _script_match_wait_keyword,
     ordered_steps as _script_ordered_steps,
 )
+from ui.modules.serialCom_module.file_dialog_memory import (
+    initial_save_path, last_dir, remember_path,
+)
 from ui.modules.serialCom_module.widgets import (
     _FramelessChromeDialog,
     _MixinSerialSettingsDialog,
@@ -816,10 +819,11 @@ class ScriptMixin:
 
     def _sc_script_import_txt(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "导入脚本 (.txt)", "", "Text Files (*.txt);;All Files (*)"
+            self, "导入脚本 (.txt)", last_dir("script_import"), "Text Files (*.txt);;All Files (*)"
         )
         if not path:
             return
+        remember_path("script_import", path)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.read().splitlines()
@@ -872,11 +876,13 @@ class ScriptMixin:
             QMessageBox.information(self, "提示", "没有可导出的脚本")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出脚本 (.txt)", f"{cur.get('name', 'script')}.txt",
+            self, "导出脚本 (.txt)",
+            initial_save_path("script_export", f"{cur.get('name', 'script')}.txt"),
             "Text Files (*.txt);;All Files (*)"
         )
         if not path:
             return
+        remember_path("script_export", path)
         lines = [
             "# 格式: 指令,优先级,等待ms  (优先级=0 表示跳过)",
             f"# 脚本: {cur.get('name', '')}",

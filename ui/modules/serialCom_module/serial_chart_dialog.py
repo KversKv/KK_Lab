@@ -24,6 +24,9 @@ from ui.modules.serialCom_module.serial_chart_model import (
     CHART_REFRESH_INTERVAL_MS, new_id,
 )
 from ui.modules.serialCom_module.serial_chart_controller import SerialChartController
+from ui.modules.serialCom_module.file_dialog_memory import (
+    initial_save_path, last_dir, remember_path,
+)
 
 logger = get_logger(__name__)
 
@@ -1713,9 +1716,13 @@ class SerialChartDialog(QDialog):
         self._events_shown = seen
 
     def _on_export(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Export chart data", "chart_data.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export chart data",
+            initial_save_path("chart_data_export", "chart_data.json"), "JSON (*.json)"
+        )
         if not path:
             return
+        remember_path("chart_data_export", path)
         snapshot = {}
         for key, buf in self._controller.buffers().items():
             xs, ys = buf.data()
@@ -1728,9 +1735,13 @@ class SerialChartDialog(QDialog):
             QMessageBox.warning(self, "Export", "Failed to write file.")
 
     def _on_export_config(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Export chart config", "chart_config.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export chart config",
+            initial_save_path("chart_config_export", "chart_config.json"), "JSON (*.json)"
+        )
         if not path:
             return
+        remember_path("chart_config_export", path)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self._config.to_dict(), f, indent=2)
@@ -1739,9 +1750,12 @@ class SerialChartDialog(QDialog):
             QMessageBox.warning(self, "Export", "Failed to write file.")
 
     def _on_import_config(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Import chart config", "", "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import chart config", last_dir("chart_config_import"), "JSON (*.json)"
+        )
         if not path:
             return
+        remember_path("chart_config_import", path)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)

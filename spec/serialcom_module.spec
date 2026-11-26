@@ -150,6 +150,7 @@ a = Analysis(
         'ui.modules.serialCom_module.serialCom_dark_style',
         'ui.modules.serialCom_module.serial_style',
         'ui.modules.serialCom_module.serial_diag_log',
+        'ui.modules.serialCom_module.file_dialog_memory',
         'core.serial_io',
         'core.serial_io.serial_backend',
         'core.serial_io.serial_session',

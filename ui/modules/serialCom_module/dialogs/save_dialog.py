@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """_SerialSaveDialog — 串口日志保存对话框（原 serialCom_module_frame.py 拆出）。"""
 
+import os
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -16,6 +18,7 @@ from ui.modules.serialCom_module.serial_style import (
     dialog_ok_button_style,
     quick_cmd_dialog_style,
 )
+from ui.modules.serialCom_module.file_dialog_memory import last_dir, remember_dir
 
 class _SerialSaveDialog(_FramelessChromeDialog):
 
@@ -81,9 +84,12 @@ class _SerialSaveDialog(_FramelessChromeDialog):
 
     def _on_browse(self):
         current = self._dir_edit.text().strip()
+        if not current or not os.path.isdir(current):
+            current = last_dir("save_log", current)
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", current)
         if directory:
             self._dir_edit.setText(directory)
+            remember_dir("save_log", directory)
 
     def get_config(self) -> dict:
         return {
