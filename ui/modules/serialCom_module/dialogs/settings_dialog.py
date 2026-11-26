@@ -34,6 +34,11 @@ from ui.modules.serialCom_module.controls.mini_slide_toggle import _MiniSlideTog
 
 # Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
 _UPDATE_LOG_ENTRIES = [
+    ("2026-11-26", [
+        "Fixed spurious long [RX(HEX)] 00 bursts: stale bytes received at wrong baudrates during Auto-Detect rescan are now purged before normal reading resumes.",
+    ], [
+        "修复日志偶发大段 [RX(HEX)] 00 假数据：Auto-Detect 重扫期间以错误波特率收到的驱动积压垃圾在恢复接收前统一清空。",
+    ]),
     ("2026-11-25", [
         "Primary Serial Log panel now has the same right-click menu as extra panels: Connect/Disconnect and Settings (rename) available on both the log area and the panel body.",
     ], [

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, QThread
 
 from debug_config import DEBUG_MOCK
+from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudScanWorker, AutoBaudState,
@@ -51,6 +52,9 @@ from ui.modules.serialCom_module.serial_style import (
     main_connect_button_style,
     status_label_style,
 )
+
+
+logger = get_logger(__name__)
 
 
 class ConnectionMixin:
@@ -913,6 +917,13 @@ class ConnectionMixin:
         self._sc_auto_baud_scan_thread = None
         self._sc_auto_baud_scan_worker = None
         if self._serial_connected:
+            # 扫描期间以错误波特率收到的帧错误垃圾（多为 0x00）会积压在驱动 RX 缓冲，
+            # 恢复读线程前必须清空，否则日志出现大段假 [RX(HEX)] 00 突发
+            try:
+                if self._serial_conn is not None and self._serial_conn.is_open:
+                    self._serial_conn.reset_input_buffer()
+            except Exception:
+                logger.warning("Flush serial RX buffer after auto-baud scan failed", exc_info=True)
             self._start_serial_read()
 
     def _sc_on_auto_baud_scan_finished(self, result):

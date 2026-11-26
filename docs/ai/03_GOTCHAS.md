@@ -630,3 +630,15 @@ app.installEventFilter(_WinFilter())
 - 隐藏 tabBar 的 Tab 容器子页一律**懒加载**：占位 `QWidget()` 占槽位，`set_current_test` 经 `_ensure_subpage` 首次选中才构建并 `removeTab/insertTab` 原位替换（保持索引/标签不变），信号连接与仪器同步随构建执行；未构建子页属性为 `None`，`get_test_config` 等分发接口对 `None` 降级（范式见 [pmu_test_ui.py](../../ui/pages/pmu_test/pmu_test_ui.py)）。已铺开：pmu_test / charger_test / consumption_test / vmin_hunter；module_test 为 `QStackedWidget` 变体（`removeWidget/insertWidget` 替换期间必须 `blockSignals` 防索引平移误触发 `currentChanged`→CommandBar 误绑占位页）。容器构造时先建默认子页，`set_current_test(selected)` 再建目标页——直选非默认子页首进会建 2 页，属预期。
 - 性能排查须区分**真机 vs offscreen**：offscreen 无真实 polish/字体/主题初始化，构造耗时差 3 倍属正常；真机测量可用 `widget.grab()` 强制渲染（不弹窗）。进程级一次性成本勿误判为某页面自身缺陷（换序构建对照即可定位）。
 - **计时/冒烟脚本禁污染 user_data**：`ConfigMemory.bind` 也挂变更信号自动写盘（不止 `watch`），`aboutToQuit` 还会兜底 `save_now`——脚本须同时禁 `watch/restore/bind/save_now`，或先补丁 `resource_path.get_user_data_dir` 到临时目录再 import UI（后导入的 from-import 才绑到隔离路径）。真实 MainWindow 冒烟曾把用户 consumption 芯片/固件配置覆写为 Mock 默认值（靠 git restore 找回）。
+
+## 46. Auto-Baud 运行时重扫后日志出现大段假 `[RX(HEX)] 00 00`（驱动垃圾缓冲未清）
+
+**现象**：串口日志偶发数千字节的全 00 HEX 突发，常紧跟二进制握手帧（如 `BE 19 ...`）之后；其它串口工具看同一设备无此现象。
+
+**根因**：二进制帧被 `score_rx_data` 评低分 → Auto-Detect runtime rescan 在**活连接**上逐个切候选波特率；设备仍按原波特率发流，错误波特率下 Windows 驱动收进大量帧错误字节（典型 0x00）塞满 RX 缓冲。扫描结束 `_restore_baudrate` 只恢复波特率不清缓冲，`_sc_on_auto_baud_thread_cleanup` 重启读线程后把积压垃圾一次性读进日志。系统日志默认隐藏（`_sc_show_system_log=False`），rescan 提示不可见，故看似"凭空出现"。
+
+**规则**：
+
+- 凡在活连接上做过波特率试探/切换，恢复读线程前必须 `reset_input_buffer()` 清驱动 RX 缓冲（错误波特率期间的字节全是垃圾，丢弃是正确语义）；统一在 `_sc_on_auto_baud_thread_cleanup` 重启读线程前执行。
+- 禁止改为在显示层过滤全 00 段——违反"保留原始 HEX"契约（见 ui/modules/AGENTS.md ASCII-HEX 条），会误杀真实数据。
+- 排查此类"假数据"先怀疑本工具自身的旁路操作（重扫/切参数/双读线程），再怀疑设备；对照其它串口工具是有效判据。
