@@ -92,6 +92,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_ntp_worker = None
         self._sc_line_ending = "\r\n"
         self._sc_show_send = True
+        self._sc_show_raw_hex = True
         self._sc_show_system_log = False
         self._sc_line_by_line = False
         self._sc_send_history = []

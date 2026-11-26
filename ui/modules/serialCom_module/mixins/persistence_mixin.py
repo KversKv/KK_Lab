@@ -383,6 +383,7 @@ class PersistenceMixin:
             "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
             "show_send": getattr(self, "_sc_show_send", True),
             "show_system_log": getattr(self, "_sc_show_system_log", False),
+            "show_raw_hex": getattr(self, "_sc_show_raw_hex", True),
             "line_by_line": getattr(self, "_sc_line_by_line", False),
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
             "footer_visible": getattr(self, "_sc_footer_visible", True),
@@ -527,6 +528,7 @@ class PersistenceMixin:
                     ("line_ending", "_sc_line_ending"),
                     ("show_send", "_sc_show_send"),
                     ("show_system_log", "_sc_show_system_log"),
+                    ("show_raw_hex", "_sc_show_raw_hex"),
                     ("line_by_line", "_sc_line_by_line"),
                     ("sidebar_visible", "_sc_sidebar_visible"),
                     ("footer_visible", "_sc_footer_visible"),
@@ -631,6 +633,8 @@ class PersistenceMixin:
         # 回放侧栏勾选/选中态（属性已恢复，控件默认态需对齐）：Show Time / Show Send / Line by Line / Line Ending
         if hasattr(self, "_sc_rx_show_time_cb"):
             self._sc_rx_show_time_cb.setChecked(bool(getattr(self, "_sc_show_timestamp", True)))
+        if hasattr(self, "_sc_show_raw_hex_cb"):
+            self._sc_show_raw_hex_cb.setChecked(bool(getattr(self, "_sc_show_raw_hex", True)))
         if hasattr(self, "_sc_show_send_cb"):
             self._sc_show_send_cb.setChecked(bool(getattr(self, "_sc_show_send", True)))
         if hasattr(self, "_sc_line_by_line_cb"):
@@ -645,6 +649,7 @@ class PersistenceMixin:
         if getattr(self, "_sc_log_panel", None) is not None:
             panel = self._sc_log_panel
             panel.show_timestamp = bool(getattr(self, "_sc_show_timestamp", True))
+            panel.show_raw_hex = bool(getattr(self, "_sc_show_raw_hex", True))
             # Display 设置回放：字体/字号/自动换行/缓冲行数/默认自动滚动
             panel.set_display_font(
                 str(getattr(self, "_sc_display_font", "Consolas")),
@@ -787,6 +792,10 @@ class PersistenceMixin:
         self._sc_show_system_log = False
         if hasattr(self, "_sc_show_system_cb"):
             self._sc_show_system_cb.setChecked(False)
+        if hasattr(self, "_sc_show_raw_hex_cb"):
+            self._sc_show_raw_hex_cb.setChecked(True)
+        # 勾选态未变化时 toggled 不触发，显式驱动一次保证真值与三容器同步
+        self._sc_on_show_raw_hex_toggled(True)
         self._sc_line_by_line = False
         if hasattr(self, "_sc_line_by_line_cb"):
             self._sc_line_by_line_cb.setChecked(False)

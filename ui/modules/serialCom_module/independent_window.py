@@ -121,6 +121,10 @@ class _IndependentSerialWindow(QWidget):
         """供 Clear All 统一调用：清空本浮窗日志面板。"""
         self._panel.clear_logs()
 
+    def set_show_raw_hex(self, enabled: bool):
+        """供宿主 Show Raw HEX 开关统一驱动：ASCII 模式二进制段是否以 [RX(HEX)] 行显示。"""
+        self._panel.show_raw_hex = bool(enabled)
+
     def _append_system(self, message: str):
         """系统行统一入口：显示 + 后台诊断日志（不含 RX/TX 数据行）。"""
         serial_diag_log.record_system(message)

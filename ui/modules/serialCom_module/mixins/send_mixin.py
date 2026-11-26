@@ -616,9 +616,11 @@ class SendMixin:
             display = ascii_display_text(data)
             for is_hex, seg in split_ascii_hex_segments(display):
                 if is_hex:
-                    # 二进制段（如芯片握手帧）：先刷出已缓冲文本保持时序，再以 HEX 行显示
-                    self._sc_flush_rx_line_buf()
-                    self._sc_append_log(f"[RX(HEX)] {seg}", _CLR_RX)
+                    # 二进制段（如芯片握手帧）：先刷出已缓冲文本保持时序，再以 HEX 行显示；
+                    # Show Raw HEX 关闭时丢弃不显示
+                    if getattr(self, "_sc_show_raw_hex", True):
+                        self._sc_flush_rx_line_buf()
+                        self._sc_append_log(f"[RX(HEX)] {seg}", _CLR_RX)
                     continue
                 self._sc_rx_line_buf += seg
                 while "\n" in self._sc_rx_line_buf:

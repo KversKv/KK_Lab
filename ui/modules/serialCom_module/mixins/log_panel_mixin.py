@@ -212,6 +212,7 @@ class LogPanelMixin:
             max_lines=self._sc_max_log_lines,
             show_timestamp=self._sc_show_timestamp,
         )
+        panel.show_raw_hex = bool(getattr(self, "_sc_show_raw_hex", True))
         panel.ntp_timestamp_provider = self._sc_ntp_timestamp
         panel.entry_renderer = self._sc_render_log_html
         panel.export_fast_path = self._sc_export_fast_path
@@ -292,6 +293,7 @@ class LogPanelMixin:
         if not hasattr(self, "_sc_independent_windows"):
             self._sc_independent_windows = []
         self._sc_independent_windows.append(win)
+        win.set_show_raw_hex(bool(getattr(self, "_sc_show_raw_hex", True)))
         win.setAttribute(Qt.WA_DeleteOnClose)
         win.destroyed.connect(lambda _=None, w=win: self._sc_on_independent_window_destroyed(w))
         win.connection_changed.connect(self._sc_sync_clear_all_btn_state)
@@ -485,6 +487,7 @@ class LogPanelMixin:
             baud_text=f"Baud rate: {config.get('baudrate', '-')}",
         )
         comp.show_timestamp = bool(config.get("show_timestamp", True))
+        comp.show_raw_hex = bool(getattr(self, "_sc_show_raw_hex", True))
         comp.setContextMenuPolicy(Qt.CustomContextMenu)
 
         panel = {

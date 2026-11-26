@@ -524,6 +524,13 @@ class ToolbarMixin:
         self._sc_rx_show_time_cb.toggled.connect(self._sc_on_show_time_toggled)
         layout.addWidget(self._sc_rx_show_time_cb)
 
+        self._sc_show_raw_hex_cb = QCheckBox("Show Raw HEX")
+        self._sc_show_raw_hex_cb.setChecked(True)
+        self._sc_show_raw_hex_cb.setToolTip("Show binary (non-printable) RX segments as [RX(HEX)] lines in ASCII mode")
+        self._sc_show_raw_hex_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_show_raw_hex_cb.toggled.connect(self._sc_on_show_raw_hex_toggled)
+        layout.addWidget(self._sc_show_raw_hex_cb)
+
         self._sc_show_system_cb = QCheckBox("Show System Log")
         self._sc_show_system_cb.setChecked(False)
         self._sc_show_system_cb.setToolTip("Show blue system/info messages in log")
@@ -847,6 +854,21 @@ class ToolbarMixin:
         else:
             panel["config"]["show_timestamp"] = checked
             panel["frame"].show_timestamp = checked
+
+    def _sc_on_show_raw_hex_toggled(self, checked):
+        """Show Raw HEX：全局显示开关，主/额外内嵌面板/独立浮窗三处跟随（HEX Format 模式不受影响）。"""
+        enabled = bool(checked)
+        self._sc_show_raw_hex = enabled
+        if getattr(self, "_sc_log_panel", None) is not None:
+            self._sc_log_panel.show_raw_hex = enabled
+        for panel in getattr(self, "_sc_extra_log_panels", []) or []:
+            panel["frame"].show_raw_hex = enabled
+        for win in list(getattr(self, "_sc_independent_windows", []) or []):
+            try:
+                win.set_show_raw_hex(enabled)
+            except RuntimeError:
+                # 浮窗已销毁但尚未从列表移除
+                pass
 
     def _sc_on_tx_format_toggled(self, v):
         panel = self._sc_sidebar_bound_panel()

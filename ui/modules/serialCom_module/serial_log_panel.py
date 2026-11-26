@@ -192,6 +192,8 @@ class SerialLogPanel(QFrame):
         self.filter_mode = filter_mode
         self.max_lines = max(1, int(max_lines))
         self.show_timestamp = bool(show_timestamp)
+        # ASCII 模式下二进制段是否以 [RX(HEX)] 行显示（宿主 Show Raw HEX 开关驱动）
+        self.show_raw_hex = True
         self.notify_on_copy_export = bool(notify_on_copy_export)
         self.all_logs = []          # [(raw, html, line_no)]
         self.pending_html = []
@@ -602,7 +604,8 @@ class SerialLogPanel(QFrame):
         display = ascii_display_text(data)
         for is_hex, seg in split_ascii_hex_segments(display):
             if is_hex:
-                self.append_log(f"[RX(HEX)] {seg}", _CLR_RX)
+                if self.show_raw_hex:
+                    self.append_log(f"[RX(HEX)] {seg}", _CLR_RX)
                 continue
             for line in seg.splitlines():
                 if line.strip():
