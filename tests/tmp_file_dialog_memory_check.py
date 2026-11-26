@@ -50,7 +50,7 @@ import ui.modules.serialCom_module.mixins.filter_save_mixin  # noqa: F401
 import ui.modules.serialCom_module.independent_window  # noqa: F401
 import ui.modules.serialCom_module.serialCom_module_frame  # noqa: F401
 
-# 6) 集成：SerialLogPanel.export_logs 初始路径 = 记忆目录 + 默认文件名
+# 6) 集成：export_logs 默认 log / 格式记忆 / 面板名命名（符号转 _）/ 记忆目录
 from PySide6.QtWidgets import QFileDialog
 from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 
@@ -58,19 +58,39 @@ dir_b = os.path.join(tmp, "b")
 os.makedirs(dir_b)
 fdm.remember_dir("export_log", dir_b)
 captured = {}
+result = {"path": os.path.join(dir_b, "out.log"), "filter": "Log Files (*.log)"}
 
 def _fake_save(parent, caption, directory, name_filter, *a, **k):
     captured["dir"] = directory
-    return os.path.join(dir_b, "out.txt"), "Text Files (*.txt)"
+    captured["filter"] = name_filter
+    return result["path"], result["filter"]
 
 _orig = QFileDialog.getSaveFileName
 QFileDialog.getSaveFileName = staticmethod(_fake_save)
 try:
-    panel = SerialLogPanel(title="T")
+    panel = SerialLogPanel(title="My Panel-01 (COM3)")
     panel.export_logs()
+    base = os.path.basename(captured["dir"])
+    assert base.startswith("My_Panel_01_COM3_") and base.endswith(".log"), base
+    assert captured["filter"].startswith("Log Files (*.log)"), captured["filter"]
+    assert fdm.last_value("export_log_format") == "log"
+
+    # 用户改选 txt -> 记忆生效：下次默认文件名 .txt 且 txt filter 排首位
+    result["path"] = os.path.join(dir_b, "out.txt")
+    result["filter"] = "Text Files (*.txt)"
+    panel.export_logs()
+    assert fdm.last_value("export_log_format") == "txt"
+    panel.export_logs()
+    base = os.path.basename(captured["dir"])
+    assert base.endswith(".txt"), base
+    assert captured["filter"].startswith("Text Files (*.txt)"), captured["filter"]
+
+    # 模拟重启后格式记忆仍在
+    fdm._loaded = False
+    fdm._dirs.clear()
+    assert fdm.last_value("export_log_format", "log") == "txt"
 finally:
     QFileDialog.getSaveFileName = _orig
-assert captured["dir"].startswith(dir_b), f"export initial dir wrong: {captured}"
 assert fdm.last_dir("export_log") == dir_b
 
 print("ALL CHECKS PASSED")

@@ -43,12 +43,14 @@ _UPDATE_LOG_ENTRIES = [
         "New Show Raw HEX checkbox in RX Config: toggle whether binary RX segments are displayed as [RX(HEX)] lines (applies to main panel, extra panels and floating windows; saved on restart).",
         "Fixed Auto-scroll misbehaving while reading older logs: scrollbar changes caused by incoming logs no longer count as user scrolling (only wheel/keyboard/scrollbar drag toggles Auto-scroll), and the view now stays frozen on the content you are reading instead of drifting once the scrollbar reaches the top (top-line trimming is paused until you resume).",
         "File dialogs (Export Log, Save, script / Quick Commands import/export, chart export/import) now remember the last used folder across restarts; if that folder no longer exists, they fall back to the default location.",
+        "Export Log now defaults to .log (with .txt also available) and remembers your last chosen format; the suggested file name follows the panel name, with spaces and other symbols replaced by '_'.",
     ], [
         "修复日志偶发大段 [RX(HEX)] 00 假数据：Auto-Detect 重扫期间以错误波特率收到的驱动积压垃圾在恢复接收前统一清空。",
         "新增后台诊断日志用于闪退排查：操作/警告/错误保存在用户 JSON 同目录（serial_diag.log，尾缀 .1-.5 循环轮转，总量约 6MB 封顶；不保存原始 RX 数据），同时捕获未处理异常与原生崩溃栈。",
         "RX Config 新增 Show Raw HEX 勾选框：控制二进制 RX 段是否以 [RX(HEX)] 行显示（主面板/额外面板/独立浮窗统一生效，重启后保留）。",
         "修复向上翻阅日志时 Auto-scroll 异常：新日志引起的滚动条变化不再被当作用户滚动（仅滚轮/按键/拖动滚动条才会切换 Auto-scroll），且翻阅期间画面冻结在正在阅读的内容，滚动条到顶后不再被迫前移（暂停顶部裁行，恢复后才继续滚动）。",
         "文件对话框（导出日志、保存、脚本/快捷指令导入导出、Chart 导出/导入）记忆上次使用的目录，重启后仍生效；目录不存在时自动回退默认位置。",
+        "导出日志默认 .log（同时支持 .txt）并记忆上次选择的格式；建议文件名跟随面板名称，空格与其它符号统一替换为 '_'。",
     ]),
     ("2026-11-25", [
         "Primary Serial Log panel now has the same right-click menu as extra panels: Connect/Disconnect and Settings (rename) available on both the log area and the panel body.",

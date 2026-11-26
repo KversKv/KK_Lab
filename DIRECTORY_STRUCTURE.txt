@@ -414,7 +414,7 @@ ui/
 │       │                               # （SerialSession/SerialSessionManager 已下沉 core/serial_io/，__init__ 再导出兼容）
 │       ├── serial_hotplug.py           # 串口热插拔监控单例 (WM_DEVICECHANGE 事件+后台重扫)
 │       ├── serial_diag_log.py          # 后台诊断日志 (操作/警告/异常, 1MB×5 循环轮转, excepthook+faulthandler, 不含 RX)
-│       ├── file_dialog_memory.py       # 文件对话框目录记忆 (叶子, 按操作键记忆上次目录, file_dialog_dirs.json 持久化, 失效回退默认)
+│       ├── file_dialog_memory.py       # 文件对话框目录/偏好记忆 (叶子, 按操作键记忆上次目录与偏好, file_dialog_dirs.json 持久化, 失效回退默认)
 │       ├── serial_chart_model.py       # RX 可视化数据模型 (ChartConfig/Rule/Series/FieldSpec)
 │       ├── serial_chart_parser.py      # RX 可视化规则引擎 (SerialChartParser/缓存)
 │       ├── serial_chart_controller.py  # RX 可视化控制器 (数据路由/派生曲线)

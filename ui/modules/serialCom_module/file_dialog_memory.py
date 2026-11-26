@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""文件对话框目录记忆（叶子模块，纯 stdlib + log_config / resource_path）。
+"""文件对话框目录 / 偏好记忆（叶子模块，纯 stdlib + log_config / resource_path）。
 
-按操作类型（Export / Import / Save 等）记忆上一次使用的目录，落盘到用户 JSON
-同目录的 file_dialog_dirs.json，重启软件后仍生效；记忆的目录已不存在时回退
-调用方传入的默认位置。导入方向与 serial_style 同层（叶子），mixins /
-serial_log_panel / dialogs / independent_window 均可直接 import。
+按操作类型（Export / Import / Save 等）记忆上一次使用的目录与少量偏好值
+（如导出格式），落盘到用户 JSON 同目录的 file_dialog_dirs.json，重启软件后
+仍生效；记忆的目录已不存在时回退调用方传入的默认位置。导入方向与
+serial_style 同层（叶子），mixins / serial_log_panel / dialogs /
+independent_window 均可直接 import。
 """
 
 import json
@@ -70,6 +71,14 @@ def initial_save_path(key: str, default_name: str) -> str:
     return os.path.join(d, default_name) if d else default_name
 
 
+def _persist() -> None:
+    try:
+        with open(_storage_path(), "w", encoding="utf-8") as f:
+            json.dump(_dirs, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logger.warning("Failed to persist file dialog dirs", exc_info=True)
+
+
 def remember_dir(key: str, directory: str) -> None:
     """记忆目录并立即落盘（尽力而为，失败不影响对话框流程）。"""
     if not key or not directory:
@@ -79,14 +88,27 @@ def remember_dir(key: str, directory: str) -> None:
     if _dirs.get(key) == directory:
         return
     _dirs[key] = directory
-    try:
-        with open(_storage_path(), "w", encoding="utf-8") as f:
-            json.dump(_dirs, f, ensure_ascii=False, indent=2)
-    except OSError:
-        logger.warning("Failed to persist file dialog dirs", exc_info=True)
+    _persist()
 
 
 def remember_path(key: str, path: str) -> None:
     """记忆所选文件所在目录。"""
     if path:
         remember_dir(key, os.path.dirname(os.path.abspath(path)))
+
+
+def last_value(key: str, default: str = "") -> str:
+    """返回 key 上一次记忆的普通偏好值（不做目录校验）；无记忆时回退 default。"""
+    _ensure_loaded()
+    return _dirs.get(key) or default
+
+
+def remember_value(key: str, value: str) -> None:
+    """记忆普通偏好值（如导出格式）并立即落盘。"""
+    if not key or not value:
+        return
+    _ensure_loaded()
+    if _dirs.get(key) == value:
+        return
+    _dirs[key] = value
+    _persist()

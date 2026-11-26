@@ -33,7 +33,7 @@ from PySide6.QtGui import QAction, QColor, QTextCursor
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.modules.serialCom_module.file_dialog_memory import (
-    initial_save_path, remember_path,
+    initial_save_path, last_value, remember_path, remember_value,
 )
 from ui.modules.serialCom_module.serial_style import (
     _SC_HIGHLIGHT_PALETTE,
@@ -1002,18 +1002,29 @@ class SerialLogPanel(QFrame):
                 self.append_log("[INFO] Log copied to clipboard", _CLR_TEXT_INFO)
 
     def export_logs(self):
-        if self.filter_mode == "full":
-            default_name = f"serial_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            name_filter = "Text Files (*.txt);;All Files (*)"
+        # 格式默认 log，支持 txt，记忆用户上次选择（记忆格式排 filter 首位即默认选中）
+        ext = last_value("export_log_format", "log")
+        if ext not in ("log", "txt"):
+            ext = "log"
+        default_name = (
+            f"{self._title_slug()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        )
+        log_filter = "Log Files (*.log)"
+        txt_filter = "Text Files (*.txt)"
+        if ext == "txt":
+            name_filter = f"{txt_filter};;{log_filter};;All Files (*)"
         else:
-            default_name = f"{self._title_slug()}.log"
-            name_filter = "Log Files (*.log);;Text Files (*.txt);;All (*.*)"
-        path, _ = QFileDialog.getSaveFileName(
+            name_filter = f"{log_filter};;{txt_filter};;All Files (*)"
+        path, selected = QFileDialog.getSaveFileName(
             self, "Export Log", initial_save_path("export_log", default_name), name_filter
         )
         if not path:
             return
         remember_path("export_log", path)
+        suffix = os.path.splitext(path)[1].lower().lstrip(".")
+        if suffix not in ("log", "txt"):
+            suffix = "txt" if "(*.txt)" in selected else "log"
+        remember_value("export_log_format", suffix)
         try:
             fast = self.export_fast_path() if self.export_fast_path else None
             if fast and os.path.isfile(fast):
@@ -1032,8 +1043,10 @@ class SerialLogPanel(QFrame):
                 logger.error("Export log failed: %s", e, exc_info=True)
 
     def _title_slug(self):
-        title = self.title_label.text() if self.title_label is not None else "serial_log"
-        return (title or "serial_log").replace(" ", "_").lower()
+        # 导出命名跟随面板名：空格与其它符号统一替换为 '_'（保留大小写与中英文字符）
+        title = self.title_label.text() if self.title_label is not None else ""
+        slug = re.sub(r"[^\w]+", "_", title).strip("_")
+        return slug or "serial_log"
 
     def clear_logs(self):
         self.all_logs.clear()
