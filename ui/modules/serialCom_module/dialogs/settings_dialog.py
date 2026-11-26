@@ -38,12 +38,12 @@ _UPDATE_LOG_ENTRIES = [
         "Fixed spurious long [RX(HEX)] 00 bursts: stale bytes received at wrong baudrates during Auto-Detect rescan are now purged before normal reading resumes.",
         "Added background diagnostic log for crash troubleshooting: operations, warnings and errors are saved next to the user JSON (serial_diag.log, rotating backups .1-.5, ~6MB cap; raw RX data is never saved). Unhandled exceptions and native crash stacks are also captured.",
         "New Show Raw HEX checkbox in RX Config: toggle whether binary RX segments are displayed as [RX(HEX)] lines (applies to main panel, extra panels and floating windows; saved on restart).",
-        "Fixed Auto-scroll turning itself back on while reading older logs: scrollbar changes caused by incoming logs no longer count as user scrolling; only wheel/keyboard/scrollbar drag toggles Auto-scroll.",
+        "Fixed Auto-scroll misbehaving while reading older logs: scrollbar changes caused by incoming logs no longer count as user scrolling (only wheel/keyboard/scrollbar drag toggles Auto-scroll), and the view now stays frozen on the content you are reading instead of drifting once the scrollbar reaches the top (top-line trimming is paused until you resume).",
     ], [
         "修复日志偶发大段 [RX(HEX)] 00 假数据：Auto-Detect 重扫期间以错误波特率收到的驱动积压垃圾在恢复接收前统一清空。",
         "新增后台诊断日志用于闪退排查：操作/警告/错误保存在用户 JSON 同目录（serial_diag.log，尾缀 .1-.5 循环轮转，总量约 6MB 封顶；不保存原始 RX 数据），同时捕获未处理异常与原生崩溃栈。",
         "RX Config 新增 Show Raw HEX 勾选框：控制二进制 RX 段是否以 [RX(HEX)] 行显示（主面板/额外面板/独立浮窗统一生效，重启后保留）。",
-        "修复向上翻阅日志时 Auto-scroll 自动重新开启：新日志引起的滚动条变化不再被当作用户滚动，仅滚轮/按键/拖动滚动条才会切换 Auto-scroll。",
+        "修复向上翻阅日志时 Auto-scroll 异常：新日志引起的滚动条变化不再被当作用户滚动（仅滚轮/按键/拖动滚动条才会切换 Auto-scroll），且翻阅期间画面冻结在正在阅读的内容，滚动条到顶后不再被迫前移（暂停顶部裁行，恢复后才继续滚动）。",
     ]),
     ("2026-11-25", [
         "Primary Serial Log panel now has the same right-click menu as extra panels: Connect/Disconnect and Settings (rename) available on both the log area and the panel body.",

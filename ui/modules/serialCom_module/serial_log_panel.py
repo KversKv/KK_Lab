@@ -715,9 +715,19 @@ class SerialLogPanel(QFrame):
             del self.pending_html[:200]
             self._append_html_batch(batch)
 
+    def _sync_doc_block_cap(self):
+        # Auto-scroll 关闭(用户向上翻阅)期间暂停顶部裁行: 否则 maximumBlockCount 会把用户
+        # 正在阅读的内容逐批挤出缓冲区, 滚动条到顶后视图被迫前移, 看起来仍在"自动滚动"。
+        # 用 4x 硬上限兜底防内存无限增长; 恢复 Auto-scroll 时回到 max_lines 并裁掉多余行。
+        doc = self.log_edit.document()
+        cap = self.max_lines if self.auto_scroll else self.max_lines * 4
+        if doc.maximumBlockCount() != cap:
+            doc.setMaximumBlockCount(cap)
+
     def _append_html_batch(self, html_list):
         if not html_list:
             return
+        self._sync_doc_block_cap()
         sb = self.log_edit.verticalScrollBar()
         prev_value = sb.value() if sb else 0
         anchor_cursor = None
@@ -1144,12 +1154,14 @@ class SerialLogPanel(QFrame):
 
     def _on_scroll_btn_clicked(self, checked):
         self.auto_scroll = checked
+        self._sync_doc_block_cap()
         if checked:
             self.scroll_to_bottom()
 
     def set_auto_scroll(self, checked):
         self.auto_scroll = bool(checked)
         self.scroll_lock_btn.setChecked(bool(checked))
+        self._sync_doc_block_cap()
         if checked:
             self.scroll_to_bottom()
 
@@ -1178,9 +1190,11 @@ class SerialLogPanel(QFrame):
         if not at_bottom and self.auto_scroll:
             self.auto_scroll = False
             self.scroll_lock_btn.setChecked(False)
+            self._sync_doc_block_cap()
         elif at_bottom and not self.auto_scroll:
             self.auto_scroll = True
             self.scroll_lock_btn.setChecked(True)
+            self._sync_doc_block_cap()
 
     def scroll_to_bottom(self):
         sb = self.log_edit.verticalScrollBar()
@@ -1210,7 +1224,7 @@ class SerialLogPanel(QFrame):
     def set_max_lines(self, value):
         value = max(1, int(value))
         self.max_lines = value
-        self.log_edit.document().setMaximumBlockCount(value)
+        self._sync_doc_block_cap()
         if len(self.all_logs) > value:
             del self.all_logs[:-value]
             if not self.is_filter_active():
