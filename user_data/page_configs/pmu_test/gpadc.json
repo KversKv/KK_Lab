@@ -40,7 +40,7 @@
     "temp_max": 120.0,
     "temp_step": 10.0,
     "soak_time": 120,
-    "sample_count": 1000,
+    "sample_count": 100,
     "calib_low": "3.2",
     "calib_high": "4.2",
     "ft_calib_v1": "0.4",
