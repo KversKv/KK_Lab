@@ -43,6 +43,7 @@ from core.auto_baud_detector import (
     AUTO_BAUD_CONFIG, AutoBaudMonitor, AutoBaudScanWorker, AutoBaudState,
     score_rx_data,
 )
+from ui.modules.serialCom_module import serial_diag_log
 from ui.modules.serialCom_module.widgets import (
     _FramelessChromeDialog,
     _MixinSerialSettingsDialog,
@@ -1115,6 +1116,17 @@ class LogPanelMixin:
             self._sc_auto_detect_cb.setChecked(enable)
 
 
+    def _sc_setup_diag_log(self):
+        """后台诊断日志：与用户 JSON 同目录，尾缀 1-5 循环轮转；只记操作/警告/异常，不记 RX。"""
+        import sys
+        serial_diag_log.setup(
+            self._sc_user_config_dir(),
+            session_info=(
+                f"app={getattr(self, '_SC_APP_VERSION', '')}, "
+                f"mode={'packaged' if getattr(sys, 'frozen', False) else 'dev'}"
+            ),
+        )
+
     def _sc_start_temp_log(self):
         self._sc_close_temp_log(delete=True)
         import tempfile
@@ -1300,6 +1312,8 @@ class LogPanelMixin:
         return html
 
     def _sc_append_system(self, message: str, force_primary: bool = False):
+        # 后台诊断日志：先于显示过滤记录（Show System Log 关闭时也保留操作痕迹）
+        serial_diag_log.record_system(message)
         color_map = {"INFO": _CLR_TEXT_INFO, "WARN": _CLR_WARNING, "ERROR": _CLR_ERROR}
         tag = ""
         for t in color_map:

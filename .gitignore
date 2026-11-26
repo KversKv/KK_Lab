@@ -20,3 +20,6 @@ Results/*
 *.pdf
 # 唯一临时资料归档目录
 Temp_Docs/
+# 串口后台诊断日志（运行期产物，循环轮转，不入库）
+user_data/SerialCom/serial_diag.log*
+user_data/SerialCom/serial_crash.log

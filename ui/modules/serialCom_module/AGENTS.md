@@ -19,6 +19,7 @@
 | `serial_log_panel.py` | **统一日志面板组件 `SerialLogPanel`**：主面板/额外内嵌面板/独立浮窗三处共用 |
 | `independent_window.py` | `_IndependentSerialWindow` 独立串口浮窗 |
 | `serial_hotplug.py` | `SerialPortHotplugMonitor` 模块级单例（WM_DEVICECHANGE + 去抖 + 后台重扫） |
+| `serial_diag_log.py` | 后台诊断日志（叶子，纯 stdlib）：操作/警告/异常落盘 + 1MB×5 循环轮转 + excepthook/faulthandler |
 | `widgets.py` | 可复用组件（搜索按钮 / 无边框对话框 chrome 等） |
 | `dialogs/` | panel / quick_cmd / script / save / settings 对话框 |
 | `controls/` | `_MiniSlideToggle`、快捷指令按钮/弹层等自定义控件 |
@@ -34,7 +35,8 @@
 5. **热插拔共享单例**，禁止各页面自建监控线程；串口下拉项填充统一 `serial_style.add_serial_port_item()`。
 6. **关键不变量**（细节见父级）：顶部控制状态唯一经 `_sc_sync_top_control_state()` 同步；主面板发送固定 `_sc_primary_send()`；额外面板 session_id = `extra_{uid}`；持久化只恢复布局不自动回连；端口匹配一律精确 `==`。
 7. 读线程三处装配（主/额外/浮窗）必须 `worker.finished → thread.quit` + `thread.finished → worker.deleteLater`。
-8. **主动维护 Update Log**：凡改动串口模块功能（新增 / 修复 / 行为变更），收尾必须同步 [dialogs/settings_dialog.py](./dialogs/settings_dialog.py) 顶部 `_UPDATE_LOG_ENTRIES`（Settings → Update Log 标签页数据源），不得遗漏。格式 `(日期, 英文要点列表, 中文要点列表)`，两列表一一对应；新日期条目插在最前，同日改动并入该日期条目；要点面向用户、简洁描述变化本身，不写实现细节。
+8. **后台诊断日志统一走 `serial_diag_log.py`**：`setup()` 幂等（`complete_serialComWidget` 在加载持久化前调 `_sc_setup_diag_log()`），落盘目录 = `_sc_user_config_dir()`（与用户 JSON 同目录），`serial_diag.log` 1MB×尾缀 .1-.5 循环轮转。系统消息唯一记录入口 = `record_system()`（`_sc_append_system` 显示过滤前调用；浮窗系统行统一走 `_IndependentSerialWindow._append_system()`），**禁止把 RX/TX 数据行写入诊断日志**；串口相关 logger 子树 WARNING+ 自动同步进诊断日志，勿再另起平行文件日志。
+9. **主动维护 Update Log**：凡改动串口模块功能（新增 / 修复 / 行为变更），收尾必须同步 [dialogs/settings_dialog.py](./dialogs/settings_dialog.py) 顶部 `_UPDATE_LOG_ENTRIES`（Settings → Update Log 标签页数据源），不得遗漏。格式 `(日期, 英文要点列表, 中文要点列表)`，两列表一一对应；新日期条目插在最前，同日改动并入该日期条目；要点面向用户、简洁描述变化本身，不写实现细节。
 
 ## 本地文档（按需读）
 

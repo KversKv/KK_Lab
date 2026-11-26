@@ -24,6 +24,7 @@ from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from core.serial_io import SerialReadWorker as _SerialReadWorker
 from core.serial_io.serial_backend import open_serial
+from ui.modules.serialCom_module import serial_diag_log
 from ui.modules.serialCom_module.serial_log_panel import SerialLogPanel
 from ui.modules.serialCom_module.serial_style import (
     _CLR_BG_LOG,
@@ -120,11 +121,16 @@ class _IndependentSerialWindow(QWidget):
         """供 Clear All 统一调用：清空本浮窗日志面板。"""
         self._panel.clear_logs()
 
+    def _append_system(self, message: str):
+        """系统行统一入口：显示 + 后台诊断日志（不含 RX/TX 数据行）。"""
+        serial_diag_log.record_system(message)
+        self._panel.append_log(message)
+
     def _do_connect(self):
         port = self._config.get("port", "")
         baudrate = self._config.get("baudrate", 115200)
         if not port:
-            self._panel.append_log("[ERROR] No port configured")
+            self._append_system("[ERROR] No port configured")
             return
 
         if DEBUG_MOCK:
@@ -132,7 +138,7 @@ class _IndependentSerialWindow(QWidget):
             self._connect_btn.setText("Disconnect")
             self._status_label.setText(f"MOCK @ {baudrate}")
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
-            self._panel.append_log(f"[INFO] Mock connected: {port} @ {baudrate}")
+            self._append_system(f"[INFO] Mock connected: {port} @ {baudrate}")
             self.connection_changed.emit()
             return
 
@@ -150,11 +156,11 @@ class _IndependentSerialWindow(QWidget):
             self._connect_btn.setText("Disconnect")
             self._status_label.setText(f"{port} @ {baudrate}")
             self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
-            self._panel.append_log(f"[INFO] Connected: {port} @ {baudrate}")
+            self._append_system(f"[INFO] Connected: {port} @ {baudrate}")
             self._start_read()
             self.connection_changed.emit()
         except Exception as e:
-            self._panel.append_log(f"[ERROR] Connection failed: {e}")
+            self._append_system(f"[ERROR] Connection failed: {e}")
 
     def _do_disconnect(self):
         self._stop_read()
@@ -166,14 +172,14 @@ class _IndependentSerialWindow(QWidget):
         self._conn = None
         self._connect_btn.setText("Connect")
         self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
-        self._panel.append_log("[INFO] Disconnected")
+        self._append_system("[INFO] Disconnected")
         self.connection_changed.emit()
 
     def disconnect_on_port_removed(self, port: str) -> bool:
         """热插拔移除当前连接端口时自动断开；返回是否真正触发了断开。"""
         if self._config.get("port") != port or not self.is_connected():
             return False
-        self._panel.append_log(f"[WARN] Port {port} removed, auto disconnected")
+        self._append_system(f"[WARN] Port {port} removed, auto disconnected")
         self._do_disconnect()
         return True
 
@@ -190,7 +196,7 @@ class _IndependentSerialWindow(QWidget):
             return
 
         if self._conn is None or not self._conn.is_open:
-            self._panel.append_log("[ERROR] Not connected")
+            self._append_system("[ERROR] Not connected")
             return
         try:
             self._conn.write(data)
@@ -198,7 +204,7 @@ class _IndependentSerialWindow(QWidget):
             self._panel.append_log(f"[TX] {text}")
             self._send_input.clear()
         except Exception as e:
-            self._panel.append_log(f"[ERROR] Send failed: {e}")
+            self._append_system(f"[ERROR] Send failed: {e}")
 
     def _start_read(self):
         if self._conn is None:
@@ -208,7 +214,7 @@ class _IndependentSerialWindow(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.data_received.connect(self._on_data_received)
-        worker.error.connect(lambda err: self._panel.append_log(f"[ERROR] {err}"))
+        worker.error.connect(lambda err: self._append_system(f"[ERROR] {err}"))
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         self._read_thread = thread
@@ -262,7 +268,7 @@ class _IndependentSerialWindow(QWidget):
         if not name.lower().endswith(".txt"):
             name += ".txt"
         if not save_dir:
-            self._panel.append_log("[ERROR] Save: no directory selected")
+            self._append_system("[ERROR] Save: no directory selected")
             return False
         try:
             os.makedirs(save_dir, exist_ok=True)
@@ -303,7 +309,7 @@ class _IndependentSerialWindow(QWidget):
 
         self._save_handle = handle
         self._save_path = file_path
-        self._panel.append_log(f"[INFO] Save started: {file_path}")
+        self._append_system(f"[INFO] Save started: {file_path}")
         return True
 
     def _stop_save(self):
@@ -316,7 +322,7 @@ class _IndependentSerialWindow(QWidget):
             pass
         self._save_handle = None
         if self._save_path:
-            self._panel.append_log(f"[INFO] Save stopped: {self._save_path}")
+            self._append_system(f"[INFO] Save stopped: {self._save_path}")
         self._save_path = None
         btn = self._panel.save_btn
         if btn is not None and btn.isChecked():

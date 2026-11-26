@@ -413,6 +413,7 @@ ui/
 │       ├── serial_log_panel.py         # 统一串口日志面板组件 (SerialLogPanel：主面板/额外面板/独立浮窗三处共用)
 │       │                               # （SerialSession/SerialSessionManager 已下沉 core/serial_io/，__init__ 再导出兼容）
 │       ├── serial_hotplug.py           # 串口热插拔监控单例 (WM_DEVICECHANGE 事件+后台重扫)
+│       ├── serial_diag_log.py          # 后台诊断日志 (操作/警告/异常, 1MB×5 循环轮转, excepthook+faulthandler, 不含 RX)
 │       ├── serial_chart_model.py       # RX 可视化数据模型 (ChartConfig/Rule/Series/FieldSpec)
 │       ├── serial_chart_parser.py      # RX 可视化规则引擎 (SerialChartParser/缓存)
 │       ├── serial_chart_controller.py  # RX 可视化控制器 (数据路由/派生曲线)

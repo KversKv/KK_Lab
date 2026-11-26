@@ -74,6 +74,7 @@ _BASE_HIDDENIMPORTS = [
     'core.instruments.visa_scan',
     'ui.modules.serialCom_module.serial_log_panel',
     'ui.modules.serialCom_module.serial_hotplug',
+    'ui.modules.serialCom_module.serial_diag_log',
     'ui.modules.serialCom_module.widgets',
     'ui.modules.serialCom_module.independent_window',
     'ui.modules.serialCom_module.controls',

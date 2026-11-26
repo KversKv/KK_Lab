@@ -207,6 +207,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         parent_layout.addLayout(outer)
 
         self._bind_sc_signals()
+        self._sc_setup_diag_log()
         self._sc_load_persisted_state()
         # 侧栏跟随聚焦面板：主面板 Serial 真值初始化（持久化回放后、首次焦点同步前）
         self._sc_primary_serial_cfg = self._sc_sidebar_serial_cfg_from_controls()

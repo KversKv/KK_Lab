@@ -149,6 +149,7 @@ a = Analysis(
         'ui.modules.serialCom_module.serialCom_apple_gpt5p5_style',
         'ui.modules.serialCom_module.serialCom_dark_style',
         'ui.modules.serialCom_module.serial_style',
+        'ui.modules.serialCom_module.serial_diag_log',
         'core.serial_io',
         'core.serial_io.serial_backend',
         'core.serial_io.serial_session',
