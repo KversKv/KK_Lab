@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "",
+    "port": "COM16",
     "baudrate": "921600",
     "auto_detect": false,
     "databits": "8",
@@ -35,7 +35,7 @@
     "show_send": true,
     "show_system_log": true,
     "line_by_line": false,
-    "sidebar_visible": false,
+    "sidebar_visible": true,
     "footer_visible": false,
     "show_line_num": false,
     "display_font": "Consolas",
@@ -45,7 +45,7 @@
     "auto_scroll_default": true,
     "primary_panel_title": "Serial Log",
     "center_split_sizes": [
-      398,
+      420,
       0
     ],
     "log_auto_save": false,
@@ -225,63 +225,10 @@
     ]
   },
   "window": {
-    "x": 2,
-    "y": 2,
+    "x": 135,
+    "y": 236,
     "width": 1218,
     "height": 500,
     "maximized": false
-  },
-  "extra_panels": [
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_detect": false,
-      "independent_window": false,
-      "auto_connect": false,
-      "connected": false
-    },
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_detect": false,
-      "independent_window": false,
-      "auto_connect": false,
-      "connected": false
-    },
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_detect": false,
-      "independent_window": false,
-      "auto_connect": false,
-      "connected": false
-    },
-    {
-      "title": "P2",
-      "port": "COM5",
-      "baudrate": 115200,
-      "databit": 8,
-      "stopbit": "1",
-      "parity": "None",
-      "flow": "None",
-      "auto_detect": false,
-      "independent_window": false,
-      "connected": false
-    }
-  ]
+  }
 }
