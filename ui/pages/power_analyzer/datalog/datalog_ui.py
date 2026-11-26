@@ -216,6 +216,9 @@ class N6705CDatalogUI(QWidget, ConnectionViewMixin, LayoutViewMixin, ChannelConf
             self._progress_overlay.setGeometry(self.chart_frame.rect())
         if hasattr(self, '_channel_config_overlay') and self._channel_config_overlay.isVisible():
             self._channel_config_overlay.setGeometry(self.channel_config_card.rect())
+        # 子控件几何在 resizeEvent 时尚未按新尺寸重排，延迟到布局激活后再自适应 MEASUREMENT 高度
+        if hasattr(self, 'meas_table'):
+            QTimer.singleShot(0, self._apply_meas_table_height)
 
     def event(self, ev):
         if ev.type() == ev.Type.LayoutRequest:

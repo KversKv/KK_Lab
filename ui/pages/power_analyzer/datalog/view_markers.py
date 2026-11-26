@@ -965,7 +965,8 @@ class MarkersViewMixin:
 
         row_h = 28
         total_h = (num_rows + 1) * row_h + 4
-        self.meas_table.setFixedHeight(min(total_h, 200))
+        self._meas_content_h = total_h
+        self._apply_meas_table_height()
         for r in range(num_rows):
             self.meas_table.setRowHeight(r, row_h)
 
@@ -1105,7 +1106,8 @@ class MarkersViewMixin:
 
         row_h = 28
         total_h = (num_rows + 1) * row_h + 4
-        self.meas_table.setFixedHeight(min(total_h, 200))
+        self._meas_content_h = total_h
+        self._apply_meas_table_height()
         for r in range(num_rows):
             self.meas_table.setRowHeight(r, row_h)
 

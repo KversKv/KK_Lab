@@ -59,6 +59,13 @@ logger = get_logger(__name__)
 
 # Update Log 数据源: (日期, 英文要点列表, 中文要点列表), 两列表一一对应, 新条目追加在最前
 _UPDATE_LOG_ENTRIES = [
+    ("2026-11-26", [
+        "MEASUREMENT table height now adapts to window height: extra height fills the table until all rows fit, then goes to the Datalog Viewer.",
+        "Added an invisible drag handle in the gap between the chart and MEASUREMENT: hover to reveal the grip, drag to resize the table manually.",
+    ], [
+        "MEASUREMENT 表格高度随窗口自适应：新增高度先补表格直至全部行显示，之后只留给 Datalog Viewer。",
+        "波形与 MEASUREMENT 之间的间距新增透明拖拽条：悬停显示握把，拖动可手动调整表格高度。",
+    ]),
     ("2026-11-18", [
         "New Update Log tab in Settings: changes grouped by date with EN/中文 toggle.",
         "Update Log supports multi-line selection, Select All (Ctrl+A) and copy.",

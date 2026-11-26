@@ -478,3 +478,69 @@ class FixedPopupComboBox(DarkComboBox):
             popup = view.window()
             global_pos = self.mapToGlobal(self.rect().bottomLeft())
             popup.move(global_pos.x(), global_pos.y())
+
+
+class MeasResizeHandle(QWidget):
+    """MEASUREMENT 高度拖拽条：复用图表与结果表之间既有 6px 间距，平时全透明，
+    悬停/拖拽时显示细握把；向上拖增大结果表高度（drag_delta 正值为增高）。"""
+
+    drag_delta = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(6)
+        self.setCursor(Qt.SizeVerCursor)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._hover = False
+        self._drag_y = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_y = event.position().y()
+            self.update()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_y is not None:
+            y = event.position().y()
+            delta = round(self._drag_y - y)
+            if delta:
+                self._drag_y = y
+                self.drag_delta.emit(delta)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._drag_y is not None:
+            self._drag_y = None
+            self.update()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        if not (self._hover or self._drag_y is not None):
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#38bdf8" if self._drag_y is not None else "#33507a"))
+        grip_w, grip_h = 36.0, 2.0
+        p.drawRoundedRect(
+            QRectF((self.width() - grip_w) / 2.0, (self.height() - grip_h) / 2.0, grip_w, grip_h),
+            1.0, 1.0,
+        )
+        p.end()
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)

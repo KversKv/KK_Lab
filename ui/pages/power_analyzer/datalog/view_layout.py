@@ -46,7 +46,7 @@ from resource_path import get_resource_base
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton
 from ui.pages.power_analyzer.datalog.helpers import _build_summary_stages, _make_svg_icon, _render_waveform_summary_image
-from ui.pages.power_analyzer.datalog.widgets import CardFrame, ChannelConfigTabBar, ClickableHeader, FixedPopupComboBox
+from ui.pages.power_analyzer.datalog.widgets import CardFrame, ChannelConfigTabBar, ClickableHeader, FixedPopupComboBox, MeasResizeHandle
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -701,7 +701,8 @@ class LayoutViewMixin:
         center_col_layout.setSpacing(6)
 
         chart_and_meas_layout = QVBoxLayout()
-        chart_and_meas_layout.setSpacing(6)
+        # 间距由透明拖拽条（6px）承担，视觉间距不变；get_capture_pixmap 的 gap=6 仍一致
+        chart_and_meas_layout.setSpacing(0)
 
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("chartFrame")
@@ -813,6 +814,10 @@ class LayoutViewMixin:
         overlay_layout.addWidget(self._progress_time_label)
 
         chart_and_meas_layout.addWidget(self.chart_frame, 1)
+
+        self.meas_resize_handle = MeasResizeHandle()
+        self.meas_resize_handle.drag_delta.connect(self._on_meas_resize_drag)
+        chart_and_meas_layout.addWidget(self.meas_resize_handle)
 
         # 无独立标题行：MEASUREMENT 图标+标题放入结果表左上角表头单元格，省一行高度
         self.measurement_card = CardFrame()
@@ -956,7 +961,8 @@ class LayoutViewMixin:
         self.meas_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.meas_table.horizontalHeader().setMinimumSectionSize(80)
         self.meas_table.setMinimumHeight(50)
-        self.meas_table.setMaximumHeight(200)
+        self._meas_content_h = 0
+        self._meas_height_override = None
         self.meas_table.setVisible(False)
         layout.addWidget(self.meas_table)
 
@@ -967,6 +973,41 @@ class LayoutViewMixin:
         self.analysis_hint_label.setAlignment(Qt.AlignCenter)
         self.analysis_hint_label.setWordWrap(True)
         layout.addWidget(self.analysis_hint_label)
+
+    def _apply_meas_table_height(self):
+        """MEASUREMENT 表高度：内容需求 _meas_content_h 与可用空间取小。
+
+        无用户拖拽值时内容优先：窗口增高的空间先补表格直到全部行显示完，
+        之后多余高度只留给 Datalog Viewer；图表始终保留最小高度。
+        有拖拽值时尊重用户设定并随空间收缩夹取。
+        """
+        # 嵌在 QStackedWidget 时 isVisible() 受祖先影响，须用 isHidden() 反判自身显式标志
+        if self.meas_table.isHidden():
+            return
+        content_h = getattr(self, "_meas_content_h", 0)
+        if content_h <= 0:
+            return
+        chart_min_h = 180
+        cur_h = self.meas_table.height()
+        available = max(50, cur_h + self.chart_frame.height() - chart_min_h)
+        override = getattr(self, "_meas_height_override", None)
+        target = override if override is not None else content_h
+        target = max(50, min(target, content_h, available))
+        if target != cur_h:
+            self.meas_table.setFixedHeight(target)
+
+    def _on_meas_resize_drag(self, delta):
+        """透明拖拽条：向上拖（delta>0）增高 MEASUREMENT，图表相应让位。"""
+        if self.meas_table.isHidden():
+            return
+        content_h = getattr(self, "_meas_content_h", 0)
+        if content_h <= 0:
+            return
+        available = max(50, self.meas_table.height() + self.chart_frame.height() - 180)
+        new_h = max(50, min(self.meas_table.height() + delta, content_h, available))
+        self._meas_height_override = new_h
+        if new_h != self.meas_table.height():
+            self.meas_table.setFixedHeight(new_h)
 
     def _apply_meas_corner_title(self):
         """MEASUREMENT 图标+标题写入结果表左上角表头单元格（替代独立标题行）。"""
@@ -1464,7 +1505,7 @@ class LayoutViewMixin:
             {
                 "target": self.measurement_card,
                 "title": "第 8 步：查看测量结果",
-                "text": "测量表实时显示各通道的统计值（第 4 步勾选的指标）；放置 Marker A / B 后，统计范围自动限定在标记区间内。",
+                "text": "测量表实时显示各通道的统计值（第 4 步勾选的指标）；放置 Marker A / B 后，统计范围自动限定在标记区间内。\n表格高度随窗口自适应，也可拖动波形与表格之间的透明拖拽条手动调整。",
             },
             {
                 "target": self.export_btn,
